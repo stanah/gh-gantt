@@ -1,0 +1,17 @@
+{
+  "name": "gh-gantt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "GitHub Projects Gantt chart with hierarchical progress tracking",
+  "license": "MIT",
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

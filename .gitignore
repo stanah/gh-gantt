@@ -1,0 +1,5 @@
+node_modules/
+dist/
+.gantt-sync/
+*.tsbuildinfo
+.DS_Store
