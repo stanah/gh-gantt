@@ -5,9 +5,10 @@ import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTree } from "./components/TaskTree.js";
 import { GanttChart } from "./components/GanttChart.js";
+import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 
 export function App() {
-  const { config, tasks, loading, error, updateTask } = useApi();
+  const { config, tasks, cache, loading, error, updateTask } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
 
@@ -67,6 +68,19 @@ export function App() {
           }
         />
       </div>
+      {detailTaskId && (() => {
+        const detailTask = tasks.find((t) => t.id === detailTaskId);
+        if (!detailTask) return null;
+        return (
+          <TaskDetailPanel
+            task={detailTask}
+            config={config}
+            comments={cache.comments[detailTaskId] ?? []}
+            onUpdate={(updates) => updateTask(detailTaskId, updates)}
+            onClose={() => setDetailTaskId(null)}
+          />
+        );
+      })()}
     </div>
   );
 }
