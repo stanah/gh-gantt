@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks } from "../github/issues.js";
+import { applySubIssueLinks, isDraftTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -84,6 +84,10 @@ export const pullCommand = new Command("pull")
 
     // Tasks that exist locally but not remotely
     for (const [id, localTask] of localTaskMap) {
+      if (isDraftTask(id)) {
+        newTasks.push(localTask);
+        continue;
+      }
       if (opts.dryRun) {
         console.log(`  - ${id}: ${localTask.title}`);
       }

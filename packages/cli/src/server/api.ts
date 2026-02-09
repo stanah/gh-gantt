@@ -4,12 +4,12 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff } from "../sync/diff.js";
+import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks } from "../github/issues.js";
-import { updateIssue, setIssueState, updateProjectItemField } from "../github/mutations.js";
+import { applySubIssueLinks, isDraftTask, buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
 
 export function createApiRouter(projectRoot: string): Router {
@@ -47,6 +47,74 @@ export function createApiRouter(projectRoot: string): Router {
       res.json({ tasks: tasksWithProgress, cache: tasksFile.cache });
     } catch (err) {
       res.status(500).json({ error: "Failed to read tasks" });
+    }
+  });
+
+  // POST /api/tasks — create a draft task
+  router.post("/api/tasks", async (req, res) => {
+    try {
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
+      const { title, type, body, start_date, end_date, parent } = req.body;
+
+      if (!title || !type) {
+        res.status(400).json({ error: "title and type are required" });
+        return;
+      }
+
+      if (!config.task_types[type]) {
+        res.status(400).json({ error: `Unknown task type: "${type}"` });
+        return;
+      }
+
+      const { owner, repo } = config.project.github;
+      const repoFullName = `${owner}/${repo}`;
+      const draftNumber = getNextDraftNumber(tasksFile.tasks);
+      const taskId = buildDraftTaskId(repoFullName, draftNumber);
+
+      const labels: string[] = [];
+      const taskType = config.task_types[type];
+      if (taskType.github_label) labels.push(taskType.github_label);
+
+      const now = new Date().toISOString();
+      const task: Task = {
+        id: taskId,
+        type,
+        github_issue: null,
+        github_repo: repoFullName,
+        parent: parent ?? null,
+        sub_tasks: [],
+        title,
+        body: body ?? null,
+        state: "open",
+        state_reason: null,
+        assignees: [],
+        labels,
+        milestone: null,
+        linked_prs: [],
+        created_at: now,
+        updated_at: now,
+        closed_at: null,
+        custom_fields: {},
+        start_date: start_date ?? null,
+        end_date: end_date ?? null,
+        date: null,
+        blocked_by: [],
+      };
+
+      if (parent) {
+        const parentTask = tasksFile.tasks.find((t) => t.id === parent);
+        if (parentTask && !parentTask.sub_tasks.includes(taskId)) {
+          parentTask.sub_tasks.push(taskId);
+        }
+      }
+
+      tasksFile.tasks.push(task);
+      await tasksStore.write(tasksFile);
+
+      res.status(201).json(task);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to create task: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -119,13 +187,21 @@ export function createApiRouter(projectRoot: string): Router {
           localTaskMap.delete(id);
         }
       }
-      removed = localTaskMap.size;
+      for (const [id, localTask] of localTaskMap) {
+        if (isDraftTask(id)) {
+          newTasks.push(localTask);
+        } else {
+          removed++;
+        }
+      }
 
       const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
       for (const task of newTasks) {
         newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString() };
       }
-      for (const id of localTaskMap.keys()) delete newSnapshots[id];
+      for (const id of localTaskMap.keys()) {
+        if (!isDraftTask(id)) delete newSnapshots[id];
+      }
 
       await tasksStore.write({ tasks: newTasks, cache: tasksFile.cache });
       await stateStore.write({ ...syncState, last_synced_at: new Date().toISOString(), snapshots: newSnapshots });
@@ -145,43 +221,18 @@ export function createApiRouter(projectRoot: string): Router {
 
       const diffs = computeLocalDiff(tasksFile.tasks, syncState);
       if (diffs.length === 0) {
-        res.json({ pushed: 0, message: "No local changes to push" });
+        res.json({ created: 0, updated: 0, skipped: 0, message: "No local changes to push" });
         return;
       }
 
       const gql = await createGraphQLClient();
-      const fm = config.sync.field_mapping;
-      let pushed = 0;
+      const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
+        await executePush(gql, config, tasksFile, syncState);
 
-      for (const diff of diffs) {
-        if (diff.type === "deleted") continue;
-        const task = diff.task;
-        const idEntry = syncState.id_map[task.id];
-        if (!idEntry) continue;
+      await tasksStore.write(updatedTasksFile);
+      await stateStore.write(updatedSyncState);
 
-        if (idEntry.issue_node_id) {
-          await updateIssue(gql, idEntry.issue_node_id, { title: task.title, body: task.body ?? undefined });
-          if (syncState.snapshots[task.id]) {
-            await setIssueState(gql, idEntry.issue_node_id, task.state);
-          }
-        }
-
-        if (task.start_date && syncState.field_ids[fm.start_date]) {
-          await updateProjectItemField(gql, syncState.project_node_id, idEntry.project_item_id, syncState.field_ids[fm.start_date], { date: task.start_date });
-        }
-        if (task.end_date && syncState.field_ids[fm.end_date]) {
-          await updateProjectItemField(gql, syncState.project_node_id, idEntry.project_item_id, syncState.field_ids[fm.end_date], { date: task.end_date });
-        }
-        pushed++;
-      }
-
-      const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
-      for (const task of tasksFile.tasks) {
-        newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString() };
-      }
-      await stateStore.write({ ...syncState, last_synced_at: new Date().toISOString(), snapshots: newSnapshots });
-
-      res.json({ pushed, total_diffs: diffs.length });
+      res.json(result);
     } catch (err) {
       res.status(500).json({ error: "Push failed: " + (err instanceof Error ? err.message : String(err)) });
     }

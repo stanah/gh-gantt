@@ -1,5 +1,5 @@
 import type { graphql } from "@octokit/graphql";
-import { PROJECT_QUERY } from "./queries.js";
+import { PROJECT_QUERY, REPOSITORY_ID_QUERY, REPOSITORY_METADATA_QUERY, buildUserIdsQuery } from "./queries.js";
 
 export interface RawProjectItem {
   id: string;
@@ -80,4 +80,50 @@ export async function fetchProject(
   } while (cursor);
 
   return { projectNodeId, projectTitle, fields, items };
+}
+
+export interface RepositoryMetadata {
+  labelMap: Map<string, string>; // name → node ID
+  milestoneMap: Map<string, string>; // title → node ID
+}
+
+export async function fetchRepositoryMetadata(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+): Promise<RepositoryMetadata> {
+  const result: any = await gql(REPOSITORY_METADATA_QUERY, { owner, repo });
+  const labelMap = new Map<string, string>();
+  for (const l of result.repository.labels.nodes) {
+    labelMap.set(l.name, l.id);
+  }
+  const milestoneMap = new Map<string, string>();
+  for (const m of result.repository.milestones.nodes) {
+    milestoneMap.set(m.title, m.id);
+  }
+  return { labelMap, milestoneMap };
+}
+
+export async function fetchUserIds(
+  gql: typeof graphql,
+  logins: string[],
+): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
+  if (logins.length === 0) return map;
+  const query = buildUserIdsQuery(logins);
+  const result: any = await gql(query);
+  for (let i = 0; i < logins.length; i++) {
+    const user = result[`u${i}`];
+    if (user) map.set(user.login, user.id);
+  }
+  return map;
+}
+
+export async function fetchRepositoryId(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+): Promise<string> {
+  const result: any = await gql(REPOSITORY_ID_QUERY, { owner, repo });
+  return result.repository.id;
 }

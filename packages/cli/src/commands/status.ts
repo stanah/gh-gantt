@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
+import { isDraftTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -80,5 +81,20 @@ export const statusCommand = new Command("status")
       }
       console.log();
       console.log(`Strategy: ${config.sync.conflict_strategy}`);
+    }
+
+    // Draft tasks
+    const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
+    if (draftTasks.length > 0) {
+      console.log();
+      console.log(`Draft tasks (${draftTasks.length}):`);
+      for (const t of draftTasks) {
+        console.log(`  * ${t.id}: ${t.title} [${t.type}]`);
+      }
+      if (config.sync.auto_create_issues) {
+        console.log('  Run "gh-gantt push" to create GitHub issues.');
+      } else {
+        console.log('  Set "auto_create_issues: true" in config to enable push.');
+      }
     }
   });

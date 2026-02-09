@@ -1,9 +1,31 @@
 import type { Task } from "@gh-gantt/shared";
+import { DRAFT_PREFIX } from "@gh-gantt/shared";
 import type { RawProjectItem } from "./projects.js";
 import type { SubIssueLink } from "./sub-issues.js";
 
 export function buildTaskId(repo: string, issueNumber: number): string {
   return `${repo}#${issueNumber}`;
+}
+
+export function buildDraftTaskId(repo: string, draftNumber: number): string {
+  return `${repo}#${DRAFT_PREFIX}${draftNumber}`;
+}
+
+export function isDraftTask(taskId: string): boolean {
+  const hash = taskId.indexOf("#");
+  if (hash === -1) return false;
+  return taskId.substring(hash + 1).startsWith(DRAFT_PREFIX);
+}
+
+export function getNextDraftNumber(tasks: Task[]): number {
+  let max = 0;
+  for (const task of tasks) {
+    if (!isDraftTask(task.id)) continue;
+    const hash = task.id.indexOf("#");
+    const num = parseInt(task.id.substring(hash + 1 + DRAFT_PREFIX.length), 10);
+    if (!isNaN(num) && num > max) max = num;
+  }
+  return max + 1;
 }
 
 export function mapProjectItemToTask(

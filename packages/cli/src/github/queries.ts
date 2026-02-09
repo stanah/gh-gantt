@@ -73,6 +73,32 @@ export const PROJECT_QUERY = `
   }
 `;
 
+export const REPOSITORY_ID_QUERY = `
+  query($owner: String!, $repo: String!) {
+    repository(owner: $owner, name: $repo) {
+      id
+    }
+  }
+`;
+
+export const REPOSITORY_METADATA_QUERY = `
+  query($owner: String!, $repo: String!) {
+    repository(owner: $owner, name: $repo) {
+      labels(first: 100) {
+        nodes { id name }
+      }
+      milestones(first: 50, states: OPEN) {
+        nodes { id title number }
+      }
+    }
+  }
+`;
+
+export function buildUserIdsQuery(logins: string[]): string {
+  const fields = logins.map((login, i) => `u${i}: user(login: "${login}") { id login }`).join("\n    ");
+  return `query { ${fields} }`;
+}
+
 export const SUB_ISSUES_QUERY = `
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
