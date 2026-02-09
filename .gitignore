@@ -3,3 +3,6 @@ dist/
 .gantt-sync/
 *.tsbuildinfo
 .DS_Store
+
+.playwright-mcp/
+gh-gantt-*.png
