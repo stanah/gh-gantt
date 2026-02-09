@@ -1,11 +1,12 @@
 import React, { useState } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { Layout } from "./components/Layout.js";
-import type { Task } from "./types/index.js";
+import { TaskTree } from "./components/TaskTree.js";
 
 export function App() {
-  const { config, tasks, cache, loading, error, refresh, updateTask } = useApi();
+  const { config, tasks, loading, error } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -34,27 +35,17 @@ export function App() {
       <div style={{ flex: 1, overflow: "hidden" }}>
         <Layout
           left={
-            <div style={{ padding: 8 }}>
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>Tasks</div>
-              {tasks.map((task) => (
-                <div
-                  key={task.id}
-                  onClick={() => setSelectedTaskId(task.id)}
-                  style={{
-                    padding: "4px 8px",
-                    cursor: "pointer",
-                    background: selectedTaskId === task.id ? "#e8f0fe" : "transparent",
-                    borderRadius: 4,
-                  }}
-                >
-                  {task.title}
-                </div>
-              ))}
-            </div>
+            <TaskTree
+              tasks={tasks}
+              config={config}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={setSelectedTaskId}
+              onDoubleClickTask={setDetailTaskId}
+            />
           }
           right={
             <div style={{ padding: 16, color: "#888" }}>
-              Gantt timeline (coming soon)
+              Gantt timeline (next task)
             </div>
           }
         />
