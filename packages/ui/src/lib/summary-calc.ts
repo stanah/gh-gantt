@@ -15,7 +15,16 @@ export function calculateSummaryDates(
     if (child.end_date) ends.push(child.end_date);
   }
 
-  if (starts.length === 0 && ends.length === 0) return null;
+  if (starts.length === 0 && ends.length === 0) {
+    // Fallback to parent's own dates when no children have dates
+    if (parent.start_date || parent.end_date) {
+      return {
+        start: parent.start_date ?? parent.end_date!,
+        end: parent.end_date ?? parent.start_date!,
+      };
+    }
+    return null;
+  }
 
   const start = starts.length > 0 ? starts.sort()[0] : ends.sort()[0];
   const end = ends.length > 0 ? ends.sort().reverse()[0] : starts.sort().reverse()[0];

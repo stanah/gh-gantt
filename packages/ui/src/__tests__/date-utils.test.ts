@@ -34,8 +34,8 @@ describe("getDateRange", () => {
       { start_date: null, end_date: null },
     ] as any[];
     const [min, max] = getDateRange(tasks);
-    // Includes 7-day padding on each side
-    expect(min < new Date(2026, 0, 1)).toBe(true);
+    // Min is aligned to month start, max extends past the last date
+    expect(min <= new Date(2026, 0, 1)).toBe(true);
     expect(max > new Date(2026, 2, 15)).toBe(true);
   });
 

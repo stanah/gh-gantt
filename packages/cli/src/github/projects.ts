@@ -5,6 +5,7 @@ export interface RawProjectItem {
   id: string;
   fieldValues: Record<string, unknown>;
   content: {
+    nodeId: string;
     number: number;
     title: string;
     body: string | null;
@@ -58,6 +59,7 @@ export async function fetchProject(
         id: item.id,
         fieldValues: fieldMap,
         content: {
+          nodeId: content.id,
           number: content.number,
           title: content.title,
           body: content.body,

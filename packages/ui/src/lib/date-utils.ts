@@ -39,9 +39,9 @@ export function getDateRange(tasks: Task[]): [Date, Date] {
   const minDate = new Date(Math.min(...timestamps));
   const maxDate = new Date(Math.max(...timestamps));
 
-  // Add padding
-  minDate.setDate(minDate.getDate() - 7);
-  maxDate.setDate(maxDate.getDate() + 7);
+  // Add padding: align to month boundaries for cleaner timeline display
+  minDate.setDate(1);
+  maxDate.setMonth(maxDate.getMonth() + 1, 7);
 
   return [minDate, maxDate];
 }

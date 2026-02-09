@@ -7,12 +7,18 @@ import { TaskTree } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/Toolbar.js";
+import type { ViewScale } from "./hooks/useGanttScale.js";
 
 export function App() {
   const { config, tasks, cache, loading, error, updateTask, refresh } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const [viewScale, setViewScale] = useState<ViewScale>("month");
   const ganttRef = useRef<GanttChartHandle>(null);
+
+  const handleViewScaleChange = useCallback((scale: ViewScale) => {
+    setViewScale(scale);
+  }, []);
 
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { flatList, collapsed, toggle: toggleCollapse } = useTaskTree(tasks, enabled);
@@ -51,8 +57,8 @@ export function App() {
         <span style={{ color: "#888", fontSize: 12 }}>{tasks.length} tasks</span>
       </header>
       <Toolbar
-        viewScale={ganttRef.current?.viewScale ?? config.gantt.default_view}
-        onSetViewScale={(s) => ganttRef.current?.setViewScale(s)}
+        viewScale={viewScale}
+        onSetViewScale={(s) => { ganttRef.current?.setViewScale(s); }}
         onZoomIn={() => ganttRef.current?.zoomIn()}
         onZoomOut={() => ganttRef.current?.zoomOut()}
         onScrollToToday={() => ganttRef.current?.scrollToToday()}
@@ -84,6 +90,7 @@ export function App() {
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
               onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
+              onViewScaleChange={handleViewScaleChange}
             />
           }
         />

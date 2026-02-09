@@ -15,9 +15,12 @@ export function mapProjectItemToTask(
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
 
+  const mappedFields = new Set([fieldMapping.start_date, fieldMapping.end_date, "Title"]);
   const customFields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item.fieldValues)) {
-    customFields[key] = value;
+    if (!mappedFields.has(key)) {
+      customFields[key] = value;
+    }
   }
 
   return {

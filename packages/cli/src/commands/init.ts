@@ -139,7 +139,7 @@ export const initCommand = new Command("init")
       const taskId = `${item.content.repository}#${item.content.number}`;
       idMap[taskId] = {
         issue_number: item.content.number,
-        issue_node_id: "",
+        issue_node_id: item.content.nodeId,
         project_item_id: item.id,
       };
     }

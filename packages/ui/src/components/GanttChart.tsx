@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useImperativeHandle, forwardRef } from "react";
+import React, { useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
@@ -27,17 +27,24 @@ interface GanttChartProps {
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   onUpdateTask?: (taskId: string, updates: { start_date?: string; end_date?: string }) => void;
+  onViewScaleChange?: (scale: ViewScale) => void;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
     config.gantt.default_view,
   );
+
+  // Notify parent when viewScale changes (e.g. due to zoom)
+  useEffect(() => {
+    onViewScaleChange?.(viewScale);
+  }, [viewScale, onViewScaleChange]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
 
@@ -50,16 +57,46 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
   const { startDrag } = useDragResize(xScale, handleDragUpdate);
 
-  const handleWheel = useCallback(
-    (e: React.WheelEvent) => {
+  // Wheel zoom with passive: false for proper preventDefault
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         if (e.deltaY < 0) zoomIn();
         else zoomOut();
       }
-    },
-    [zoomIn, zoomOut],
-  );
+    };
+    el.addEventListener("wheel", handler, { passive: false });
+    return () => el.removeEventListener("wheel", handler);
+  }, [zoomIn, zoomOut]);
+
+  // Drag to pan
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Middle button or left button with space/alt
+    if (e.button !== 1 && !(e.button === 0 && e.altKey)) return;
+    e.preventDefault();
+    const el = containerRef.current;
+    if (!el) return;
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const startScrollLeft = el.scrollLeft;
+    const startScrollTop = el.scrollTop;
+    el.style.cursor = "grabbing";
+
+    const onMouseMove = (ev: MouseEvent) => {
+      el.scrollLeft = startScrollLeft - (ev.clientX - startX);
+      el.scrollTop = startScrollTop - (ev.clientY - startY);
+    };
+    const onMouseUp = () => {
+      el.style.cursor = "";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, []);
 
   const scrollToToday = useCallback(() => {
     if (!containerRef.current) return;
@@ -79,14 +116,19 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Timeline header */}
-      <div style={{ overflow: "hidden" }}>
+      <div ref={timelineRef} style={{ overflow: "hidden" }}>
         <GanttTimeline xScale={xScale} dateRange={dateRange} viewScale={viewScale} totalWidth={totalWidth} />
       </div>
 
       {/* Chart body */}
       <div
         ref={containerRef}
-        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onScroll={() => {
+          if (containerRef.current && timelineRef.current) {
+            timelineRef.current.scrollLeft = containerRef.current.scrollLeft;
+          }
+        }}
         style={{ flex: 1, overflow: "auto", position: "relative" }}
       >
         <div style={{ width: totalWidth, height: totalHeight, position: "relative" }}>

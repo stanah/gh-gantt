@@ -51,6 +51,7 @@ export const PROJECT_QUERY = `
             }
             content {
               ... on Issue {
+                id
                 number
                 title
                 body

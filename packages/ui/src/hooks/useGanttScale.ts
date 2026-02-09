@@ -5,23 +5,38 @@ import { getDateRange } from "../lib/date-utils.js";
 
 export type ViewScale = "day" | "week" | "month" | "quarter";
 
-const PIXELS_PER_DAY: Record<ViewScale, number> = {
+/** Default pixelsPerDay for each view scale preset */
+const PRESET_PPD: Record<ViewScale, number> = {
   day: 40,
   week: 16,
   month: 5,
   quarter: 2,
 };
 
+/** Derive viewScale from current pixelsPerDay */
+function deriveViewScale(ppd: number): ViewScale {
+  if (ppd >= 25) return "day";
+  if (ppd >= 8) return "week";
+  if (ppd >= 3) return "month";
+  return "quarter";
+}
+
+const MIN_PPD = 0.5;
+const MAX_PPD = 120;
+
 export function useGanttScale(tasks: Task[], initialView: ViewScale = "month") {
-  const [viewScale, setViewScale] = useState<ViewScale>(initialView);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [pixelsPerDay, setPixelsPerDay] = useState(PRESET_PPD[initialView]);
+
+  const viewScale = deriveViewScale(pixelsPerDay);
+
+  const setViewScale = useCallback((scale: ViewScale) => {
+    setPixelsPerDay(PRESET_PPD[scale]);
+  }, []);
 
   const [dateRange] = useMemo(() => {
     const range = getDateRange(tasks);
     return [range];
   }, [tasks]);
-
-  const pixelsPerDay = PIXELS_PER_DAY[viewScale] * zoomLevel;
 
   const totalDays = Math.ceil(
     (dateRange[1].getTime() - dateRange[0].getTime()) / (1000 * 60 * 60 * 24),
@@ -34,13 +49,17 @@ export function useGanttScale(tasks: Task[], initialView: ViewScale = "month") {
       .range([0, totalWidth]);
   }, [dateRange, totalWidth]);
 
-  const zoomIn = useCallback(() => setZoomLevel((z) => Math.min(z * 1.3, 10)), []);
-  const zoomOut = useCallback(() => setZoomLevel((z) => Math.max(z / 1.3, 0.2)), []);
+  const zoomIn = useCallback(() => {
+    setPixelsPerDay((p) => Math.min(p * 1.15, MAX_PPD));
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setPixelsPerDay((p) => Math.max(p / 1.15, MIN_PPD));
+  }, []);
 
   return {
     viewScale,
     setViewScale,
-    zoomLevel,
     zoomIn,
     zoomOut,
     xScale,
