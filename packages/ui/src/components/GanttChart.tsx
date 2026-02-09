@@ -4,6 +4,7 @@ import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
 import { GanttSummaryBar } from "./GanttSummaryBar.js";
 import { GanttMilestone } from "./GanttMilestone.js";
+import { GanttBlockLines } from "./GanttBlockLines.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
@@ -90,6 +91,7 @@ export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTa
             workingDays={config.gantt.working_days}
             pixelsPerDay={pixelsPerDay}
           />
+          <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
           <svg width={totalWidth} height={totalHeight} style={{ position: "absolute", top: 0, left: 0 }}>
             {flatList.map((node, i) => {
               const task = node.task;
