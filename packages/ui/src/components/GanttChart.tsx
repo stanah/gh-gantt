@@ -6,6 +6,8 @@ import { GanttSummaryBar } from "./GanttSummaryBar.js";
 import { GanttMilestone } from "./GanttMilestone.js";
 import { GanttBlockLines } from "./GanttBlockLines.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
+import { useDragResize } from "../hooks/useDragResize.js";
+import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
@@ -16,9 +18,10 @@ interface GanttChartProps {
   config: Config;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
+  onUpdateTask?: (taskId: string, updates: { start_date?: string; end_date?: string }) => void;
 }
 
-export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTask }: GanttChartProps) {
+export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask }: GanttChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
@@ -26,6 +29,15 @@ export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTa
   );
 
   const totalHeight = flatList.length * ROW_HEIGHT;
+
+  const handleDragUpdate = useCallback(
+    (taskId: string, updates: { start_date?: string; end_date?: string }) => {
+      onUpdateTask?.(taskId, updates);
+    },
+    [onUpdateTask],
+  );
+
+  const { startDrag } = useDragResize(xScale, handleDragUpdate);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -136,6 +148,7 @@ export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTa
                   height={ROW_HEIGHT}
                   onClick={() => onSelectTask(task.id)}
                   isSelected={selectedTaskId === task.id}
+                  onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
                 />
               );
             })}

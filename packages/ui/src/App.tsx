@@ -7,7 +7,7 @@ import { TaskTree } from "./components/TaskTree.js";
 import { GanttChart } from "./components/GanttChart.js";
 
 export function App() {
-  const { config, tasks, loading, error } = useApi();
+  const { config, tasks, loading, error, updateTask } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
 
@@ -62,6 +62,7 @@ export function App() {
               config={config}
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
+              onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
             />
           }
         />
