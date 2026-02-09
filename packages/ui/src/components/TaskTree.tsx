@@ -1,9 +1,8 @@
 import React from "react";
 import { TaskRow } from "./TaskRow.js";
 import { TypeFilter } from "./TypeFilter.js";
-import { useTaskTree } from "../hooks/useTaskTree.js";
-import { useTypeFilter } from "../hooks/useTypeFilter.js";
 import type { Task, Config } from "../types/index.js";
+import type { TreeNode } from "../hooks/useTaskTree.js";
 
 interface TaskTreeProps {
   tasks: Task[];
@@ -11,25 +10,30 @@ interface TaskTreeProps {
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
   onDoubleClickTask: (taskId: string) => void;
-  rowHeight?: number;
+  enabledTypes: Set<string>;
+  onToggleType: (typeName: string) => void;
+  flatList: TreeNode[];
+  collapsed: Set<string>;
+  onToggleCollapse: (taskId: string) => void;
 }
 
 export const ROW_HEIGHT = 28;
 
 export function TaskTree({
-  tasks,
   config,
   selectedTaskId,
   onSelectTask,
   onDoubleClickTask,
+  enabledTypes,
+  onToggleType,
+  flatList,
+  collapsed,
+  onToggleCollapse,
 }: TaskTreeProps) {
-  const { enabled, toggle: toggleType } = useTypeFilter(config.task_types);
-  const { flatList, collapsed, toggle: toggleCollapse } = useTaskTree(tasks, enabled);
-
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <div style={{ padding: "6px 8px", borderBottom: "1px solid #e0e0e0" }}>
-        <TypeFilter taskTypes={config.task_types} enabled={enabled} onToggle={toggleType} />
+        <TypeFilter taskTypes={config.task_types} enabled={enabledTypes} onToggle={onToggleType} />
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>
         {flatList.map((node) => (
@@ -39,7 +43,7 @@ export function TaskTree({
             depth={node.depth}
             hasChildren={node.children.length > 0}
             isCollapsed={collapsed.has(node.task.id)}
-            onToggle={() => toggleCollapse(node.task.id)}
+            onToggle={() => onToggleCollapse(node.task.id)}
             onClick={() => onSelectTask(node.task.id)}
             onDoubleClick={() => onDoubleClickTask(node.task.id)}
             isSelected={selectedTaskId === node.task.id}

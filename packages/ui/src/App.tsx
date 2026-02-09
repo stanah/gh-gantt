@@ -1,12 +1,19 @@
 import React, { useState } from "react";
 import { useApi } from "./hooks/useApi.js";
+import { useTaskTree } from "./hooks/useTaskTree.js";
+import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTree } from "./components/TaskTree.js";
+import { GanttChart } from "./components/GanttChart.js";
 
 export function App() {
   const { config, tasks, loading, error } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+
+  // Lift type filter and tree state so both panes share it
+  const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
+  const { flatList, collapsed, toggle: toggleCollapse } = useTaskTree(tasks, enabled);
 
   if (loading) {
     return (
@@ -41,12 +48,21 @@ export function App() {
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
               onDoubleClickTask={setDetailTaskId}
+              enabledTypes={enabled}
+              onToggleType={toggleType}
+              flatList={flatList}
+              collapsed={collapsed}
+              onToggleCollapse={toggleCollapse}
             />
           }
           right={
-            <div style={{ padding: 16, color: "#888" }}>
-              Gantt timeline (next task)
-            </div>
+            <GanttChart
+              tasks={tasks}
+              flatList={flatList}
+              config={config}
+              selectedTaskId={selectedTaskId}
+              onSelectTask={setSelectedTaskId}
+            />
           }
         />
       </div>
