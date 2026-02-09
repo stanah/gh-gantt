@@ -1,16 +1,24 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useImperativeHandle, forwardRef } from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
 import { GanttSummaryBar } from "./GanttSummaryBar.js";
 import { GanttMilestone } from "./GanttMilestone.js";
 import { GanttBlockLines } from "./GanttBlockLines.js";
-import { useGanttScale } from "../hooks/useGanttScale.js";
+import { useGanttScale, type ViewScale } from "../hooks/useGanttScale.js";
 import { useDragResize } from "../hooks/useDragResize.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
+
+export interface GanttChartHandle {
+  viewScale: ViewScale;
+  setViewScale: (s: ViewScale) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  scrollToToday: () => void;
+}
 
 interface GanttChartProps {
   tasks: Task[];
@@ -21,7 +29,10 @@ interface GanttChartProps {
   onUpdateTask?: (taskId: string, updates: { start_date?: string; end_date?: string }) => void;
 }
 
-export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask }: GanttChartProps) {
+export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask },
+  ref,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
@@ -57,32 +68,16 @@ export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTa
     containerRef.current.scrollLeft = Math.max(0, x - containerRef.current.clientWidth / 2);
   }, [xScale]);
 
+  useImperativeHandle(ref, () => ({
+    viewScale,
+    setViewScale,
+    zoomIn,
+    zoomOut,
+    scrollToToday,
+  }), [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Mini toolbar */}
-      <div style={{ padding: "4px 8px", borderBottom: "1px solid #e0e0e0", display: "flex", gap: 4, alignItems: "center", fontSize: 11 }}>
-        {(["day", "week", "month", "quarter"] as const).map((scale) => (
-          <button
-            key={scale}
-            onClick={() => setViewScale(scale)}
-            style={{
-              padding: "2px 8px",
-              border: "1px solid #ccc",
-              borderRadius: 3,
-              background: viewScale === scale ? "#333" : "#fff",
-              color: viewScale === scale ? "#fff" : "#333",
-              cursor: "pointer",
-              fontSize: 11,
-            }}
-          >
-            {scale}
-          </button>
-        ))}
-        <button onClick={zoomIn} style={{ padding: "2px 6px", border: "1px solid #ccc", borderRadius: 3, cursor: "pointer", fontSize: 11 }}>+</button>
-        <button onClick={zoomOut} style={{ padding: "2px 6px", border: "1px solid #ccc", borderRadius: 3, cursor: "pointer", fontSize: 11 }}>-</button>
-        <button onClick={scrollToToday} style={{ padding: "2px 8px", border: "1px solid #ccc", borderRadius: 3, cursor: "pointer", fontSize: 11 }}>Today</button>
-      </div>
-
       {/* Timeline header */}
       <div style={{ overflow: "hidden" }}>
         <GanttTimeline xScale={xScale} dateRange={dateRange} viewScale={viewScale} totalWidth={totalWidth} />
@@ -157,4 +152,4 @@ export function GanttChart({ tasks, flatList, config, selectedTaskId, onSelectTa
       </div>
     </div>
   );
-}
+});

@@ -1,20 +1,30 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useCallback } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { useTaskTree } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTree } from "./components/TaskTree.js";
-import { GanttChart } from "./components/GanttChart.js";
+import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
+import { Toolbar } from "./components/Toolbar.js";
 
 export function App() {
-  const { config, tasks, cache, loading, error, updateTask } = useApi();
+  const { config, tasks, cache, loading, error, updateTask, refresh } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
+  const ganttRef = useRef<GanttChartHandle>(null);
 
-  // Lift type filter and tree state so both panes share it
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { flatList, collapsed, toggle: toggleCollapse } = useTaskTree(tasks, enabled);
+
+  const handlePull = useCallback(async () => {
+    await fetch("/api/sync/pull", { method: "POST" });
+    await refresh();
+  }, [refresh]);
+
+  const handlePush = useCallback(async () => {
+    await fetch("/api/sync/push", { method: "POST" });
+  }, []);
 
   if (loading) {
     return (
@@ -40,6 +50,15 @@ export function App() {
         <strong>{config.project.name}</strong>
         <span style={{ color: "#888", fontSize: 12 }}>{tasks.length} tasks</span>
       </header>
+      <Toolbar
+        viewScale={ganttRef.current?.viewScale ?? config.gantt.default_view}
+        onSetViewScale={(s) => ganttRef.current?.setViewScale(s)}
+        onZoomIn={() => ganttRef.current?.zoomIn()}
+        onZoomOut={() => ganttRef.current?.zoomOut()}
+        onScrollToToday={() => ganttRef.current?.scrollToToday()}
+        onPull={handlePull}
+        onPush={handlePush}
+      />
       <div style={{ flex: 1, overflow: "hidden" }}>
         <Layout
           left={
@@ -58,6 +77,7 @@ export function App() {
           }
           right={
             <GanttChart
+              ref={ganttRef}
               tasks={tasks}
               flatList={flatList}
               config={config}
