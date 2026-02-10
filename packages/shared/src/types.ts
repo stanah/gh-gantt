@@ -8,6 +8,7 @@ export interface TaskType {
   display: TaskDisplay;
   color: string;
   github_label: string | null;
+  github_field_value?: string | null;
   default_collapsed?: boolean;
 }
 
@@ -76,6 +77,7 @@ export interface SyncConfig {
     start_date: string;
     end_date: string;
     status: string;
+    type?: string | null;
   };
 }
 
@@ -122,4 +124,5 @@ export interface SyncState {
   id_map: Record<string, IdMapping>;
   field_ids: Record<string, string>;
   snapshots: Record<string, Snapshot>;
+  option_ids?: Record<string, Record<string, string>>;
 }

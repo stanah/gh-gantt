@@ -89,6 +89,8 @@ export const pullCommand = new Command("pull")
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
+    const typeFieldConfigured = !!config.sync.field_mapping.type;
+
     const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArray, syncState);
     if (conflicts.length > 0) {
       const result = await confirmConflicts(conflicts, opts, {
@@ -125,7 +127,7 @@ export const pullCommand = new Command("pull")
 
         if (remoteHash !== snapshotHash) {
           // Remote changed since last sync
-          const merged = mergeRemoteIntoLocal(localTask, remoteTask);
+          const merged = mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured });
           if (opts.dryRun) {
             console.log(`  ~ ${id}: ${remoteTask.title}`);
           }
@@ -172,11 +174,24 @@ export const pullCommand = new Command("pull")
       delete newSnapshots[id];
     }
 
+    // Update option_ids from latest project data
+    const optionIds: Record<string, Record<string, string>> = {};
+    for (const field of projectData.fields) {
+      if (field.options && field.options.length > 0) {
+        const optMap: Record<string, string> = {};
+        for (const opt of field.options) {
+          optMap[opt.name] = opt.id;
+        }
+        optionIds[field.name] = optMap;
+      }
+    }
+
     await tasksStore.write({ tasks: newTasks, cache: tasksFile.cache });
     await stateStore.write({
       ...syncState,
       last_synced_at: new Date().toISOString(),
       snapshots: newSnapshots,
+      option_ids: optionIds,
     });
 
     console.log("Pull complete.");

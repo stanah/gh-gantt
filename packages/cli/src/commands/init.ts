@@ -17,6 +17,7 @@ export const initCommand = new Command("init")
   .option("--start-date-field <name>", "Start date field name", "Start Date")
   .option("--end-date-field <name>", "End date field name", "End Date")
   .option("--status-field <name>", "Status field name", "Status")
+  .option("--type-field <name>", "Type custom field name (auto-detected if omitted)")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     console.log(`Initializing gh-gantt for ${opts.owner}/${opts.repo} project #${opts.project}...`);
@@ -40,6 +41,30 @@ export const initCommand = new Command("init")
       }
     }
 
+    // Auto-detect Type custom field
+    const typeFieldName = opts.typeField ?? null;
+    let detectedTypeField: typeof projectData.fields[number] | undefined;
+
+    if (typeFieldName) {
+      // Explicit --type-field option
+      detectedTypeField = projectData.fields.find(
+        (f) => f.name === typeFieldName && f.options,
+      );
+      if (!detectedTypeField) {
+        console.warn(`WARNING: Type field "${typeFieldName}" not found or has no options`);
+      }
+    } else {
+      // Auto-detect: look for a Single Select field named "Type"
+      detectedTypeField = projectData.fields.find(
+        (f) => f.name === "Type" && f.options,
+      );
+    }
+
+    const resolvedTypeFieldName = detectedTypeField?.name ?? null;
+    if (detectedTypeField) {
+      console.log(`Detected Type field: "${detectedTypeField.name}" with ${detectedTypeField.options?.length ?? 0} options`);
+    }
+
     // Auto-detect task types from labels
     const allLabels = new Set<string>();
     for (const item of projectData.items) {
@@ -54,18 +79,40 @@ export const initCommand = new Command("init")
       task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
     };
 
-    // Detect common label patterns for task types
+    // Map custom field options to task types
+    if (detectedTypeField?.options) {
+      for (const opt of detectedTypeField.options) {
+        const lower = opt.name.toLowerCase();
+        if (lower === "epic") {
+          taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: null, github_field_value: opt.name };
+        } else if (lower === "milestone") {
+          taskTypes.milestone_type = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: null, github_field_value: opt.name };
+        } else if (lower === "bug") {
+          taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: null, github_field_value: opt.name };
+        } else if (lower === "feature" || lower === "enhancement") {
+          taskTypes.feature = { label: "Feature", display: "bar", color: "#3498DB", github_label: null, github_field_value: opt.name };
+        } else if (lower === "task") {
+          // Update default task type with field value mapping
+          taskTypes.task.github_field_value = opt.name;
+        } else {
+          // Unknown field value → create as bar type
+          taskTypes[lower] = { label: opt.name, display: "bar", color: "#95A5A6", github_label: null, github_field_value: opt.name };
+        }
+      }
+    }
+
+    // Detect common label patterns for task types (only if not already defined by custom field)
     const typeLabels = ["epic", "milestone", "feature", "bug", "enhancement"];
     for (const label of allLabels) {
       const lower = label.toLowerCase();
       if (typeLabels.includes(lower)) {
-        if (lower === "epic") {
+        if (lower === "epic" && !taskTypes.epic) {
           taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: label };
-        } else if (lower === "milestone") {
+        } else if (lower === "milestone" && !taskTypes.milestone_type) {
           taskTypes.milestone_type = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: label };
-        } else if (lower === "bug") {
+        } else if (lower === "bug" && !taskTypes.bug) {
           taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: label };
-        } else if (lower === "enhancement" || lower === "feature") {
+        } else if ((lower === "enhancement" || lower === "feature") && !taskTypes.feature) {
           taskTypes.feature = { label: "Feature", display: "bar", color: "#3498DB", github_label: label };
         }
       }
@@ -76,10 +123,11 @@ export const initCommand = new Command("init")
       typeHierarchy[typeName] = [];
     }
 
-    const fieldMapping = {
+    const fieldMapping: Config["sync"]["field_mapping"] = {
       start_date: opts.startDateField,
       end_date: opts.endDateField,
       status: opts.statusField,
+      type: resolvedTypeFieldName,
     };
 
     const config: Config = {
@@ -115,7 +163,13 @@ export const initCommand = new Command("init")
     const tasks: Task[] = [];
     for (const item of projectData.items) {
       if (!item.content) continue;
-      const taskType = resolveTaskType(item.content.labels, taskTypes);
+      const taskType = resolveTaskType(
+        item.content.labels,
+        item.content.milestone,
+        item.fieldValues,
+        taskTypes,
+        resolvedTypeFieldName,
+      );
       const task = mapProjectItemToTask(item, fieldMapping, taskType);
       if (task) tasks.push(task);
     }
@@ -151,12 +205,25 @@ export const initCommand = new Command("init")
       }
     }
 
+    // Build option_ids map from fields with options
+    const optionIds: Record<string, Record<string, string>> = {};
+    for (const field of projectData.fields) {
+      if (field.options && field.options.length > 0) {
+        const optMap: Record<string, string> = {};
+        for (const opt of field.options) {
+          optMap[opt.name] = opt.id;
+        }
+        optionIds[field.name] = optMap;
+      }
+    }
+
     const syncState: SyncState = {
       last_synced_at: new Date().toISOString(),
       project_node_id: projectData.projectNodeId,
       id_map: idMap,
       field_ids: fieldIds,
       snapshots: {},
+      option_ids: optionIds,
     };
 
     // Write files

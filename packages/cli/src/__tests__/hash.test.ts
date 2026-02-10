@@ -53,4 +53,9 @@ describe("hashTask", () => {
     const modified = { ...baseTask, linked_prs: [42] };
     expect(hashTask(baseTask)).toBe(hashTask(modified));
   });
+
+  it("produces different hash when type changes", () => {
+    const modified = { ...baseTask, type: "epic" };
+    expect(hashTask(baseTask)).not.toBe(hashTask(modified));
+  });
 });

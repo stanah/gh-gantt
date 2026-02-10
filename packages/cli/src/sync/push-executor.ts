@@ -1,5 +1,5 @@
 import type { graphql } from "@octokit/graphql";
-import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask } from "./hash.js";
 import { isDraftTask, buildTaskId } from "../github/issues.js";
@@ -126,6 +126,20 @@ export async function executePush(
         );
       }
 
+      // Set Type custom field
+      if (fm.type && syncState.field_ids[fm.type]) {
+        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        if (typeOptionId) {
+          await updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.type],
+            { singleSelectOptionId: typeOptionId },
+          );
+        }
+      }
+
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
       task.id = newId;
@@ -209,6 +223,20 @@ export async function executePush(
         );
       }
 
+      // Update Type custom field if configured
+      if (fm.type && syncState.field_ids[fm.type]) {
+        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        if (typeOptionId) {
+          await updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            idEntry.project_item_id,
+            syncState.field_ids[fm.type],
+            { singleSelectOptionId: typeOptionId },
+          );
+        }
+      }
+
       result.updated++;
     }
   }
@@ -229,4 +257,15 @@ export async function executePush(
   };
 
   return { result, tasksFile, syncState };
+}
+
+function resolveTypeOptionId(
+  typeName: string,
+  taskTypes: Record<string, TaskType>,
+  typeFieldName: string,
+  optionIds?: Record<string, Record<string, string>>,
+): string | undefined {
+  const typeDef = taskTypes[typeName];
+  if (!typeDef?.github_field_value) return undefined;
+  return optionIds?.[typeFieldName]?.[typeDef.github_field_value];
 }
