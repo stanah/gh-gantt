@@ -1,4 +1,5 @@
 import { Command } from "commander";
+import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
@@ -7,11 +8,55 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { hashTask } from "../sync/hash.js";
+import { detectConflicts, type Conflict } from "../sync/conflict.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
+
+export async function confirmConflicts(
+  conflicts: Conflict[],
+  opts: { dryRun?: boolean; force?: boolean },
+  io: { isTTY: boolean; createPrompt: () => { question(q: string): Promise<string>; close(): void } },
+): Promise<{ action: "proceed" | "abort" }> {
+  console.warn(`\nWARNING: ${conflicts.length} task(s) have conflicting changes:\n`);
+  for (const c of conflicts) {
+    console.warn(`  ! ${c.taskId}: ${c.title}`);
+  }
+  console.warn(
+    "\nBoth local and remote versions changed since last sync.\n" +
+      "Pulling will apply remote-wins merge: local changes to title, body,\n" +
+      "dates, state, assignees, labels, milestone, and custom fields will be lost.\n" +
+      "Local-only fields (parent, sub_tasks, blocked_by, type) will be preserved.\n",
+  );
+
+  if (opts.dryRun) {
+    return { action: "proceed" };
+  }
+
+  if (opts.force) {
+    console.warn("--force specified, proceeding with remote-wins merge.\n");
+    return { action: "proceed" };
+  }
+
+  if (!io.isTTY) {
+    console.error("Non-interactive environment detected. Use --force to skip confirmation.");
+    return { action: "abort" };
+  }
+
+  const rl = io.createPrompt();
+  try {
+    const answer = await rl.question("Proceed with remote-wins merge? (y/N): ");
+    if (answer.trim().toLowerCase() === "y") {
+      return { action: "proceed" };
+    }
+    return { action: "abort" };
+  } finally {
+    rl.close();
+  }
+}
 
 export const pullCommand = new Command("pull")
   .description("Pull latest changes from GitHub Project")
   .option("--dry-run", "Show changes without applying")
+  .option("--force", "Skip conflict confirmation prompt")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -43,6 +88,18 @@ export const pullCommand = new Command("pull")
     const remoteTaskArray = Array.from(remoteTasks.values());
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
+
+    const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArray, syncState);
+    if (conflicts.length > 0) {
+      const result = await confirmConflicts(conflicts, opts, {
+        isTTY: !!(process.stdin.isTTY && process.stdout.isTTY),
+        createPrompt: () => createInterface({ input: process.stdin, output: process.stdout }),
+      });
+      if (result.action === "abort") {
+        process.exitCode = 1;
+        return;
+      }
+    }
 
     const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
 
