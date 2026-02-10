@@ -28,14 +28,15 @@ interface GanttChartProps {
   onSelectTask: (taskId: string) => void;
   onUpdateTask?: (taskId: string, updates: { start_date?: string; end_date?: string }) => void;
   onViewScaleChange?: (scale: ViewScale) => void;
+  scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
+  header: (node: React.ReactNode) => void;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header },
   ref,
 ) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
     config.gantt.default_view,
@@ -45,6 +46,13 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   useEffect(() => {
     onViewScaleChange?.(viewScale);
   }, [viewScale, onViewScaleChange]);
+
+  // Publish the timeline header to parent via render callback
+  useEffect(() => {
+    header(
+      <GanttTimeline xScale={xScale} dateRange={dateRange} viewScale={viewScale} totalWidth={totalWidth} />
+    );
+  }, [header, xScale, dateRange, viewScale, totalWidth]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
 
@@ -59,7 +67,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
   // Wheel zoom with passive: false for proper preventDefault
   useEffect(() => {
-    const el = containerRef.current;
+    const el = bodyRef.current;
     if (!el) return;
     const handler = (e: WheelEvent) => {
       if (e.ctrlKey || e.metaKey) {
@@ -72,12 +80,12 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     return () => el.removeEventListener("wheel", handler);
   }, [zoomIn, zoomOut]);
 
-  // Drag to pan
+  // Drag to pan — operates on the shared scroll container
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Middle button or left button with space/alt
+    // Middle button or left button with alt
     if (e.button !== 1 && !(e.button === 0 && e.altKey)) return;
     e.preventDefault();
-    const el = containerRef.current;
+    const el = scrollContainerRef?.current;
     if (!el) return;
     const startX = e.clientX;
     const startY = e.clientY;
@@ -96,14 +104,15 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     };
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
-  }, []);
+  }, [scrollContainerRef]);
 
   const scrollToToday = useCallback(() => {
-    if (!containerRef.current) return;
+    const el = scrollContainerRef?.current;
+    if (!el) return;
     const today = new Date();
     const x = xScale(today);
-    containerRef.current.scrollLeft = Math.max(0, x - containerRef.current.clientWidth / 2);
-  }, [xScale]);
+    el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
+  }, [xScale, scrollContainerRef]);
 
   useImperativeHandle(ref, () => ({
     viewScale,
@@ -114,84 +123,69 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   }), [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Timeline header */}
-      <div ref={timelineRef} style={{ overflow: "hidden" }}>
-        <GanttTimeline xScale={xScale} dateRange={dateRange} viewScale={viewScale} totalWidth={totalWidth} />
-      </div>
+    <div
+      ref={bodyRef}
+      onMouseDown={handleMouseDown}
+      style={{ width: totalWidth, height: totalHeight, position: "relative" }}
+    >
+      <GanttGrid
+        xScale={xScale}
+        dateRange={dateRange}
+        totalWidth={totalWidth}
+        totalHeight={totalHeight}
+        workingDays={config.gantt.working_days}
+        pixelsPerDay={pixelsPerDay}
+      />
+      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
+      <svg width={totalWidth} height={totalHeight} style={{ position: "absolute", top: 0, left: 0 }}>
+        {flatList.map((node, i) => {
+          const task = node.task;
+          const y = i * ROW_HEIGHT;
+          const taskType = config.task_types[task.type];
+          const display = taskType?.display ?? "bar";
 
-      {/* Chart body */}
-      <div
-        ref={containerRef}
-        onMouseDown={handleMouseDown}
-        onScroll={() => {
-          if (containerRef.current && timelineRef.current) {
-            timelineRef.current.scrollLeft = containerRef.current.scrollLeft;
+          if (display === "summary") {
+            return (
+              <GanttSummaryBar
+                key={task.id}
+                task={task}
+                allTasks={tasks}
+                taskType={taskType}
+                xScale={xScale}
+                y={y}
+                height={ROW_HEIGHT}
+              />
+            );
           }
-        }}
-        style={{ flex: 1, overflow: "auto", position: "relative" }}
-      >
-        <div style={{ width: totalWidth, height: totalHeight, position: "relative" }}>
-          <GanttGrid
-            xScale={xScale}
-            dateRange={dateRange}
-            totalWidth={totalWidth}
-            totalHeight={totalHeight}
-            workingDays={config.gantt.working_days}
-            pixelsPerDay={pixelsPerDay}
-          />
-          <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
-          <svg width={totalWidth} height={totalHeight} style={{ position: "absolute", top: 0, left: 0 }}>
-            {flatList.map((node, i) => {
-              const task = node.task;
-              const y = i * ROW_HEIGHT;
-              const taskType = config.task_types[task.type];
-              const display = taskType?.display ?? "bar";
 
-              if (display === "summary") {
-                return (
-                  <GanttSummaryBar
-                    key={task.id}
-                    task={task}
-                    allTasks={tasks}
-                    taskType={taskType}
-                    xScale={xScale}
-                    y={y}
-                    height={ROW_HEIGHT}
-                  />
-                );
-              }
+          if (display === "milestone") {
+            return (
+              <GanttMilestone
+                key={task.id}
+                task={task}
+                taskType={taskType}
+                xScale={xScale}
+                y={y}
+                height={ROW_HEIGHT}
+              />
+            );
+          }
 
-              if (display === "milestone") {
-                return (
-                  <GanttMilestone
-                    key={task.id}
-                    task={task}
-                    taskType={taskType}
-                    xScale={xScale}
-                    y={y}
-                    height={ROW_HEIGHT}
-                  />
-                );
-              }
-
-              return (
-                <GanttBar
-                  key={task.id}
-                  task={task}
-                  taskType={taskType}
-                  xScale={xScale}
-                  y={y}
-                  height={ROW_HEIGHT}
-                  onClick={() => onSelectTask(task.id)}
-                  isSelected={selectedTaskId === task.id}
-                  onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
-                />
-              );
-            })}
-          </svg>
-        </div>
-      </div>
+          return (
+            <GanttBar
+              key={task.id}
+              task={task}
+              taskType={taskType}
+              xScale={xScale}
+              y={y}
+              height={ROW_HEIGHT}
+              onClick={() => onSelectTask(task.id)}
+              isSelected={selectedTaskId === task.id}
+              onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
+            />
+          );
+        })}
+      </svg>
     </div>
   );
 });

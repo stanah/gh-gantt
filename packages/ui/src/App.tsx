@@ -3,7 +3,7 @@ import { useApi } from "./hooks/useApi.js";
 import { useTaskTree } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { Layout } from "./components/Layout.js";
-import { TaskTree } from "./components/TaskTree.js";
+import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/Toolbar.js";
@@ -14,14 +14,28 @@ export function App() {
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
+  const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   const handleViewScaleChange = useCallback((scale: ViewScale) => {
     setViewScale(scale);
   }, []);
 
+  const handleGanttHeader = useCallback((node: React.ReactNode) => {
+    setGanttHeader(node);
+  }, []);
+
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
-  const { flatList, collapsed, toggle: toggleCollapse } = useTaskTree(tasks, enabled);
+  const {
+    flatList,
+    collapsed,
+    toggle: toggleCollapse,
+    backlogFlatList,
+    backlogCollapsed,
+    backlogTotalCount,
+    toggleBacklog,
+  } = useTaskTree(tasks, enabled);
 
   const handlePull = useCallback(async () => {
     await fetch("/api/sync/pull", { method: "POST" });
@@ -67,21 +81,31 @@ export function App() {
       />
       <div style={{ flex: 1, overflow: "hidden" }}>
         <Layout
-          left={
-            <TaskTree
-              tasks={tasks}
+          scrollContainerRef={scrollContainerRef}
+          leftHeader={
+            <TaskTreeHeader
+              config={config}
+              enabledTypes={enabled}
+              onToggleType={toggleType}
+            />
+          }
+          leftBody={
+            <TaskTreeBody
               config={config}
               selectedTaskId={selectedTaskId}
               onSelectTask={setSelectedTaskId}
               onDoubleClickTask={setDetailTaskId}
-              enabledTypes={enabled}
-              onToggleType={toggleType}
               flatList={flatList}
               collapsed={collapsed}
               onToggleCollapse={toggleCollapse}
+              backlogFlatList={backlogFlatList}
+              backlogCollapsed={backlogCollapsed}
+              backlogTotalCount={backlogTotalCount}
+              onToggleBacklog={toggleBacklog}
             />
           }
-          right={
+          rightHeader={ganttHeader}
+          rightBody={
             <GanttChart
               ref={ganttRef}
               tasks={tasks}
@@ -91,6 +115,8 @@ export function App() {
               onSelectTask={setSelectedTaskId}
               onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
               onViewScaleChange={handleViewScaleChange}
+              scrollContainerRef={scrollContainerRef}
+              header={handleGanttHeader}
             />
           }
         />
