@@ -15,6 +15,7 @@
   "dependencies": {
     "@gh-gantt/shared": "workspace:*",
     "@octokit/graphql": "^8.0.0",
+    "cli-table3": "^0.6.5",
     "commander": "^12.0.0",
     "express": "^4.21.0",
     "zod": "^3.23.0"

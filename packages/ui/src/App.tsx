@@ -117,6 +117,9 @@ export function App() {
               onViewScaleChange={handleViewScaleChange}
               scrollContainerRef={scrollContainerRef}
               header={handleGanttHeader}
+              backlogFlatList={backlogFlatList}
+              backlogCollapsed={backlogCollapsed}
+              backlogTotalCount={backlogTotalCount}
             />
           }
         />
