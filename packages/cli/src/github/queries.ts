@@ -88,7 +88,7 @@ export const REPOSITORY_METADATA_QUERY = `
         nodes { id name }
       }
       milestones(first: 50, states: OPEN) {
-        nodes { id title number }
+        nodes { id title number dueOn description closedAt state }
       }
     }
   }

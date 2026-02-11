@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
-import { fetchProject } from "../github/projects.js";
+import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { mapProjectItemToTask, applySubIssueLinks } from "../github/issues.js";
+import { mapProjectItemToTask, applySubIssueLinks, milestoneToTask } from "../github/issues.js";
 import { resolveTaskType } from "../sync/type-resolver.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
@@ -85,8 +85,6 @@ export const initCommand = new Command("init")
         const lower = opt.name.toLowerCase();
         if (lower === "epic") {
           taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: null, github_field_value: opt.name };
-        } else if (lower === "milestone") {
-          taskTypes.milestone_type = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: null, github_field_value: opt.name };
         } else if (lower === "bug") {
           taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: null, github_field_value: opt.name };
         } else if (lower === "feature" || lower === "enhancement") {
@@ -103,14 +101,12 @@ export const initCommand = new Command("init")
     }
 
     // Detect common label patterns for task types (only if not already defined by custom field)
-    const typeLabels = ["epic", "milestone", "feature", "bug", "enhancement"];
+    const typeLabels = ["epic", "feature", "bug", "enhancement"];
     for (const label of allLabels) {
       const lower = label.toLowerCase();
       if (typeLabels.includes(lower)) {
         if (lower === "epic" && !taskTypes.epic) {
           taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: label };
-        } else if (lower === "milestone" && !taskTypes.milestone_type) {
-          taskTypes.milestone_type = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: label };
         } else if (lower === "bug" && !taskTypes.bug) {
           taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: label };
         } else if ((lower === "enhancement" || lower === "feature") && !taskTypes.feature) {
@@ -166,13 +162,24 @@ export const initCommand = new Command("init")
       if (!item.content) continue;
       const taskType = resolveTaskType(
         item.content.labels,
-        item.content.milestone,
         item.fieldValues,
         taskTypes,
         resolvedTypeFieldName,
       );
       const task = mapProjectItemToTask(item, fieldMapping, taskType);
       if (task) tasks.push(task);
+    }
+
+    // Fetch native GitHub Milestones and create synthetic milestone tasks
+    const repoFullName = `${opts.owner}/${opts.repo}`;
+    const repoMetadata = await fetchRepositoryMetadata(gql, opts.owner, opts.repo);
+    const milestonesWithDueDate = repoMetadata.milestones.filter((m) => m.dueOn);
+    if (milestonesWithDueDate.length > 0) {
+      taskTypes.milestone = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: null };
+      for (const m of milestonesWithDueDate) {
+        tasks.push(milestoneToTask(m, repoFullName));
+      }
+      console.log(`Added ${milestonesWithDueDate.length} milestone(s) from GitHub`);
     }
 
     // Fetch sub-issue relationships

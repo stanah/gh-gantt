@@ -2,7 +2,6 @@ import type { TaskType } from "@gh-gantt/shared";
 
 export function resolveTaskType(
   labels: string[],
-  milestone: string | null,
   customFields: Record<string, unknown>,
   taskTypes: Record<string, TaskType>,
   typeFieldName?: string | null,
@@ -26,15 +25,6 @@ export function resolveTaskType(
     }
   }
 
-  // 3. Milestone presence → milestone display type
-  if (milestone) {
-    for (const [typeName, typeDef] of Object.entries(taskTypes)) {
-      if (typeDef.display === "milestone") {
-        return typeName;
-      }
-    }
-  }
-
-  // 4. Default
+  // 3. Default
   return "task";
 }

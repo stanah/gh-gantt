@@ -8,9 +8,9 @@ import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { detectConflicts } from "../sync/conflict.js";
 import { createGraphQLClient } from "../github/client.js";
-import { fetchProject } from "../github/projects.js";
+import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, isDraftTask, buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
+import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
 
 export function createApiRouter(projectRoot: string): Router {
@@ -183,7 +183,18 @@ export function createApiRouter(projectRoot: string): Router {
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
-      const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArray, syncState);
+      // Fetch native GitHub Milestones and inject synthetic tasks
+      const { owner: repoOwner, repo: repoName } = config.project.github;
+      const repoFullName = `${repoOwner}/${repoName}`;
+      const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
+      for (const m of repoMetadata.milestones) {
+        if (!m.dueOn) continue;
+        const syntheticTask = milestoneToTask(m, repoFullName);
+        remoteTasks.set(syntheticTask.id, syntheticTask);
+      }
+
+      const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
+      const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArrayWithMilestones, syncState);
       if (conflicts.length > 0 && !force) {
         res.status(409).json({
           conflicts: conflicts.map((c) => ({ taskId: c.taskId, title: c.title })),

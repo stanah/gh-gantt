@@ -13,7 +13,6 @@ export function mapRemoteItemToTask(
   const fm = config.sync.field_mapping;
   const taskType = resolveTaskType(
     c.labels,
-    c.milestone,
     item.fieldValues,
     config.task_types,
     fm.type,

@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
-import { fetchProject } from "../github/projects.js";
+import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, isDraftTask } from "../github/issues.js";
+import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -106,9 +106,22 @@ export const pullCommand = new Command("pull")
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
+    // Fetch native GitHub Milestones and inject synthetic tasks
+    const { owner: repoOwner, repo: repoName } = config.project.github;
+    const repoFullName = `${repoOwner}/${repoName}`;
+    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
+    for (const m of repoMetadata.milestones) {
+      if (!m.dueOn) continue;
+      const syntheticTask = milestoneToTask(m, repoFullName);
+      remoteTasks.set(syntheticTask.id, syntheticTask);
+    }
+
+    // Re-build array after adding milestones
+    const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
+
     const typeFieldConfigured = !!config.sync.field_mapping.type;
 
-    const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArray, syncState);
+    const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArrayWithMilestones, syncState);
     if (conflicts.length > 0) {
       const result = await confirmConflicts(conflicts, opts, {
         isTTY: !!(process.stdin.isTTY && process.stdout.isTTY),
