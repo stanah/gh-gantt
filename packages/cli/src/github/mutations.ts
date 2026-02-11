@@ -139,7 +139,7 @@ export async function addSubIssue(
 
 const REMOVE_SUB_ISSUE_MUTATION = `
   mutation($issueId: ID!, $subIssueId: ID!) {
-    removeSubIssue(input: { parentIssueId: $issueId, subIssueId: $subIssueId }) {
+    removeSubIssue(input: { issueId: $issueId, subIssueId: $subIssueId }) {
       issue { id }
       subIssue { id }
     }
@@ -160,7 +160,7 @@ export async function removeSubIssue(
 const ADD_BLOCKED_BY_MUTATION = `
   mutation($issueId: ID!, $blockingIssueId: ID!) {
     addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
-      blockedIssue { id }
+      issue { id }
       blockingIssue { id }
     }
   }
@@ -178,9 +178,9 @@ export async function addBlockedByIssue(
 }
 
 const REMOVE_BLOCKED_BY_MUTATION = `
-  mutation($blockedIssueId: ID!, $blockingIssueId: ID!) {
-    removeBlockedBy(input: { blockedIssueId: $blockedIssueId, blockingIssueId: $blockingIssueId }) {
-      blockedIssue { id }
+  mutation($issueId: ID!, $blockingIssueId: ID!) {
+    removeBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+      issue { id }
       blockingIssue { id }
     }
   }
@@ -192,7 +192,7 @@ export async function removeBlockedByIssue(
   blockingIssueNodeId: string,
 ): Promise<void> {
   await gql(REMOVE_BLOCKED_BY_MUTATION, {
-    blockedIssueId: blockedIssueNodeId,
+    issueId: blockedIssueNodeId,
     blockingIssueId: blockingIssueNodeId,
   });
 }
