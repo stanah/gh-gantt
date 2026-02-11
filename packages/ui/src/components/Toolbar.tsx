@@ -1,5 +1,6 @@
-import React, { useState, useCallback } from "react";
+import React from "react";
 import type { ViewScale } from "../hooks/useGanttScale.js";
+import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 
 interface ToolbarProps {
   viewScale: ViewScale;
@@ -7,9 +8,12 @@ interface ToolbarProps {
   onZoomIn: () => void;
   onZoomOut: () => void;
   onScrollToToday: () => void;
-  onPull: () => Promise<void>;
-  onPush: () => Promise<void>;
+  onPull: () => void;
+  onPush: () => void;
+  syncing: "pull" | "push" | null;
   lastSyncedAt?: string;
+  displayOptions: Set<DisplayOption>;
+  onToggleDisplayOption: (opt: DisplayOption) => void;
 }
 
 export function Toolbar({
@@ -20,19 +24,11 @@ export function Toolbar({
   onScrollToToday,
   onPull,
   onPush,
+  syncing,
   lastSyncedAt,
+  displayOptions,
+  onToggleDisplayOption,
 }: ToolbarProps) {
-  const [syncing, setSyncing] = useState(false);
-
-  const handlePull = useCallback(async () => {
-    setSyncing(true);
-    try { await onPull(); } finally { setSyncing(false); }
-  }, [onPull]);
-
-  const handlePush = useCallback(async () => {
-    setSyncing(true);
-    try { await onPush(); } finally { setSyncing(false); }
-  }, [onPush]);
 
   const btnStyle = (active = false): React.CSSProperties => ({
     padding: "3px 10px",
@@ -62,14 +58,26 @@ export function Toolbar({
       <button onClick={onZoomOut} style={btnStyle()}>-</button>
       <button onClick={onScrollToToday} style={btnStyle()}>Today</button>
 
+      <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
+
+      {/* Display options */}
+      <div style={{ display: "flex", gap: 2 }}>
+        <button onClick={() => onToggleDisplayOption("issueId")} style={btnStyle(displayOptions.has("issueId"))}>
+          #ID
+        </button>
+        <button onClick={() => onToggleDisplayOption("assignees")} style={btnStyle(displayOptions.has("assignees"))}>
+          Assignee
+        </button>
+      </div>
+
       <div style={{ flex: 1 }} />
 
       {/* Sync */}
-      <button onClick={handlePull} disabled={syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
-        Pull
+      <button onClick={onPull} disabled={!!syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
+        {syncing === "pull" ? "Pulling…" : "Pull"}
       </button>
-      <button onClick={handlePush} disabled={syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
-        Push
+      <button onClick={onPush} disabled={!!syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
+        {syncing === "push" ? "Pushing…" : "Push"}
       </button>
 
       {lastSyncedAt && (

@@ -116,6 +116,7 @@ export interface IdMapping {
 export interface Snapshot {
   hash: string;
   synced_at: string;
+  updated_at?: string;
 }
 
 export interface SyncState {

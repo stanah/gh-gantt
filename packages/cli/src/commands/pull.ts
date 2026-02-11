@@ -80,6 +80,23 @@ export const pullCommand = new Command("pull")
       if (task) remoteTasks.set(task.id, task);
     }
 
+    // Quick check: skip sub-issues fetch if no remote changes
+    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
+    if (remoteTasks.size === localNonDraft.length) {
+      let changed = false;
+      for (const [id, remote] of remoteTasks) {
+        const snap = syncState.snapshots[id];
+        if (!snap?.updated_at) { changed = true; break; }
+        if (remote.updated_at !== snap.updated_at) { changed = true; break; }
+      }
+      if (!changed) {
+        console.log("No remote changes detected, skipping sub-issues fetch.");
+        console.log(`Pull summary: +0 ~0 -0`);
+        console.log("Pull complete.");
+        return;
+      }
+    }
+
     // Fetch and apply sub-issue links
     const issueItems = projectData.items
       .filter((i) => i.content)
@@ -167,6 +184,7 @@ export const pullCommand = new Command("pull")
       newSnapshots[task.id] = {
         hash: hashTask(task),
         synced_at: new Date().toISOString(),
+        updated_at: task.updated_at,
       };
     }
     // Remove snapshots for deleted tasks

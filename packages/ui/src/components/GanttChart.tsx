@@ -12,6 +12,7 @@ import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
+import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 
 export interface GanttChartHandle {
   viewScale: ViewScale;
@@ -34,10 +35,13 @@ interface GanttChartProps {
   backlogFlatList?: TreeNode[];
   backlogCollapsed?: boolean;
   backlogTotalCount?: number;
+  displayOptions?: Set<DisplayOption>;
+  hoveredTaskId?: string | null;
+  onHoverTask?: (taskId: string | null) => void;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask },
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -154,12 +158,34 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         pixelsPerDay={pixelsPerDay}
       />
       <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
-      <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}>
+      <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}
+        onMouseLeave={() => onHoverTask?.(null)}
+      >
+        {/* Row hover backgrounds */}
+        {flatList.map((node, i) => {
+          const y = i * ROW_HEIGHT;
+          const isHovered = hoveredTaskId === node.task.id;
+          const isSelected = selectedTaskId === node.task.id;
+          return (
+            <rect
+              key={`hover-${node.task.id}`}
+              x={0}
+              y={y}
+              width={totalWidth}
+              height={ROW_HEIGHT}
+              fill={isSelected ? "#e8f0fe" : isHovered ? "#f5f8ff" : "transparent"}
+              onMouseEnter={() => onHoverTask?.(node.task.id)}
+            />
+          );
+        })}
         {flatList.map((node, i) => {
           const task = node.task;
           const y = i * ROW_HEIGHT;
           const taskType = config.task_types[task.type];
           const display = taskType?.display ?? "bar";
+
+          const showIssueId = displayOptions?.has("issueId");
+          const showAssignees = displayOptions?.has("assignees");
 
           if (display === "summary") {
             return (
@@ -171,6 +197,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 xScale={xScale}
                 y={y}
                 height={ROW_HEIGHT}
+                showIssueId={showIssueId}
               />
             );
           }
@@ -184,6 +211,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 xScale={xScale}
                 y={y}
                 height={ROW_HEIGHT}
+                showIssueId={showIssueId}
               />
             );
           }
@@ -199,6 +227,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               onClick={() => onSelectTask(task.id)}
               isSelected={selectedTaskId === task.id}
               onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
+              showIssueId={showIssueId}
+              showAssignees={showAssignees}
             />
           );
         })}

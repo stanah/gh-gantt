@@ -114,6 +114,7 @@ export const SyncStateSchema = z.object({
   snapshots: z.record(z.object({
     hash: z.string(),
     synced_at: z.string(),
+    updated_at: z.string().optional(),
   })),
   option_ids: z.record(z.record(z.string())).optional(),
 });

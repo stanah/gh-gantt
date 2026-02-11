@@ -4,6 +4,7 @@ import { TypeFilter } from "./TypeFilter.js";
 import { BacklogSectionHeader } from "./BacklogSectionHeader.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
+import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 
 export const ROW_HEIGHT = 28;
 
@@ -15,7 +16,7 @@ interface TaskTreeHeaderProps {
 
 export function TaskTreeHeader({ config, enabledTypes, onToggleType }: TaskTreeHeaderProps) {
   return (
-    <div style={{ padding: "6px 8px", borderBottom: "1px solid #e0e0e0" }}>
+    <div style={{ padding: "0 8px", borderBottom: "1px solid #e0e0e0", height: 32, display: "flex", alignItems: "center" }}>
       <TypeFilter taskTypes={config.task_types} enabled={enabledTypes} onToggle={onToggleType} />
     </div>
   );
@@ -33,6 +34,9 @@ interface TaskTreeBodyProps {
   backlogCollapsed: boolean;
   backlogTotalCount: number;
   onToggleBacklog: () => void;
+  displayOptions?: Set<DisplayOption>;
+  hoveredTaskId?: string | null;
+  onHoverTask?: (taskId: string | null) => void;
 }
 
 export function TaskTreeBody({
@@ -47,6 +51,9 @@ export function TaskTreeBody({
   backlogCollapsed,
   backlogTotalCount,
   onToggleBacklog,
+  displayOptions,
+  hoveredTaskId,
+  onHoverTask,
 }: TaskTreeBodyProps) {
   return (
     <div>
@@ -61,9 +68,13 @@ export function TaskTreeBody({
           onClick={() => onSelectTask(node.task.id)}
           onDoubleClick={() => onDoubleClickTask(node.task.id)}
           isSelected={selectedTaskId === node.task.id}
+          isHovered={hoveredTaskId === node.task.id}
+          onHover={onHoverTask}
           statusFieldName={config.statuses.field_name}
           statusValues={config.statuses.values}
           taskType={config.task_types[node.task.type]}
+          showIssueId={displayOptions?.has("issueId")}
+          showAssignees={displayOptions?.has("assignees")}
         />
       ))}
       {backlogTotalCount > 0 && (
@@ -84,9 +95,13 @@ export function TaskTreeBody({
               onClick={() => onSelectTask(node.task.id)}
               onDoubleClick={() => onDoubleClickTask(node.task.id)}
               isSelected={selectedTaskId === node.task.id}
+              isHovered={hoveredTaskId === node.task.id}
+              onHover={onHoverTask}
               statusFieldName={config.statuses.field_name}
               statusValues={config.statuses.values}
               taskType={config.task_types[node.task.type]}
+              showIssueId={displayOptions?.has("issueId")}
+              showAssignees={displayOptions?.has("assignees")}
             />
           ))}
         </>

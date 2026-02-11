@@ -58,8 +58,6 @@ export function mergeRemoteIntoLocal(
   return {
     ...remoteTask,
     // Preserve local-only fields
-    parent: localTask.parent,
-    sub_tasks: localTask.sub_tasks,
     blocked_by: localTask.blocked_by,
     // Use remote type when custom field mapping is configured; otherwise preserve local
     type: options?.typeFieldConfigured ? remoteTask.type : localTask.type,

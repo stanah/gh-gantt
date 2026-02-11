@@ -5,7 +5,8 @@ interface ProgressBarProps {
   color?: string;
 }
 
-export function ProgressBar({ progress, color = "#2ECC71" }: ProgressBarProps) {
+export function ProgressBar({ progress }: ProgressBarProps) {
+  const fillColor = progress === 100 ? "#8957e5" : "#3fb950";
   return (
     <div
       style={{
@@ -21,7 +22,7 @@ export function ProgressBar({ progress, color = "#2ECC71" }: ProgressBarProps) {
         style={{
           width: `${Math.min(100, Math.max(0, progress))}%`,
           height: "100%",
-          background: progress === 100 ? color : "#3498DB",
+          background: fillColor,
           borderRadius: 3,
           transition: "width 0.2s",
         }}

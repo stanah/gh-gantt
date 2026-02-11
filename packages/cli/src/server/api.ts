@@ -6,6 +6,7 @@ import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
+import { detectConflicts } from "../sync/conflict.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
@@ -142,8 +143,9 @@ export function createApiRouter(projectRoot: string): Router {
   });
 
   // POST /api/sync/pull
-  router.post("/api/sync/pull", async (_req, res) => {
+  router.post("/api/sync/pull", async (req, res) => {
     try {
+      const { force } = req.body ?? {};
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
@@ -158,6 +160,21 @@ export function createApiRouter(projectRoot: string): Router {
         if (task) remoteTasks.set(task.id, task);
       }
 
+      // Quick check: skip sub-issues fetch if no remote changes
+      const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
+      if (remoteTasks.size === localNonDraft.length) {
+        let changed = false;
+        for (const [id, remote] of remoteTasks) {
+          const snap = syncState.snapshots[id];
+          if (!snap?.updated_at) { changed = true; break; }
+          if (remote.updated_at !== snap.updated_at) { changed = true; break; }
+        }
+        if (!changed) {
+          res.json({ added: 0, updated: 0, removed: 0 });
+          return;
+        }
+      }
+
       const issueItems = projectData.items
         .filter((i) => i.content)
         .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
@@ -166,6 +183,16 @@ export function createApiRouter(projectRoot: string): Router {
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
+      const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArray, syncState);
+      if (conflicts.length > 0 && !force) {
+        res.status(409).json({
+          conflicts: conflicts.map((c) => ({ taskId: c.taskId, title: c.title })),
+          message: `${conflicts.length} task(s) have conflicting changes. Local and remote were both modified since last sync.`,
+        });
+        return;
+      }
+
+      const typeFieldConfigured = !!config.sync.field_mapping.type;
       const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
       const newTasks: Task[] = [];
       let added = 0, updated = 0, removed = 0;
@@ -179,7 +206,7 @@ export function createApiRouter(projectRoot: string): Router {
           const remoteHash = hashTask(remoteTask);
           const snapshotHash = syncState.snapshots[id]?.hash;
           if (remoteHash !== snapshotHash) {
-            newTasks.push(mergeRemoteIntoLocal(localTask, remoteTask));
+            newTasks.push(mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured }));
             updated++;
           } else {
             newTasks.push(localTask);
@@ -197,7 +224,7 @@ export function createApiRouter(projectRoot: string): Router {
 
       const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
       for (const task of newTasks) {
-        newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString() };
+        newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString(), updated_at: task.updated_at };
       }
       for (const id of localTaskMap.keys()) {
         if (!isDraftTask(id)) delete newSnapshots[id];

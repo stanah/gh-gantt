@@ -9,7 +9,8 @@ interface StatusBadgeProps {
 export function StatusBadge({ status, statusValues }: StatusBadgeProps) {
   if (!status) return null;
   const sv = statusValues[status];
-  const color = sv?.color ?? "#888";
+  const isDone = sv?.done ?? false;
+  const color = isDone ? "#8957e5" : "#3fb950";
 
   return (
     <span
