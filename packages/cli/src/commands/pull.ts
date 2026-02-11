@@ -24,7 +24,7 @@ export async function confirmConflicts(
     "\nBoth local and remote versions changed since last sync.\n" +
       "Pulling will apply remote-wins merge: local changes to title, body,\n" +
       "dates, state, assignees, labels, milestone, and custom fields will be lost.\n" +
-      "Local-only fields (parent, sub_tasks, blocked_by, type) will be preserved.\n",
+      "Local-only fields (blocked_by) will be preserved. Parent and sub_tasks will be taken from remote.\n",
   );
 
   if (opts.dryRun) {

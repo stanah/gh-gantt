@@ -269,9 +269,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
           {/* Draw preview */}
           {preview && (() => {
-            const node = backlogFlatList?.find((n) => n.task.id === preview.taskId);
-            if (!node) return null;
-            const idx = backlogFlatList!.indexOf(node);
+            const idx = backlogFlatList?.findIndex((n) => n.task.id === preview.taskId) ?? -1;
+            if (idx < 0) return null;
             const y = ROW_HEIGHT + idx * ROW_HEIGHT;
             return (
               <rect
