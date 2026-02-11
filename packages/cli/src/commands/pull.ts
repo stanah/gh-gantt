@@ -110,10 +110,13 @@ export const pullCommand = new Command("pull")
         if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
       }
       if (!changed) {
-        console.log("No remote changes detected, skipping sub-issues fetch.");
-        console.log(`Pull summary: +0 ~0 -0`);
-        console.log("Pull complete.");
-        return;
+        if (!opts.withComments && !opts.forceComments) {
+          console.log("No remote changes detected, skipping sub-issues fetch.");
+          console.log(`Pull summary: +0 ~0 -0`);
+          console.log("Pull complete.");
+          return;
+        }
+        console.log("No remote changes detected, but fetching comments as requested.");
       }
     }
 

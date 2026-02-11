@@ -43,6 +43,9 @@ describe("CommentsStore", () => {
 });
 
 describe("fetchAllComments", () => {
+  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
+  afterEach(() => { vi.useRealTimers(); });
+
   function makeGql(commentsByNumber: Record<number, Array<{ id: string; author: string; body: string }>>) {
     return async (_query: string, vars: any) => ({
       repository: {

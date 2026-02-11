@@ -41,7 +41,7 @@ export function createApiRouter(projectRoot: string): Router {
       const commentsFile = await commentsStore.read();
       const mergedCache = {
         ...tasksFile.cache,
-        comments: { ...tasksFile.cache.comments, ...commentsFile.comments },
+        comments: { ...(tasksFile.cache.comments ?? {}), ...commentsFile.comments },
       };
       const tasksWithProgress = tasksFile.tasks.map((task) => ({
         ...task,

@@ -25,7 +25,10 @@ export async function fetchIssueComments(
       cursor,
     });
 
-    const connection = result.repository.issue.comments;
+    const issue = result.repository?.issue;
+    if (!issue) return comments;
+
+    const connection = issue.comments;
     for (const node of connection.nodes) {
       comments.push({
         id: node.id,
@@ -62,6 +65,7 @@ export async function fetchAllComments(
 
   let fetched = 0;
   let skipped = 0;
+  let failed = 0;
 
   for (const item of items) {
     if (!options?.force && data.fetched_at[item.taskId]) {
@@ -91,9 +95,10 @@ export async function fetchAllComments(
         break;
       }
       console.warn(`Failed to fetch comments for ${item.taskId}: ${err instanceof Error ? err.message : String(err)}`);
+      failed++;
     }
   }
 
-  console.log(`Comments: ${fetched} fetched, ${skipped} cached`);
+  console.log(`Comments: ${fetched} fetched, ${skipped} cached${failed > 0 ? `, ${failed} failed` : ""}`);
   return data;
 }
