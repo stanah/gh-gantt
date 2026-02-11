@@ -4,9 +4,15 @@ export function resolveTaskId(input: string, config: Config): string {
   const { owner, repo } = config.project.github;
   const repoFullName = `${owner}/${repo}`;
 
-  // Already fully qualified: owner/repo#6
+  // Already fully qualified: owner/repo#6 or milestone:owner/repo#1
   if (input.includes("/") && input.includes("#")) {
     return input;
+  }
+
+  // M1, M42 → milestone:owner/repo#1
+  const milestoneMatch = input.match(/^M(\d+)$/i);
+  if (milestoneMatch) {
+    return `milestone:${repoFullName}#${milestoneMatch[1]}`;
   }
 
   // #6 or just 6

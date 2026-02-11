@@ -1,8 +1,11 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { useTaskTree } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
+import { useTaskFilter } from "./hooks/useTaskFilter.js";
+import { useRelatedTasks } from "./hooks/useRelatedTasks.js";
+import { useTreeDragDrop } from "./hooks/useTreeDragDrop.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
@@ -14,7 +17,6 @@ export function App() {
   const { config, tasks, cache, loading, error, updateTask, refresh } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
-  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
@@ -40,8 +42,13 @@ export function App() {
     setGanttHeader(node);
   }, []);
 
+  const handleSelectTask = useCallback((taskId: string) => {
+    setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
+  }, []);
+
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
+  const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees, searchQuery, setSearchQuery } = useTaskFilter(tasks);
   const {
     flatList,
     collapsed,
@@ -50,7 +57,37 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled);
+  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, searchQuery });
+
+  const { getRelated } = useRelatedTasks(tasks);
+  const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
+    () => getRelated(hoveredTaskId),
+    [getRelated, hoveredTaskId],
+  );
+
+  const handleReparent = useCallback(async (taskId: string, newParentId: string | null) => {
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reparent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newParentId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        showToast(err?.error ?? "Failed to reparent task", "error");
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [refresh, showToast]);
+
+  const dragState = useTreeDragDrop({
+    tasks,
+    config,
+    onReparent: handleReparent,
+  });
 
   const handlePull = useCallback(async () => {
     setSyncing("pull");
@@ -97,7 +134,49 @@ export function App() {
   const handlePush = useCallback(async () => {
     setSyncing("push");
     try {
-      const res = await fetch("/api/sync/push", { method: "POST" });
+      // Step 1: Preview with dry_run
+      const previewRes = await fetch("/api/sync/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run: true }),
+      });
+      if (!previewRes.ok) {
+        const err = await previewRes.json().catch(() => null);
+        showToast(`Push failed: ${err?.error ?? previewRes.statusText}`, "error");
+        return;
+      }
+      const preview = await previewRes.json();
+
+      if (preview.summary.create === 0 && preview.summary.update === 0 && (preview.summary.skip ?? 0) === 0) {
+        showToast("No local changes to push.", "info");
+        return;
+      }
+
+      // Step 2: Confirm
+      const lines = preview.changes.map(
+        (c: { type: string; title: string; changedFields?: string[] }) =>
+          `  ${c.type === "added" ? "+" : c.type === "deleted" ? "-" : "~"} ${c.title}${c.changedFields ? ` [${c.changedFields.join(", ")}]` : ""}`,
+      );
+      const totalCount = preview.summary.create + preview.summary.update + (preview.summary.skip ?? 0);
+      const msg =
+        `Push ${totalCount} task(s) to GitHub?\n\n` +
+        `  Create: ${preview.summary.create}\n` +
+        `  Update: ${preview.summary.update}\n` +
+        (preview.summary.skip ? `  Skip/Delete: ${preview.summary.skip}\n` : "") +
+        `  Estimated API calls: ~${preview.estimated_api_calls}\n\n` +
+        lines.join("\n");
+
+      if (!window.confirm(msg)) {
+        showToast("Push cancelled.", "info");
+        return;
+      }
+
+      // Step 3: Execute
+      const res = await fetch("/api/sync/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
         showToast(`Push failed: ${err?.error ?? res.statusText}`, "error");
@@ -109,12 +188,13 @@ export function App() {
       } else {
         showToast(`Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`, "success");
       }
+      await refresh();
     } catch (err) {
       showToast(`Push failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setSyncing(null);
     }
-  }, [showToast]);
+  }, [refresh, showToast]);
 
   if (loading) {
     return (
@@ -174,71 +254,85 @@ export function App() {
         syncing={syncing}
         displayOptions={displayOptions}
         onToggleDisplayOption={toggleDisplayOption}
+        hideClosed={hideClosed}
+        onToggleHideClosed={toggleHideClosed}
+        selectedAssignee={selectedAssignee}
+        allAssignees={allAssignees}
+        onSelectAssignee={setSelectedAssignee}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        <Layout
-          scrollContainerRef={scrollContainerRef}
-          leftHeader={
-            <TaskTreeHeader
-              config={config}
-              enabledTypes={enabled}
-              onToggleType={toggleType}
-            />
-          }
-          leftBody={
-            <TaskTreeBody
-              config={config}
-              selectedTaskId={selectedTaskId}
-              onSelectTask={setSelectedTaskId}
-              onDoubleClickTask={setDetailTaskId}
-              flatList={flatList}
-              collapsed={collapsed}
-              onToggleCollapse={toggleCollapse}
-              backlogFlatList={backlogFlatList}
-              backlogCollapsed={backlogCollapsed}
-              backlogTotalCount={backlogTotalCount}
-              onToggleBacklog={toggleBacklog}
-              displayOptions={displayOptions}
-              hoveredTaskId={hoveredTaskId}
-              onHoverTask={setHoveredTaskId}
-            />
-          }
-          rightHeader={ganttHeader}
-          rightBody={
-            <GanttChart
-              ref={ganttRef}
-              tasks={tasks}
-              flatList={flatList}
-              config={config}
-              selectedTaskId={selectedTaskId}
-              onSelectTask={setSelectedTaskId}
-              onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
-              onViewScaleChange={handleViewScaleChange}
-              scrollContainerRef={scrollContainerRef}
-              header={handleGanttHeader}
-              backlogFlatList={backlogFlatList}
-              backlogCollapsed={backlogCollapsed}
-              backlogTotalCount={backlogTotalCount}
-              displayOptions={displayOptions}
-              hoveredTaskId={hoveredTaskId}
-              onHoverTask={setHoveredTaskId}
-            />
-          }
-        />
-      </div>
-      {detailTaskId && (() => {
-        const detailTask = tasks.find((t) => t.id === detailTaskId);
-        if (!detailTask) return null;
-        return (
-          <TaskDetailPanel
-            task={detailTask}
-            config={config}
-            comments={cache.comments[detailTaskId] ?? []}
-            onUpdate={(updates) => updateTask(detailTaskId, updates)}
-            onClose={() => setDetailTaskId(null)}
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <Layout
+            scrollContainerRef={scrollContainerRef}
+            leftHeader={
+              <TaskTreeHeader
+                config={config}
+                enabledTypes={enabled}
+                onToggleType={toggleType}
+              />
+            }
+            leftBody={
+              <TaskTreeBody
+                config={config}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleSelectTask}
+                flatList={flatList}
+                collapsed={collapsed}
+                onToggleCollapse={toggleCollapse}
+                backlogFlatList={backlogFlatList}
+                backlogCollapsed={backlogCollapsed}
+                backlogTotalCount={backlogTotalCount}
+                onToggleBacklog={toggleBacklog}
+                displayOptions={displayOptions}
+                hoveredTaskId={hoveredTaskId}
+                onHoverTask={setHoveredTaskId}
+                highlightedTaskIds={highlightedTaskIds}
+                highlightRelationMap={highlightRelationMap}
+                searchQuery={searchQuery}
+                dragState={dragState}
+              />
+            }
+            rightHeader={ganttHeader}
+            rightBody={
+              <GanttChart
+                ref={ganttRef}
+                tasks={tasks}
+                flatList={flatList}
+                config={config}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleSelectTask}
+                onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
+                onViewScaleChange={handleViewScaleChange}
+                scrollContainerRef={scrollContainerRef}
+                header={handleGanttHeader}
+                backlogFlatList={backlogFlatList}
+                backlogCollapsed={backlogCollapsed}
+                backlogTotalCount={backlogTotalCount}
+                displayOptions={displayOptions}
+                hoveredTaskId={hoveredTaskId}
+                onHoverTask={setHoveredTaskId}
+                highlightRelationMap={highlightRelationMap}
+              />
+            }
           />
-        );
-      })()}
+        </div>
+        {selectedTaskId && (() => {
+          const detailTask = tasks.find((t) => t.id === selectedTaskId);
+          if (!detailTask) return null;
+          return (
+            <TaskDetailPanel
+              key={selectedTaskId}
+              task={detailTask}
+              config={config}
+              comments={cache.comments[selectedTaskId] ?? []}
+              onUpdate={(updates) => updateTask(selectedTaskId, updates)}
+              onClose={() => setSelectedTaskId(null)}
+            />
+          );
+        })()}
+      </div>
     </div>
   );
 }

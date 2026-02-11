@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isWorkingDay, addWorkingDays, getDateRange } from "../lib/date-utils.js";
+import { isWorkingDay, addWorkingDays, parseDate, getDateRange } from "../lib/date-utils.js";
 
 describe("isWorkingDay", () => {
   it("returns true for Monday (day 1)", () => {
@@ -26,6 +26,22 @@ describe("addWorkingDays", () => {
   });
 });
 
+describe("parseDate", () => {
+  it("parses YYYY-MM-DD format", () => {
+    const d = parseDate("2026-03-15");
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(2); // 0-indexed
+    expect(d.getDate()).toBe(15);
+  });
+
+  it("parses ISO timestamp by extracting date portion", () => {
+    const d = parseDate("2026-05-31T00:00:00Z");
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(4); // 0-indexed
+    expect(d.getDate()).toBe(31);
+  });
+});
+
 describe("getDateRange", () => {
   it("returns padded min/max dates from tasks", () => {
     const tasks = [
@@ -42,5 +58,14 @@ describe("getDateRange", () => {
   it("returns default range when no dates", () => {
     const [min, max] = getDateRange([]);
     expect(max > min).toBe(true);
+  });
+
+  it("includes task.date in the range calculation", () => {
+    const tasks = [
+      { start_date: "2026-01-01", end_date: "2026-01-10", date: null },
+      { start_date: null, end_date: null, date: "2026-06-15" },
+    ] as any[];
+    const [, max] = getDateRange(tasks);
+    expect(max > new Date(2026, 5, 15)).toBe(true);
   });
 });

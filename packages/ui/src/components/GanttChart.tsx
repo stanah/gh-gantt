@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from "react";
+import React, { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useLayoutEffect } from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
@@ -13,6 +13,7 @@ import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 
 export interface GanttChartHandle {
   viewScale: ViewScale;
@@ -38,16 +39,31 @@ interface GanttChartProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
+  highlightRelationMap?: Map<string, RelationType>;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask, highlightRelationMap },
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const parent = bodyRef.current?.parentElement;
+    if (!parent) return;
+    setContainerWidth(parent.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
     config.gantt.default_view,
+    containerWidth,
   );
 
   // Notify parent when viewScale changes (e.g. due to zoom)
@@ -157,7 +173,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         workingDays={config.gantt.working_days}
         pixelsPerDay={pixelsPerDay}
       />
-      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
+      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} hoveredTaskId={hoveredTaskId ?? null} />
       <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
@@ -173,7 +189,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               y={y}
               width={totalWidth}
               height={ROW_HEIGHT}
-              fill={isSelected ? "#e8f0fe" : isHovered ? "#f5f8ff" : "transparent"}
+              fill={isSelected ? "rgba(66, 133, 244, 0.12)" : isHovered ? "rgba(66, 133, 244, 0.06)" : "transparent"}
+              style={{ cursor: "pointer" }}
+              onClick={() => onSelectTask(node.task.id)}
               onMouseEnter={() => onHoverTask?.(node.task.id)}
             />
           );
@@ -187,6 +205,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           const showIssueId = displayOptions?.has("issueId");
           const showAssignees = displayOptions?.has("assignees");
 
+          const isHoveredTask = hoveredTaskId === task.id;
+          const highlightType = highlightRelationMap?.get(task.id) ?? null;
+          const isDimmed = hoveredTaskId != null && !isHoveredTask && !highlightType;
+
           if (display === "summary") {
             return (
               <GanttSummaryBar
@@ -198,6 +220,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 y={y}
                 height={ROW_HEIGHT}
                 showIssueId={showIssueId}
+                isDimmed={isDimmed}
+                highlightType={highlightType}
               />
             );
           }
@@ -212,6 +236,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 y={y}
                 height={ROW_HEIGHT}
                 showIssueId={showIssueId}
+                isDimmed={isDimmed}
+                highlightType={highlightType}
               />
             );
           }
@@ -229,6 +255,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
               showIssueId={showIssueId}
               showAssignees={showAssignees}
+              isDimmed={isDimmed}
+              highlightType={highlightType}
             />
           );
         })}

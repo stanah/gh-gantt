@@ -137,6 +137,66 @@ export async function addSubIssue(
   });
 }
 
+const REMOVE_SUB_ISSUE_MUTATION = `
+  mutation($issueId: ID!, $subIssueId: ID!) {
+    removeSubIssue(input: { issueId: $issueId, subIssueId: $subIssueId }) {
+      issue { id }
+      subIssue { id }
+    }
+  }
+`;
+
+export async function removeSubIssue(
+  gql: typeof graphql,
+  parentIssueNodeId: string,
+  childIssueNodeId: string,
+): Promise<void> {
+  await gql(REMOVE_SUB_ISSUE_MUTATION, {
+    issueId: parentIssueNodeId,
+    subIssueId: childIssueNodeId,
+  });
+}
+
+const ADD_BLOCKED_BY_MUTATION = `
+  mutation($issueId: ID!, $blockingIssueId: ID!) {
+    addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+      issue { id }
+      blockingIssue { id }
+    }
+  }
+`;
+
+export async function addBlockedByIssue(
+  gql: typeof graphql,
+  issueNodeId: string,
+  blockingIssueNodeId: string,
+): Promise<void> {
+  await gql(ADD_BLOCKED_BY_MUTATION, {
+    issueId: issueNodeId,
+    blockingIssueId: blockingIssueNodeId,
+  });
+}
+
+const REMOVE_BLOCKED_BY_MUTATION = `
+  mutation($issueId: ID!, $blockingIssueId: ID!) {
+    removeBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+      issue { id }
+      blockingIssue { id }
+    }
+  }
+`;
+
+export async function removeBlockedByIssue(
+  gql: typeof graphql,
+  blockedIssueNodeId: string,
+  blockingIssueNodeId: string,
+): Promise<void> {
+  await gql(REMOVE_BLOCKED_BY_MUTATION, {
+    issueId: blockedIssueNodeId,
+    blockingIssueId: blockingIssueNodeId,
+  });
+}
+
 export async function updateProjectItemField(
   gql: typeof graphql,
   projectId: string,
@@ -150,4 +210,36 @@ export async function updateProjectItemField(
     fieldId,
     value,
   });
+}
+
+export async function createGithubMilestone(
+  token: string,
+  owner: string,
+  repo: string,
+  options: { title: string; description?: string; dueOn?: string },
+): Promise<{ number: number; nodeId: string }> {
+  const body: Record<string, string> = { title: options.title };
+  if (options.description) body.description = options.description;
+  if (options.dueOn) body.due_on = `${options.dueOn}T00:00:00Z`;
+
+  const response = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/milestones`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `token ${token}`,
+        Accept: "application/vnd.github+json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    },
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Failed to create milestone: ${response.status} ${text}`);
+  }
+
+  const data: any = await response.json();
+  return { number: data.number, nodeId: data.node_id };
 }

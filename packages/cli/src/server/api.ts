@@ -3,16 +3,18 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
-import { hashTask } from "../sync/hash.js";
-import { computeLocalDiff } from "../sync/diff.js";
+import { setParent, removeParent } from "../commands/task/link.js";
+import { hashTask, extractSyncFields } from "../sync/hash.js";
+import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { detectConflicts } from "../sync/conflict.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
-import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
+import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
+import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
+import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
 export function createApiRouter(projectRoot: string): Router {
   const router = Router();
@@ -143,13 +145,118 @@ export function createApiRouter(projectRoot: string): Router {
         return;
       }
 
-      const updatedTask = { ...tasksFile.tasks[idx], ...updates };
+      const UPDATABLE_FIELDS = [
+        "title", "body", "state", "state_reason", "assignees", "labels",
+        "milestone", "custom_fields", "start_date", "end_date", "date",
+        "parent", "sub_tasks", "blocked_by",
+      ] as const;
+
+      const oldTask = tasksFile.tasks[idx];
+      const safeUpdates: Partial<Task> = {};
+      for (const key of UPDATABLE_FIELDS) {
+        if (key in updates) {
+          (safeUpdates as Record<string, unknown>)[key] = updates[key];
+        }
+      }
+      const updatedTask = { ...oldTask, ...safeUpdates };
+
+      // Auto-update dates on status transition
+      const config = await configStore.read();
+      const statusField = config.statuses.field_name;
+      const oldStatus = oldTask.custom_fields[statusField] as string | undefined;
+      const newStatus = updatedTask.custom_fields[statusField] as string | undefined;
+      if (newStatus && oldStatus !== newStatus) {
+        const dateUpdates = computeStatusDateUpdates(oldStatus, newStatus, config.statuses.values, {
+          start_date: updatedTask.start_date,
+          end_date: updatedTask.end_date,
+        });
+        if (dateUpdates.start_date && !safeUpdates.start_date) updatedTask.start_date = dateUpdates.start_date;
+        if (dateUpdates.end_date && !safeUpdates.end_date) updatedTask.end_date = dateUpdates.end_date;
+      }
+
+      // Prevent start > end regardless of how dates were changed
+      if (updatedTask.start_date && updatedTask.end_date && updatedTask.start_date > updatedTask.end_date) {
+        res.status(400).json({ error: `start_date (${updatedTask.start_date}) must not be after end_date (${updatedTask.end_date})` });
+        return;
+      }
+
       tasksFile.tasks[idx] = updatedTask;
       await tasksStore.write(tasksFile);
 
       res.json(updatedTask);
     } catch (err) {
       res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  // POST /api/tasks/:id/reparent
+  router.post("/api/tasks/:id/reparent", async (req, res) => {
+    try {
+      const taskId = decodeURIComponent(req.params.id);
+      const { newParentId } = req.body;
+
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
+      const task = tasksFile.tasks.find((t) => t.id === taskId);
+
+      if (!task) {
+        res.status(404).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
+        return;
+      }
+
+      if (newParentId === taskId) {
+        res.status(400).json({ error: "Cannot set a task as its own parent", code: "SELF_REFERENCE" });
+        return;
+      }
+
+      if (newParentId != null) {
+        const parent = tasksFile.tasks.find((t) => t.id === newParentId);
+        if (!parent) {
+          res.status(404).json({ error: "Parent task not found", code: "TASK_NOT_FOUND" });
+          return;
+        }
+
+        // Cycle detection: walk up from newParentId, check we don't reach taskId
+        const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
+        let current: string | null = newParentId;
+        while (current) {
+          if (current === taskId) {
+            res.status(400).json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
+            return;
+          }
+          const t = taskMap.get(current);
+          current = t?.parent ?? null;
+        }
+
+        // Type hierarchy validation
+        const allowed = config.type_hierarchy[parent.type];
+        if (allowed && allowed.length > 0 && !allowed.includes(task.type)) {
+          res.status(400).json({
+            error: `Cannot place "${task.type}" under "${parent.type}"`,
+            code: "TYPE_HIERARCHY_VIOLATION",
+          });
+          return;
+        }
+
+        tasksFile.tasks = setParent(tasksFile.tasks, taskId, newParentId);
+      } else {
+        tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
+      }
+
+      await tasksStore.write(tasksFile);
+
+      const tasksWithProgress = tasksFile.tasks.map((t) => ({
+        ...t,
+        _progress: computeProgress(
+          t,
+          tasksFile.tasks,
+          config.statuses.values,
+          config.statuses.field_name,
+        ),
+      }));
+      res.json({ tasks: tasksWithProgress });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -204,9 +311,10 @@ export function createApiRouter(projectRoot: string): Router {
       const issueItems = projectData.items
         .filter((i) => i.content)
         .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-      const subIssueLinks = await fetchAllSubIssueLinks(gql, issueItems);
+      const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
       const remoteTaskArray = Array.from(remoteTasks.values());
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
+      applyBlockedByLinks(remoteTaskArray, blockedByLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
       const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
@@ -230,9 +338,9 @@ export function createApiRouter(projectRoot: string): Router {
           newTasks.push(remoteTask);
           added++;
         } else {
-          const remoteHash = hashTask(remoteTask);
-          const snapshotHash = syncState.snapshots[id]?.hash;
-          if (remoteHash !== snapshotHash) {
+          const currentRemoteHash = hashTask(remoteTask);
+          const prevRemoteHash = syncState.snapshots[id]?.remoteHash ?? syncState.snapshots[id]?.hash;
+          if (currentRemoteHash !== prevRemoteHash) {
             newTasks.push(mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured }));
             updated++;
           } else {
@@ -251,7 +359,21 @@ export function createApiRouter(projectRoot: string): Router {
 
       const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
       for (const task of newTasks) {
-        newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString(), updated_at: task.updated_at };
+        const remoteTask = remoteTasks.get(task.id);
+        const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
+        const existing = syncState.snapshots[task.id];
+        // Preserve existing snapshot for unchanged tasks to protect unpushed local changes
+        if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+          newSnapshots[task.id] = { ...existing, remoteHash };
+          continue;
+        }
+        newSnapshots[task.id] = {
+          hash: hashTask(task),
+          synced_at: new Date().toISOString(),
+          updated_at: task.updated_at,
+          remoteHash,
+          syncFields: extractSyncFields(task),
+        };
       }
       for (const id of localTaskMap.keys()) {
         if (!isDraftTask(id)) delete newSnapshots[id];
@@ -267,18 +389,28 @@ export function createApiRouter(projectRoot: string): Router {
   });
 
   // POST /api/sync/push
-  router.post("/api/sync/push", async (_req, res) => {
+  router.post("/api/sync/push", async (req, res) => {
     try {
-      const config = await configStore.read();
+      const { dry_run } = req.body ?? {};
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
 
       const diffs = computeLocalDiff(tasksFile.tasks, syncState);
       if (diffs.length === 0) {
+        if (dry_run) {
+          res.json(formatDiffPreview([]));
+          return;
+        }
         res.json({ created: 0, updated: 0, skipped: 0, message: "No local changes to push" });
         return;
       }
 
+      const config = await configStore.read();
+
+      if (dry_run) {
+        res.json(formatDiffPreview(diffs, { autoCreateIssues: config.sync.auto_create_issues }));
+        return;
+      }
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
         await executePush(gql, config, tasksFile, syncState);
@@ -319,6 +451,7 @@ function computeProgress(
   allTasks: Task[],
   statusValues: Record<string, StatusValue>,
   statusFieldName: string,
+  visited: Set<string> = new Set(),
 ): number {
   if (task.state === "closed") return 100;
 
@@ -327,13 +460,16 @@ function computeProgress(
 
   if (task.sub_tasks.length > 0) {
     const taskMap = new Map(allTasks.map((t) => [t.id, t]));
+    visited.add(task.id);
     let total = 0;
     let done = 0;
     for (const childId of task.sub_tasks) {
+      if (visited.has(childId)) continue;
       const child = taskMap.get(childId);
       if (child) {
         total++;
-        done += computeProgress(child, allTasks, statusValues, statusFieldName) / 100;
+        visited.add(childId);
+        done += computeProgress(child, allTasks, statusValues, statusFieldName, visited) / 100;
       }
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;

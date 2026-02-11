@@ -2,9 +2,13 @@ import { Command } from "commander";
 import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
+import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Task } from "@gh-gantt/shared";
 
 function formatTask(task: Task): string {
+  if (isMilestoneSyntheticTask(task.id)) {
+    return formatMilestone(task);
+  }
   const lines: string[] = [
     `ID:         ${task.id}`,
     `Title:      ${task.title}`,
@@ -24,6 +28,20 @@ function formatTask(task: Task): string {
   ];
   if (task.body) {
     lines.push("", "--- Body ---", task.body);
+  }
+  return lines.join("\n");
+}
+
+function formatMilestone(task: Task): string {
+  const lines: string[] = [
+    `ID:         ${task.id}`,
+    `Title:      ${task.title}`,
+    `Type:       milestone`,
+    `State:      ${task.state}`,
+    `Due Date:   ${task.date ?? "-"}`,
+  ];
+  if (task.body) {
+    lines.push("", "--- Description ---", task.body);
   }
   return lines.join("\n");
 }

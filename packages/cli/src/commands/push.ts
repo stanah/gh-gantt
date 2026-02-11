@@ -1,15 +1,27 @@
+import { createInterface } from "node:readline";
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import { computeLocalDiff } from "../sync/diff.js";
+import { computeLocalDiff, estimateApiCalls } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
-import { isDraftTask } from "../github/issues.js";
+import { isDraftTask, isMilestoneDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
+
+function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/N) `, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === "y");
+    });
+  });
+}
 
 export const pushCommand = new Command("push")
   .description("Push local changes to GitHub Project")
   .option("--dry-run", "Show changes without applying")
+  .option("-y, --yes", "Skip confirmation prompt")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -27,22 +39,54 @@ export const pushCommand = new Command("push")
       return;
     }
 
-    const draftCount = diffs.filter((d) => isDraftTask(d.id)).length;
-    const existingCount = diffs.length - draftCount;
+    // Exclude synthetic milestone tasks (read-only)
+    const pushableDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
-    console.log(`Found ${diffs.length} local change(s):`);
-    if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
-    if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
-
-    for (const diff of diffs) {
-      const symbol = diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
-      const draft = isDraftTask(diff.id) ? " [draft]" : "";
-      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${draft}`);
+    if (pushableDiffs.length === 0) {
+      console.log("No local changes to push.");
+      return;
     }
 
+    const milestoneCount = pushableDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task)).length;
+    const draftCount = pushableDiffs.filter((d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task)).length;
+    const deletedCount = pushableDiffs.filter((d) => d.type === "deleted").length;
+    const existingCount = pushableDiffs.length - draftCount - milestoneCount - deletedCount;
+
+    console.log(`Found ${pushableDiffs.length} local change(s):`);
+    if (milestoneCount > 0) console.log(`  ${milestoneCount} milestone(s) to create`);
+    if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
+    if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
+    if (deletedCount > 0) console.log(`  ${deletedCount} deleted task(s)`);
+
+    for (const diff of pushableDiffs) {
+      const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);
+      const symbol = isMilestone ? "*" : diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
+      const tag = isMilestone
+        ? ` [milestone${diff.task.date ? `, due: ${diff.task.date}` : ""}]`
+        : isDraftTask(diff.id) ? " [draft]" : "";
+      const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
+      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
+    }
+
+    const estimated = estimateApiCalls(pushableDiffs);
+    console.log(`\nEstimated GitHub API calls: ~${estimated}`);
+
     if (opts.dryRun) {
-      console.log("Dry run — no changes pushed.");
+      console.log("\nDry run — no changes pushed.");
       return;
+    }
+
+    if (!opts.yes) {
+      if (!process.stdin.isTTY) {
+        console.error("Non-interactive environment detected. Use --yes to confirm push.");
+        process.exitCode = 1;
+        return;
+      }
+      const confirmed = await confirm("\nProceed with push?");
+      if (!confirmed) {
+        console.log("Push cancelled.");
+        return;
+      }
     }
 
     const gql = await createGraphQLClient();

@@ -66,41 +66,70 @@ export function getEdgeCoordinates(
   edge: DependencyEdge,
   taskPositions: Map<string, { x1: number; x2: number; y: number }>,
   rowHeight: number,
-): { path: string; isCycle: boolean } | null {
+): { path: string } | null {
   const from = taskPositions.get(edge.from);
   const to = taskPositions.get(edge.to);
   if (!from || !to) return null;
 
-  const midY = rowHeight / 2;
+  const barPad = 4; // matches barY = y + 4 in GanttBar
+  const gap = 12;
 
-  let startX: number;
-  let endX: number;
+  const startX = (from.x1 + from.x2) / 2;
+  const endX = to.x1;
+  const endY = to.y + rowHeight / 2;
 
-  switch (edge.type) {
-    case "finish-to-start":
-      startX = from.x2;
-      endX = to.x1;
-      break;
-    case "finish-to-finish":
-      startX = from.x2;
-      endX = to.x2;
-      break;
-    case "start-to-start":
-      startX = from.x1;
-      endX = to.x1;
-      break;
-    case "start-to-finish":
-      startX = from.x1;
-      endX = to.x2;
-      break;
+  let startY: number;
+  let path: string;
+
+  if (to.y > from.y) {
+    // Target below: exit from bottom
+    startY = from.y + rowHeight - barPad;
+    if (startX <= endX) {
+      // Clear: L-shape (1 bend)
+      path = `M ${startX} ${startY} L ${startX} ${endY} L ${endX} ${endY}`;
+    } else {
+      // Overlapping: down through gap → left → down → right
+      const midY = (from.y + rowHeight + to.y) / 2;
+      const approachX = Math.min(from.x1, endX) - gap;
+      path = [
+        `M ${startX} ${startY}`,
+        `L ${startX} ${midY}`,
+        `L ${approachX} ${midY}`,
+        `L ${approachX} ${endY}`,
+        `L ${endX} ${endY}`,
+      ].join(" ");
+    }
+  } else if (to.y < from.y) {
+    // Target above: exit from top
+    startY = from.y + barPad;
+    if (startX <= endX) {
+      // Clear: L-shape up (1 bend)
+      path = `M ${startX} ${startY} L ${startX} ${endY} L ${endX} ${endY}`;
+    } else {
+      // Overlapping: up through gap → left → up → right
+      const midY = (to.y + rowHeight + from.y) / 2;
+      const approachX = Math.min(from.x1, endX) - gap;
+      path = [
+        `M ${startX} ${startY}`,
+        `L ${startX} ${midY}`,
+        `L ${approachX} ${midY}`,
+        `L ${approachX} ${endY}`,
+        `L ${endX} ${endY}`,
+      ].join(" ");
+    }
+  } else {
+    // Same row: exit bottom, route through gap between this row and the next
+    startY = from.y + rowHeight - barPad;
+    const midY = from.y + rowHeight;
+    const approachX = Math.min(from.x1, endX) - gap;
+    path = [
+      `M ${startX} ${startY}`,
+      `L ${startX} ${midY}`,
+      `L ${approachX} ${midY}`,
+      `L ${approachX} ${endY}`,
+      `L ${endX} ${endY}`,
+    ].join(" ");
   }
 
-  const fromY = from.y + midY;
-  const toY = to.y + midY;
-
-  // Simple path with a bend
-  const bendX = startX + (endX - startX) * 0.5;
-  const path = `M ${startX} ${fromY} C ${bendX} ${fromY}, ${bendX} ${toY}, ${endX} ${toY}`;
-
-  return { path, isCycle: false };
+  return { path };
 }

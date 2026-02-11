@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { filterTasks } from "../commands/task/list.js";
-import { applyTaskUpdate } from "../commands/task/update.js";
+import { applyTaskUpdate, filterTasksForUpdate } from "../commands/task/update.js";
+import { collectMilestones } from "../commands/milestone/list.js";
 import {
   addDependency,
   removeDependency,
@@ -37,7 +38,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-function makeConfig(): Config {
+function makeConfig(overrides: Partial<Config> = {}): Config {
   return {
     version: "1",
     project: {
@@ -60,6 +61,7 @@ function makeConfig(): Config {
       working_days: [1, 2, 3, 4, 5],
       colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
     },
+    ...overrides,
   };
 }
 
@@ -175,6 +177,192 @@ describe("applyTaskUpdate", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { title: "Changed" }, config);
     expect(result.task.updated_at).not.toBe(task.updated_at);
+  });
+
+  it("sets milestone", () => {
+    const task = makeTask();
+    const result = applyTaskUpdate(task, { milestone: "v1.0" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.milestone).toBe("v1.0");
+  });
+
+  it("clears milestone with 'none'", () => {
+    const task = makeTask({ milestone: "v1.0" });
+    const result = applyTaskUpdate(task, { milestone: "none" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.milestone).toBeNull();
+  });
+
+  it("adds label", () => {
+    const task = makeTask({ labels: ["bug"] });
+    const result = applyTaskUpdate(task, { label: "priority" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.labels).toEqual(["bug", "priority"]);
+  });
+
+  it("does not duplicate label", () => {
+    const task = makeTask({ labels: ["bug"] });
+    const result = applyTaskUpdate(task, { label: "bug" }, config);
+    expect(result.task.labels).toEqual(["bug"]);
+  });
+
+  it("removes label", () => {
+    const task = makeTask({ labels: ["bug", "priority"] });
+    const result = applyTaskUpdate(task, { removeLabel: "bug" }, config);
+    expect(result.task.labels).toEqual(["priority"]);
+  });
+
+  // --- status option with auto-date updates ---
+
+  describe("--status option", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    const configWithStatuses = makeConfig({
+      statuses: {
+        field_name: "Status",
+        values: {
+          "Todo": { color: "#ccc", done: false },
+          "In Progress": { color: "#36f", done: false, starts_work: true },
+          "Done": { color: "#0c0", done: true },
+        },
+      },
+    });
+
+    it("sets status custom field and start_date when starts_work", () => {
+      vi.useFakeTimers({ now: new Date("2026-03-15T12:00:00Z") });
+      const task = makeTask({ custom_fields: { Status: "Todo" } });
+      const result = applyTaskUpdate(task, { status: "In Progress" }, configWithStatuses);
+      expect(result.error).toBeUndefined();
+      expect(result.task.custom_fields.Status).toBe("In Progress");
+      expect(result.task.start_date).toBe("2026-03-15");
+      vi.useRealTimers();
+    });
+
+    it("sets end_date when transitioning to done status", () => {
+      vi.useFakeTimers({ now: new Date("2026-04-20T08:30:00Z") });
+      const task = makeTask({ custom_fields: { Status: "In Progress" }, start_date: "2026-03-15" });
+      const result = applyTaskUpdate(task, { status: "Done" }, configWithStatuses);
+      expect(result.error).toBeUndefined();
+      expect(result.task.custom_fields.Status).toBe("Done");
+      expect(result.task.end_date).toBe("2026-04-20");
+      vi.useRealTimers();
+    });
+
+    it("does not change dates for a non-special status", () => {
+      const task = makeTask({ custom_fields: { Status: "In Progress" }, start_date: "2026-03-15" });
+      const result = applyTaskUpdate(task, { status: "Todo" }, configWithStatuses);
+      expect(result.error).toBeUndefined();
+      expect(result.task.start_date).toBe("2026-03-15");
+      expect(result.task.end_date).toBeNull();
+    });
+
+    it("overwrites existing start_date on starts_work transition", () => {
+      vi.useFakeTimers({ now: new Date("2026-05-01T00:00:00Z") });
+      const task = makeTask({ custom_fields: { Status: "Todo" }, start_date: "2026-01-01" });
+      const result = applyTaskUpdate(task, { status: "In Progress" }, configWithStatuses);
+      expect(result.task.start_date).toBe("2026-05-01");
+      vi.useRealTimers();
+    });
+
+    it("rejects unknown status", () => {
+      const task = makeTask();
+      const result = applyTaskUpdate(task, { status: "NonExistent" }, configWithStatuses);
+      expect(result.error).toContain("Unknown status");
+      expect(result.error).toContain("NonExistent");
+    });
+  });
+});
+
+// --- filterTasksForUpdate (bulk) ---
+
+describe("filterTasksForUpdate", () => {
+  const tasks = [
+    makeTask({ id: "owner/repo#1", state: "open", type: "task", milestone: "v1.0", labels: ["bug"] }),
+    makeTask({ id: "owner/repo#2", state: "open", type: "epic", milestone: null, labels: ["feature"] }),
+    makeTask({ id: "owner/repo#3", state: "closed", type: "task", milestone: "v1.0", labels: ["bug", "feature"] }),
+    makeTask({ id: "owner/repo#4", state: "open", type: "task", milestone: null, labels: [] }),
+  ];
+
+  it("filters by state", () => {
+    const result = filterTasksForUpdate(tasks, { filterState: "closed" });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("owner/repo#3");
+  });
+
+  it("filters by type", () => {
+    const result = filterTasksForUpdate(tasks, { filterType: "epic" });
+    expect(result).toHaveLength(1);
+    expect(result[0].id).toBe("owner/repo#2");
+  });
+
+  it("filters by milestone", () => {
+    const result = filterTasksForUpdate(tasks, { filterMilestone: "v1.0" });
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#3"]);
+  });
+
+  it("filters by milestone 'none' for unset", () => {
+    const result = filterTasksForUpdate(tasks, { filterMilestone: "none" });
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2", "owner/repo#4"]);
+  });
+
+  it("filters by label", () => {
+    const result = filterTasksForUpdate(tasks, { filterLabel: "feature" });
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2", "owner/repo#3"]);
+  });
+
+  it("combines filters with AND logic", () => {
+    const result = filterTasksForUpdate(tasks, { filterState: "open", filterType: "task" });
+    expect(result).toHaveLength(2);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#4"]);
+  });
+});
+
+// --- collectMilestones ---
+
+describe("collectMilestones", () => {
+  it("collects milestone-type tasks", () => {
+    const tasks = [
+      makeTask({ id: "milestone:owner/repo#1", type: "milestone", title: "v1.0", date: "2026-06-01" }),
+    ];
+    const result = collectMilestones(tasks);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("v1.0");
+    expect(result[0].dueDate).toBe("2026-06-01");
+  });
+
+  it("collects milestone_type tasks", () => {
+    const tasks = [
+      makeTask({ id: "owner/repo#5", type: "milestone_type", title: "v1.0 Release", end_date: "2026-06-01" }),
+    ];
+    const result = collectMilestones(tasks);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("v1.0 Release");
+    expect(result[0].dueDate).toBe("2026-06-01");
+  });
+
+  it("counts tasks referencing milestones", () => {
+    const tasks = [
+      makeTask({ id: "milestone:owner/repo#1", type: "milestone", title: "v1.0", date: "2026-06-01" }),
+      makeTask({ id: "owner/repo#2", milestone: "v1.0" }),
+      makeTask({ id: "owner/repo#3", milestone: "v1.0" }),
+    ];
+    const result = collectMilestones(tasks);
+    expect(result).toHaveLength(1);
+    expect(result[0].taskCount).toBe(2);
+  });
+
+  it("discovers milestones from task references only", () => {
+    const tasks = [
+      makeTask({ id: "owner/repo#1", milestone: "v2.0" }),
+    ];
+    const result = collectMilestones(tasks);
+    expect(result).toHaveLength(1);
+    expect(result[0].name).toBe("v2.0");
+    expect(result[0].taskId).toBeNull();
+    expect(result[0].taskCount).toBe(1);
   });
 });
 

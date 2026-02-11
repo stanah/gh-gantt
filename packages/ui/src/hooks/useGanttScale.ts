@@ -24,7 +24,7 @@ function deriveViewScale(ppd: number): ViewScale {
 const MIN_PPD = 0.5;
 const MAX_PPD = 120;
 
-export function useGanttScale(tasks: Task[], initialView: ViewScale = "month") {
+export function useGanttScale(tasks: Task[], initialView: ViewScale = "month", minWidth = 800) {
   const [pixelsPerDay, setPixelsPerDay] = useState(PRESET_PPD[initialView]);
 
   const viewScale = deriveViewScale(pixelsPerDay);
@@ -33,15 +33,24 @@ export function useGanttScale(tasks: Task[], initialView: ViewScale = "month") {
     setPixelsPerDay(PRESET_PPD[scale]);
   }, []);
 
-  const [dateRange] = useMemo(() => {
-    const range = getDateRange(tasks);
-    return [range];
+  const baseDateRange = useMemo(() => {
+    return getDateRange(tasks);
   }, [tasks]);
 
   const totalDays = Math.ceil(
-    (dateRange[1].getTime() - dateRange[0].getTime()) / (1000 * 60 * 60 * 24),
+    (baseDateRange[1].getTime() - baseDateRange[0].getTime()) / (1000 * 60 * 60 * 24),
   );
-  const totalWidth = Math.max(totalDays * pixelsPerDay, 800);
+  const dataWidth = totalDays * pixelsPerDay;
+  const totalWidth = Math.max(dataWidth, minWidth || 800);
+
+  // When viewport is wider than data, extend the date range
+  // so the xScale maintains the correct pixelsPerDay ratio
+  const dateRange = useMemo<[Date, Date]>(() => {
+    if (totalWidth <= dataWidth) return baseDateRange;
+    const effectiveDays = totalWidth / pixelsPerDay;
+    const end = new Date(baseDateRange[0].getTime() + effectiveDays * 24 * 60 * 60 * 1000);
+    return [baseDateRange[0], end];
+  }, [baseDateRange, totalWidth, dataWidth, pixelsPerDay]);
 
   const xScale = useMemo(() => {
     return scaleTime()

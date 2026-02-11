@@ -40,6 +40,21 @@ describe("milestoneToTask", () => {
     expect(task.date).toBe("2026-03-01");
   });
 
+  it("normalizes ISO timestamp dueOn to YYYY-MM-DD", () => {
+    const m: RawMilestone = {
+      ...baseMilestone,
+      dueOn: "2026-05-31T00:00:00Z",
+    };
+    const task = milestoneToTask(m, "owner/repo");
+    expect(task.date).toBe("2026-05-31");
+  });
+
+  it("handles null dueOn", () => {
+    const m: RawMilestone = { ...baseMilestone, dueOn: null };
+    const task = milestoneToTask(m, "owner/repo");
+    expect(task.date).toBeNull();
+  });
+
   it("maps title and description", () => {
     const task = milestoneToTask(baseMilestone, "owner/repo");
     expect(task.title).toBe("v1.0");

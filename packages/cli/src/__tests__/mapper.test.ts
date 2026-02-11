@@ -42,12 +42,22 @@ describe("mergeRemoteIntoLocal", () => {
     expect(merged.title).toBe("Updated title");
   });
 
-  it("preserves local blocked_by", () => {
+  it("merges blocked_by using remote refs with local type/lag", () => {
+    const localDep = { task: "owner/repo#5", type: "start-to-start" as const, lag: 2 };
+    const remoteDep = { task: "owner/repo#5", type: "finish-to-start" as const, lag: 0 };
+    const local = { ...baseTask, blocked_by: [localDep] };
+    const remote = { ...baseTask, blocked_by: [remoteDep] };
+    const merged = mergeRemoteIntoLocal(local, remote);
+    // Remote ref exists, local type/lag preserved
+    expect(merged.blocked_by).toEqual([localDep]);
+  });
+
+  it("drops local blocked_by when remote has none", () => {
     const dep = { task: "owner/repo#5", type: "finish-to-start" as const, lag: 0 };
     const local = { ...baseTask, blocked_by: [dep] };
     const remote = { ...baseTask, blocked_by: [] };
     const merged = mergeRemoteIntoLocal(local, remote);
-    expect(merged.blocked_by).toEqual([dep]);
+    expect(merged.blocked_by).toEqual([]);
   });
 
   it("preserves local type when type field not configured", () => {

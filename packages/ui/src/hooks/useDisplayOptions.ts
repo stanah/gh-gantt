@@ -18,6 +18,11 @@ export function useDisplayOptions() {
 }
 
 export function formatIssueId(taskId: string): string {
+  if (taskId.startsWith("milestone:")) {
+    const hash = taskId.indexOf("#");
+    if (hash === -1) return "";
+    return "M" + taskId.substring(hash + 1);
+  }
   const hash = taskId.indexOf("#");
   if (hash === -1) return "";
   const suffix = taskId.substring(hash + 1);

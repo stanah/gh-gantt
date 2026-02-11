@@ -2,6 +2,7 @@ import { Command } from "commander";
 import Table from "cli-table3";
 import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
+import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Task } from "@gh-gantt/shared";
 
 export interface TaskFilterOptions {
@@ -37,9 +38,24 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
   return result;
 }
 
+function formatShortId(task: Task): string {
+  if (isMilestoneSyntheticTask(task.id)) {
+    const hash = task.id.indexOf("#");
+    return "M" + task.id.substring(hash + 1);
+  }
+  return task.id.includes("#") ? task.id.split("#")[1] : task.id;
+}
+
 function formatTable(tasks: Task[]): string {
+  const hasMilestones = tasks.some((t) => t.type === "milestone");
+  const hasNonMilestones = tasks.some((t) => t.type !== "milestone");
+
+  const head = hasMilestones && !hasNonMilestones
+    ? ["ID", "Type", "Title", "State", "Due"]
+    : ["ID", "Type", "Title", "State", "Start", "End"];
+
   const table = new Table({
-    head: ["ID", "Type", "Title", "State", "Start", "End"],
+    head,
     style: { head: [], border: [], compact: true },
     chars: {
       top: "", "top-mid": "", "top-left": "", "top-right": "",
@@ -50,8 +66,15 @@ function formatTable(tasks: Task[]): string {
   });
 
   for (const t of tasks) {
-    const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
-    table.push([shortId, t.type, t.title, t.state, t.start_date ?? "-", t.end_date ?? "-"]);
+    const shortId = formatShortId(t);
+    if (hasMilestones && !hasNonMilestones) {
+      table.push([shortId, t.type, t.title, t.state, t.date ?? "-"]);
+    } else {
+      const dates = t.type === "milestone"
+        ? [t.date ?? "-", "-"]
+        : [t.start_date ?? "-", t.end_date ?? "-"];
+      table.push([shortId, t.type, t.title, t.state, ...dates]);
+    }
   }
 
   return table.toString();

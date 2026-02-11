@@ -118,11 +118,17 @@ export const ISSUE_COMMENTS_QUERY = `
   }
 `;
 
-export const SUB_ISSUES_QUERY = `
+export const ISSUE_RELATIONSHIPS_QUERY = `
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
       issue(number: $number) {
         subIssues(first: 50) {
+          nodes {
+            number
+            repository { nameWithOwner }
+          }
+        }
+        blockedBy(first: 50) {
           nodes {
             number
             repository { nameWithOwner }

@@ -5,8 +5,8 @@ interface ProgressBarProps {
   color?: string;
 }
 
-export function ProgressBar({ progress }: ProgressBarProps) {
-  const fillColor = progress === 100 ? "#8957e5" : "#3fb950";
+export function ProgressBar({ progress, color }: ProgressBarProps) {
+  const fillColor = progress === 100 ? "#8957e5" : (color ?? "#3fb950");
   return (
     <div
       style={{

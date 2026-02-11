@@ -7,6 +7,7 @@ import { statusCommand } from "./commands/status.js";
 import { serveCommand } from "./commands/serve.js";
 import { createCommand } from "./commands/create.js";
 import { taskCommand } from "./commands/task/index.js";
+import { milestoneCommand } from "./commands/milestone/index.js";
 
 const program = new Command();
 program.name("gh-gantt").version("0.1.0").description("GitHub Projects Gantt chart");
@@ -17,4 +18,5 @@ program.addCommand(statusCommand);
 program.addCommand(serveCommand);
 program.addCommand(createCommand);
 program.addCommand(taskCommand);
+program.addCommand(milestoneCommand);
 program.parse();

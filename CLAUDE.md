@@ -74,3 +74,37 @@ pnpm typecheck
 - **Test framework**: Vitest (no separate config files, uses package.json scripts)
 - **TypeScript target**: ES2022, strict mode, bundler module resolution
 - **Local state directory**: `.gantt-sync/` (gitignored) holds all project data files
+
+## Task Management via CLI
+
+**IMPORTANT: `.gantt-sync/tasks.json` を直接編集してはならない。**
+常に CLI コマンドでタスクを管理すること。直接編集はバリデーションをバイパスし、同期状態を破損させる可能性がある。
+
+### よく使うコマンド
+```bash
+# タスク作成
+./gh-gantt create --title "タスク名" --type task --start-date 2026-03-01 --end-date 2026-03-15
+
+# タスク更新（単体）
+./gh-gantt task update 6 --milestone v1.0
+./gh-gantt task update 6 --start-date 2026-03-01 --end-date 2026-03-15
+./gh-gantt task update 6 --label priority
+
+# タスク更新（バルク）
+./gh-gantt task update --filter-state open --milestone v1.0
+
+# 依存関係・親子関係
+./gh-gantt task link 7 --blocked-by 6
+./gh-gantt task link 6 --set-parent draft-1
+
+# マイルストーン
+./gh-gantt milestone list
+./gh-gantt milestone create "v1.0" --due-date 2026-06-01
+
+# マイルストーン作成 → GitHub に反映
+./gh-gantt milestone create "v2.0" --due-date 2026-12-01
+./gh-gantt push  # GitHub Milestone が自動作成される（Issue ではなく Milestone として）
+
+# 同期
+./gh-gantt pull && ./gh-gantt push
+```

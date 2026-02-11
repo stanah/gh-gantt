@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import type { Config, TasksResponse, Task } from "../types/index.js";
+import { calculateProgress } from "../lib/progress.js";
 
 export function useApi() {
   const [config, setConfig] = useState<Config | null>(null);
@@ -46,13 +47,21 @@ export function useApi() {
     const updated = await res.json();
     setTasksResponse((prev) => {
       if (!prev) return prev;
-      return {
-        ...prev,
-        tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t)),
-      };
+      const tasks = prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t));
+      if (config) {
+        const { values, field_name } = config.statuses;
+        return {
+          ...prev,
+          tasks: tasks.map((t) => ({
+            ...t,
+            _progress: calculateProgress(t, tasks, values, field_name),
+          })),
+        };
+      }
+      return { ...prev, tasks };
     });
     return updated;
-  }, []);
+  }, [config]);
 
   return {
     config,

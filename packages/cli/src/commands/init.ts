@@ -30,13 +30,18 @@ export const initCommand = new Command("init")
     const statusField = projectData.fields.find(
       (f) => f.name === opts.statusField && f.options,
     );
-    const statusValues: Record<string, { color: string; done: boolean }> = {};
+    const statusValues: Record<string, { color: string; done: boolean; starts_work?: boolean }> = {};
     const defaultDoneNames = ["done", "completed", "closed", "finished"];
+    const defaultStartsWorkNames = ["in progress", "in review", "active", "working"];
     if (statusField?.options) {
       for (const opt of statusField.options) {
+        const lower = opt.name.toLowerCase();
+        const done = defaultDoneNames.includes(lower);
+        const startsWork = defaultStartsWorkNames.includes(lower);
         statusValues[opt.name] = {
           color: "#3498DB",
-          done: defaultDoneNames.includes(opt.name.toLowerCase()),
+          done,
+          ...(startsWork ? { starts_work: true } : {}),
         };
       }
     }

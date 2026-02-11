@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { ConfigSchema, GANTT_DIR, CONFIG_FILE } from "@gh-gantt/shared";
 import type { Config } from "@gh-gantt/shared";
 
+const DEFAULT_STARTS_WORK_NAMES = ["in progress", "in review", "active", "working"];
+
 export class ConfigStore {
   private path: string;
 
@@ -12,7 +14,14 @@ export class ConfigStore {
 
   async read(): Promise<Config> {
     const raw = await readFile(this.path, "utf-8");
-    return ConfigSchema.parse(JSON.parse(raw));
+    const config = ConfigSchema.parse(JSON.parse(raw));
+    // Auto-migrate: fill in starts_work for known status names
+    for (const [name, sv] of Object.entries(config.statuses.values)) {
+      if (sv.starts_work === undefined && DEFAULT_STARTS_WORK_NAMES.includes(name.toLowerCase())) {
+        sv.starts_work = true;
+      }
+    }
+    return config;
   }
 
   async write(config: Config): Promise<void> {

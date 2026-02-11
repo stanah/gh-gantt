@@ -2,15 +2,16 @@ import { Command } from "commander";
 import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
-import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
+import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import { fetchAllComments } from "../github/comments.js";
-import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
+import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
-import { hashTask } from "../sync/hash.js";
+import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { detectConflicts, type Conflict } from "../sync/conflict.js";
+import { formatValue } from "../util/format.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 
 export async function confirmConflicts(
@@ -21,12 +22,19 @@ export async function confirmConflicts(
   console.warn(`\nWARNING: ${conflicts.length} task(s) have conflicting changes:\n`);
   for (const c of conflicts) {
     console.warn(`  ! ${c.taskId}: ${c.title}`);
+    for (const d of c.fieldDetails) {
+      const isLocal = c.localChangedFields.includes(d.field);
+      const isRemote = c.remoteChangedFields.includes(d.field);
+      const tag = `[${isLocal ? "L" : " "}${isRemote ? "R" : " "}]`;
+      console.warn(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+    }
   }
   console.warn(
     "\nBoth local and remote versions changed since last sync.\n" +
       "Pulling will apply remote-wins merge: local changes to title, body,\n" +
       "dates, state, assignees, labels, milestone, and custom fields will be lost.\n" +
-      "Local-only fields (blocked_by) will be preserved. Parent and sub_tasks will be taken from remote.\n",
+      "Parent, sub_tasks, and blocked_by references will be taken from remote.\n" +
+      "Local blocked_by type/lag metadata will be preserved where the reference still exists.\n",
   );
 
   if (opts.dryRun) {
@@ -120,13 +128,14 @@ export const pullCommand = new Command("pull")
       }
     }
 
-    // Fetch and apply sub-issue links
+    // Fetch and apply sub-issue + blocked_by links
     const issueItems = projectData.items
       .filter((i) => i.content)
       .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-    const subIssueLinks = await fetchAllSubIssueLinks(gql, issueItems);
+    const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
     const remoteTaskArray = Array.from(remoteTasks.values());
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
+    applyBlockedByLinks(remoteTaskArray, blockedByLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
     // Re-build array after applying sub-issue links
@@ -166,7 +175,8 @@ export const pullCommand = new Command("pull")
         added++;
       } else {
         const remoteHash = hashTask(remoteTask);
-        const snapshotHash = syncState.snapshots[id]?.hash;
+        const snap = syncState.snapshots[id];
+        const snapshotHash = snap?.remoteHash ?? snap?.hash;
 
         if (remoteHash !== snapshotHash) {
           // Remote changed since last sync
@@ -207,10 +217,20 @@ export const pullCommand = new Command("pull")
     // Update snapshots
     const newSnapshots = { ...syncState.snapshots };
     for (const task of newTasks) {
+      const remoteTask = remoteTasks.get(task.id);
+      const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
+      const existing = syncState.snapshots[task.id];
+      // Preserve existing snapshot for unchanged tasks to protect unpushed local changes
+      if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+        newSnapshots[task.id] = { ...existing, remoteHash };
+        continue;
+      }
       newSnapshots[task.id] = {
         hash: hashTask(task),
         synced_at: new Date().toISOString(),
         updated_at: task.updated_at,
+        syncFields: extractSyncFields(task),
+        remoteHash,
       };
     }
     // Remove snapshots for deleted tasks

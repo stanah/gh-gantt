@@ -1,12 +1,20 @@
 import type { Task } from "@gh-gantt/shared";
 import { DRAFT_PREFIX } from "@gh-gantt/shared";
 import type { RawProjectItem, RawMilestone } from "./projects.js";
-import type { SubIssueLink } from "./sub-issues.js";
+import type { SubIssueLink, BlockedByLink } from "./sub-issues.js";
 
 const MILESTONE_PREFIX = "milestone:";
 
 export function isMilestoneSyntheticTask(taskId: string): boolean {
   return taskId.startsWith(MILESTONE_PREFIX);
+}
+
+export function buildMilestoneSyntheticId(repo: string, milestoneNumber: number): string {
+  return `${MILESTONE_PREFIX}${repo}#${milestoneNumber}`;
+}
+
+export function isMilestoneDraftTask(task: Task): boolean {
+  return isDraftTask(task.id) && task.type === "milestone";
 }
 
 export function milestoneToTask(m: RawMilestone, repo: string): Task {
@@ -31,7 +39,7 @@ export function milestoneToTask(m: RawMilestone, repo: string): Task {
     custom_fields: {},
     start_date: null,
     end_date: null,
-    date: m.dueOn,
+    date: m.dueOn ? m.dueOn.slice(0, 10) : null,
     blocked_by: [],
   };
 }
@@ -118,6 +126,27 @@ export function applySubIssueLinks(tasks: Task[], links: SubIssueLink[]): void {
         parent.sub_tasks.push(childId);
       }
       child.parent = parentId;
+    }
+  }
+}
+
+export function applyBlockedByLinks(tasks: Task[], links: BlockedByLink[]): void {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+
+  for (const link of links) {
+    const blockedId = buildTaskId(link.blockedRepo, link.blockedNumber);
+    const blockingId = buildTaskId(link.blockingRepo, link.blockingNumber);
+    const blockedTask = taskMap.get(blockedId);
+
+    if (blockedTask && taskMap.has(blockingId)) {
+      const alreadyLinked = blockedTask.blocked_by.some((d) => d.task === blockingId);
+      if (!alreadyLinked) {
+        blockedTask.blocked_by.push({
+          task: blockingId,
+          type: "finish-to-start",
+          lag: 0,
+        });
+      }
     }
   }
 }

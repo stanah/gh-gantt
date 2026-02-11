@@ -17,6 +17,7 @@ const TaskTypeSchema = z.object({
 const StatusValueSchema = z.object({
   color: z.string(),
   done: z.boolean(),
+  starts_work: z.boolean().optional(),
 });
 
 const StatusesSchema = z.object({
@@ -115,6 +116,23 @@ export const SyncStateSchema = z.object({
     hash: z.string(),
     synced_at: z.string(),
     updated_at: z.string().optional(),
+    syncFields: z.object({
+      title: z.string(),
+      body: z.string().nullable(),
+      state: z.enum(["open", "closed"]),
+      type: z.string(),
+      assignees: z.array(z.string()),
+      labels: z.array(z.string()),
+      milestone: z.string().nullable(),
+      custom_fields: z.record(z.unknown()),
+      parent: z.string().nullable(),
+      sub_tasks: z.array(z.string()),
+      start_date: z.string().nullable(),
+      end_date: z.string().nullable(),
+      date: z.string().nullable(),
+      blocked_by: z.array(DependencySchema),
+    }).optional(),
+    remoteHash: z.string().optional(),
   })),
   option_ids: z.record(z.record(z.string())).optional(),
 });
