@@ -2,8 +2,9 @@ import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, extractSyncFields } from "./hash.js";
-import { isDraftTask, isMilestoneSyntheticTask, buildTaskId } from "../github/issues.js";
+import { isDraftTask, isMilestoneSyntheticTask, isMilestoneDraftTask, buildTaskId, buildMilestoneSyntheticId } from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
+import { getToken } from "../github/auth.js";
 import {
   createIssue,
   addProjectItem,
@@ -11,6 +12,7 @@ import {
   updateIssue,
   setIssueState,
   updateProjectItemField,
+  createGithubMilestone,
 } from "../github/mutations.js";
 
 export interface PushResult {
@@ -57,14 +59,50 @@ export async function executePush(
   const nonSyntheticDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
   // Separate draft tasks from existing tasks
-  const draftDiffs = nonSyntheticDiffs.filter((d) => isDraftTask(d.id));
+  const allDraftDiffs = nonSyntheticDiffs.filter((d) => isDraftTask(d.id));
   const existingDiffs = nonSyntheticDiffs.filter((d) => !isDraftTask(d.id));
+
+  // Further separate milestone drafts from regular issue drafts
+  const draftMilestones = allDraftDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task));
+  const draftDiffs = allDraftDiffs.filter((d) => d.type === "deleted" || !isMilestoneDraftTask(d.task));
+
+  // Process milestone drafts first (must precede Issue creation for milestoneMap)
+  if (draftMilestones.length > 0) {
+    const token = await getToken();
+    for (const diff of draftMilestones) {
+      const task = diff.task;
+      const oldId = task.id;
+
+      const { number: milestoneNumber, nodeId } = await createGithubMilestone(
+        token,
+        owner,
+        repo,
+        {
+          title: task.title,
+          description: task.body ?? undefined,
+          dueOn: task.date ?? undefined,
+        },
+      );
+
+      // Convert to synthetic milestone ID
+      const newId = buildMilestoneSyntheticId(`${owner}/${repo}`, milestoneNumber);
+      task.id = newId;
+      task.github_issue = null;
+      task.github_repo = `${owner}/${repo}`;
+
+      // Update references in all tasks
+      replaceTaskIdReferences(tasksFile.tasks, oldId, newId);
+
+      result.created++;
+    }
+  }
 
   // Process draft tasks (create issues) if auto_create_issues is enabled
   if (config.sync.auto_create_issues && draftDiffs.length > 0) {
     const repositoryId = await fetchRepositoryId(gql, owner, repo);
 
     // Resolve labels, milestones, and assignees in bulk
+    // Re-fetch metadata to pick up newly created milestones
     const metadata = await fetchRepositoryMetadata(gql, owner, repo);
     const allAssignees = new Set<string>();
     for (const d of draftDiffs) {

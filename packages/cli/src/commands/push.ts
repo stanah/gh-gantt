@@ -5,7 +5,7 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
-import { isDraftTask } from "../github/issues.js";
+import { isDraftTask, isMilestoneDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
 
 export const pushCommand = new Command("push")
   .description("Push local changes to GitHub Project")
@@ -27,18 +27,31 @@ export const pushCommand = new Command("push")
       return;
     }
 
-    const draftCount = diffs.filter((d) => isDraftTask(d.id)).length;
-    const existingCount = diffs.length - draftCount;
+    // Exclude synthetic milestone tasks (read-only)
+    const pushableDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
-    console.log(`Found ${diffs.length} local change(s):`);
+    if (pushableDiffs.length === 0) {
+      console.log("No local changes to push.");
+      return;
+    }
+
+    const milestoneCount = pushableDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task)).length;
+    const draftCount = pushableDiffs.filter((d) => isDraftTask(d.id)).length - milestoneCount;
+    const existingCount = pushableDiffs.length - draftCount - milestoneCount;
+
+    console.log(`Found ${pushableDiffs.length} local change(s):`);
+    if (milestoneCount > 0) console.log(`  ${milestoneCount} milestone(s) to create`);
     if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
     if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
 
-    for (const diff of diffs) {
-      const symbol = diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
-      const draft = isDraftTask(diff.id) ? " [draft]" : "";
+    for (const diff of pushableDiffs) {
+      const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);
+      const symbol = isMilestone ? "*" : diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
+      const tag = isMilestone
+        ? ` [milestone${diff.task.date ? `, due: ${diff.task.date}` : ""}]`
+        : isDraftTask(diff.id) ? " [draft]" : "";
       const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
-      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${draft}${fields}`);
+      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
     }
 
     if (opts.dryRun) {

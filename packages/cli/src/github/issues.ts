@@ -9,6 +9,14 @@ export function isMilestoneSyntheticTask(taskId: string): boolean {
   return taskId.startsWith(MILESTONE_PREFIX);
 }
 
+export function buildMilestoneSyntheticId(repo: string, milestoneNumber: number): string {
+  return `${MILESTONE_PREFIX}${repo}#${milestoneNumber}`;
+}
+
+export function isMilestoneDraftTask(task: Task): boolean {
+  return isDraftTask(task.id) && task.type === "milestone";
+}
+
 export function milestoneToTask(m: RawMilestone, repo: string): Task {
   return {
     id: `${MILESTONE_PREFIX}${repo}#${m.number}`,

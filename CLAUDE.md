@@ -101,6 +101,10 @@ pnpm typecheck
 ./gh-gantt milestone list
 ./gh-gantt milestone create "v1.0" --due-date 2026-06-01
 
+# マイルストーン作成 → GitHub に反映
+./gh-gantt milestone create "v2.0" --due-date 2026-12-01
+./gh-gantt push  # GitHub Milestone が自動作成される（Issue ではなく Milestone として）
+
 # 同期
 ./gh-gantt pull && ./gh-gantt push
 ```

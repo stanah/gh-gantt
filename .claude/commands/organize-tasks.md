@@ -79,6 +79,11 @@
 ```bash
 ./gh-gantt milestone list [--json]
 ./gh-gantt milestone create "名前" [--due-date YYYY-MM-DD] [--description "説明"]
+
+# マイルストーンを GitHub に反映（push で自動作成）
+./gh-gantt milestone create "v2.0" --due-date 2026-12-01
+./gh-gantt push --dry-run  # "1 milestone(s) to create" が表示される
+./gh-gantt push            # GitHub Milestone が自動作成される
 ```
 
 ## タスク ID のショートハンド
