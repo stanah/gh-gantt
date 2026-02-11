@@ -49,12 +49,14 @@ export const pushCommand = new Command("push")
 
     const milestoneCount = pushableDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task)).length;
     const draftCount = pushableDiffs.filter((d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task)).length;
-    const existingCount = pushableDiffs.length - draftCount - milestoneCount;
+    const deletedCount = pushableDiffs.filter((d) => d.type === "deleted").length;
+    const existingCount = pushableDiffs.length - draftCount - milestoneCount - deletedCount;
 
     console.log(`Found ${pushableDiffs.length} local change(s):`);
     if (milestoneCount > 0) console.log(`  ${milestoneCount} milestone(s) to create`);
     if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
     if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
+    if (deletedCount > 0) console.log(`  ${deletedCount} deleted task(s)`);
 
     for (const diff of pushableDiffs) {
       const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);

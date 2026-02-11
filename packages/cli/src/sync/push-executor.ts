@@ -377,12 +377,13 @@ export async function executePush(
     const task = tasksFile.tasks.find((t) => t.id === id);
     if (task) {
       const existing = newSnapshots[id];
+      const newHash = hashTask(task);
       newSnapshots[id] = {
-        hash: hashTask(task),
+        hash: newHash,
         synced_at: new Date().toISOString(),
         syncFields: extractSyncFields(task),
         updated_at: existing?.updated_at,
-        remoteHash: existing?.remoteHash,
+        remoteHash: newHash,
       };
     }
   }

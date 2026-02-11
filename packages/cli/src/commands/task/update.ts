@@ -237,6 +237,12 @@ export const taskUpdateCommand = new Command("update")
           updatedTasks.push(result.task);
         }
 
+        if (updatedTasks.length === 0) {
+          console.error("All matched tasks failed to update.");
+          process.exitCode = 1;
+          return;
+        }
+
         await tasksStore.write(tasksFile);
 
         if (opts.json) {

@@ -158,7 +158,8 @@ export function createApiRouter(projectRoot: string): Router {
           start_date: updatedTask.start_date,
           end_date: updatedTask.end_date,
         });
-        Object.assign(updatedTask, dateUpdates);
+        if (dateUpdates.start_date && !updates.start_date) updatedTask.start_date = dateUpdates.start_date;
+        if (dateUpdates.end_date && !updates.end_date) updatedTask.end_date = dateUpdates.end_date;
       }
 
       // Prevent start > end regardless of how dates were changed
@@ -187,7 +188,7 @@ export function createApiRouter(projectRoot: string): Router {
       const task = tasksFile.tasks.find((t) => t.id === taskId);
 
       if (!task) {
-        res.status(400).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
+        res.status(404).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
         return;
       }
 
@@ -199,7 +200,7 @@ export function createApiRouter(projectRoot: string): Router {
       if (newParentId != null) {
         const parent = tasksFile.tasks.find((t) => t.id === newParentId);
         if (!parent) {
-          res.status(400).json({ error: "Parent task not found", code: "TASK_NOT_FOUND" });
+          res.status(404).json({ error: "Parent task not found", code: "TASK_NOT_FOUND" });
           return;
         }
 
@@ -347,11 +348,18 @@ export function createApiRouter(projectRoot: string): Router {
       const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
       for (const task of newTasks) {
         const remoteTask = remoteTasks.get(task.id);
+        const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
+        const existing = syncState.snapshots[task.id];
+        // Preserve existing snapshot for unchanged tasks to protect unpushed local changes
+        if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+          newSnapshots[task.id] = { ...existing, remoteHash };
+          continue;
+        }
         newSnapshots[task.id] = {
           hash: hashTask(task),
           synced_at: new Date().toISOString(),
           updated_at: task.updated_at,
-          remoteHash: remoteTask ? hashTask(remoteTask) : undefined,
+          remoteHash,
           syncFields: extractSyncFields(task),
         };
       }

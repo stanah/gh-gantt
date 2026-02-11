@@ -321,6 +321,7 @@ export function App() {
           if (!detailTask) return null;
           return (
             <TaskDetailPanel
+              key={selectedTaskId}
               task={detailTask}
               config={config}
               comments={cache.comments[selectedTaskId] ?? []}
