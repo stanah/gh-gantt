@@ -10,8 +10,13 @@ export function mapRemoteItemToTask(
   if (!item.content) return null;
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
-  const taskType = resolveTaskType(c.labels, config.task_types);
   const fm = config.sync.field_mapping;
+  const taskType = resolveTaskType(
+    c.labels,
+    item.fieldValues,
+    config.task_types,
+    fm.type,
+  );
 
   const customFields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item.fieldValues)) {
@@ -47,13 +52,14 @@ export function mapRemoteItemToTask(
 export function mergeRemoteIntoLocal(
   localTask: Task,
   remoteTask: Task,
+  options?: { typeFieldConfigured?: boolean },
 ): Task {
   return {
     ...remoteTask,
     // Preserve local-only fields
-    parent: localTask.parent,
-    sub_tasks: localTask.sub_tasks,
     blocked_by: localTask.blocked_by,
-    type: localTask.type,
+    date: localTask.date,
+    // Use remote type when custom field mapping is configured; otherwise preserve local
+    type: options?.typeFieldConfigured ? remoteTask.type : localTask.type,
   };
 }

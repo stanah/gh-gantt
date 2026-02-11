@@ -11,6 +11,7 @@ export function hashTask(task: Task): string {
     title: task.title,
     body: task.body,
     state: task.state,
+    type: task.type,
     assignees: [...task.assignees].sort(),
     labels: [...task.labels].sort(),
     milestone: task.milestone,

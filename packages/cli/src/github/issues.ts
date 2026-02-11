@@ -1,7 +1,40 @@
 import type { Task } from "@gh-gantt/shared";
 import { DRAFT_PREFIX } from "@gh-gantt/shared";
-import type { RawProjectItem } from "./projects.js";
+import type { RawProjectItem, RawMilestone } from "./projects.js";
 import type { SubIssueLink } from "./sub-issues.js";
+
+const MILESTONE_PREFIX = "milestone:";
+
+export function isMilestoneSyntheticTask(taskId: string): boolean {
+  return taskId.startsWith(MILESTONE_PREFIX);
+}
+
+export function milestoneToTask(m: RawMilestone, repo: string): Task {
+  return {
+    id: `${MILESTONE_PREFIX}${repo}#${m.number}`,
+    type: "milestone",
+    github_issue: null,
+    github_repo: repo,
+    parent: null,
+    sub_tasks: [],
+    title: m.title,
+    body: m.description ?? null,
+    state: m.state === "OPEN" ? "open" : "closed",
+    state_reason: null,
+    assignees: [],
+    labels: [],
+    milestone: null,
+    linked_prs: [],
+    created_at: "",
+    updated_at: "",
+    closed_at: m.closedAt ?? null,
+    custom_fields: {},
+    start_date: null,
+    end_date: null,
+    date: m.dueOn,
+    blocked_by: [],
+  };
+}
 
 export function buildTaskId(repo: string, issueNumber: number): string {
   return `${repo}#${issueNumber}`;

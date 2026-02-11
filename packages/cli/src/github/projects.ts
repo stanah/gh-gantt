@@ -82,9 +82,20 @@ export async function fetchProject(
   return { projectNodeId, projectTitle, fields, items };
 }
 
+export interface RawMilestone {
+  id: string;
+  title: string;
+  number: number;
+  dueOn: string | null;
+  description: string | null;
+  closedAt: string | null;
+  state: string; // "OPEN" | "CLOSED"
+}
+
 export interface RepositoryMetadata {
   labelMap: Map<string, string>; // name → node ID
   milestoneMap: Map<string, string>; // title → node ID
+  milestones: RawMilestone[];
 }
 
 export async function fetchRepositoryMetadata(
@@ -98,10 +109,20 @@ export async function fetchRepositoryMetadata(
     labelMap.set(l.name, l.id);
   }
   const milestoneMap = new Map<string, string>();
+  const milestones: RawMilestone[] = [];
   for (const m of result.repository.milestones.nodes) {
     milestoneMap.set(m.title, m.id);
+    milestones.push({
+      id: m.id,
+      title: m.title,
+      number: m.number,
+      dueOn: m.dueOn ?? null,
+      description: m.description ?? null,
+      closedAt: m.closedAt ?? null,
+      state: m.state ?? "OPEN",
+    });
   }
-  return { labelMap, milestoneMap };
+  return { labelMap, milestoneMap, milestones };
 }
 
 export async function fetchUserIds(

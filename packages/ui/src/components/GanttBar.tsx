@@ -2,6 +2,7 @@ import React from "react";
 import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
 import { parseDate } from "../lib/date-utils.js";
+import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 
 interface GanttBarProps {
@@ -13,9 +14,11 @@ interface GanttBarProps {
   onClick: () => void;
   isSelected: boolean;
   onDragStart?: (e: React.MouseEvent, mode: DragMode) => void;
+  showIssueId?: boolean;
+  showAssignees?: boolean;
 }
 
-export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart }: GanttBarProps) {
+export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees }: GanttBarProps) {
   if (!task.start_date || !task.end_date) return null;
 
   const x1 = xScale(parseDate(task.start_date));
@@ -49,21 +52,66 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         width={width * (progress / 100)}
         height={barHeight}
         rx={3}
-        fill={color}
+        fill={progress === 100 ? "#8957e5" : color}
         opacity={0.7}
       />
       {/* Label */}
-      {width > 60 && (
-        <text
-          x={x1 + 6}
-          y={barY + barHeight / 2 + 4}
-          fontSize={10}
-          fill="#333"
-          style={{ pointerEvents: "none" }}
-        >
-          {task.title.length > Math.floor(width / 7) ? task.title.slice(0, Math.floor(width / 7)) + "..." : task.title}
-        </text>
-      )}
+      {(() => {
+        const issueLabel = showIssueId ? formatIssueId(task.id) : "";
+        const prefix = issueLabel ? issueLabel + " " : "";
+        const fullText = prefix + task.title;
+        const charWidth = 7;
+        const padding = 12;
+        const fitsInside = fullText.length * charWidth + padding < width;
+
+        if (fitsInside) {
+          const maxChars = Math.floor((width - padding) / charWidth);
+          const label = fullText.length > maxChars
+            ? fullText.slice(0, maxChars) + "..."
+            : fullText;
+          return (
+            <text x={x1 + 6} y={barY + barHeight / 2 + 4}
+                  fontSize={10} fill="#333"
+                  style={{ pointerEvents: "none" }}>
+              {label}
+            </text>
+          );
+        }
+
+        const maxOutsideChars = 30;
+        const outsideLabel = fullText.length > maxOutsideChars
+          ? fullText.slice(0, maxOutsideChars) + "..."
+          : fullText;
+        return (
+          <text x={x1 + width + 4} y={barY + barHeight / 2 + 4}
+                fontSize={10} fill="#666"
+                style={{ pointerEvents: "none" }}>
+            {outsideLabel}
+          </text>
+        );
+      })()}
+      {/* Assignee - always outside bar, after label */}
+      {showAssignees && task.assignees.length > 0 && (() => {
+        const issueLabel = showIssueId ? formatIssueId(task.id) : "";
+        const prefix = issueLabel ? issueLabel + " " : "";
+        const fullText = prefix + task.title;
+        const charWidth = 7;
+        const fitsInside = fullText.length * charWidth + 12 < width;
+        const outsideLabelWidth = fitsInside
+          ? 0
+          : Math.min(fullText.length, 30) * charWidth + 8;
+        const assigneeX = x1 + width + 4 + outsideLabelWidth;
+        const assigneeText = task.assignees.length <= 2
+          ? task.assignees.map((a) => `@${a}`).join(" ")
+          : `@${task.assignees[0]} +${task.assignees.length - 1}`;
+        return (
+          <text x={assigneeX} y={barY + barHeight / 2 + 4}
+                fontSize={9} fill="#888"
+                style={{ pointerEvents: "none" }}>
+            {assigneeText}
+          </text>
+        );
+      })()}
 
       {/* Drag area (move) */}
       {onDragStart && (

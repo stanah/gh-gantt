@@ -7,8 +7,13 @@ export interface TreeNode {
   depth: number;
 }
 
+function isBacklog(task: Task): boolean {
+  return !task.start_date && !task.end_date && !task.date;
+}
+
 export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [backlogCollapsed, setBacklogCollapsed] = useState(true);
 
   const toggle = useCallback((taskId: string) => {
     setCollapsed((prev) => {
@@ -19,22 +24,36 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
     });
   }, []);
 
-  const tree = useMemo(() => {
+  const toggleBacklog = useCallback(() => {
+    setBacklogCollapsed((prev) => !prev);
+  }, []);
+
+  const { scheduledTree, backlogTree } = useMemo(() => {
     const filtered = tasks.filter((t) => enabledTypes.has(t.type));
-    const taskMap = new Map(filtered.map((t) => [t.id, t]));
 
-    const buildNode = (task: Task, depth: number): TreeNode => ({
-      task,
-      children: task.sub_tasks
-        .map((id) => taskMap.get(id))
-        .filter((t): t is Task => t != null && enabledTypes.has(t.type))
-        .map((child) => buildNode(child, depth + 1)),
-      depth,
-    });
+    const scheduledTasks = filtered.filter((t) => !isBacklog(t));
+    const backlogTasks = filtered.filter((t) => isBacklog(t));
 
-    // Root tasks: no parent, or parent not in our filtered set
-    const roots = filtered.filter((t) => !t.parent || !taskMap.has(t.parent));
-    return roots.map((t) => buildNode(t, 0));
+    const buildTree = (subset: Task[]) => {
+      const taskMap = new Map(subset.map((t) => [t.id, t]));
+
+      const buildNode = (task: Task, depth: number): TreeNode => ({
+        task,
+        children: task.sub_tasks
+          .map((id) => taskMap.get(id))
+          .filter((t): t is Task => t != null && enabledTypes.has(t.type))
+          .map((child) => buildNode(child, depth + 1)),
+        depth,
+      });
+
+      const roots = subset.filter((t) => !t.parent || !taskMap.has(t.parent));
+      return roots.map((t) => buildNode(t, 0));
+    };
+
+    return {
+      scheduledTree: buildTree(scheduledTasks),
+      backlogTree: buildTree(backlogTasks),
+    };
   }, [tasks, enabledTypes]);
 
   const flatList = useMemo(() => {
@@ -47,9 +66,44 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
         }
       }
     };
-    flatten(tree);
+    flatten(scheduledTree);
     return result;
-  }, [tree, collapsed]);
+  }, [scheduledTree, collapsed]);
 
-  return { tree, flatList, collapsed, toggle };
+  const backlogFlatList = useMemo(() => {
+    const result: TreeNode[] = [];
+    const flatten = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        result.push(node);
+        if (!collapsed.has(node.task.id) && node.children.length > 0) {
+          flatten(node.children);
+        }
+      }
+    };
+    flatten(backlogTree);
+    return result;
+  }, [backlogTree, collapsed]);
+
+  const backlogTotalCount = useMemo(() => {
+    let count = 0;
+    const countNodes = (nodes: TreeNode[]) => {
+      for (const node of nodes) {
+        count++;
+        countNodes(node.children);
+      }
+    };
+    countNodes(backlogTree);
+    return count;
+  }, [backlogTree]);
+
+  return {
+    tree: scheduledTree,
+    flatList,
+    collapsed,
+    toggle,
+    backlogFlatList,
+    backlogCollapsed,
+    backlogTotalCount,
+    toggleBacklog,
+  };
 }

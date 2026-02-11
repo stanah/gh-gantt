@@ -3,6 +3,7 @@ import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
 import { calculateSummaryDates } from "../lib/summary-calc.js";
 import { parseDate } from "../lib/date-utils.js";
+import { formatIssueId } from "../hooks/useDisplayOptions.js";
 
 interface GanttSummaryBarProps {
   task: Task;
@@ -11,9 +12,10 @@ interface GanttSummaryBarProps {
   xScale: ScaleTime<number, number>;
   y: number;
   height: number;
+  showIssueId?: boolean;
 }
 
-export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height }: GanttSummaryBarProps) {
+export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height, showIssueId }: GanttSummaryBarProps) {
   const dates = calculateSummaryDates(task, allTasks);
   if (!dates) return null;
 
@@ -36,6 +38,17 @@ export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height }:
       <rect x={x1} y={barY - 2} width={3} height={10} fill={color} />
       {/* Right bracket */}
       <rect x={x2 - 3} y={barY - 2} width={3} height={10} fill={color} />
+      {showIssueId && (
+        <text
+          x={x2 + 4}
+          y={barY + 9}
+          fontSize={9}
+          fill="#888"
+          style={{ pointerEvents: "none" }}
+        >
+          {formatIssueId(task.id)}
+        </text>
+      )}
     </g>
   );
 }

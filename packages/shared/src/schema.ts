@@ -10,6 +10,7 @@ const TaskTypeSchema = z.object({
   display: TaskDisplaySchema,
   color: z.string(),
   github_label: z.string().nullable(),
+  github_field_value: z.string().nullable().optional(),
   default_collapsed: z.boolean().optional(),
 });
 
@@ -71,6 +72,7 @@ export const ConfigSchema = z.object({
       start_date: z.string(),
       end_date: z.string(),
       status: z.string(),
+      type: z.string().nullable().optional(),
     }),
   }),
   task_types: z.record(TaskTypeSchema),
@@ -112,7 +114,9 @@ export const SyncStateSchema = z.object({
   snapshots: z.record(z.object({
     hash: z.string(),
     synced_at: z.string(),
+    updated_at: z.string().optional(),
   })),
+  option_ids: z.record(z.record(z.string())).optional(),
 });
 
 export { TaskSchema, DependencySchema, StatusesSchema };

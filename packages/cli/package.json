@@ -8,13 +8,14 @@
   },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
-    "dev": "tsup src/index.ts --format esm --watch",
+    "dev": "tsup src/index.ts --format esm --watch --onSuccess 'cd ../.. && node packages/cli/dist/index.js serve --api-only'",
     "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@gh-gantt/shared": "workspace:*",
     "@octokit/graphql": "^8.0.0",
+    "cli-table3": "^0.6.5",
     "commander": "^12.0.0",
     "express": "^4.21.0",
     "zod": "^3.23.0"

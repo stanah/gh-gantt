@@ -1,8 +1,8 @@
 import type { graphql } from "@octokit/graphql";
-import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask } from "./hash.js";
-import { isDraftTask, buildTaskId } from "../github/issues.js";
+import { isDraftTask, isMilestoneSyntheticTask, buildTaskId } from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
 import {
   createIssue,
@@ -53,9 +53,12 @@ export async function executePush(
   const fm = config.sync.field_mapping;
   const { owner, repo } = config.project.github;
 
+  // Filter out synthetic milestone tasks (read-only, managed by pull)
+  const nonSyntheticDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
+
   // Separate draft tasks from existing tasks
-  const draftDiffs = diffs.filter((d) => isDraftTask(d.id));
-  const existingDiffs = diffs.filter((d) => !isDraftTask(d.id));
+  const draftDiffs = nonSyntheticDiffs.filter((d) => isDraftTask(d.id));
+  const existingDiffs = nonSyntheticDiffs.filter((d) => !isDraftTask(d.id));
 
   // Process draft tasks (create issues) if auto_create_issues is enabled
   if (config.sync.auto_create_issues && draftDiffs.length > 0) {
@@ -124,6 +127,20 @@ export async function executePush(
           syncState.field_ids[fm.end_date],
           { date: task.end_date },
         );
+      }
+
+      // Set Type custom field
+      if (fm.type && syncState.field_ids[fm.type]) {
+        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        if (typeOptionId) {
+          await updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.type],
+            { singleSelectOptionId: typeOptionId },
+          );
+        }
       }
 
       // Update task ID from draft to real
@@ -209,6 +226,20 @@ export async function executePush(
         );
       }
 
+      // Update Type custom field if configured
+      if (fm.type && syncState.field_ids[fm.type]) {
+        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        if (typeOptionId) {
+          await updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            idEntry.project_item_id,
+            syncState.field_ids[fm.type],
+            { singleSelectOptionId: typeOptionId },
+          );
+        }
+      }
+
       result.updated++;
     }
   }
@@ -229,4 +260,15 @@ export async function executePush(
   };
 
   return { result, tasksFile, syncState };
+}
+
+function resolveTypeOptionId(
+  typeName: string,
+  taskTypes: Record<string, TaskType>,
+  typeFieldName: string,
+  optionIds?: Record<string, Record<string, string>>,
+): string | undefined {
+  const typeDef = taskTypes[typeName];
+  if (!typeDef?.github_field_value) return undefined;
+  return optionIds?.[typeFieldName]?.[typeDef.github_field_value];
 }

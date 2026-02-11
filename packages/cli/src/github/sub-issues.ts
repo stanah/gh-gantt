@@ -31,19 +31,24 @@ export async function fetchAllSubIssueLinks(
   gql: typeof graphql,
   items: Array<{ number: number; repository: string }>,
 ): Promise<SubIssueLink[]> {
+  const BATCH_SIZE = 10;
   const links: SubIssueLink[] = [];
 
-  for (const item of items) {
-    const [owner, repo] = item.repository.split("/");
-    const subIssues = await fetchSubIssues(gql, owner, repo, item.number);
-    for (const child of subIssues) {
-      links.push({
-        parentNumber: item.number,
-        parentRepo: item.repository,
-        childNumber: child.number,
-        childRepo: child.repository,
-      });
-    }
+  for (let i = 0; i < items.length; i += BATCH_SIZE) {
+    const batch = items.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (item) => {
+        const [owner, repo] = item.repository.split("/");
+        const subIssues = await fetchSubIssues(gql, owner, repo, item.number);
+        return subIssues.map((child) => ({
+          parentNumber: item.number,
+          parentRepo: item.repository,
+          childNumber: child.number,
+          childRepo: child.repository,
+        }));
+      }),
+    );
+    for (const batch of results) links.push(...batch);
   }
 
   return links;

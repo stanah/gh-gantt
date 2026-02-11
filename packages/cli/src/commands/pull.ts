@@ -1,17 +1,62 @@
 import { Command } from "commander";
+import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
-import { fetchProject } from "../github/projects.js";
+import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, isDraftTask } from "../github/issues.js";
+import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { hashTask } from "../sync/hash.js";
+import { detectConflicts, type Conflict } from "../sync/conflict.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
+
+export async function confirmConflicts(
+  conflicts: Conflict[],
+  opts: { dryRun?: boolean; force?: boolean },
+  io: { isTTY: boolean; createPrompt: () => { question(q: string): Promise<string>; close(): void } },
+): Promise<{ action: "proceed" | "abort" }> {
+  console.warn(`\nWARNING: ${conflicts.length} task(s) have conflicting changes:\n`);
+  for (const c of conflicts) {
+    console.warn(`  ! ${c.taskId}: ${c.title}`);
+  }
+  console.warn(
+    "\nBoth local and remote versions changed since last sync.\n" +
+      "Pulling will apply remote-wins merge: local changes to title, body,\n" +
+      "dates, state, assignees, labels, milestone, and custom fields will be lost.\n" +
+      "Local-only fields (blocked_by) will be preserved. Parent and sub_tasks will be taken from remote.\n",
+  );
+
+  if (opts.dryRun) {
+    return { action: "proceed" };
+  }
+
+  if (opts.force) {
+    console.warn("--force specified, proceeding with remote-wins merge.\n");
+    return { action: "proceed" };
+  }
+
+  if (!io.isTTY) {
+    console.error("Non-interactive environment detected. Use --force to skip confirmation.");
+    return { action: "abort" };
+  }
+
+  const rl = io.createPrompt();
+  try {
+    const answer = await rl.question("Proceed with remote-wins merge? (y/N): ");
+    if (answer.trim().toLowerCase() === "y") {
+      return { action: "proceed" };
+    }
+    return { action: "abort" };
+  } finally {
+    rl.close();
+  }
+}
 
 export const pullCommand = new Command("pull")
   .description("Pull latest changes from GitHub Project")
   .option("--dry-run", "Show changes without applying")
+  .option("--force", "Skip conflict confirmation prompt")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -35,6 +80,39 @@ export const pullCommand = new Command("pull")
       if (task) remoteTasks.set(task.id, task);
     }
 
+    // Fetch native GitHub Milestones and inject synthetic tasks
+    // (before early-return check so milestone changes are detected)
+    const { owner: repoOwner, repo: repoName } = config.project.github;
+    const repoFullName = `${repoOwner}/${repoName}`;
+    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
+    for (const m of repoMetadata.milestones) {
+      if (!m.dueOn) continue;
+      const syntheticTask = milestoneToTask(m, repoFullName);
+      remoteTasks.set(syntheticTask.id, syntheticTask);
+    }
+
+    // Quick check: skip sub-issues fetch if no remote changes
+    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
+    const localIds = new Set(localNonDraft.map((t) => t.id));
+    const remoteIds = new Set(remoteTasks.keys());
+    const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
+    if (sameIdSets) {
+      let changed = false;
+      for (const [id, remote] of remoteTasks) {
+        const snap = syncState.snapshots[id];
+        if (!snap?.updated_at) { changed = true; break; }
+        if (remote.updated_at !== snap.updated_at) { changed = true; break; }
+        // For synthetic milestones, compare date (dueOn) via hash
+        if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
+      }
+      if (!changed) {
+        console.log("No remote changes detected, skipping sub-issues fetch.");
+        console.log(`Pull summary: +0 ~0 -0`);
+        console.log("Pull complete.");
+        return;
+      }
+    }
+
     // Fetch and apply sub-issue links
     const issueItems = projectData.items
       .filter((i) => i.content)
@@ -43,6 +121,23 @@ export const pullCommand = new Command("pull")
     const remoteTaskArray = Array.from(remoteTasks.values());
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
+
+    // Re-build array after applying sub-issue links
+    const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
+
+    const typeFieldConfigured = !!config.sync.field_mapping.type;
+
+    const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArrayWithMilestones, syncState);
+    if (conflicts.length > 0) {
+      const result = await confirmConflicts(conflicts, opts, {
+        isTTY: !!(process.stdin.isTTY && process.stdout.isTTY),
+        createPrompt: () => createInterface({ input: process.stdin, output: process.stdout }),
+      });
+      if (result.action === "abort") {
+        process.exitCode = 1;
+        return;
+      }
+    }
 
     const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
 
@@ -68,7 +163,7 @@ export const pullCommand = new Command("pull")
 
         if (remoteHash !== snapshotHash) {
           // Remote changed since last sync
-          const merged = mergeRemoteIntoLocal(localTask, remoteTask);
+          const merged = mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured });
           if (opts.dryRun) {
             console.log(`  ~ ${id}: ${remoteTask.title}`);
           }
@@ -108,6 +203,7 @@ export const pullCommand = new Command("pull")
       newSnapshots[task.id] = {
         hash: hashTask(task),
         synced_at: new Date().toISOString(),
+        updated_at: task.updated_at,
       };
     }
     // Remove snapshots for deleted tasks
@@ -115,11 +211,24 @@ export const pullCommand = new Command("pull")
       delete newSnapshots[id];
     }
 
+    // Update option_ids from latest project data
+    const optionIds: Record<string, Record<string, string>> = {};
+    for (const field of projectData.fields) {
+      if (field.options && field.options.length > 0) {
+        const optMap: Record<string, string> = {};
+        for (const opt of field.options) {
+          optMap[opt.name] = opt.id;
+        }
+        optionIds[field.name] = optMap;
+      }
+    }
+
     await tasksStore.write({ tasks: newTasks, cache: tasksFile.cache });
     await stateStore.write({
       ...syncState,
       last_synced_at: new Date().toISOString(),
       snapshots: newSnapshots,
+      option_ids: optionIds,
     });
 
     console.log("Pull complete.");
