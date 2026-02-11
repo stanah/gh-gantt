@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import type { Task, Config } from "../types/index.js";
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { StatusBadge } from "./StatusBadge.js";
@@ -15,11 +15,44 @@ interface TaskDetailPanelProps {
 export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: TaskDetailPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
+  const [copyFeedback, setCopyFeedback] = useState(false);
   const statusFieldName = config.statuses.field_name;
   const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
   const statusOptions = Object.keys(config.statuses.values);
   const taskType = config.task_types[task.type];
   const isMilestone = task.type === "milestone";
+
+  const copyTaskInfo = useCallback(() => {
+    const ref = task.github_issue
+      ? `${task.github_repo}#${task.github_issue}`
+      : task.id;
+    const info: Record<string, unknown> = {
+      ref,
+      title: task.title,
+      type: task.type,
+      state: task.state,
+      status: currentStatus ?? null,
+    };
+    if (task.body) info.description = task.body;
+    if (task.assignees.length > 0) info.assignees = task.assignees;
+    if (task.labels.length > 0) info.labels = task.labels;
+    if (task.milestone) info.milestone = task.milestone;
+    if (isMilestone) {
+      if (task.date) info.due_date = task.date;
+    } else {
+      if (task.start_date) info.start_date = task.start_date;
+      if (task.end_date) info.end_date = task.end_date;
+    }
+    if (task.parent) info.parent = task.parent;
+    if (task.sub_tasks.length > 0) info.sub_tasks = task.sub_tasks;
+    if (task.blocked_by.length > 0) info.blocked_by = task.blocked_by.map((d) => d.task);
+    if (task.linked_prs.length > 0) info.linked_prs = task.linked_prs;
+
+    navigator.clipboard.writeText(JSON.stringify(info, null, 2)).then(() => {
+      setCopyFeedback(true);
+      setTimeout(() => setCopyFeedback(false), 1500);
+    });
+  }, [task, currentStatus, isMilestone]);
 
   const githubUrl = isMilestone
     ? task.github_repo
@@ -34,7 +67,29 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
       {/* Header */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #e0e0e0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 11, color: "#888" }}>{task.id}</span>
-        <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#888" }}>x</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          <button
+            onClick={copyTaskInfo}
+            title="Copy task info as JSON"
+            style={{
+              border: "none", background: "none",
+              cursor: "pointer", color: copyFeedback ? "#27AE60" : "#888",
+              padding: 4, display: "flex", alignItems: "center", transition: "color 0.2s",
+            }}
+          >
+            {copyFeedback ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="4 8.5 6.5 11 12 5" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="5.5" y="5.5" width="8" height="9" rx="1" />
+                <path d="M10.5 5.5V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v7.5a1 1 0 0 0 1 1h2.5" />
+              </svg>
+            )}
+          </button>
+          <button onClick={onClose} style={{ border: "none", background: "none", fontSize: 18, cursor: "pointer", color: "#888" }}>x</button>
+        </div>
       </div>
 
       <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
