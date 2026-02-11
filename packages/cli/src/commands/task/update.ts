@@ -88,6 +88,7 @@ export const taskUpdateCommand = new Command("update")
 
     if (taskIndex === -1) {
       console.error(`Task not found: ${resolvedId}`);
+      process.exitCode = 1;
       return;
     }
 
@@ -103,6 +104,7 @@ export const taskUpdateCommand = new Command("update")
 
     if (result.error) {
       console.error(result.error);
+      process.exitCode = 1;
       return;
     }
 

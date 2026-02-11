@@ -87,6 +87,8 @@ export function App() {
       } else {
         showToast(`Pull complete: ${added} added, ${updated} updated, ${removed} removed`, "success");
       }
+    } catch (err) {
+      showToast(`Pull failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setSyncing(null);
     }
@@ -107,6 +109,8 @@ export function App() {
       } else {
         showToast(`Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`, "success");
       }
+    } catch (err) {
+      showToast(`Push failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setSyncing(null);
     }

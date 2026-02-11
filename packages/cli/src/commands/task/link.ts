@@ -56,7 +56,7 @@ export function removeParent(tasks: Task[], taskId: string): Task[] {
       return { ...t, parent: null, updated_at: new Date().toISOString() };
     }
     if (oldParentId && t.id === oldParentId) {
-      return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId) };
+      return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId), updated_at: new Date().toISOString() };
     }
     return t;
   });
@@ -83,6 +83,7 @@ export const taskLinkCommand = new Command("link")
 
     if (taskIndex === -1) {
       console.error(`Task not found: ${resolvedId}`);
+      process.exitCode = 1;
       return;
     }
 
@@ -109,6 +110,7 @@ export const taskLinkCommand = new Command("link")
       const parentExists = tasksFile.tasks.some((t) => t.id === parentId);
       if (!parentExists) {
         console.error(`Parent task not found: ${parentId}`);
+        process.exitCode = 1;
         return;
       }
       tasksFile.tasks = setParent(tasksFile.tasks, resolvedId, parentId);

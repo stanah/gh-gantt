@@ -37,7 +37,7 @@ Optionally visualize with `gh-gantt serve` (opens Gantt chart at http://localhos
 
 Create a feature branch from the issue:
 
-```
+```bash
 feat/issue-<number>-<short-description>    # features
 fix/issue-<number>-<short-description>     # bug fixes
 ```

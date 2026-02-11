@@ -96,7 +96,8 @@ export const initCommand = new Command("init")
           taskTypes.task.github_field_value = opt.name;
         } else {
           // Unknown field value → create as bar type
-          taskTypes[lower] = { label: opt.name, display: "bar", color: "#95A5A6", github_label: null, github_field_value: opt.name };
+          const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          taskTypes[key] = { label: opt.name, display: "bar", color: "#95A5A6", github_label: null, github_field_value: opt.name };
         }
       }
     }

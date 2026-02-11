@@ -45,6 +45,7 @@ export const taskShowCommand = new Command("show")
 
     if (!task) {
       console.error(`Task not found: ${resolvedId}`);
+      process.exitCode = 1;
       return;
     }
 

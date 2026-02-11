@@ -59,6 +59,7 @@ export function mergeRemoteIntoLocal(
     ...remoteTask,
     // Preserve local-only fields
     blocked_by: localTask.blocked_by,
+    date: localTask.date,
     // Use remote type when custom field mapping is configured; otherwise preserve local
     type: options?.typeFieldConfigured ? remoteTask.type : localTask.type,
   };
