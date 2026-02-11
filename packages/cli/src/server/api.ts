@@ -405,12 +405,12 @@ export function createApiRouter(projectRoot: string): Router {
         return;
       }
 
+      const config = await configStore.read();
+
       if (dry_run) {
-        res.json(formatDiffPreview(diffs));
+        res.json(formatDiffPreview(diffs, { autoCreateIssues: config.sync.auto_create_issues }));
         return;
       }
-
-      const config = await configStore.read();
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
         await executePush(gql, config, tasksFile, syncState);
@@ -460,6 +460,7 @@ function computeProgress(
 
   if (task.sub_tasks.length > 0) {
     const taskMap = new Map(allTasks.map((t) => [t.id, t]));
+    visited.add(task.id);
     let total = 0;
     let done = 0;
     for (const childId of task.sub_tasks) {

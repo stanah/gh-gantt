@@ -58,7 +58,8 @@ export function computeLocalDiff(
   return diffs;
 }
 
-export function estimateApiCalls(diffs: TaskDiff[]): number {
+export function estimateApiCalls(diffs: TaskDiff[], options?: { autoCreateIssues?: boolean }): number {
+  const autoCreate = options?.autoCreateIssues ?? true;
   let calls = 0;
   for (const diff of diffs) {
     if (diff.type === "deleted") continue;
@@ -66,7 +67,7 @@ export function estimateApiCalls(diffs: TaskDiff[]): number {
       if (isMilestoneDraftTask(diff.task)) {
         // createGithubMilestone via REST
         calls += 1;
-      } else {
+      } else if (autoCreate) {
         // createIssue + addProjectItem + up to 4 field updates
         calls += 6;
       }
@@ -92,8 +93,9 @@ export interface DiffPreview {
   changes: DiffPreviewChange[];
 }
 
-export function formatDiffPreview(diffs: TaskDiff[]): DiffPreview {
+export function formatDiffPreview(diffs: TaskDiff[], options?: { autoCreateIssues?: boolean }): DiffPreview {
   const pushable = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
+  const autoCreate = options?.autoCreateIssues ?? true;
 
   let create = 0;
   let update = 0;
@@ -106,13 +108,17 @@ export function formatDiffPreview(diffs: TaskDiff[]): DiffPreview {
       continue;
     }
     if (isDraftTask(diff.id)) {
-      create++;
-      changes.push({
-        id: diff.id,
-        title: diff.task.title,
-        type: "added",
-        changedFields: diff.changedFields,
-      });
+      if (autoCreate || isMilestoneDraftTask(diff.task)) {
+        create++;
+        changes.push({
+          id: diff.id,
+          title: diff.task.title,
+          type: "added",
+          changedFields: diff.changedFields,
+        });
+      } else {
+        skip++;
+      }
     } else if (diff.type === "modified") {
       update++;
       changes.push({
@@ -127,7 +133,7 @@ export function formatDiffPreview(diffs: TaskDiff[]): DiffPreview {
   return {
     preview: true,
     summary: { create, update, skip },
-    estimated_api_calls: estimateApiCalls(pushable),
+    estimated_api_calls: estimateApiCalls(pushable, options),
     changes,
   };
 }

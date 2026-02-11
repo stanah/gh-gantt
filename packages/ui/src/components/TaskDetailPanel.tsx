@@ -207,7 +207,7 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
               onChange={(e) => onUpdate({ type: e.target.value })}
               style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
             >
-              {Object.entries(config.task_types).map(([name, def]) => (
+              {Object.entries(config.task_types).filter(([name]) => name !== "milestone").map(([name, def]) => (
                 <option key={name} value={name}>{def.label}</option>
               ))}
             </select>

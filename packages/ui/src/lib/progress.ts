@@ -14,6 +14,7 @@ export function calculateProgress(
 
   if (task.sub_tasks.length > 0) {
     const taskMap = new Map(allTasks.map((t) => [t.id, t]));
+    visited.add(task.id);
     let total = 0;
     let done = 0;
     for (const childId of task.sub_tasks) {
