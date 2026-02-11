@@ -3,6 +3,7 @@ import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Config, Task } from "@gh-gantt/shared";
+import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -10,6 +11,7 @@ export interface TaskUpdateOptions {
   title?: string;
   type?: string;
   state?: "open" | "closed";
+  status?: string;
   startDate?: string;
   endDate?: string;
   assignee?: string;
@@ -70,6 +72,24 @@ export function applyTaskUpdate(
     updated.milestone = opts.milestone === "none" ? null : opts.milestone;
   }
 
+  if (opts.status) {
+    const statusField = config.statuses.field_name;
+    if (!config.statuses.values[opts.status]) {
+      return {
+        task,
+        error: `Unknown status: "${opts.status}". Available: ${Object.keys(config.statuses.values).join(", ")}`,
+      };
+    }
+    const oldStatus = updated.custom_fields[statusField] as string | undefined;
+    updated.custom_fields = { ...updated.custom_fields, [statusField]: opts.status };
+    const dateUpdates = computeStatusDateUpdates(oldStatus, opts.status, config.statuses.values, {
+      start_date: updated.start_date,
+      end_date: updated.end_date,
+    });
+    if (dateUpdates.start_date) updated.start_date = dateUpdates.start_date;
+    if (dateUpdates.end_date) updated.end_date = dateUpdates.end_date;
+  }
+
   if (opts.label) {
     if (!updated.labels.includes(opts.label)) {
       updated.labels = [...updated.labels, opts.label];
@@ -126,6 +146,7 @@ export const taskUpdateCommand = new Command("update")
   .option("--remove-assignee <login>", "Remove assignee")
   .option("--milestone <name>", "Set milestone ('none' to clear)")
   .option("--label <name>", "Add label")
+  .option("--status <status>", "Set status (auto-updates dates based on transition)")
   .option("--remove-label <name>", "Remove label")
   .option("--filter-state <state>", "Bulk filter: match tasks by state")
   .option("--filter-type <type>", "Bulk filter: match tasks by type")
@@ -145,6 +166,7 @@ export const taskUpdateCommand = new Command("update")
         title: opts.title,
         type: opts.type,
         state: opts.state,
+        status: opts.status,
         startDate: opts.startDate,
         endDate: opts.endDate,
         assignee: opts.assignee,

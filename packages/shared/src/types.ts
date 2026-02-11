@@ -15,6 +15,7 @@ export interface TaskType {
 export interface StatusValue {
   color: string;
   done: boolean;
+  starts_work?: boolean;
 }
 
 export interface Statuses {

@@ -17,6 +17,7 @@ const TaskTypeSchema = z.object({
 const StatusValueSchema = z.object({
   color: z.string(),
   done: z.boolean(),
+  starts_work: z.boolean().optional(),
 });
 
 const StatusesSchema = z.object({

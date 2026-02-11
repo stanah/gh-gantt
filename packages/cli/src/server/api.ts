@@ -13,6 +13,7 @@ import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
 import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
+import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
 export function createApiRouter(projectRoot: string): Router {
   const router = Router();
@@ -143,7 +144,22 @@ export function createApiRouter(projectRoot: string): Router {
         return;
       }
 
-      const updatedTask = { ...tasksFile.tasks[idx], ...updates };
+      const oldTask = tasksFile.tasks[idx];
+      const updatedTask = { ...oldTask, ...updates };
+
+      // Auto-update dates on status transition
+      const config = await configStore.read();
+      const statusField = config.statuses.field_name;
+      const oldStatus = oldTask.custom_fields[statusField] as string | undefined;
+      const newStatus = updatedTask.custom_fields[statusField] as string | undefined;
+      if (newStatus && oldStatus !== newStatus) {
+        const dateUpdates = computeStatusDateUpdates(oldStatus, newStatus, config.statuses.values, {
+          start_date: updatedTask.start_date,
+          end_date: updatedTask.end_date,
+        });
+        Object.assign(updatedTask, dateUpdates);
+      }
+
       tasksFile.tasks[idx] = updatedTask;
       await tasksStore.write(tasksFile);
 
