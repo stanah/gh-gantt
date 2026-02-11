@@ -54,10 +54,16 @@ export function mergeRemoteIntoLocal(
   remoteTask: Task,
   options?: { typeFieldConfigured?: boolean },
 ): Task {
+  // Merge blocked_by: use remote references as base, preserve local type/lag
+  const mergedBlockedBy = remoteTask.blocked_by.map((remoteDep) => {
+    const localMatch = localTask.blocked_by.find((d) => d.task === remoteDep.task);
+    return localMatch ?? remoteDep;
+  });
+
   return {
     ...remoteTask,
-    // Preserve local-only fields
-    blocked_by: localTask.blocked_by,
+    // Merge remote blocked_by refs with local type/lag metadata
+    blocked_by: mergedBlockedBy,
     date: localTask.date,
     // Use remote type when custom field mapping is configured; otherwise preserve local
     type: options?.typeFieldConfigured ? remoteTask.type : localTask.type,

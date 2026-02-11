@@ -2,9 +2,9 @@ import { Command } from "commander";
 import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
-import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
+import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import { fetchAllComments } from "../github/comments.js";
-import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
+import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -26,7 +26,8 @@ export async function confirmConflicts(
     "\nBoth local and remote versions changed since last sync.\n" +
       "Pulling will apply remote-wins merge: local changes to title, body,\n" +
       "dates, state, assignees, labels, milestone, and custom fields will be lost.\n" +
-      "Local-only fields (blocked_by) will be preserved. Parent and sub_tasks will be taken from remote.\n",
+      "Parent, sub_tasks, and blocked_by references will be taken from remote.\n" +
+      "Local blocked_by type/lag metadata will be preserved where the reference still exists.\n",
   );
 
   if (opts.dryRun) {
@@ -120,13 +121,14 @@ export const pullCommand = new Command("pull")
       }
     }
 
-    // Fetch and apply sub-issue links
+    // Fetch and apply sub-issue + blocked_by links
     const issueItems = projectData.items
       .filter((i) => i.content)
       .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-    const subIssueLinks = await fetchAllSubIssueLinks(gql, issueItems);
+    const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
     const remoteTaskArray = Array.from(remoteTasks.values());
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
+    applyBlockedByLinks(remoteTaskArray, blockedByLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
     // Re-build array after applying sub-issue links

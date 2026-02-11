@@ -1,5 +1,5 @@
 import type { graphql } from "@octokit/graphql";
-import { SUB_ISSUES_QUERY } from "./queries.js";
+import { ISSUE_RELATIONSHIPS_QUERY } from "./queries.js";
 
 export interface SubIssueLink {
   parentNumber: number;
@@ -8,48 +8,87 @@ export interface SubIssueLink {
   childRepo: string;
 }
 
-export async function fetchSubIssues(
+export interface BlockedByLink {
+  blockedNumber: number;
+  blockedRepo: string;
+  blockingNumber: number;
+  blockingRepo: string;
+}
+
+export interface IssueRelationships {
+  subIssues: Array<{ number: number; repository: string }>;
+  blockedBy: Array<{ number: number; repository: string }>;
+}
+
+export async function fetchIssueRelationships(
   gql: typeof graphql,
   owner: string,
   repo: string,
   issueNumber: number,
-): Promise<Array<{ number: number; repository: string }>> {
+): Promise<IssueRelationships> {
   try {
-    const result: any = await gql(SUB_ISSUES_QUERY, { owner, repo, number: issueNumber });
-    const subIssues = result.repository.issue.subIssues.nodes;
-    return subIssues.map((si: any) => ({
-      number: si.number,
-      repository: si.repository.nameWithOwner,
-    }));
+    const result: any = await gql(ISSUE_RELATIONSHIPS_QUERY, { owner, repo, number: issueNumber });
+    const issue = result.repository.issue;
+    return {
+      subIssues: (issue.subIssues?.nodes ?? []).map((si: any) => ({
+        number: si.number,
+        repository: si.repository.nameWithOwner,
+      })),
+      blockedBy: (issue.blockedBy?.nodes ?? []).map((bi: any) => ({
+        number: bi.number,
+        repository: bi.repository.nameWithOwner,
+      })),
+    };
   } catch {
-    // Sub-issues API may not be available for all repos
-    return [];
+    // Relationships API may not be available for all repos
+    return { subIssues: [], blockedBy: [] };
   }
 }
 
-export async function fetchAllSubIssueLinks(
+export async function fetchAllIssueRelationshipLinks(
   gql: typeof graphql,
   items: Array<{ number: number; repository: string }>,
-): Promise<SubIssueLink[]> {
+): Promise<{ subIssueLinks: SubIssueLink[]; blockedByLinks: BlockedByLink[] }> {
   const BATCH_SIZE = 10;
-  const links: SubIssueLink[] = [];
+  const subIssueLinks: SubIssueLink[] = [];
+  const blockedByLinks: BlockedByLink[] = [];
 
   for (let i = 0; i < items.length; i += BATCH_SIZE) {
     const batch = items.slice(i, i + BATCH_SIZE);
     const results = await Promise.all(
       batch.map(async (item) => {
         const [owner, repo] = item.repository.split("/");
-        const subIssues = await fetchSubIssues(gql, owner, repo, item.number);
-        return subIssues.map((child) => ({
-          parentNumber: item.number,
-          parentRepo: item.repository,
-          childNumber: child.number,
-          childRepo: child.repository,
-        }));
+        const rels = await fetchIssueRelationships(gql, owner, repo, item.number);
+        return {
+          subIssues: rels.subIssues.map((child) => ({
+            parentNumber: item.number,
+            parentRepo: item.repository,
+            childNumber: child.number,
+            childRepo: child.repository,
+          })),
+          blockedBy: rels.blockedBy.map((blocker) => ({
+            blockedNumber: item.number,
+            blockedRepo: item.repository,
+            blockingNumber: blocker.number,
+            blockingRepo: blocker.repository,
+          })),
+        };
       }),
     );
-    for (const batch of results) links.push(...batch);
+    for (const r of results) {
+      subIssueLinks.push(...r.subIssues);
+      blockedByLinks.push(...r.blockedBy);
+    }
   }
 
-  return links;
+  return { subIssueLinks, blockedByLinks };
+}
+
+// Backward-compatible wrapper
+export async function fetchAllSubIssueLinks(
+  gql: typeof graphql,
+  items: Array<{ number: number; repository: string }>,
+): Promise<SubIssueLink[]> {
+  const { subIssueLinks } = await fetchAllIssueRelationshipLinks(gql, items);
+  return subIssueLinks;
 }

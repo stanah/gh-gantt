@@ -137,6 +137,66 @@ export async function addSubIssue(
   });
 }
 
+const REMOVE_SUB_ISSUE_MUTATION = `
+  mutation($issueId: ID!, $subIssueId: ID!) {
+    removeSubIssue(input: { parentIssueId: $issueId, subIssueId: $subIssueId }) {
+      issue { id }
+      subIssue { id }
+    }
+  }
+`;
+
+export async function removeSubIssue(
+  gql: typeof graphql,
+  parentIssueNodeId: string,
+  childIssueNodeId: string,
+): Promise<void> {
+  await gql(REMOVE_SUB_ISSUE_MUTATION, {
+    issueId: parentIssueNodeId,
+    subIssueId: childIssueNodeId,
+  });
+}
+
+const ADD_BLOCKED_BY_MUTATION = `
+  mutation($issueId: ID!, $blockingIssueId: ID!) {
+    addBlockedBy(input: { issueId: $issueId, blockingIssueId: $blockingIssueId }) {
+      blockedIssue { id }
+      blockingIssue { id }
+    }
+  }
+`;
+
+export async function addBlockedByIssue(
+  gql: typeof graphql,
+  issueNodeId: string,
+  blockingIssueNodeId: string,
+): Promise<void> {
+  await gql(ADD_BLOCKED_BY_MUTATION, {
+    issueId: issueNodeId,
+    blockingIssueId: blockingIssueNodeId,
+  });
+}
+
+const REMOVE_BLOCKED_BY_MUTATION = `
+  mutation($blockedIssueId: ID!, $blockingIssueId: ID!) {
+    removeBlockedBy(input: { blockedIssueId: $blockedIssueId, blockingIssueId: $blockingIssueId }) {
+      blockedIssue { id }
+      blockingIssue { id }
+    }
+  }
+`;
+
+export async function removeBlockedByIssue(
+  gql: typeof graphql,
+  blockedIssueNodeId: string,
+  blockingIssueNodeId: string,
+): Promise<void> {
+  await gql(REMOVE_BLOCKED_BY_MUTATION, {
+    blockedIssueId: blockedIssueNodeId,
+    blockingIssueId: blockingIssueNodeId,
+  });
+}
+
 export async function updateProjectItemField(
   gql: typeof graphql,
   projectId: string,

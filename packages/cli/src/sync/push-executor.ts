@@ -9,10 +9,13 @@ import {
   createIssue,
   addProjectItem,
   addSubIssue,
+  removeSubIssue,
   updateIssue,
   setIssueState,
   updateProjectItemField,
   createGithubMilestone,
+  addBlockedByIssue,
+  removeBlockedByIssue,
 } from "../github/mutations.js";
 
 export interface PushResult {
@@ -215,6 +218,24 @@ export async function executePush(
         // Sub-issues API may not be available; skip silently
       }
     }
+
+    // Set up blocked_by relationships for newly created issues
+    for (const id of createdTaskIds) {
+      const task = tasksFile.tasks.find((t) => t.id === id);
+      if (!task?.blocked_by.length) continue;
+      const taskEntry = syncState.id_map[task.id];
+      if (!taskEntry?.issue_node_id) continue;
+
+      for (const dep of task.blocked_by) {
+        const blockerEntry = syncState.id_map[dep.task];
+        if (!blockerEntry?.issue_node_id) continue;
+        try {
+          await addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id);
+        } catch {
+          // Blocker may not be a pushable issue; skip silently
+        }
+      }
+    }
   } else if (draftDiffs.length > 0) {
     result.skipped += draftDiffs.length;
   }
@@ -275,6 +296,58 @@ export async function executePush(
             syncState.field_ids[fm.type],
             { singleSelectOptionId: typeOptionId },
           );
+        }
+      }
+
+      // Detect parent changes from snapshot and sync sub-issue relationships
+      const snapshot = syncState.snapshots[task.id];
+      if (snapshot?.syncFields && idEntry.issue_node_id) {
+        const oldParent = snapshot.syncFields.parent;
+        const newParent = task.parent;
+
+        if (oldParent !== newParent) {
+          // Remove old parent relationship
+          if (oldParent) {
+            const oldParentEntry = syncState.id_map[oldParent];
+            if (oldParentEntry?.issue_node_id) {
+              try { await removeSubIssue(gql, oldParentEntry.issue_node_id, idEntry.issue_node_id); }
+              catch { /* may not exist on remote */ }
+            }
+          }
+          // Add new parent relationship
+          if (newParent) {
+            const newParentEntry = syncState.id_map[newParent];
+            if (newParentEntry?.issue_node_id) {
+              try { await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id); }
+              catch { /* sub-issues API may not be available */ }
+            }
+          }
+        }
+
+        // Detect blocked_by changes from snapshot
+        const oldBlockedBy = new Set(snapshot.syncFields.blocked_by.map((d) => d.task));
+        const newBlockedBy = new Set(task.blocked_by.map((d) => d.task));
+
+        // Added blockers
+        for (const dep of task.blocked_by) {
+          if (!oldBlockedBy.has(dep.task)) {
+            const blockerEntry = syncState.id_map[dep.task];
+            if (blockerEntry?.issue_node_id) {
+              try { await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id); }
+              catch { /* blocker may not be a pushable issue */ }
+            }
+          }
+        }
+
+        // Removed blockers
+        for (const dep of snapshot.syncFields.blocked_by) {
+          if (!newBlockedBy.has(dep.task)) {
+            const blockerEntry = syncState.id_map[dep.task];
+            if (blockerEntry?.issue_node_id) {
+              try { await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id); }
+              catch { /* may not exist on remote */ }
+            }
+          }
         }
       }
 
