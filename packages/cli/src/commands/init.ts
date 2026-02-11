@@ -95,6 +95,7 @@ export const initCommand = new Command("init")
         } else {
           // Unknown field value → create as bar type
           const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+          if (taskTypes[key]) continue; // Already mapped by a known pattern above
           taskTypes[key] = { label: opt.name, display: "bar", color: "#95A5A6", github_label: null, github_field_value: opt.name };
         }
       }

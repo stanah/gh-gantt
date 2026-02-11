@@ -160,8 +160,19 @@ export function createApiRouter(projectRoot: string): Router {
         if (task) remoteTasks.set(task.id, task);
       }
 
+      // Fetch native GitHub Milestones and inject synthetic tasks
+      // (before early-return check so milestone changes are detected)
+      const { owner: repoOwner, repo: repoName } = config.project.github;
+      const repoFullName = `${repoOwner}/${repoName}`;
+      const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
+      for (const m of repoMetadata.milestones) {
+        if (!m.dueOn) continue;
+        const syntheticTask = milestoneToTask(m, repoFullName);
+        remoteTasks.set(syntheticTask.id, syntheticTask);
+      }
+
       // Quick check: skip sub-issues fetch if no remote changes
-      const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id));
+      const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
       const localIds = new Set(localNonDraft.map((t) => t.id));
       const remoteIds = new Set(remoteTasks.keys());
       const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
@@ -171,6 +182,7 @@ export function createApiRouter(projectRoot: string): Router {
           const snap = syncState.snapshots[id];
           if (!snap?.updated_at) { changed = true; break; }
           if (remote.updated_at !== snap.updated_at) { changed = true; break; }
+          if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
         }
         if (!changed) {
           res.json({ added: 0, updated: 0, removed: 0 });
@@ -185,16 +197,6 @@ export function createApiRouter(projectRoot: string): Router {
       const remoteTaskArray = Array.from(remoteTasks.values());
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
-
-      // Fetch native GitHub Milestones and inject synthetic tasks
-      const { owner: repoOwner, repo: repoName } = config.project.github;
-      const repoFullName = `${repoOwner}/${repoName}`;
-      const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
-      for (const m of repoMetadata.milestones) {
-        if (!m.dueOn) continue;
-        const syntheticTask = milestoneToTask(m, repoFullName);
-        remoteTasks.set(syntheticTask.id, syntheticTask);
-      }
 
       const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
       const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArrayWithMilestones, syncState);

@@ -80,8 +80,19 @@ export const pullCommand = new Command("pull")
       if (task) remoteTasks.set(task.id, task);
     }
 
+    // Fetch native GitHub Milestones and inject synthetic tasks
+    // (before early-return check so milestone changes are detected)
+    const { owner: repoOwner, repo: repoName } = config.project.github;
+    const repoFullName = `${repoOwner}/${repoName}`;
+    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
+    for (const m of repoMetadata.milestones) {
+      if (!m.dueOn) continue;
+      const syntheticTask = milestoneToTask(m, repoFullName);
+      remoteTasks.set(syntheticTask.id, syntheticTask);
+    }
+
     // Quick check: skip sub-issues fetch if no remote changes
-    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id));
+    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
     const localIds = new Set(localNonDraft.map((t) => t.id));
     const remoteIds = new Set(remoteTasks.keys());
     const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
@@ -91,6 +102,8 @@ export const pullCommand = new Command("pull")
         const snap = syncState.snapshots[id];
         if (!snap?.updated_at) { changed = true; break; }
         if (remote.updated_at !== snap.updated_at) { changed = true; break; }
+        // For synthetic milestones, compare date (dueOn) via hash
+        if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
       }
       if (!changed) {
         console.log("No remote changes detected, skipping sub-issues fetch.");
@@ -109,17 +122,7 @@ export const pullCommand = new Command("pull")
     applySubIssueLinks(remoteTaskArray, subIssueLinks);
     for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
-    // Fetch native GitHub Milestones and inject synthetic tasks
-    const { owner: repoOwner, repo: repoName } = config.project.github;
-    const repoFullName = `${repoOwner}/${repoName}`;
-    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
-    for (const m of repoMetadata.milestones) {
-      if (!m.dueOn) continue;
-      const syntheticTask = milestoneToTask(m, repoFullName);
-      remoteTasks.set(syntheticTask.id, syntheticTask);
-    }
-
-    // Re-build array after adding milestones
+    // Re-build array after applying sub-issue links
     const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
 
     const typeFieldConfigured = !!config.sync.field_mapping.type;
