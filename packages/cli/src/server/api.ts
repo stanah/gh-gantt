@@ -2,6 +2,7 @@ import { Router, json } from "express";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
+import { CommentsStore } from "../store/comments.js";
 import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
@@ -20,6 +21,7 @@ export function createApiRouter(projectRoot: string): Router {
   const configStore = new ConfigStore(projectRoot);
   const tasksStore = new TasksStore(projectRoot);
   const stateStore = new SyncStateStore(projectRoot);
+  const commentsStore = new CommentsStore(projectRoot);
 
   // GET /api/config
   router.get("/api/config", async (_req, res) => {
@@ -36,6 +38,11 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
+      const commentsFile = await commentsStore.read();
+      const mergedCache = {
+        ...tasksFile.cache,
+        comments: { ...tasksFile.cache.comments, ...commentsFile.comments },
+      };
       const tasksWithProgress = tasksFile.tasks.map((task) => ({
         ...task,
         _progress: computeProgress(
@@ -45,7 +52,7 @@ export function createApiRouter(projectRoot: string): Router {
           config.statuses.field_name,
         ),
       }));
-      res.json({ tasks: tasksWithProgress, cache: tasksFile.cache });
+      res.json({ tasks: tasksWithProgress, cache: mergedCache });
     } catch (err) {
       res.status(500).json({ error: "Failed to read tasks" });
     }

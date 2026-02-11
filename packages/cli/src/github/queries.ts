@@ -99,6 +99,25 @@ export function buildUserIdsQuery(logins: string[]): string {
   return `query { ${fields} }`;
 }
 
+export const ISSUE_COMMENTS_QUERY = `
+  query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $number) {
+        comments(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            id
+            author { login }
+            body
+            createdAt
+            updatedAt
+          }
+        }
+      }
+    }
+  }
+`;
+
 export const SUB_ISSUES_QUERY = `
   query($owner: String!, $repo: String!, $number: Int!) {
     repository(owner: $owner, name: $repo) {
