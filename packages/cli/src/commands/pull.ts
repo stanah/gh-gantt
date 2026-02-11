@@ -242,34 +242,38 @@ export const pullCommand = new Command("pull")
 
     // Fetch comments if requested
     if (opts.withComments || opts.forceComments) {
-      const commentsStore = new CommentsStore(projectRoot);
-      const commentsFile = await commentsStore.read();
+      try {
+        const commentsStore = new CommentsStore(projectRoot);
+        const commentsFile = await commentsStore.read();
 
-      // Build list of issue items to fetch comments for
-      const commentItems = newTasks
-        .filter((t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id))
-        .map((t) => {
-          const [owner, repo] = t.github_repo.split("/");
-          return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
-        });
+        // Build list of issue items to fetch comments for
+        const commentItems = newTasks
+          .filter((t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id))
+          .map((t) => {
+            const [owner, repo] = t.github_repo.split("/");
+            return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
+          });
 
-      // Clean up comments for deleted tasks
-      const taskIds = new Set(newTasks.map((t) => t.id));
-      for (const key of Object.keys(commentsFile.fetched_at)) {
-        if (!taskIds.has(key)) {
-          delete commentsFile.fetched_at[key];
-          delete commentsFile.comments[key];
+        const updatedComments = await fetchAllComments(
+          gql,
+          commentItems,
+          commentsFile,
+          (data) => commentsStore.write(data),
+          { force: !!opts.forceComments },
+        );
+
+        // Clean up comments for deleted tasks after fetching
+        const taskIds = new Set(newTasks.map((t) => t.id));
+        for (const key of Object.keys(updatedComments.fetched_at)) {
+          if (!taskIds.has(key)) {
+            delete updatedComments.fetched_at[key];
+            delete updatedComments.comments[key];
+          }
         }
+
+        await commentsStore.write(updatedComments);
+      } catch (err) {
+        console.warn(`Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`);
       }
-
-      const updatedComments = await fetchAllComments(
-        gql,
-        commentItems,
-        commentsFile,
-        (data) => commentsStore.write(data),
-        { force: !!opts.forceComments },
-      );
-
-      await commentsStore.write(updatedComments);
     }
   });

@@ -39,9 +39,13 @@ export function createApiRouter(projectRoot: string): Router {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const commentsFile = await commentsStore.read();
+      const normalizedComments: Record<string, Array<{ author: string; body: string; created_at: string }>> = {};
+      for (const [key, arr] of Object.entries(commentsFile.comments)) {
+        normalizedComments[key] = arr.map((c) => ({ author: c.author, body: c.body, created_at: c.created_at }));
+      }
       const mergedCache = {
         ...tasksFile.cache,
-        comments: { ...(tasksFile.cache.comments ?? {}), ...commentsFile.comments },
+        comments: { ...(tasksFile.cache.comments ?? {}), ...normalizedComments },
       };
       const tasksWithProgress = tasksFile.tasks.map((task) => ({
         ...task,

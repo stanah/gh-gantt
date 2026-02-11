@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CommentsStore } from "../store/comments.js";
-import { fetchAllComments } from "../github/comments.js";
+import { fetchAllComments, fetchIssueComments } from "../github/comments.js";
 import type { CommentsFile } from "@gh-gantt/shared";
 
 describe("CommentsStore", () => {
@@ -159,5 +159,52 @@ describe("fetchAllComments", () => {
     // All 3 should be fetched
     expect(gql).toHaveBeenCalledTimes(3);
     expect(result.comments["o/r#1"]?.[0].id).toBe("C_1_new");
+  });
+});
+
+describe("fetchIssueComments", () => {
+  it("handles pagination across multiple pages", async () => {
+    let callCount = 0;
+    const gql = async (_query: string, vars: any) => {
+      callCount++;
+      if (callCount === 1) {
+        return {
+          repository: {
+            issue: {
+              comments: {
+                pageInfo: { hasNextPage: true, endCursor: "cursor1" },
+                nodes: [
+                  { id: "C_1", author: { login: "alice" }, body: "page1", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+                ],
+              },
+            },
+          },
+        };
+      }
+      return {
+        repository: {
+          issue: {
+            comments: {
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                { id: "C_2", author: { login: "bob" }, body: "page2", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" },
+              ],
+            },
+          },
+        },
+      };
+    };
+
+    const result = await fetchIssueComments(gql as any, "o", "r", 1);
+    expect(callCount).toBe(2);
+    expect(result).toHaveLength(2);
+    expect(result[0].body).toBe("page1");
+    expect(result[1].body).toBe("page2");
+  });
+
+  it("returns empty array when issue is null", async () => {
+    const gql = async () => ({ repository: { issue: null } });
+    const result = await fetchIssueComments(gql as any, "o", "r", 999);
+    expect(result).toEqual([]);
   });
 });
