@@ -1,7 +1,7 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
-import { hashTask } from "./hash.js";
+import { hashTask, extractSyncFields } from "./hash.js";
 import { isDraftTask, isMilestoneSyntheticTask, buildTaskId } from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
 import {
@@ -250,6 +250,7 @@ export async function executePush(
     newSnapshots[task.id] = {
       hash: hashTask(task),
       synced_at: new Date().toISOString(),
+      syncFields: extractSyncFields(task),
     };
   }
 

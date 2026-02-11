@@ -37,7 +37,8 @@ export const pushCommand = new Command("push")
     for (const diff of diffs) {
       const symbol = diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
       const draft = isDraftTask(diff.id) ? " [draft]" : "";
-      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${draft}`);
+      const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
+      console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${draft}${fields}`);
     }
 
     if (opts.dryRun) {

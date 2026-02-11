@@ -1,13 +1,12 @@
 import { createHash } from "node:crypto";
-import type { Task } from "@gh-gantt/shared";
+import type { Task, SyncFields } from "@gh-gantt/shared";
 
 /**
- * Hash only the bidirectional sync fields of a task.
- * Changes to read-only fields (created_at, updated_at, linked_prs, etc.)
- * should not trigger a sync diff.
+ * Extract the bidirectional sync fields from a task.
+ * These are the fields that participate in hash comparison and diff detection.
  */
-export function hashTask(task: Task): string {
-  const syncFields = {
+export function extractSyncFields(task: Task): SyncFields {
+  return {
     title: task.title,
     body: task.body,
     state: task.state,
@@ -23,7 +22,15 @@ export function hashTask(task: Task): string {
     date: task.date,
     blocked_by: task.blocked_by,
   };
+}
 
+/**
+ * Hash only the bidirectional sync fields of a task.
+ * Changes to read-only fields (created_at, updated_at, linked_prs, etc.)
+ * should not trigger a sync diff.
+ */
+export function hashTask(task: Task): string {
+  const syncFields = extractSyncFields(task);
   const json = JSON.stringify(syncFields);
   return createHash("sha256").update(json).digest("hex");
 }

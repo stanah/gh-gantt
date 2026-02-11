@@ -113,10 +113,28 @@ export interface IdMapping {
   project_item_id: string;
 }
 
+export interface SyncFields {
+  title: string;
+  body: string | null;
+  state: "open" | "closed";
+  type: string;
+  assignees: string[];
+  labels: string[];
+  milestone: string | null;
+  custom_fields: Record<string, unknown>;
+  parent: string | null;
+  sub_tasks: string[];
+  start_date: string | null;
+  end_date: string | null;
+  date: string | null;
+  blocked_by: Dependency[];
+}
+
 export interface Snapshot {
   hash: string;
   synced_at: string;
   updated_at?: string;
+  syncFields?: SyncFields;
 }
 
 export interface SyncState {

@@ -9,7 +9,7 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
-import { hashTask } from "../sync/hash.js";
+import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { detectConflicts, type Conflict } from "../sync/conflict.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 
@@ -211,6 +211,7 @@ export const pullCommand = new Command("pull")
         hash: hashTask(task),
         synced_at: new Date().toISOString(),
         updated_at: task.updated_at,
+        syncFields: extractSyncFields(task),
       };
     }
     // Remove snapshots for deleted tasks

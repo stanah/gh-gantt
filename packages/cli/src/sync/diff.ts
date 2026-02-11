@@ -1,11 +1,23 @@
-import type { Task, SyncState } from "@gh-gantt/shared";
-import { hashTask } from "./hash.js";
+import type { Task, SyncState, SyncFields } from "@gh-gantt/shared";
+import { hashTask, extractSyncFields } from "./hash.js";
 
 export interface TaskDiff {
   id: string;
   type: "added" | "modified" | "deleted";
   task: Task;
   changedFields?: string[];
+}
+
+function detectChangedFields(current: SyncFields, previous: SyncFields): string[] {
+  const changed: string[] = [];
+  for (const key of Object.keys(current) as (keyof SyncFields)[]) {
+    const a = JSON.stringify(current[key]);
+    const b = JSON.stringify(previous[key]);
+    if (a !== b) {
+      changed.push(key);
+    }
+  }
+  return changed;
 }
 
 export function computeLocalDiff(
@@ -23,7 +35,10 @@ export function computeLocalDiff(
 
     const currentHash = hashTask(task);
     if (currentHash !== snapshot.hash) {
-      diffs.push({ id: task.id, type: "modified", task });
+      const changedFields = snapshot.syncFields
+        ? detectChangedFields(extractSyncFields(task), snapshot.syncFields)
+        : undefined;
+      diffs.push({ id: task.id, type: "modified", task, changedFields });
     }
   }
 
