@@ -145,8 +145,20 @@ export function createApiRouter(projectRoot: string): Router {
         return;
       }
 
+      const UPDATABLE_FIELDS = [
+        "title", "body", "state", "state_reason", "assignees", "labels",
+        "milestone", "custom_fields", "start_date", "end_date", "date",
+        "parent", "sub_tasks", "blocked_by",
+      ] as const;
+
       const oldTask = tasksFile.tasks[idx];
-      const updatedTask = { ...oldTask, ...updates };
+      const safeUpdates: Partial<Task> = {};
+      for (const key of UPDATABLE_FIELDS) {
+        if (key in updates) {
+          (safeUpdates as Record<string, unknown>)[key] = updates[key];
+        }
+      }
+      const updatedTask = { ...oldTask, ...safeUpdates };
 
       // Auto-update dates on status transition
       const config = await configStore.read();
@@ -158,8 +170,8 @@ export function createApiRouter(projectRoot: string): Router {
           start_date: updatedTask.start_date,
           end_date: updatedTask.end_date,
         });
-        if (dateUpdates.start_date && !updates.start_date) updatedTask.start_date = dateUpdates.start_date;
-        if (dateUpdates.end_date && !updates.end_date) updatedTask.end_date = dateUpdates.end_date;
+        if (dateUpdates.start_date && !safeUpdates.start_date) updatedTask.start_date = dateUpdates.start_date;
+        if (dateUpdates.end_date && !safeUpdates.end_date) updatedTask.end_date = dateUpdates.end_date;
       }
 
       // Prevent start > end regardless of how dates were changed
@@ -439,6 +451,7 @@ function computeProgress(
   allTasks: Task[],
   statusValues: Record<string, StatusValue>,
   statusFieldName: string,
+  visited: Set<string> = new Set(),
 ): number {
   if (task.state === "closed") return 100;
 
@@ -450,10 +463,12 @@ function computeProgress(
     let total = 0;
     let done = 0;
     for (const childId of task.sub_tasks) {
+      if (visited.has(childId)) continue;
       const child = taskMap.get(childId);
       if (child) {
         total++;
-        done += computeProgress(child, allTasks, statusValues, statusFieldName) / 100;
+        visited.add(childId);
+        done += computeProgress(child, allTasks, statusValues, statusFieldName, visited) / 100;
       }
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;

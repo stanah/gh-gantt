@@ -175,7 +175,8 @@ export const pullCommand = new Command("pull")
         added++;
       } else {
         const remoteHash = hashTask(remoteTask);
-        const snapshotHash = syncState.snapshots[id]?.hash;
+        const snap = syncState.snapshots[id];
+        const snapshotHash = snap?.remoteHash ?? snap?.hash;
 
         if (remoteHash !== snapshotHash) {
           // Remote changed since last sync

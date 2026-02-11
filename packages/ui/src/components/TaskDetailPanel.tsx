@@ -181,7 +181,7 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
               <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Start Date</label>
               <input
                 type="date"
-                value={task.start_date ?? ""}
+                value={(task.start_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ start_date: e.target.value || null })}
                 style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
               />
@@ -190,7 +190,7 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
               <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>End Date</label>
               <input
                 type="date"
-                value={task.end_date ?? ""}
+                value={(task.end_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ end_date: e.target.value || null })}
                 style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
               />

@@ -59,6 +59,10 @@ export function applyTaskUpdate(
     updated.end_date = opts.endDate === "none" ? null : opts.endDate;
   }
 
+  if (updated.start_date && updated.end_date && updated.start_date > updated.end_date) {
+    return { task, error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).` };
+  }
+
   if (opts.assignee) {
     if (!updated.assignees.includes(opts.assignee)) {
       updated.assignees = [...updated.assignees, opts.assignee];
