@@ -19,6 +19,8 @@ interface ToolbarProps {
   selectedAssignee: string | null;
   allAssignees: string[];
   onSelectAssignee: (assignee: string | null) => void;
+  searchQuery: string;
+  onSearchChange: (query: string) => void;
 }
 
 export function Toolbar({
@@ -38,6 +40,8 @@ export function Toolbar({
   selectedAssignee,
   allAssignees,
   onSelectAssignee,
+  searchQuery,
+  onSearchChange,
 }: ToolbarProps) {
 
   const btnStyle = (active = false): React.CSSProperties => ({
@@ -105,6 +109,46 @@ export function Toolbar({
             <option key={a} value={a}>{a}</option>
           ))}
         </select>
+      </div>
+
+      <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
+
+      {/* Search */}
+      <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search tasks..."
+          style={{
+            padding: "3px 24px 3px 6px",
+            border: "1px solid #ccc",
+            borderRadius: 3,
+            fontSize: 11,
+            width: 160,
+            outline: "none",
+          }}
+        />
+        {searchQuery && (
+          <button
+            onClick={() => onSearchChange("")}
+            style={{
+              position: "absolute",
+              right: 2,
+              top: "50%",
+              transform: "translateY(-50%)",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: 12,
+              color: "#888",
+              padding: "0 4px",
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        )}
       </div>
 
       <div style={{ flex: 1 }} />

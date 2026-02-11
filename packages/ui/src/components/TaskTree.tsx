@@ -39,6 +39,7 @@ interface TaskTreeBodyProps {
   onHoverTask?: (taskId: string | null) => void;
   highlightedTaskIds?: Set<string>;
   highlightRelationMap?: Map<string, RelationType>;
+  searchQuery?: string;
 }
 
 export function TaskTreeBody({
@@ -57,6 +58,7 @@ export function TaskTreeBody({
   onHoverTask,
   highlightedTaskIds,
   highlightRelationMap,
+  searchQuery,
 }: TaskTreeBodyProps) {
   return (
     <div>
@@ -80,6 +82,7 @@ export function TaskTreeBody({
           showAssignees={displayOptions?.has("assignees")}
           highlightType={highlightRelationMap?.get(node.task.id) ?? null}
           isDimmed={hoveredTaskId != null && hoveredTaskId !== node.task.id && !highlightedTaskIds?.has(node.task.id)}
+          searchQuery={searchQuery}
         />
       ))}
       {backlogTotalCount > 0 && (
@@ -109,6 +112,7 @@ export function TaskTreeBody({
               showAssignees={displayOptions?.has("assignees")}
               highlightType={highlightRelationMap?.get(node.task.id) ?? null}
               isDimmed={hoveredTaskId != null && hoveredTaskId !== node.task.id && !highlightedTaskIds?.has(node.task.id)}
+              searchQuery={searchQuery}
             />
           ))}
         </>

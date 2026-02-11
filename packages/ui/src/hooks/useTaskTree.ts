@@ -14,9 +14,27 @@ function isBacklog(task: Task): boolean {
 export interface TaskFilterOptions {
   hideClosed?: boolean;
   selectedAssignee?: string | null;
+  searchQuery?: string;
 }
 
 const CONTAINER_TYPES = new Set(["epic", "summary"]);
+
+function matchesSearch(task: Task, query: string): boolean {
+  const q = query.toLowerCase();
+  if (task.title.toLowerCase().includes(q)) return true;
+  if (task.body?.toLowerCase().includes(q)) return true;
+  if (task.id.toLowerCase().includes(q)) return true;
+  if (task.type.toLowerCase().includes(q)) return true;
+  if (task.state.toLowerCase().includes(q)) return true;
+  if (task.milestone?.toLowerCase().includes(q)) return true;
+  if (task.labels.some((l) => l.toLowerCase().includes(q))) return true;
+  if (task.assignees.some((a) => a.toLowerCase().includes(q))) return true;
+  if (task.github_issue != null && String(task.github_issue).includes(q)) return true;
+  for (const v of Object.values(task.custom_fields)) {
+    if (typeof v === "string" && v.toLowerCase().includes(q)) return true;
+  }
+  return false;
+}
 
 export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOptions: TaskFilterOptions = {}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -35,9 +53,10 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
     setBacklogCollapsed((prev) => !prev);
   }, []);
 
-  const { hideClosed = false, selectedAssignee = null } = filterOptions;
+  const { hideClosed = false, selectedAssignee = null, searchQuery = "" } = filterOptions;
 
   const { scheduledTree, backlogTree } = useMemo(() => {
+    const trimmedQuery = searchQuery.trim();
     const filtered = tasks.filter((t) => {
       if (!enabledTypes.has(t.type)) return false;
       if (hideClosed && t.state === "closed") return false;
@@ -48,6 +67,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
           if (!t.assignees.includes(selectedAssignee)) return false;
         }
       }
+      if (trimmedQuery && !matchesSearch(t, trimmedQuery)) return false;
       return true;
     });
 
@@ -79,7 +99,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee]);
+  }, [tasks, enabledTypes, hideClosed, selectedAssignee, searchQuery]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

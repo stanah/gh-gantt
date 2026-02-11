@@ -47,7 +47,7 @@ export function App() {
 
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
-  const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees } = useTaskFilter(tasks);
+  const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees, searchQuery, setSearchQuery } = useTaskFilter(tasks);
   const {
     flatList,
     collapsed,
@@ -56,7 +56,7 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee });
+  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, searchQuery });
 
   const { getRelated } = useRelatedTasks(tasks);
   const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
@@ -191,6 +191,8 @@ export function App() {
         selectedAssignee={selectedAssignee}
         allAssignees={allAssignees}
         onSelectAssignee={setSelectedAssignee}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
       />
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -220,6 +222,7 @@ export function App() {
                 onHoverTask={setHoveredTaskId}
                 highlightedTaskIds={highlightedTaskIds}
                 highlightRelationMap={highlightRelationMap}
+                searchQuery={searchQuery}
               />
             }
             rightHeader={ganttHeader}

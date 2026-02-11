@@ -11,6 +11,7 @@ export interface TaskFilterState {
 export function useTaskFilter(tasks: Task[]) {
   const [hideClosed, setHideClosed] = useState(true);
   const [selectedAssignee, setSelectedAssignee] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const toggleHideClosed = useCallback(() => {
     setHideClosed((prev) => !prev);
@@ -32,5 +33,7 @@ export function useTaskFilter(tasks: Task[]) {
     selectedAssignee,
     setSelectedAssignee,
     allAssignees,
+    searchQuery,
+    setSearchQuery,
   };
 }
