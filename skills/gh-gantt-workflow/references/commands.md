@@ -8,6 +8,10 @@
 - [status](#status)
 - [create](#create)
 - [serve](#serve)
+- [task list](#task-list)
+- [task show](#task-show)
+- [task update](#task-update)
+- [task link](#task-link)
 
 ---
 
@@ -144,6 +148,85 @@ gh-gantt serve [-p <port>] [--api-only]
 
 ---
 
+## task list
+
+List tasks with optional filters.
+
+```bash
+gh-gantt task list [--backlog] [--scheduled] [--type <type>] [--state <state>] [--json]
+```
+
+**Options:**
+- `--backlog` — Show only backlog tasks (no dates set)
+- `--scheduled` — Show only scheduled tasks (have dates)
+- `--type <type>` — Filter by task type (task, epic, bug, etc.)
+- `--state <state>` — Filter by state (open/closed)
+- `--json` — Output as JSON
+
+---
+
+## task show
+
+Show detailed information about a single task.
+
+```bash
+gh-gantt task show <id> [--json]
+```
+
+**Arguments:**
+- `<id>` — Task ID (supports short ID resolution, see below)
+
+**Options:**
+- `--json` — Output as JSON
+
+---
+
+## task update
+
+Update a task's fields.
+
+```bash
+gh-gantt task update <id> [--title <title>] [--type <type>] [--state <state>]
+  [--start-date <date>] [--end-date <date>] [--assignee <login>]
+  [--remove-assignee <login>] [--json]
+```
+
+**Arguments:**
+- `<id>` — Task ID (supports short ID resolution, see below)
+
+**Options:**
+- `--title <title>` — Set title
+- `--type <type>` — Set task type
+- `--state <state>` — Set state (open/closed)
+- `--start-date <date>` — Set start date (YYYY-MM-DD or 'none' to clear)
+- `--end-date <date>` — Set end date (YYYY-MM-DD or 'none' to clear)
+- `--assignee <login>` — Add assignee
+- `--remove-assignee <login>` — Remove assignee
+- `--json` — Output updated task as JSON
+
+---
+
+## task link
+
+Manage task dependencies and parent relationships.
+
+```bash
+gh-gantt task link <id> [--blocked-by <id>] [--unblock <id>]
+  [--set-parent <id>] [--remove-parent] [--json]
+```
+
+**Arguments:**
+- `<id>` — Task ID (supports short ID resolution, see below)
+
+**Options:**
+- `--blocked-by <id>` — Add a blocking dependency (finish-to-start)
+- `--unblock <id>` — Remove a blocking dependency
+- `--set-parent <id>` — Set parent task
+- `--remove-parent` — Remove parent task
+- `--json` — Output updated task as JSON
+
+---
+
 ## .gantt-sync/ Directory
 
 All local state is stored in `.gantt-sync/` (should be gitignored):
@@ -157,6 +240,11 @@ All local state is stored in `.gantt-sync/` (should be gitignored):
 **Task ID formats:**
 - GitHub issue: `owner/repo#123`
 - Draft task: `draft-owner/repo-N`
+- Synthetic milestone: `milestone:owner/repo#N`
+
+**Short ID resolution:** Commands that accept a task ID support short forms for convenience:
+- `6` or `#6` resolves to `owner/repo#6` (using the repo from config)
+- `owner/repo#6` is used as-is
 
 **Conflict strategies** (in config):
 - `remote-wins` — GitHub is source of truth

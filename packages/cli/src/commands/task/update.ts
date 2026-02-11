@@ -29,6 +29,10 @@ export function applyTaskUpdate(
     };
   }
 
+  if (opts.state && opts.state !== "open" && opts.state !== "closed") {
+    return { task, error: `Invalid state: "${opts.state}". Must be "open" or "closed".` };
+  }
+
   if (opts.startDate && opts.startDate !== "none" && !DATE_RE.test(opts.startDate)) {
     return { task, error: `Invalid start date format: "${opts.startDate}". Use YYYY-MM-DD.` };
   }
@@ -76,44 +80,49 @@ export const taskUpdateCommand = new Command("update")
   .option("--remove-assignee <login>", "Remove assignee")
   .option("--json", "Output updated task as JSON")
   .action(async (id: string, opts) => {
-    const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
+    try {
+      const projectRoot = process.cwd();
+      const configStore = new ConfigStore(projectRoot);
+      const tasksStore = new TasksStore(projectRoot);
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
 
-    const resolvedId = resolveTaskId(id, config);
-    const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
+      const resolvedId = resolveTaskId(id, config);
+      const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
 
-    if (taskIndex === -1) {
-      console.error(`Task not found: ${resolvedId}`);
+      if (taskIndex === -1) {
+        console.error(`Task not found: ${resolvedId}`);
+        process.exitCode = 1;
+        return;
+      }
+
+      const result = applyTaskUpdate(tasksFile.tasks[taskIndex], {
+        title: opts.title,
+        type: opts.type,
+        state: opts.state,
+        startDate: opts.startDate,
+        endDate: opts.endDate,
+        assignee: opts.assignee,
+        removeAssignee: opts.removeAssignee,
+      }, config);
+
+      if (result.error) {
+        console.error(result.error);
+        process.exitCode = 1;
+        return;
+      }
+
+      tasksFile.tasks[taskIndex] = result.task;
+      await tasksStore.write(tasksFile);
+
+      if (opts.json) {
+        console.log(JSON.stringify(result.task, null, 2));
+      } else {
+        console.log(`Updated task: ${resolvedId}`);
+      }
+    } catch (err) {
+      console.error("Failed to update task:", err instanceof Error ? err.message : String(err));
       process.exitCode = 1;
-      return;
-    }
-
-    const result = applyTaskUpdate(tasksFile.tasks[taskIndex], {
-      title: opts.title,
-      type: opts.type,
-      state: opts.state,
-      startDate: opts.startDate,
-      endDate: opts.endDate,
-      assignee: opts.assignee,
-      removeAssignee: opts.removeAssignee,
-    }, config);
-
-    if (result.error) {
-      console.error(result.error);
-      process.exitCode = 1;
-      return;
-    }
-
-    tasksFile.tasks[taskIndex] = result.task;
-    await tasksStore.write(tasksFile);
-
-    if (opts.json) {
-      console.log(JSON.stringify(result.task, null, 2));
-    } else {
-      console.log(`Updated task: ${resolvedId}`);
     }
   });

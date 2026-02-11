@@ -81,8 +81,11 @@ export const pullCommand = new Command("pull")
     }
 
     // Quick check: skip sub-issues fetch if no remote changes
-    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
-    if (remoteTasks.size === localNonDraft.length) {
+    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id));
+    const localIds = new Set(localNonDraft.map((t) => t.id));
+    const remoteIds = new Set(remoteTasks.keys());
+    const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
+    if (sameIdSets) {
       let changed = false;
       for (const [id, remote] of remoteTasks) {
         const snap = syncState.snapshots[id];
