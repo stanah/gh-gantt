@@ -147,7 +147,7 @@ export function App() {
       }
       const preview = await previewRes.json();
 
-      if (preview.summary.create === 0 && preview.summary.update === 0) {
+      if (preview.summary.create === 0 && preview.summary.update === 0 && (preview.summary.skip ?? 0) === 0) {
         showToast("No local changes to push.", "info");
         return;
       }
@@ -155,12 +155,14 @@ export function App() {
       // Step 2: Confirm
       const lines = preview.changes.map(
         (c: { type: string; title: string; changedFields?: string[] }) =>
-          `  ${c.type === "added" ? "+" : "~"} ${c.title}${c.changedFields ? ` [${c.changedFields.join(", ")}]` : ""}`,
+          `  ${c.type === "added" ? "+" : c.type === "deleted" ? "-" : "~"} ${c.title}${c.changedFields ? ` [${c.changedFields.join(", ")}]` : ""}`,
       );
+      const totalCount = preview.summary.create + preview.summary.update + (preview.summary.skip ?? 0);
       const msg =
-        `Push ${preview.summary.create + preview.summary.update} task(s) to GitHub?\n\n` +
+        `Push ${totalCount} task(s) to GitHub?\n\n` +
         `  Create: ${preview.summary.create}\n` +
         `  Update: ${preview.summary.update}\n` +
+        (preview.summary.skip ? `  Skip/Delete: ${preview.summary.skip}\n` : "") +
         `  Estimated API calls: ~${preview.estimated_api_calls}\n\n` +
         lines.join("\n");
 

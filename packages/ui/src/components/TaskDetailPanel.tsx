@@ -15,7 +15,7 @@ interface TaskDetailPanelProps {
 export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: TaskDetailPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
-  const [copyFeedback, setCopyFeedback] = useState(false);
+  const [copyFeedback, setCopyFeedback] = useState<"success" | "error" | null>(null);
   const statusFieldName = config.statuses.field_name;
   const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
   const statusOptions = Object.keys(config.statuses.values);
@@ -49,10 +49,11 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
     if (task.linked_prs.length > 0) info.linked_prs = task.linked_prs;
 
     navigator.clipboard.writeText(JSON.stringify(info, null, 2)).then(() => {
-      setCopyFeedback(true);
-      setTimeout(() => setCopyFeedback(false), 1500);
+      setCopyFeedback("success");
+      setTimeout(() => setCopyFeedback(null), 1500);
     }).catch(() => {
-      console.warn("Failed to copy to clipboard");
+      setCopyFeedback("error");
+      setTimeout(() => setCopyFeedback(null), 1500);
     });
   }, [task, currentStatus, isMilestone]);
 
@@ -78,13 +79,17 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
             title="Copy task info as JSON"
             style={{
               border: "none", background: "none",
-              cursor: "pointer", color: copyFeedback ? "#27AE60" : "#888",
+              cursor: "pointer", color: copyFeedback === "success" ? "#27AE60" : copyFeedback === "error" ? "#E74C3C" : "#888",
               padding: 4, display: "flex", alignItems: "center", transition: "color 0.2s",
             }}
           >
-            {copyFeedback ? (
+            {copyFeedback === "success" ? (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <polyline points="4 8.5 6.5 11 12 5" />
+              </svg>
+            ) : copyFeedback === "error" ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="4" x2="12" y2="12" /><line x1="12" y1="4" x2="4" y2="12" />
               </svg>
             ) : (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
