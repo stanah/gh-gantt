@@ -1,9 +1,10 @@
-import React, { useState, useRef, useCallback, useEffect } from "react";
+import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { useTaskTree } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
 import { useTaskFilter } from "./hooks/useTaskFilter.js";
+import { useRelatedTasks } from "./hooks/useRelatedTasks.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
@@ -15,7 +16,6 @@ export function App() {
   const { config, tasks, cache, loading, error, updateTask, refresh } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
-  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
@@ -41,6 +41,10 @@ export function App() {
     setGanttHeader(node);
   }, []);
 
+  const handleSelectTask = useCallback((taskId: string) => {
+    setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
+  }, []);
+
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
   const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees } = useTaskFilter(tasks);
@@ -53,6 +57,12 @@ export function App() {
     backlogTotalCount,
     toggleBacklog,
   } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee });
+
+  const { getRelated } = useRelatedTasks(tasks);
+  const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
+    () => getRelated(hoveredTaskId),
+    [getRelated, hoveredTaskId],
+  );
 
   const handlePull = useCallback(async () => {
     setSyncing("pull");
@@ -182,70 +192,71 @@ export function App() {
         allAssignees={allAssignees}
         onSelectAssignee={setSelectedAssignee}
       />
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        <Layout
-          scrollContainerRef={scrollContainerRef}
-          leftHeader={
-            <TaskTreeHeader
-              config={config}
-              enabledTypes={enabled}
-              onToggleType={toggleType}
-            />
-          }
-          leftBody={
-            <TaskTreeBody
-              config={config}
-              selectedTaskId={selectedTaskId}
-              onSelectTask={setSelectedTaskId}
-              onDoubleClickTask={setDetailTaskId}
-              flatList={flatList}
-              collapsed={collapsed}
-              onToggleCollapse={toggleCollapse}
-              backlogFlatList={backlogFlatList}
-              backlogCollapsed={backlogCollapsed}
-              backlogTotalCount={backlogTotalCount}
-              onToggleBacklog={toggleBacklog}
-              displayOptions={displayOptions}
-              hoveredTaskId={hoveredTaskId}
-              onHoverTask={setHoveredTaskId}
-            />
-          }
-          rightHeader={ganttHeader}
-          rightBody={
-            <GanttChart
-              ref={ganttRef}
-              tasks={tasks}
-              flatList={flatList}
-              config={config}
-              selectedTaskId={selectedTaskId}
-              onSelectTask={setSelectedTaskId}
-              onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
-              onViewScaleChange={handleViewScaleChange}
-              scrollContainerRef={scrollContainerRef}
-              header={handleGanttHeader}
-              backlogFlatList={backlogFlatList}
-              backlogCollapsed={backlogCollapsed}
-              backlogTotalCount={backlogTotalCount}
-              displayOptions={displayOptions}
-              hoveredTaskId={hoveredTaskId}
-              onHoverTask={setHoveredTaskId}
-            />
-          }
-        />
-      </div>
-      {detailTaskId && (() => {
-        const detailTask = tasks.find((t) => t.id === detailTaskId);
-        if (!detailTask) return null;
-        return (
-          <TaskDetailPanel
-            task={detailTask}
-            config={config}
-            comments={cache.comments[detailTaskId] ?? []}
-            onUpdate={(updates) => updateTask(detailTaskId, updates)}
-            onClose={() => setDetailTaskId(null)}
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        <div style={{ flex: 1, overflow: "hidden" }}>
+          <Layout
+            scrollContainerRef={scrollContainerRef}
+            leftHeader={
+              <TaskTreeHeader
+                config={config}
+                enabledTypes={enabled}
+                onToggleType={toggleType}
+              />
+            }
+            leftBody={
+              <TaskTreeBody
+                config={config}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleSelectTask}
+                flatList={flatList}
+                collapsed={collapsed}
+                onToggleCollapse={toggleCollapse}
+                backlogFlatList={backlogFlatList}
+                backlogCollapsed={backlogCollapsed}
+                backlogTotalCount={backlogTotalCount}
+                onToggleBacklog={toggleBacklog}
+                displayOptions={displayOptions}
+                hoveredTaskId={hoveredTaskId}
+                onHoverTask={setHoveredTaskId}
+              />
+            }
+            rightHeader={ganttHeader}
+            rightBody={
+              <GanttChart
+                ref={ganttRef}
+                tasks={tasks}
+                flatList={flatList}
+                config={config}
+                selectedTaskId={selectedTaskId}
+                onSelectTask={handleSelectTask}
+                onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
+                onViewScaleChange={handleViewScaleChange}
+                scrollContainerRef={scrollContainerRef}
+                header={handleGanttHeader}
+                backlogFlatList={backlogFlatList}
+                backlogCollapsed={backlogCollapsed}
+                backlogTotalCount={backlogTotalCount}
+                displayOptions={displayOptions}
+                hoveredTaskId={hoveredTaskId}
+                onHoverTask={setHoveredTaskId}
+              />
+            }
           />
-        );
-      })()}
+        </div>
+        {selectedTaskId && (() => {
+          const detailTask = tasks.find((t) => t.id === selectedTaskId);
+          if (!detailTask) return null;
+          return (
+            <TaskDetailPanel
+              task={detailTask}
+              config={config}
+              comments={cache.comments[selectedTaskId] ?? []}
+              onUpdate={(updates) => updateTask(selectedTaskId, updates)}
+              onClose={() => setSelectedTaskId(null)}
+            />
+          );
+        })()}
+      </div>
     </div>
   );
 }

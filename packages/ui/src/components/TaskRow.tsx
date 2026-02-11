@@ -11,7 +11,6 @@ interface TaskRowProps {
   isCollapsed: boolean;
   onToggle: () => void;
   onClick: () => void;
-  onDoubleClick: () => void;
   isSelected: boolean;
   isHovered?: boolean;
   onHover?: (taskId: string | null) => void;
@@ -29,7 +28,6 @@ export function TaskRow({
   isCollapsed,
   onToggle,
   onClick,
-  onDoubleClick,
   isSelected,
   isHovered,
   onHover,
@@ -48,7 +46,6 @@ export function TaskRow({
   return (
     <div
       onClick={onClick}
-      onDoubleClick={onDoubleClick}
       onMouseEnter={() => onHover?.(task.id)}
       onMouseLeave={() => onHover?.(null)}
       style={{

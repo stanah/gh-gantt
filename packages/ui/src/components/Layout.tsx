@@ -58,7 +58,7 @@ export function Layout({ leftHeader, leftBody, rightHeader, rightBody, scrollCon
           </div>
 
           {/* Right column */}
-          <div>
+          <div style={{ flexGrow: 1, minWidth: 0 }}>
             {/* Right header — sticky to top */}
             <div style={{ position: "sticky", top: 0, zIndex: 2, background: "#fff" }}>
               {rightHeader}

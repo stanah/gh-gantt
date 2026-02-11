@@ -30,7 +30,7 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
       : null;
 
   return (
-    <div style={{ position: "fixed", top: 0, right: 0, width: 400, height: "100%", background: "#fff", borderLeft: "1px solid #e0e0e0", boxShadow: "-2px 0 8px rgba(0,0,0,0.1)", overflow: "auto", zIndex: 10 }}>
+    <div style={{ width: 400, flexShrink: 0, height: "100%", background: "#fff", borderLeft: "1px solid #e0e0e0", overflow: "auto" }}>
       {/* Header */}
       <div style={{ padding: "12px 16px", borderBottom: "1px solid #e0e0e0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <span style={{ fontSize: 11, color: "#888" }}>{task.id}</span>

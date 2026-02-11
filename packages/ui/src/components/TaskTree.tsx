@@ -26,7 +26,6 @@ interface TaskTreeBodyProps {
   config: Config;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
-  onDoubleClickTask: (taskId: string) => void;
   flatList: TreeNode[];
   collapsed: Set<string>;
   onToggleCollapse: (taskId: string) => void;
@@ -43,7 +42,6 @@ export function TaskTreeBody({
   config,
   selectedTaskId,
   onSelectTask,
-  onDoubleClickTask,
   flatList,
   collapsed,
   onToggleCollapse,
@@ -66,7 +64,7 @@ export function TaskTreeBody({
           isCollapsed={collapsed.has(node.task.id)}
           onToggle={() => onToggleCollapse(node.task.id)}
           onClick={() => onSelectTask(node.task.id)}
-          onDoubleClick={() => onDoubleClickTask(node.task.id)}
+
           isSelected={selectedTaskId === node.task.id}
           isHovered={hoveredTaskId === node.task.id}
           onHover={onHoverTask}
@@ -93,7 +91,7 @@ export function TaskTreeBody({
               isCollapsed={collapsed.has(node.task.id)}
               onToggle={() => onToggleCollapse(node.task.id)}
               onClick={() => onSelectTask(node.task.id)}
-              onDoubleClick={() => onDoubleClickTask(node.task.id)}
+    
               isSelected={selectedTaskId === node.task.id}
               isHovered={hoveredTaskId === node.task.id}
               onHover={onHoverTask}

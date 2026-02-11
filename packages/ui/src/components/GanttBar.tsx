@@ -55,7 +55,7 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         fill={progress === 100 ? "#8957e5" : color}
         opacity={0.7}
       />
-      {/* Label */}
+      {/* Label + Assignee */}
       {(() => {
         const issueLabel = showIssueId ? formatIssueId(task.id) : "";
         const prefix = issueLabel ? issueLabel + " " : "";
@@ -63,6 +63,12 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         const charWidth = 7;
         const padding = 12;
         const fitsInside = fullText.length * charWidth + padding < width;
+
+        const assigneeText = showAssignees && task.assignees.length > 0
+          ? (task.assignees.length <= 2
+              ? task.assignees.map((a) => `@${a}`).join(" ")
+              : `@${task.assignees[0]} +${task.assignees.length - 1}`)
+          : "";
 
         if (fitsInside) {
           const maxChars = Math.floor((width - padding) / charWidth);
@@ -74,6 +80,9 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
                   fontSize={10} fill="#333"
                   style={{ pointerEvents: "none" }}>
               {label}
+              {assigneeText && (
+                <tspan fontSize={9} fill="#888">{" "}{assigneeText}</tspan>
+              )}
             </text>
           );
         }
@@ -87,28 +96,9 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
                 fontSize={10} fill="#666"
                 style={{ pointerEvents: "none" }}>
             {outsideLabel}
-          </text>
-        );
-      })()}
-      {/* Assignee - always outside bar, after label */}
-      {showAssignees && task.assignees.length > 0 && (() => {
-        const issueLabel = showIssueId ? formatIssueId(task.id) : "";
-        const prefix = issueLabel ? issueLabel + " " : "";
-        const fullText = prefix + task.title;
-        const charWidth = 7;
-        const fitsInside = fullText.length * charWidth + 12 < width;
-        const outsideLabelWidth = fitsInside
-          ? 0
-          : Math.min(fullText.length, 30) * charWidth + 8;
-        const assigneeX = x1 + width + 4 + outsideLabelWidth;
-        const assigneeText = task.assignees.length <= 2
-          ? task.assignees.map((a) => `@${a}`).join(" ")
-          : `@${task.assignees[0]} +${task.assignees.length - 1}`;
-        return (
-          <text x={assigneeX} y={barY + barHeight / 2 + 4}
-                fontSize={9} fill="#888"
-                style={{ pointerEvents: "none" }}>
-            {assigneeText}
+            {assigneeText && (
+              <tspan fontSize={9} fill="#888">{" "}{assigneeText}</tspan>
+            )}
           </text>
         );
       })()}

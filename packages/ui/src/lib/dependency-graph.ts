@@ -72,35 +72,34 @@ export function getEdgeCoordinates(
   if (!from || !to) return null;
 
   const midY = rowHeight / 2;
+  const barPad = 4;  // matches barY = y + 4 in GanttBar
+  const gap = 8;
 
-  let startX: number;
-  let endX: number;
+  // Start: side of from bar at vertical center
+  const isFromEnd = edge.type === "finish-to-start" || edge.type === "finish-to-finish";
+  const startX = isFromEnd ? from.x2 : from.x1;
+  const startY = from.y + midY;
 
-  switch (edge.type) {
-    case "finish-to-start":
-      startX = from.x2;
-      endX = to.x1;
-      break;
-    case "finish-to-finish":
-      startX = from.x2;
-      endX = to.x2;
-      break;
-    case "start-to-start":
-      startX = from.x1;
-      endX = to.x1;
-      break;
-    case "start-to-finish":
-      startX = from.x1;
-      endX = to.x2;
-      break;
-  }
+  // End: top of to bar at the appropriate side
+  const isToStart = edge.type === "finish-to-start" || edge.type === "start-to-start";
+  const endX = isToStart ? to.x1 : to.x2;
+  const endY = to.y + barPad;
 
-  const fromY = from.y + midY;
-  const toY = to.y + midY;
+  // Polyline routing:
+  // 1. Step away horizontally from the from bar
+  // 2. Go vertically to just above the target bar
+  // 3. Go horizontally to above the endpoint
+  // 4. Go down vertically into the top of the bar
+  const turnX = isFromEnd ? startX + gap : startX - gap;
+  const aboveY = endY - gap;
 
-  // Simple path with a bend
-  const bendX = startX + (endX - startX) * 0.5;
-  const path = `M ${startX} ${fromY} C ${bendX} ${fromY}, ${bendX} ${toY}, ${endX} ${toY}`;
+  const path = [
+    `M ${startX} ${startY}`,
+    `L ${turnX} ${startY}`,
+    `L ${turnX} ${aboveY}`,
+    `L ${endX} ${aboveY}`,
+    `L ${endX} ${endY}`,
+  ].join(" ");
 
   return { path, isCycle: false };
 }

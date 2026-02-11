@@ -1,4 +1,4 @@
-import React, { useRef, useCallback, useImperativeHandle, forwardRef, useEffect } from "react";
+import React, { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useLayoutEffect } from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
@@ -45,9 +45,23 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const parent = bodyRef.current?.parentElement;
+    if (!parent) return;
+    setContainerWidth(parent.clientWidth);
+    const observer = new ResizeObserver((entries) => {
+      setContainerWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    observer.observe(parent);
+    return () => observer.disconnect();
+  }, []);
+
   const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
     tasks,
     config.gantt.default_view,
+    containerWidth,
   );
 
   // Notify parent when viewScale changes (e.g. due to zoom)
@@ -173,7 +187,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               y={y}
               width={totalWidth}
               height={ROW_HEIGHT}
-              fill={isSelected ? "#e8f0fe" : isHovered ? "#f5f8ff" : "transparent"}
+              fill={isSelected ? "rgba(66, 133, 244, 0.12)" : isHovered ? "rgba(66, 133, 244, 0.06)" : "transparent"}
+              style={{ cursor: "pointer" }}
+              onClick={() => onSelectTask(node.task.id)}
               onMouseEnter={() => onHoverTask?.(node.task.id)}
             />
           );
