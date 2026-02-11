@@ -5,6 +5,7 @@ import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
 import { useTaskFilter } from "./hooks/useTaskFilter.js";
 import { useRelatedTasks } from "./hooks/useRelatedTasks.js";
+import { useTreeDragDrop } from "./hooks/useTreeDragDrop.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
@@ -63,6 +64,30 @@ export function App() {
     () => getRelated(hoveredTaskId),
     [getRelated, hoveredTaskId],
   );
+
+  const handleReparent = useCallback(async (taskId: string, newParentId: string | null) => {
+    try {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reparent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newParentId }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        showToast(err?.error ?? "Failed to reparent task", "error");
+        return;
+      }
+      await refresh();
+    } catch (err) {
+      showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [refresh, showToast]);
+
+  const dragState = useTreeDragDrop({
+    tasks,
+    config,
+    onReparent: handleReparent,
+  });
 
   const handlePull = useCallback(async () => {
     setSyncing("pull");
@@ -223,6 +248,7 @@ export function App() {
                 highlightedTaskIds={highlightedTaskIds}
                 highlightRelationMap={highlightRelationMap}
                 searchQuery={searchQuery}
+                dragState={dragState}
               />
             }
             rightHeader={ganttHeader}

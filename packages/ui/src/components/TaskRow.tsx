@@ -4,6 +4,7 @@ import { StatusBadge } from "./StatusBadge.js";
 import { ProgressBar } from "./ProgressBar.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
+import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
 
 interface TaskRowProps {
   task: Task;
@@ -23,6 +24,14 @@ interface TaskRowProps {
   highlightType?: RelationType | null;
   isDimmed?: boolean;
   searchQuery?: string;
+  draggable?: boolean;
+  isDragging?: boolean;
+  dropIndicator?: DropIndicator | null;
+  onDragStart?: (e: React.DragEvent) => void;
+  onDragOver?: (e: React.DragEvent) => void;
+  onDragLeave?: (e: React.DragEvent) => void;
+  onDrop?: (e: React.DragEvent) => void;
+  onDragEnd?: (e: React.DragEvent) => void;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -56,6 +65,14 @@ export function TaskRow({
   highlightType,
   isDimmed,
   searchQuery,
+  draggable: isDraggable,
+  isDragging,
+  dropIndicator,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
 }: TaskRowProps) {
   const indent = depth * 20;
   const progress = task._progress ?? 0;
@@ -67,26 +84,37 @@ export function TaskRow({
   const highlightBg = isBlockRelation ? "#fef2f2" : isParentRelation ? "#f5f0ff" : undefined;
   const highlightBorder = isBlockRelation ? "3px solid #e74c3c" : isParentRelation ? "3px solid #8957e5" : undefined;
 
-  const bg = isSelected ? "#e8f0fe" : highlightBg ?? (isHovered ? "#f5f8ff" : "transparent");
+  const dropValid = dropIndicator?.targetTaskId === task.id && dropIndicator.valid;
+  const dropInvalid = dropIndicator?.targetTaskId === task.id && !dropIndicator.valid;
+  const dropBorderLeft = dropValid ? "2px solid #4285f4" : dropInvalid ? "2px dashed #e74c3c" : highlightBorder;
+  const dropBg = dropValid ? "#e8f0fe" : dropInvalid ? "#fef2f2" : undefined;
+
+  const bg = dropBg ?? (isSelected ? "#e8f0fe" : highlightBg ?? (isHovered ? "#f5f8ff" : "transparent"));
 
   return (
     <div
+      draggable={isDraggable}
       onClick={onClick}
       onMouseEnter={() => onHover?.(task.id)}
       onMouseLeave={() => onHover?.(null)}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+      onDragEnd={onDragEnd}
       style={{
         display: "flex",
         alignItems: "center",
         gap: 6,
         padding: "3px 8px",
-        paddingLeft: highlightBorder ? 5 + indent : 8 + indent,
-        cursor: "pointer",
+        paddingLeft: dropBorderLeft ? 5 + indent : 8 + indent,
+        cursor: isDraggable ? "grab" : "pointer",
         background: bg,
         borderBottom: "1px solid #f0f0f0",
-        borderLeft: highlightBorder,
+        borderLeft: dropBorderLeft,
         height: 28,
         minWidth: 0,
-        opacity: isDimmed ? 0.4 : 1,
+        opacity: isDragging ? 0.3 : isDimmed ? 0.4 : 1,
       }}
     >
       {hasChildren ? (

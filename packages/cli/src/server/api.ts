@@ -3,6 +3,7 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
+import { setParent, removeParent } from "../commands/task/link.js";
 import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
@@ -172,6 +173,77 @@ export function createApiRouter(projectRoot: string): Router {
       res.json(updatedTask);
     } catch (err) {
       res.status(500).json({ error: "Failed to update task" });
+    }
+  });
+
+  // POST /api/tasks/:id/reparent
+  router.post("/api/tasks/:id/reparent", async (req, res) => {
+    try {
+      const taskId = decodeURIComponent(req.params.id);
+      const { newParentId } = req.body;
+
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
+      const task = tasksFile.tasks.find((t) => t.id === taskId);
+
+      if (!task) {
+        res.status(400).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
+        return;
+      }
+
+      if (newParentId === taskId) {
+        res.status(400).json({ error: "Cannot set a task as its own parent", code: "SELF_REFERENCE" });
+        return;
+      }
+
+      if (newParentId != null) {
+        const parent = tasksFile.tasks.find((t) => t.id === newParentId);
+        if (!parent) {
+          res.status(400).json({ error: "Parent task not found", code: "TASK_NOT_FOUND" });
+          return;
+        }
+
+        // Cycle detection: walk up from newParentId, check we don't reach taskId
+        const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
+        let current: string | null = newParentId;
+        while (current) {
+          if (current === taskId) {
+            res.status(400).json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
+            return;
+          }
+          const t = taskMap.get(current);
+          current = t?.parent ?? null;
+        }
+
+        // Type hierarchy validation
+        const allowed = config.type_hierarchy[parent.type];
+        if (allowed && allowed.length > 0 && !allowed.includes(task.type)) {
+          res.status(400).json({
+            error: `Cannot place "${task.type}" under "${parent.type}"`,
+            code: "TYPE_HIERARCHY_VIOLATION",
+          });
+          return;
+        }
+
+        tasksFile.tasks = setParent(tasksFile.tasks, taskId, newParentId);
+      } else {
+        tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
+      }
+
+      await tasksStore.write(tasksFile);
+
+      const tasksWithProgress = tasksFile.tasks.map((t) => ({
+        ...t,
+        _progress: computeProgress(
+          t,
+          tasksFile.tasks,
+          config.statuses.values,
+          config.statuses.field_name,
+        ),
+      }));
+      res.json({ tasks: tasksWithProgress });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 
