@@ -58,4 +58,34 @@ describe("hashTask", () => {
     const modified = { ...baseTask, type: "epic" };
     expect(hashTask(baseTask)).not.toBe(hashTask(modified));
   });
+
+  it("produces same hash regardless of custom_fields key order", () => {
+    const task1 = { ...baseTask, custom_fields: { Status: "Todo", Priority: "High", Sprint: "1" } };
+    const task2 = { ...baseTask, custom_fields: { Sprint: "1", Status: "Todo", Priority: "High" } };
+    expect(hashTask(task1)).toBe(hashTask(task2));
+  });
+
+  it("produces same hash regardless of blocked_by order", () => {
+    const task1 = {
+      ...baseTask,
+      blocked_by: [
+        { task: "owner/repo#2", type: "finish-to-start" as const, lag: 0 },
+        { task: "owner/repo#3", type: "finish-to-start" as const, lag: 0 },
+      ],
+    };
+    const task2 = {
+      ...baseTask,
+      blocked_by: [
+        { task: "owner/repo#3", type: "finish-to-start" as const, lag: 0 },
+        { task: "owner/repo#2", type: "finish-to-start" as const, lag: 0 },
+      ],
+    };
+    expect(hashTask(task1)).toBe(hashTask(task2));
+  });
+
+  it("produces different hash when custom_fields values differ", () => {
+    const task1 = { ...baseTask, custom_fields: { Status: "Todo" } };
+    const task2 = { ...baseTask, custom_fields: { Status: "Done" } };
+    expect(hashTask(task1)).not.toBe(hashTask(task2));
+  });
 });

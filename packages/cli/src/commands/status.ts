@@ -6,7 +6,8 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { computeLocalDiff } from "../sync/diff.js";
-import { detectConflicts } from "../sync/conflict.js";
+import { detectConflicts, type ConflictFieldDetail } from "../sync/conflict.js";
+import { formatValue } from "../util/format.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { hashTask } from "../sync/hash.js";
 import type { Task } from "@gh-gantt/shared";
@@ -78,6 +79,12 @@ export const statusCommand = new Command("status")
       console.log(`Conflicts (${conflicts.length}):`);
       for (const c of conflicts) {
         console.log(`  ! ${c.taskId}: ${c.title}`);
+        for (const d of c.fieldDetails) {
+          const isLocal = c.localChangedFields.includes(d.field);
+          const isRemote = c.remoteChangedFields.includes(d.field);
+          const tag = `[${isLocal ? "L" : " "}${isRemote ? "R" : " "}]`;
+          console.log(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+        }
       }
       console.log();
       console.log(`Strategy: ${config.sync.conflict_strategy}`);

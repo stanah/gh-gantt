@@ -9,6 +9,12 @@ const conflicts: Conflict[] = [
     localHash: "aaa",
     remoteHash: "bbb",
     snapshotHash: "ccc",
+    localChangedFields: ["state"],
+    remoteChangedFields: ["custom_fields"],
+    fieldDetails: [
+      { field: "state", local: "closed", remote: "open", snapshot: "open" },
+      { field: "custom_fields", local: { Status: "Todo" }, remote: { Status: "Done" }, snapshot: { Status: "Todo" } },
+    ],
   },
   {
     taskId: "owner/repo#12",
@@ -16,6 +22,11 @@ const conflicts: Conflict[] = [
     localHash: "ddd",
     remoteHash: "eee",
     snapshotHash: "fff",
+    localChangedFields: [],
+    remoteChangedFields: ["assignees"],
+    fieldDetails: [
+      { field: "assignees", local: ["alice"], remote: ["bob"], snapshot: ["alice"] },
+    ],
   },
 ];
 
@@ -45,6 +56,11 @@ describe("confirmConflicts", () => {
     expect(warnCalls).toContain("owner/repo#5: Implement auth flow");
     expect(warnCalls).toContain("owner/repo#12: Update dashboard layout");
     expect(warnCalls).toContain("2 task(s) have conflicting changes");
+    // Field details are shown
+    expect(warnCalls).toContain("[L ]");
+    expect(warnCalls).toContain("[ R]");
+    expect(warnCalls).toContain("state:");
+    expect(warnCalls).toContain("assignees:");
   });
 
   it("returns proceed with --force without prompting", async () => {

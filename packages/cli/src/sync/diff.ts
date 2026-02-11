@@ -8,7 +8,7 @@ export interface TaskDiff {
   changedFields?: string[];
 }
 
-function detectChangedFields(current: SyncFields, previous: SyncFields): string[] {
+export function detectChangedFields(current: SyncFields, previous: SyncFields): string[] {
   const changed: string[] = [];
   for (const key of Object.keys(current) as (keyof SyncFields)[]) {
     const a = JSON.stringify(current[key]);

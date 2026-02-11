@@ -11,6 +11,7 @@ import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { detectConflicts, type Conflict } from "../sync/conflict.js";
+import { formatValue } from "../util/format.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 
 export async function confirmConflicts(
@@ -21,6 +22,12 @@ export async function confirmConflicts(
   console.warn(`\nWARNING: ${conflicts.length} task(s) have conflicting changes:\n`);
   for (const c of conflicts) {
     console.warn(`  ! ${c.taskId}: ${c.title}`);
+    for (const d of c.fieldDetails) {
+      const isLocal = c.localChangedFields.includes(d.field);
+      const isRemote = c.remoteChangedFields.includes(d.field);
+      const tag = `[${isLocal ? "L" : " "}${isRemote ? "R" : " "}]`;
+      console.warn(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+    }
   }
   console.warn(
     "\nBoth local and remote versions changed since last sync.\n" +
