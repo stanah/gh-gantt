@@ -5,6 +5,7 @@ import { BacklogSectionHeader } from "./BacklogSectionHeader.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 
 export const ROW_HEIGHT = 28;
 
@@ -36,6 +37,8 @@ interface TaskTreeBodyProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
+  highlightedTaskIds?: Set<string>;
+  highlightRelationMap?: Map<string, RelationType>;
 }
 
 export function TaskTreeBody({
@@ -52,6 +55,8 @@ export function TaskTreeBody({
   displayOptions,
   hoveredTaskId,
   onHoverTask,
+  highlightedTaskIds,
+  highlightRelationMap,
 }: TaskTreeBodyProps) {
   return (
     <div>
@@ -73,6 +78,8 @@ export function TaskTreeBody({
           taskType={config.task_types[node.task.type]}
           showIssueId={displayOptions?.has("issueId")}
           showAssignees={displayOptions?.has("assignees")}
+          highlightType={highlightRelationMap?.get(node.task.id) ?? null}
+          isDimmed={hoveredTaskId != null && hoveredTaskId !== node.task.id && !highlightedTaskIds?.has(node.task.id)}
         />
       ))}
       {backlogTotalCount > 0 && (
@@ -91,7 +98,7 @@ export function TaskTreeBody({
               isCollapsed={collapsed.has(node.task.id)}
               onToggle={() => onToggleCollapse(node.task.id)}
               onClick={() => onSelectTask(node.task.id)}
-    
+
               isSelected={selectedTaskId === node.task.id}
               isHovered={hoveredTaskId === node.task.id}
               onHover={onHoverTask}
@@ -100,6 +107,8 @@ export function TaskTreeBody({
               taskType={config.task_types[node.task.type]}
               showIssueId={displayOptions?.has("issueId")}
               showAssignees={displayOptions?.has("assignees")}
+              highlightType={highlightRelationMap?.get(node.task.id) ?? null}
+              isDimmed={hoveredTaskId != null && hoveredTaskId !== node.task.id && !highlightedTaskIds?.has(node.task.id)}
             />
           ))}
         </>

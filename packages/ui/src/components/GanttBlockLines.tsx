@@ -12,9 +12,10 @@ interface GanttBlockLinesProps {
   xScale: ScaleTime<number, number>;
   totalWidth: number;
   totalHeight: number;
+  hoveredTaskId: string | null;
 }
 
-export function GanttBlockLines({ tasks, flatList, xScale, totalWidth, totalHeight }: GanttBlockLinesProps) {
+export function GanttBlockLines({ tasks, flatList, xScale, totalWidth, totalHeight, hoveredTaskId }: GanttBlockLinesProps) {
   const edges = useMemo(() => buildDependencyEdges(tasks), [tasks]);
   const cycles = useMemo(() => {
     const c = detectCycles(tasks);
@@ -37,7 +38,13 @@ export function GanttBlockLines({ tasks, flatList, xScale, totalWidth, totalHeig
     return map;
   }, [flatList, xScale]);
 
-  if (edges.length === 0) return null;
+  // Only show arrows when hovering a task; filter to edges involving the hovered task
+  const visibleEdges = useMemo(() => {
+    if (!hoveredTaskId) return [];
+    return edges.filter((edge) => edge.from === hoveredTaskId || edge.to === hoveredTaskId);
+  }, [edges, hoveredTaskId]);
+
+  if (visibleEdges.length === 0) return null;
 
   return (
     <svg
@@ -53,7 +60,7 @@ export function GanttBlockLines({ tasks, flatList, xScale, totalWidth, totalHeig
           <polygon points="0 0, 8 3, 0 6" fill="#E74C3C" />
         </marker>
       </defs>
-      {edges.map((edge, i) => {
+      {visibleEdges.map((edge, i) => {
         const coords = getEdgeCoordinates(edge, taskPositions, ROW_HEIGHT);
         if (!coords) return null;
 

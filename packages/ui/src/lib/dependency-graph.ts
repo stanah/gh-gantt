@@ -71,35 +71,65 @@ export function getEdgeCoordinates(
   const to = taskPositions.get(edge.to);
   if (!from || !to) return null;
 
-  const midY = rowHeight / 2;
-  const barPad = 4;  // matches barY = y + 4 in GanttBar
-  const gap = 8;
+  const barPad = 4; // matches barY = y + 4 in GanttBar
+  const gap = 12;
 
-  // Start: side of from bar at vertical center
-  const isFromEnd = edge.type === "finish-to-start" || edge.type === "finish-to-finish";
-  const startX = isFromEnd ? from.x2 : from.x1;
-  const startY = from.y + midY;
+  const startX = (from.x1 + from.x2) / 2;
+  const endX = to.x1;
+  const endY = to.y + rowHeight / 2;
 
-  // End: top of to bar at the appropriate side
-  const isToStart = edge.type === "finish-to-start" || edge.type === "start-to-start";
-  const endX = isToStart ? to.x1 : to.x2;
-  const endY = to.y + barPad;
+  let startY: number;
+  let path: string;
 
-  // Polyline routing:
-  // 1. Step away horizontally from the from bar
-  // 2. Go vertically to just above the target bar
-  // 3. Go horizontally to above the endpoint
-  // 4. Go down vertically into the top of the bar
-  const turnX = isFromEnd ? startX + gap : startX - gap;
-  const aboveY = endY - gap;
-
-  const path = [
-    `M ${startX} ${startY}`,
-    `L ${turnX} ${startY}`,
-    `L ${turnX} ${aboveY}`,
-    `L ${endX} ${aboveY}`,
-    `L ${endX} ${endY}`,
-  ].join(" ");
+  if (to.y > from.y) {
+    // Target below: exit from bottom
+    startY = from.y + rowHeight - barPad;
+    if (startX <= endX) {
+      // Clear: L-shape (1 bend)
+      path = `M ${startX} ${startY} L ${startX} ${endY} L ${endX} ${endY}`;
+    } else {
+      // Overlapping: down through gap → left → down → right
+      const midY = (from.y + rowHeight + to.y) / 2;
+      const approachX = Math.min(from.x1, endX) - gap;
+      path = [
+        `M ${startX} ${startY}`,
+        `L ${startX} ${midY}`,
+        `L ${approachX} ${midY}`,
+        `L ${approachX} ${endY}`,
+        `L ${endX} ${endY}`,
+      ].join(" ");
+    }
+  } else if (to.y < from.y) {
+    // Target above: exit from top
+    startY = from.y + barPad;
+    if (startX <= endX) {
+      // Clear: L-shape up (1 bend)
+      path = `M ${startX} ${startY} L ${startX} ${endY} L ${endX} ${endY}`;
+    } else {
+      // Overlapping: up through gap → left → up → right
+      const midY = (to.y + rowHeight + from.y) / 2;
+      const approachX = Math.min(from.x1, endX) - gap;
+      path = [
+        `M ${startX} ${startY}`,
+        `L ${startX} ${midY}`,
+        `L ${approachX} ${midY}`,
+        `L ${approachX} ${endY}`,
+        `L ${endX} ${endY}`,
+      ].join(" ");
+    }
+  } else {
+    // Same row: exit bottom, route through gap between this row and the next
+    startY = from.y + rowHeight - barPad;
+    const midY = from.y + rowHeight;
+    const approachX = Math.min(from.x1, endX) - gap;
+    path = [
+      `M ${startX} ${startY}`,
+      `L ${startX} ${midY}`,
+      `L ${approachX} ${midY}`,
+      `L ${approachX} ${endY}`,
+      `L ${endX} ${endY}`,
+    ].join(" ");
+  }
 
   return { path, isCycle: false };
 }

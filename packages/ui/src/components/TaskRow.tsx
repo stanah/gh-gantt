@@ -3,6 +3,7 @@ import type { Task, StatusValue, TaskType } from "../types/index.js";
 import { StatusBadge } from "./StatusBadge.js";
 import { ProgressBar } from "./ProgressBar.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 
 interface TaskRowProps {
   task: Task;
@@ -19,6 +20,8 @@ interface TaskRowProps {
   taskType: TaskType | undefined;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  highlightType?: RelationType | null;
+  isDimmed?: boolean;
 }
 
 export function TaskRow({
@@ -36,12 +39,20 @@ export function TaskRow({
   taskType,
   showIssueId,
   showAssignees,
+  highlightType,
+  isDimmed,
 }: TaskRowProps) {
   const indent = depth * 20;
   const progress = task._progress ?? 0;
   const status = task.custom_fields[statusFieldName] as string | undefined;
-  const bg = isSelected ? "#e8f0fe" : isHovered ? "#f5f8ff" : "transparent";
   const isMilestone = task.type === "milestone";
+
+  const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
+  const isParentRelation = highlightType === "parent" || highlightType === "child";
+  const highlightBg = isBlockRelation ? "#fef2f2" : isParentRelation ? "#f5f0ff" : undefined;
+  const highlightBorder = isBlockRelation ? "3px solid #e74c3c" : isParentRelation ? "3px solid #8957e5" : undefined;
+
+  const bg = isSelected ? "#e8f0fe" : highlightBg ?? (isHovered ? "#f5f8ff" : "transparent");
 
   return (
     <div
@@ -53,12 +64,14 @@ export function TaskRow({
         alignItems: "center",
         gap: 6,
         padding: "3px 8px",
-        paddingLeft: 8 + indent,
+        paddingLeft: highlightBorder ? 5 + indent : 8 + indent,
         cursor: "pointer",
         background: bg,
         borderBottom: "1px solid #f0f0f0",
+        borderLeft: highlightBorder,
         height: 28,
         minWidth: 0,
+        opacity: isDimmed ? 0.4 : 1,
       }}
     >
       {hasChildren ? (

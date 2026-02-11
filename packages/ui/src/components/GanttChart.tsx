@@ -13,6 +13,7 @@ import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 
 export interface GanttChartHandle {
   viewScale: ViewScale;
@@ -38,10 +39,12 @@ interface GanttChartProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
+  highlightedTaskIds?: Set<string>;
+  highlightRelationMap?: Map<string, RelationType>;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask, highlightedTaskIds, highlightRelationMap },
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -171,7 +174,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         workingDays={config.gantt.working_days}
         pixelsPerDay={pixelsPerDay}
       />
-      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} />
+      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} hoveredTaskId={hoveredTaskId ?? null} />
       <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
@@ -203,6 +206,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           const showIssueId = displayOptions?.has("issueId");
           const showAssignees = displayOptions?.has("assignees");
 
+          const isHoveredTask = hoveredTaskId === task.id;
+          const highlightType = highlightRelationMap?.get(task.id) ?? null;
+          const isDimmed = hoveredTaskId != null && !isHoveredTask && !highlightType;
+
           if (display === "summary") {
             return (
               <GanttSummaryBar
@@ -214,6 +221,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 y={y}
                 height={ROW_HEIGHT}
                 showIssueId={showIssueId}
+                isDimmed={isDimmed}
+                highlightType={highlightType}
               />
             );
           }
@@ -228,6 +237,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 y={y}
                 height={ROW_HEIGHT}
                 showIssueId={showIssueId}
+                isDimmed={isDimmed}
+                highlightType={highlightType}
               />
             );
           }
@@ -245,6 +256,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
               showIssueId={showIssueId}
               showAssignees={showAssignees}
+              isDimmed={isDimmed}
+              highlightType={highlightType}
             />
           );
         })}

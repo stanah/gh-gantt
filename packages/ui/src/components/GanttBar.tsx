@@ -4,6 +4,7 @@ import type { Task, TaskType } from "../types/index.js";
 import { parseDate } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { DragMode } from "../hooks/useDragResize.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 
 interface GanttBarProps {
   task: Task;
@@ -16,9 +17,17 @@ interface GanttBarProps {
   onDragStart?: (e: React.MouseEvent, mode: DragMode) => void;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  isDimmed?: boolean;
+  highlightType?: RelationType | null;
 }
 
-export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees }: GanttBarProps) {
+function highlightStroke(type: RelationType | null | undefined): { stroke: string; strokeWidth: number } | null {
+  if (!type) return null;
+  if (type === "parent" || type === "child") return { stroke: "#8957e5", strokeWidth: 2 };
+  return { stroke: "#e74c3c", strokeWidth: 2 };
+}
+
+export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees, isDimmed, highlightType }: GanttBarProps) {
   if (!task.start_date || !task.end_date) return null;
 
   const x1 = xScale(parseDate(task.start_date));
@@ -32,8 +41,10 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
   const barY = y + 4;
   const handleWidth = 6;
 
+  const hl = highlightStroke(highlightType);
+
   return (
-    <g onClick={onClick} style={{ cursor: "pointer" }}>
+    <g onClick={onClick} style={{ cursor: "pointer" }} opacity={isDimmed ? 0.3 : 1}>
       {/* Background */}
       <rect
         x={x1}
@@ -42,8 +53,8 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         height={barHeight}
         rx={3}
         fill={color + "44"}
-        stroke={isSelected ? "#333" : color}
-        strokeWidth={isSelected ? 2 : 1}
+        stroke={isSelected ? "#333" : hl ? hl.stroke : color}
+        strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
       />
       {/* Progress fill */}
       <rect
