@@ -160,6 +160,12 @@ export function createApiRouter(projectRoot: string): Router {
         Object.assign(updatedTask, dateUpdates);
       }
 
+      // Prevent start > end regardless of how dates were changed
+      if (updatedTask.start_date && updatedTask.end_date && updatedTask.start_date > updatedTask.end_date) {
+        res.status(400).json({ error: `start_date (${updatedTask.start_date}) must not be after end_date (${updatedTask.end_date})` });
+        return;
+      }
+
       tasksFile.tasks[idx] = updatedTask;
       await tasksStore.write(tasksFile);
 
