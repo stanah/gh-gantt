@@ -3,10 +3,12 @@ import { createInterface } from "node:readline/promises";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
+import { fetchAllComments } from "../github/comments.js";
 import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
+import { CommentsStore } from "../store/comments.js";
 import { hashTask } from "../sync/hash.js";
 import { detectConflicts, type Conflict } from "../sync/conflict.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
@@ -57,6 +59,8 @@ export const pullCommand = new Command("pull")
   .description("Pull latest changes from GitHub Project")
   .option("--dry-run", "Show changes without applying")
   .option("--force", "Skip conflict confirmation prompt")
+  .option("--with-comments", "Also fetch issue comments")
+  .option("--force-comments", "Re-fetch all comments (implies --with-comments)")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -106,10 +110,13 @@ export const pullCommand = new Command("pull")
         if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
       }
       if (!changed) {
-        console.log("No remote changes detected, skipping sub-issues fetch.");
-        console.log(`Pull summary: +0 ~0 -0`);
-        console.log("Pull complete.");
-        return;
+        if (!opts.withComments && !opts.forceComments) {
+          console.log("No remote changes detected, skipping sub-issues fetch.");
+          console.log(`Pull summary: +0 ~0 -0`);
+          console.log("Pull complete.");
+          return;
+        }
+        console.log("No remote changes detected, but fetching comments as requested.");
       }
     }
 
@@ -232,4 +239,41 @@ export const pullCommand = new Command("pull")
     });
 
     console.log("Pull complete.");
+
+    // Fetch comments if requested
+    if (opts.withComments || opts.forceComments) {
+      try {
+        const commentsStore = new CommentsStore(projectRoot);
+        const commentsFile = await commentsStore.read();
+
+        // Build list of issue items to fetch comments for
+        const commentItems = newTasks
+          .filter((t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id))
+          .map((t) => {
+            const [owner, repo] = t.github_repo.split("/");
+            return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
+          });
+
+        const updatedComments = await fetchAllComments(
+          gql,
+          commentItems,
+          commentsFile,
+          (data) => commentsStore.write(data),
+          { force: !!opts.forceComments },
+        );
+
+        // Clean up comments for deleted tasks after fetching
+        const taskIds = new Set(newTasks.map((t) => t.id));
+        for (const key of Object.keys(updatedComments.fetched_at)) {
+          if (!taskIds.has(key)) {
+            delete updatedComments.fetched_at[key];
+            delete updatedComments.comments[key];
+          }
+        }
+
+        await commentsStore.write(updatedComments);
+      } catch (err) {
+        console.warn(`Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
   });
