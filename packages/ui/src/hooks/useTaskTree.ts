@@ -11,7 +11,14 @@ function isBacklog(task: Task): boolean {
   return !task.start_date && !task.end_date && !task.date;
 }
 
-export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
+export interface TaskFilterOptions {
+  hideClosed?: boolean;
+  selectedAssignee?: string | null;
+}
+
+const CONTAINER_TYPES = new Set(["epic", "summary"]);
+
+export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOptions: TaskFilterOptions = {}) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [backlogCollapsed, setBacklogCollapsed] = useState(true);
 
@@ -28,8 +35,21 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
     setBacklogCollapsed((prev) => !prev);
   }, []);
 
+  const { hideClosed = false, selectedAssignee = null } = filterOptions;
+
   const { scheduledTree, backlogTree } = useMemo(() => {
-    const filtered = tasks.filter((t) => enabledTypes.has(t.type));
+    const filtered = tasks.filter((t) => {
+      if (!enabledTypes.has(t.type)) return false;
+      if (hideClosed && t.state === "closed") return false;
+      if (selectedAssignee && !CONTAINER_TYPES.has(t.type)) {
+        if (selectedAssignee === "__unassigned__") {
+          if (t.assignees.length > 0) return false;
+        } else {
+          if (!t.assignees.includes(selectedAssignee)) return false;
+        }
+      }
+      return true;
+    });
 
     const scheduledTasks = filtered.filter((t) => !isBacklog(t));
     const backlogTasks = filtered.filter((t) => isBacklog(t));
@@ -47,6 +67,11 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
       });
 
       const roots = subset.filter((t) => !t.parent || !taskMap.has(t.parent));
+      roots.sort((a, b) => {
+        const aMs = a.type === "milestone" ? 1 : 0;
+        const bMs = b.type === "milestone" ? 1 : 0;
+        return aMs - bMs;
+      });
       return roots.map((t) => buildNode(t, 0));
     };
 
@@ -54,7 +79,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>) {
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes]);
+  }, [tasks, enabledTypes, hideClosed, selectedAssignee]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

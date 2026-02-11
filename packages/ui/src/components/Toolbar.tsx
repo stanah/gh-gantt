@@ -14,6 +14,11 @@ interface ToolbarProps {
   lastSyncedAt?: string;
   displayOptions: Set<DisplayOption>;
   onToggleDisplayOption: (opt: DisplayOption) => void;
+  hideClosed: boolean;
+  onToggleHideClosed: () => void;
+  selectedAssignee: string | null;
+  allAssignees: string[];
+  onSelectAssignee: (assignee: string | null) => void;
 }
 
 export function Toolbar({
@@ -28,6 +33,11 @@ export function Toolbar({
   lastSyncedAt,
   displayOptions,
   onToggleDisplayOption,
+  hideClosed,
+  onToggleHideClosed,
+  selectedAssignee,
+  allAssignees,
+  onSelectAssignee,
 }: ToolbarProps) {
 
   const btnStyle = (active = false): React.CSSProperties => ({
@@ -68,6 +78,33 @@ export function Toolbar({
         <button onClick={() => onToggleDisplayOption("assignees")} style={btnStyle(displayOptions.has("assignees"))}>
           Assignee
         </button>
+      </div>
+
+      <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
+
+      {/* Filters */}
+      <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+        <button onClick={onToggleHideClosed} style={btnStyle(hideClosed)}>
+          Hide closed
+        </button>
+        <select
+          value={selectedAssignee ?? ""}
+          onChange={(e) => onSelectAssignee(e.target.value || null)}
+          style={{
+            padding: "3px 6px",
+            border: "1px solid #ccc",
+            borderRadius: 3,
+            fontSize: 11,
+            background: "#fff",
+            cursor: "pointer",
+          }}
+        >
+          <option value="">All assignees</option>
+          <option value="__unassigned__">Unassigned</option>
+          {allAssignees.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </select>
       </div>
 
       <div style={{ flex: 1 }} />

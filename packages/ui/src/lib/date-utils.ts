@@ -17,7 +17,7 @@ export function addWorkingDays(start: Date, days: number, workingDays: number[])
 }
 
 export function parseDate(dateStr: string): Date {
-  const [year, month, day] = dateStr.split("-").map(Number);
+  const [year, month, day] = dateStr.slice(0, 10).split("-").map(Number);
   return new Date(year, month - 1, day);
 }
 
@@ -26,6 +26,7 @@ export function getDateRange(tasks: Task[]): [Date, Date] {
   for (const task of tasks) {
     if (task.start_date) dates.push(parseDate(task.start_date));
     if (task.end_date) dates.push(parseDate(task.end_date));
+    if (task.date) dates.push(parseDate(task.date));
   }
 
   if (dates.length === 0) {

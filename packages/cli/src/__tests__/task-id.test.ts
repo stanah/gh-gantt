@@ -53,4 +53,20 @@ describe("resolveTaskId", () => {
   it("passes through cross-repo IDs", () => {
     expect(resolveTaskId("other/project#10", config)).toBe("other/project#10");
   });
+
+  it("resolves M1 to milestone:owner/repo#1", () => {
+    expect(resolveTaskId("M1", config)).toBe("milestone:owner/repo#1");
+  });
+
+  it("resolves M42 to milestone:owner/repo#42", () => {
+    expect(resolveTaskId("M42", config)).toBe("milestone:owner/repo#42");
+  });
+
+  it("resolves m1 (lowercase) to milestone:owner/repo#1", () => {
+    expect(resolveTaskId("m1", config)).toBe("milestone:owner/repo#1");
+  });
+
+  it("passes through fully qualified milestone IDs", () => {
+    expect(resolveTaskId("milestone:owner/repo#1", config)).toBe("milestone:owner/repo#1");
+  });
 });

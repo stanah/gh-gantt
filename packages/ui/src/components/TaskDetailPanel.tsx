@@ -19,10 +19,15 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
   const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
   const statusOptions = Object.keys(config.statuses.values);
   const taskType = config.task_types[task.type];
+  const isMilestone = task.type === "milestone";
 
-  const githubUrl = task.github_issue
-    ? `https://github.com/${task.github_repo}/issues/${task.github_issue}`
-    : null;
+  const githubUrl = isMilestone
+    ? task.github_repo
+      ? `https://github.com/${task.github_repo}/milestone/${task.id.split("#").pop()}`
+      : null
+    : task.github_issue
+      ? `https://github.com/${task.github_repo}/issues/${task.github_issue}`
+      : null;
 
   return (
     <div style={{ position: "fixed", top: 0, right: 0, width: 400, height: "100%", background: "#fff", borderLeft: "1px solid #e0e0e0", boxShadow: "-2px 0 8px rgba(0,0,0,0.1)", overflow: "auto", zIndex: 10 }}>
@@ -54,25 +59,29 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
           </h2>
         )}
 
-        {/* Progress */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ProgressBar progress={task._progress ?? 0} color={taskType?.color} />
-          <span style={{ fontSize: 11, color: "#888" }}>{task._progress ?? 0}%</span>
-        </div>
+        {/* Progress (tasks only) */}
+        {!isMilestone && (
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <ProgressBar progress={task._progress ?? 0} color={taskType?.color} />
+            <span style={{ fontSize: 11, color: "#888" }}>{task._progress ?? 0}%</span>
+          </div>
+        )}
 
-        {/* Status */}
-        <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Status</label>
-          <select
-            value={currentStatus ?? ""}
-            onChange={(e) => onUpdate({ custom_fields: { ...task.custom_fields, [statusFieldName]: e.target.value } })}
-            style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
-          >
-            {statusOptions.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </select>
-        </div>
+        {/* Status (tasks only) */}
+        {!isMilestone && (
+          <div>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Status</label>
+            <select
+              value={currentStatus ?? ""}
+              onChange={(e) => onUpdate({ custom_fields: { ...task.custom_fields, [statusFieldName]: e.target.value } })}
+              style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
+            >
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        )}
 
         {/* State */}
         <div>
@@ -91,62 +100,80 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
         </div>
 
         {/* Dates */}
-        <div style={{ display: "flex", gap: 12 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Start Date</label>
+        {isMilestone ? (
+          <div>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Due Date</label>
             <input
               type="date"
-              value={task.start_date ?? ""}
-              onChange={(e) => onUpdate({ start_date: e.target.value || null })}
+              value={(task.date ?? "").slice(0, 10)}
+              onChange={(e) => onUpdate({ date: e.target.value || null })}
               style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
             />
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>End Date</label>
-            <input
-              type="date"
-              value={task.end_date ?? ""}
-              onChange={(e) => onUpdate({ end_date: e.target.value || null })}
-              style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
-            />
+        ) : (
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Start Date</label>
+              <input
+                type="date"
+                value={task.start_date ?? ""}
+                onChange={(e) => onUpdate({ start_date: e.target.value || null })}
+                style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>End Date</label>
+              <input
+                type="date"
+                value={task.end_date ?? ""}
+                onChange={(e) => onUpdate({ end_date: e.target.value || null })}
+                style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4, width: "100%" }}
+              />
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Type */}
-        <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Type</label>
-          <select
-            value={task.type}
-            onChange={(e) => onUpdate({ type: e.target.value })}
-            style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
-          >
-            {Object.entries(config.task_types).map(([name, def]) => (
-              <option key={name} value={name}>{def.label}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Assignees */}
-        <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Assignees</label>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {task.assignees.map((a) => (
-              <span key={a} style={{ padding: "2px 8px", fontSize: 11, background: "#e8f0fe", borderRadius: 12 }}>{a}</span>
-            ))}
-            {task.assignees.length === 0 && <span style={{ color: "#999", fontSize: 11 }}>None</span>}
+        {/* Type (tasks only) */}
+        {!isMilestone && (
+          <div>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Type</label>
+            <select
+              value={task.type}
+              onChange={(e) => onUpdate({ type: e.target.value })}
+              style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
+            >
+              {Object.entries(config.task_types).map(([name, def]) => (
+                <option key={name} value={name}>{def.label}</option>
+              ))}
+            </select>
           </div>
-        </div>
+        )}
 
-        {/* Labels */}
-        <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Labels</label>
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-            {task.labels.map((l) => (
-              <span key={l} style={{ padding: "2px 8px", fontSize: 11, background: "#f0f0f0", borderRadius: 3 }}>{l}</span>
-            ))}
-            {task.labels.length === 0 && <span style={{ color: "#999", fontSize: 11 }}>None</span>}
+        {/* Assignees (tasks only) */}
+        {!isMilestone && (
+          <div>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Assignees</label>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {task.assignees.map((a) => (
+                <span key={a} style={{ padding: "2px 8px", fontSize: 11, background: "#e8f0fe", borderRadius: 12 }}>{a}</span>
+              ))}
+              {task.assignees.length === 0 && <span style={{ color: "#999", fontSize: 11 }}>None</span>}
+            </div>
           </div>
-        </div>
+        )}
+
+        {/* Labels (tasks only) */}
+        {!isMilestone && (
+          <div>
+            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Labels</label>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+              {task.labels.map((l) => (
+                <span key={l} style={{ padding: "2px 8px", fontSize: 11, background: "#f0f0f0", borderRadius: 3 }}>{l}</span>
+              ))}
+              {task.labels.length === 0 && <span style={{ color: "#999", fontSize: 11 }}>None</span>}
+            </div>
+          </div>
+        )}
 
         {/* Body */}
         <div>

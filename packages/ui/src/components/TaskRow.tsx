@@ -43,6 +43,7 @@ export function TaskRow({
   const progress = task._progress ?? 0;
   const status = task.custom_fields[statusFieldName] as string | undefined;
   const bg = isSelected ? "#e8f0fe" : isHovered ? "#f5f8ff" : "transparent";
+  const isMilestone = task.type === "milestone";
 
   return (
     <div
@@ -96,7 +97,7 @@ export function TaskRow({
         {task.title}
       </span>
 
-      {showAssignees && task.assignees.length > 0 && (
+      {!isMilestone && showAssignees && task.assignees.length > 0 && (
         <span style={{ fontSize: 10, color: "#666", flexShrink: 0, whiteSpace: "nowrap" }}>
           {task.assignees.length <= 2
             ? task.assignees.map((a) => `@${a}`).join(" ")
@@ -104,8 +105,14 @@ export function TaskRow({
         </span>
       )}
 
-      <StatusBadge status={status} statusValues={statusValues} />
-      <ProgressBar progress={progress} color={taskType?.color} />
+      {isMilestone && task.date && (
+        <span style={{ fontSize: 10, color: "#888", flexShrink: 0, fontFamily: "monospace" }}>
+          {task.date.slice(0, 10)}
+        </span>
+      )}
+
+      {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}
+      {!isMilestone && <ProgressBar progress={progress} color={taskType?.color} />}
     </div>
   );
 }

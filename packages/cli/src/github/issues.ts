@@ -39,7 +39,7 @@ export function milestoneToTask(m: RawMilestone, repo: string): Task {
     custom_fields: {},
     start_date: null,
     end_date: null,
-    date: m.dueOn,
+    date: m.dueOn ? m.dueOn.slice(0, 10) : null,
     blocked_by: [],
   };
 }

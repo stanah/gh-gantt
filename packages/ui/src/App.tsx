@@ -3,6 +3,7 @@ import { useApi } from "./hooks/useApi.js";
 import { useTaskTree } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
+import { useTaskFilter } from "./hooks/useTaskFilter.js";
 import { Layout } from "./components/Layout.js";
 import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
@@ -42,6 +43,7 @@ export function App() {
 
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
+  const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees } = useTaskFilter(tasks);
   const {
     flatList,
     collapsed,
@@ -50,7 +52,7 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled);
+  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee });
 
   const handlePull = useCallback(async () => {
     setSyncing("pull");
@@ -174,6 +176,11 @@ export function App() {
         syncing={syncing}
         displayOptions={displayOptions}
         onToggleDisplayOption={toggleDisplayOption}
+        hideClosed={hideClosed}
+        onToggleHideClosed={toggleHideClosed}
+        selectedAssignee={selectedAssignee}
+        allAssignees={allAssignees}
+        onSelectAssignee={setSelectedAssignee}
       />
       <div style={{ flex: 1, overflow: "hidden" }}>
         <Layout
