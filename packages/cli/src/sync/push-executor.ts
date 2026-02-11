@@ -80,7 +80,7 @@ export async function executePush(
       const task = diff.task;
       const oldId = task.id;
 
-      const { number: milestoneNumber, nodeId } = await createGithubMilestone(
+      const { number: milestoneNumber } = await createGithubMilestone(
         token,
         owner,
         repo,

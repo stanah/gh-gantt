@@ -39,12 +39,11 @@ interface GanttChartProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
-  highlightedTaskIds?: Set<string>;
   highlightRelationMap?: Map<string, RelationType>;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask, highlightedTaskIds, highlightRelationMap },
+  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask, highlightRelationMap },
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);

@@ -4,15 +4,15 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
-import { hashTask } from "../sync/hash.js";
+import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { detectConflicts } from "../sync/conflict.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
-import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
+import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
+import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
@@ -298,9 +298,10 @@ export function createApiRouter(projectRoot: string): Router {
       const issueItems = projectData.items
         .filter((i) => i.content)
         .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-      const subIssueLinks = await fetchAllSubIssueLinks(gql, issueItems);
+      const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
       const remoteTaskArray = Array.from(remoteTasks.values());
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
+      applyBlockedByLinks(remoteTaskArray, blockedByLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
       const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
@@ -351,6 +352,7 @@ export function createApiRouter(projectRoot: string): Router {
           synced_at: new Date().toISOString(),
           updated_at: task.updated_at,
           remoteHash: remoteTask ? hashTask(remoteTask) : undefined,
+          syncFields: extractSyncFields(task),
         };
       }
       for (const id of localTaskMap.keys()) {

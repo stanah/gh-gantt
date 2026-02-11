@@ -311,7 +311,6 @@ export function App() {
                 displayOptions={displayOptions}
                 hoveredTaskId={hoveredTaskId}
                 onHoverTask={setHoveredTaskId}
-                highlightedTaskIds={highlightedTaskIds}
                 highlightRelationMap={highlightRelationMap}
               />
             }

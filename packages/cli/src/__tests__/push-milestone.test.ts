@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { isMilestoneDraftTask, buildMilestoneSyntheticId } from "../github/issues.js";
 import { replaceTaskIdReferences } from "../sync/push-executor.js";
 import type { Task } from "@gh-gantt/shared";

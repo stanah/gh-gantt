@@ -83,7 +83,11 @@ export const statusCommand = new Command("status")
           const isLocal = c.localChangedFields.includes(d.field);
           const isRemote = c.remoteChangedFields.includes(d.field);
           const tag = `[${isLocal ? "L" : " "}${isRemote ? "R" : " "}]`;
-          console.log(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+          if (isLocal && isRemote) {
+            console.log(`      ${tag} ${d.field}: local=${formatValue(d.local)} remote=${formatValue(d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+          } else {
+            console.log(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
+          }
         }
       }
       console.log();

@@ -31,6 +31,8 @@ function collectMilestones(tasks: Task[]): MilestoneInfo[] {
   // Count tasks referencing each milestone and discover milestones from references
   for (const t of tasks) {
     if (t.milestone) {
+      // Skip self-referencing milestone tasks
+      if ((t.type === "milestone" || t.type === "milestone_type") && t.milestone === t.title) continue;
       const existing = milestoneMap.get(t.milestone);
       if (existing) {
         existing.taskCount++;

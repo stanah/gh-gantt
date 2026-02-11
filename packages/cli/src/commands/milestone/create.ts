@@ -20,10 +20,18 @@ export const milestoneCreateCommand = new Command("create")
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
 
-      if (opts.dueDate && !DATE_RE.test(opts.dueDate)) {
-        console.error(`Invalid date format: "${opts.dueDate}". Use YYYY-MM-DD.`);
-        process.exitCode = 1;
-        return;
+      if (opts.dueDate) {
+        if (!DATE_RE.test(opts.dueDate)) {
+          console.error(`Invalid date format: "${opts.dueDate}". Use YYYY-MM-DD.`);
+          process.exitCode = 1;
+          return;
+        }
+        const d = new Date(opts.dueDate + "T00:00:00Z");
+        if (isNaN(d.getTime()) || !d.toISOString().startsWith(opts.dueDate)) {
+          console.error(`Invalid date: "${opts.dueDate}".`);
+          process.exitCode = 1;
+          return;
+        }
       }
 
       const { owner, repo } = config.project.github;

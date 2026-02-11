@@ -111,7 +111,9 @@ export function useTreeDragDrop({
       if (wouldCreateParentCycle(tasks, dragId, targetTaskId)) return;
       if (config && !isTypeHierarchyAllowed(config.type_hierarchy, targetTask.type, draggedTask.type)) return;
 
-      onReparent(dragId, targetTaskId);
+      onReparent(dragId, targetTaskId).catch((err) => {
+        console.error("Reparent failed:", err);
+      });
     },
     [tasks, config, onReparent],
   );
@@ -142,7 +144,9 @@ export function useTreeDragDrop({
       setDraggedTaskId(null);
       draggedRef.current = null;
       if (!dragId) return;
-      onReparent(dragId, null);
+      onReparent(dragId, null).catch((err) => {
+        console.error("Reparent failed:", err);
+      });
     },
     [onReparent],
   );

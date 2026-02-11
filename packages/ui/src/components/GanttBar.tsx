@@ -63,7 +63,7 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         width={width * (progress / 100)}
         height={barHeight}
         rx={3}
-        fill={progress === 100 ? "#999" : color}
+        fill={progress === 100 ? "#8957e5" : color}
         opacity={0.7}
       />
       {/* Label + Assignee */}

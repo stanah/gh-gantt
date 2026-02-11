@@ -65,7 +65,7 @@ describe("getDateRange", () => {
       { start_date: "2026-01-01", end_date: "2026-01-10", date: null },
       { start_date: null, end_date: null, date: "2026-06-15" },
     ] as any[];
-    const [min, max] = getDateRange(tasks);
+    const [, max] = getDateRange(tasks);
     expect(max > new Date(2026, 5, 15)).toBe(true);
   });
 });

@@ -86,8 +86,8 @@ export function applyTaskUpdate(
       start_date: updated.start_date,
       end_date: updated.end_date,
     });
-    if (dateUpdates.start_date) updated.start_date = dateUpdates.start_date;
-    if (dateUpdates.end_date) updated.end_date = dateUpdates.end_date;
+    if (dateUpdates.start_date && !opts.startDate) updated.start_date = dateUpdates.start_date;
+    if (dateUpdates.end_date && !opts.endDate) updated.end_date = dateUpdates.end_date;
   }
 
   if (opts.label) {

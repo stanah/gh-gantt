@@ -50,9 +50,13 @@ export function useApi() {
       const tasks = prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t));
       if (config) {
         const { values, field_name } = config.statuses;
-        for (const t of tasks) {
-          t._progress = calculateProgress(t, tasks, values, field_name);
-        }
+        return {
+          ...prev,
+          tasks: tasks.map((t) => ({
+            ...t,
+            _progress: calculateProgress(t, tasks, values, field_name),
+          })),
+        };
       }
       return { ...prev, tasks };
     });

@@ -48,7 +48,7 @@ export const pushCommand = new Command("push")
     }
 
     const milestoneCount = pushableDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task)).length;
-    const draftCount = pushableDiffs.filter((d) => isDraftTask(d.id)).length - milestoneCount;
+    const draftCount = pushableDiffs.filter((d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task)).length;
     const existingCount = pushableDiffs.length - draftCount - milestoneCount;
 
     console.log(`Found ${pushableDiffs.length} local change(s):`);
@@ -74,7 +74,12 @@ export const pushCommand = new Command("push")
       return;
     }
 
-    if (!opts.yes && process.stdin.isTTY) {
+    if (!opts.yes) {
+      if (!process.stdin.isTTY) {
+        console.error("Non-interactive environment detected. Use --yes to confirm push.");
+        process.exitCode = 1;
+        return;
+      }
       const confirmed = await confirm("\nProceed with push?");
       if (!confirmed) {
         console.log("Push cancelled.");

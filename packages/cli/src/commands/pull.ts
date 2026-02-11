@@ -216,11 +216,13 @@ export const pullCommand = new Command("pull")
     // Update snapshots
     const newSnapshots = { ...syncState.snapshots };
     for (const task of newTasks) {
+      const remoteTask = remoteTasks.get(task.id);
       newSnapshots[task.id] = {
         hash: hashTask(task),
         synced_at: new Date().toISOString(),
         updated_at: task.updated_at,
         syncFields: extractSyncFields(task),
+        remoteHash: remoteTask ? hashTask(remoteTask) : undefined,
       };
     }
     // Remove snapshots for deleted tasks

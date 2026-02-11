@@ -66,7 +66,7 @@ export function getEdgeCoordinates(
   edge: DependencyEdge,
   taskPositions: Map<string, { x1: number; x2: number; y: number }>,
   rowHeight: number,
-): { path: string; isCycle: boolean } | null {
+): { path: string } | null {
   const from = taskPositions.get(edge.from);
   const to = taskPositions.get(edge.to);
   if (!from || !to) return null;
@@ -131,5 +131,5 @@ export function getEdgeCoordinates(
     ].join(" ");
   }
 
-  return { path, isCycle: false };
+  return { path };
 }

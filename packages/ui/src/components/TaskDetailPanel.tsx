@@ -51,13 +51,18 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
     navigator.clipboard.writeText(JSON.stringify(info, null, 2)).then(() => {
       setCopyFeedback(true);
       setTimeout(() => setCopyFeedback(false), 1500);
+    }).catch(() => {
+      console.warn("Failed to copy to clipboard");
     });
   }, [task, currentStatus, isMilestone]);
 
   const githubUrl = isMilestone
-    ? task.github_repo
-      ? `https://github.com/${task.github_repo}/milestone/${task.id.split("#").pop()}`
-      : null
+    ? (() => {
+        if (!task.github_repo) return null;
+        const suffix = task.id.split("#").pop();
+        if (!suffix || !/^\d+$/.test(suffix)) return null;
+        return `https://github.com/${task.github_repo}/milestone/${suffix}`;
+      })()
     : task.github_issue
       ? `https://github.com/${task.github_repo}/issues/${task.github_issue}`
       : null;
