@@ -1,15 +1,27 @@
+import { createInterface } from "node:readline";
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import { computeLocalDiff } from "../sync/diff.js";
+import { computeLocalDiff, estimateApiCalls } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { isDraftTask, isMilestoneDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
+
+function confirm(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(`${question} (y/N) `, (answer) => {
+      rl.close();
+      resolve(answer.trim().toLowerCase() === "y");
+    });
+  });
+}
 
 export const pushCommand = new Command("push")
   .description("Push local changes to GitHub Project")
   .option("--dry-run", "Show changes without applying")
+  .option("-y, --yes", "Skip confirmation prompt")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -54,9 +66,20 @@ export const pushCommand = new Command("push")
       console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
     }
 
+    const estimated = estimateApiCalls(pushableDiffs);
+    console.log(`\nEstimated GitHub API calls: ~${estimated}`);
+
     if (opts.dryRun) {
-      console.log("Dry run — no changes pushed.");
+      console.log("\nDry run — no changes pushed.");
       return;
+    }
+
+    if (!opts.yes && process.stdin.isTTY) {
+      const confirmed = await confirm("\nProceed with push?");
+      if (!confirmed) {
+        console.log("Push cancelled.");
+        return;
+      }
     }
 
     const gql = await createGraphQLClient();

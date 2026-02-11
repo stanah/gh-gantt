@@ -5,7 +5,7 @@ import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
 import { hashTask } from "../sync/hash.js";
-import { computeLocalDiff } from "../sync/diff.js";
+import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { detectConflicts } from "../sync/conflict.js";
@@ -324,9 +324,9 @@ export function createApiRouter(projectRoot: string): Router {
           newTasks.push(remoteTask);
           added++;
         } else {
-          const remoteHash = hashTask(remoteTask);
-          const snapshotHash = syncState.snapshots[id]?.hash;
-          if (remoteHash !== snapshotHash) {
+          const currentRemoteHash = hashTask(remoteTask);
+          const prevRemoteHash = syncState.snapshots[id]?.remoteHash ?? syncState.snapshots[id]?.hash;
+          if (currentRemoteHash !== prevRemoteHash) {
             newTasks.push(mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured }));
             updated++;
           } else {
@@ -345,7 +345,13 @@ export function createApiRouter(projectRoot: string): Router {
 
       const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
       for (const task of newTasks) {
-        newSnapshots[task.id] = { hash: hashTask(task), synced_at: new Date().toISOString(), updated_at: task.updated_at };
+        const remoteTask = remoteTasks.get(task.id);
+        newSnapshots[task.id] = {
+          hash: hashTask(task),
+          synced_at: new Date().toISOString(),
+          updated_at: task.updated_at,
+          remoteHash: remoteTask ? hashTask(remoteTask) : undefined,
+        };
       }
       for (const id of localTaskMap.keys()) {
         if (!isDraftTask(id)) delete newSnapshots[id];
@@ -361,18 +367,28 @@ export function createApiRouter(projectRoot: string): Router {
   });
 
   // POST /api/sync/push
-  router.post("/api/sync/push", async (_req, res) => {
+  router.post("/api/sync/push", async (req, res) => {
     try {
-      const config = await configStore.read();
+      const { dry_run } = req.body ?? {};
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
 
       const diffs = computeLocalDiff(tasksFile.tasks, syncState);
       if (diffs.length === 0) {
+        if (dry_run) {
+          res.json(formatDiffPreview([]));
+          return;
+        }
         res.json({ created: 0, updated: 0, skipped: 0, message: "No local changes to push" });
         return;
       }
 
+      if (dry_run) {
+        res.json(formatDiffPreview(diffs));
+        return;
+      }
+
+      const config = await configStore.read();
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
         await executePush(gql, config, tasksFile, syncState);

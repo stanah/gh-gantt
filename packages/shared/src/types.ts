@@ -136,6 +136,7 @@ export interface Snapshot {
   synced_at: string;
   updated_at?: string;
   syncFields?: SyncFields;
+  remoteHash?: string;
 }
 
 export interface SyncState {

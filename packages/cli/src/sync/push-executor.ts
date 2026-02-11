@@ -58,6 +58,10 @@ export async function executePush(
   const fm = config.sync.field_mapping;
   const { owner, repo } = config.project.github;
 
+  // Track which tasks were actually pushed (by their current ID after push)
+  const pushedTaskIds = new Set<string>();
+  const replacedDraftIds = new Set<string>();
+
   // Filter out synthetic milestone tasks (read-only, managed by pull)
   const nonSyntheticDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
@@ -96,6 +100,8 @@ export async function executePush(
       // Update references in all tasks
       replaceTaskIdReferences(tasksFile.tasks, oldId, newId);
 
+      replacedDraftIds.add(oldId);
+      pushedTaskIds.add(newId);
       result.created++;
     }
   }
@@ -200,6 +206,8 @@ export async function executePush(
         project_item_id: projectItemId,
       };
 
+      replacedDraftIds.add(oldId);
+      pushedTaskIds.add(newId);
       createdTaskIds.push(newId);
       result.created++;
     }
@@ -351,18 +359,32 @@ export async function executePush(
         }
       }
 
+      pushedTaskIds.add(task.id);
       result.updated++;
     }
   }
 
-  // Update snapshots
+  // Update snapshots — only for tasks that were actually pushed
   const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
-  for (const task of tasksFile.tasks) {
-    newSnapshots[task.id] = {
-      hash: hashTask(task),
-      synced_at: new Date().toISOString(),
-      syncFields: extractSyncFields(task),
-    };
+
+  // Remove stale draft snapshots whose IDs were replaced
+  for (const oldId of replacedDraftIds) {
+    delete newSnapshots[oldId];
+  }
+
+  // Update snapshots only for pushed tasks; preserve existing snapshots for others
+  for (const id of pushedTaskIds) {
+    const task = tasksFile.tasks.find((t) => t.id === id);
+    if (task) {
+      const existing = newSnapshots[id];
+      newSnapshots[id] = {
+        hash: hashTask(task),
+        synced_at: new Date().toISOString(),
+        syncFields: extractSyncFields(task),
+        updated_at: existing?.updated_at,
+        remoteHash: existing?.remoteHash,
+      };
+    }
   }
 
   syncState = {

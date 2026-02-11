@@ -132,6 +132,7 @@ export const SyncStateSchema = z.object({
       date: z.string().nullable(),
       blocked_by: z.array(DependencySchema),
     }).optional(),
+    remoteHash: z.string().optional(),
   })),
   option_ids: z.record(z.record(z.string())).optional(),
 });

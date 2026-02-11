@@ -134,7 +134,47 @@ export function App() {
   const handlePush = useCallback(async () => {
     setSyncing("push");
     try {
-      const res = await fetch("/api/sync/push", { method: "POST" });
+      // Step 1: Preview with dry_run
+      const previewRes = await fetch("/api/sync/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dry_run: true }),
+      });
+      if (!previewRes.ok) {
+        const err = await previewRes.json().catch(() => null);
+        showToast(`Push failed: ${err?.error ?? previewRes.statusText}`, "error");
+        return;
+      }
+      const preview = await previewRes.json();
+
+      if (preview.summary.create === 0 && preview.summary.update === 0) {
+        showToast("No local changes to push.", "info");
+        return;
+      }
+
+      // Step 2: Confirm
+      const lines = preview.changes.map(
+        (c: { type: string; title: string; changedFields?: string[] }) =>
+          `  ${c.type === "added" ? "+" : "~"} ${c.title}${c.changedFields ? ` [${c.changedFields.join(", ")}]` : ""}`,
+      );
+      const msg =
+        `Push ${preview.summary.create + preview.summary.update} task(s) to GitHub?\n\n` +
+        `  Create: ${preview.summary.create}\n` +
+        `  Update: ${preview.summary.update}\n` +
+        `  Estimated API calls: ~${preview.estimated_api_calls}\n\n` +
+        lines.join("\n");
+
+      if (!window.confirm(msg)) {
+        showToast("Push cancelled.", "info");
+        return;
+      }
+
+      // Step 3: Execute
+      const res = await fetch("/api/sync/push", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => null);
         showToast(`Push failed: ${err?.error ?? res.statusText}`, "error");
@@ -146,12 +186,13 @@ export function App() {
       } else {
         showToast(`Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`, "success");
       }
+      await refresh();
     } catch (err) {
       showToast(`Push failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     } finally {
       setSyncing(null);
     }
-  }, [showToast]);
+  }, [refresh, showToast]);
 
   if (loading) {
     return (
