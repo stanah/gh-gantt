@@ -95,6 +95,13 @@ export interface GanttConfig {
   colors: GanttColors;
 }
 
+export interface SprintConfig {
+  name: string;
+  start_date: string;
+  end_date: string;
+  color: string;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -106,6 +113,7 @@ export interface Config {
   type_hierarchy: Record<string, string[]>;
   statuses: Statuses;
   gantt: GanttConfig;
+  sprints?: SprintConfig[];
 }
 
 export interface IdMapping {

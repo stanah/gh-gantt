@@ -5,6 +5,7 @@ import { ProgressBar } from "./ProgressBar.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
+import { isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
 
 interface TaskRowProps {
   task: Task;
@@ -47,6 +48,30 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   );
 }
 
+function getBodyPreview(body: string | null, maxLength = 180): string | null {
+  if (!body) return null;
+
+  const cleaned = body
+    .replace(/\r\n/g, "\n")
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>\s?/gm, "")
+    .replace(/^[-*+]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/^\s*[-*]\s+\[[ xX]\]\s+/gm, "")
+    .replace(/\|/g, " ")
+    .replace(/\n+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  if (!cleaned) return null;
+  if (cleaned.length <= maxLength) return cleaned;
+  return `${cleaned.slice(0, maxLength - 1).trimEnd()}…`;
+}
+
 export function TaskRow({
   task,
   depth,
@@ -78,6 +103,13 @@ export function TaskRow({
   const progress = task._progress ?? 0;
   const status = task.custom_fields[statusFieldName] as string | undefined;
   const isMilestone = task.type === "milestone";
+  const atRiskThresholdDays = 3;
+  const overdue = !isMilestone && isOverdue(task);
+  const atRisk = !isMilestone && !overdue && isAtRisk(task, atRiskThresholdDays);
+  const overdueDays = overdue ? getOverdueDays(task) : 0;
+  const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
+  const bodyPreview = getBodyPreview(task.body);
+  const showBodyPreview = Boolean(isHovered && bodyPreview && !isDragging);
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isParentRelation = highlightType === "parent" || highlightType === "child";
@@ -93,6 +125,7 @@ export function TaskRow({
 
   return (
     <div
+      data-task-id={task.id}
       draggable={isDraggable}
       onClick={onClick}
       onMouseEnter={() => onHover?.(task.id)}
@@ -104,6 +137,7 @@ export function TaskRow({
       onDragEnd={onDragEnd}
       style={{
         display: "flex",
+        position: "relative",
         alignItems: "center",
         gap: 6,
         padding: "3px 8px",
@@ -164,8 +198,67 @@ export function TaskRow({
         </span>
       )}
 
+      {overdue && (
+        <span
+          title={`期限超過: ${overdueDays}日`}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "#fff",
+            background: "#e74c3c",
+            borderRadius: 10,
+            padding: "1px 6px",
+            flexShrink: 0,
+          }}
+        >
+          +{overdueDays}d
+        </span>
+      )}
+
+      {atRisk && daysUntilDue != null && (
+        <span
+          title={`期限まで: ${daysUntilDue}日`}
+          style={{
+            fontSize: 10,
+            fontWeight: 600,
+            color: "#7a4b00",
+            background: "#ffe8bd",
+            borderRadius: 10,
+            padding: "1px 6px",
+            flexShrink: 0,
+          }}
+        >
+          D-{daysUntilDue}
+        </span>
+      )}
+
       {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}
       {!isMilestone && <ProgressBar progress={progress} color={taskType?.color} />}
+
+      {showBodyPreview && (
+        <div
+          style={{
+            position: "absolute",
+            left: Math.max(28 + indent, 40),
+            top: 26,
+            maxWidth: 420,
+            padding: "6px 8px",
+            fontSize: 11,
+            lineHeight: 1.45,
+            color: "#2c3e50",
+            background: "rgba(255, 255, 255, 0.98)",
+            border: "1px solid #dfe6ee",
+            borderRadius: 6,
+            boxShadow: "0 4px 10px rgba(0, 0, 0, 0.12)",
+            zIndex: 25,
+            pointerEvents: "none",
+            whiteSpace: "normal",
+            wordBreak: "break-word",
+          }}
+        >
+          {bodyPreview}
+        </div>
+      )}
     </div>
   );
 }

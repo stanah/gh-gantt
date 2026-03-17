@@ -56,6 +56,13 @@ const TaskSchema = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
+const SprintSchema = z.object({
+  name: z.string(),
+  start_date: z.string(),
+  end_date: z.string(),
+  color: z.string(),
+});
+
 export const ConfigSchema = z.object({
   version: z.string(),
   project: z.object({
@@ -89,6 +96,7 @@ export const ConfigSchema = z.object({
       overdue: z.string(),
     }),
   }),
+  sprints: z.array(SprintSchema).optional(),
 });
 
 export const TasksFileSchema = z.object({

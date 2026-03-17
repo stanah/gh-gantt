@@ -12,17 +12,73 @@ import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/Toolbar.js";
 import type { ViewScale } from "./hooks/useGanttScale.js";
+import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
+import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
+import type { Task } from "./types/index.js";
+import { useUndoRedo } from "./hooks/useUndoRedo.js";
+
+const TRACKED_TASK_FIELDS = [
+  "title",
+  "body",
+  "state",
+  "state_reason",
+  "assignees",
+  "labels",
+  "milestone",
+  "custom_fields",
+  "start_date",
+  "end_date",
+  "date",
+  "blocked_by",
+] as const satisfies ReadonlyArray<keyof Task>;
+
+function cloneHistoryValue<T>(value: T): T {
+  if (value == null) return value;
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function valuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function buildTaskHistoryPatches(before: Task, after: Task): { undoPatch: Partial<Task>; redoPatch: Partial<Task> } {
+  const undoPatch: Partial<Task> = {};
+  const redoPatch: Partial<Task> = {};
+  const undoRecord = undoPatch as Record<string, unknown>;
+  const redoRecord = redoPatch as Record<string, unknown>;
+
+  for (const field of TRACKED_TASK_FIELDS) {
+    if (!valuesEqual(before[field], after[field])) {
+      undoRecord[field] = cloneHistoryValue(before[field]);
+      redoRecord[field] = cloneHistoryValue(after[field]);
+    }
+  }
+
+  return { undoPatch, redoPatch };
+}
 
 export function App() {
-  const { config, tasks, cache, loading, error, updateTask, refresh } = useApi();
+  const { config, tasks, cache, loading, error, updateTask, refresh, reparentTask } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
   const [syncing, setSyncing] = useState<"pull" | "push" | null>(null);
+  const {
+    canUndo,
+    canRedo,
+    undoCount,
+    redoCount,
+    isApplying: undoRedoBusy,
+    push: pushHistory,
+    undo,
+    redo,
+    clearAll: clearHistory,
+  } = useUndoRedo();
 
   const showToast = useCallback((message: string, type: "success" | "error" | "info" = "info") => {
     setToast({ message, type });
@@ -46,9 +102,22 @@ export function App() {
     setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
   }, []);
 
+  const activateTask = useCallback((taskId: string) => {
+    setSelectedTaskId(taskId);
+  }, []);
+
   const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
-  const { hideClosed, toggleHideClosed, selectedAssignee, setSelectedAssignee, allAssignees, searchQuery, setSearchQuery } = useTaskFilter(tasks);
+  const {
+    hideClosed,
+    toggleHideClosed,
+    selectedAssignee,
+    selectedAssignees,
+    setSelectedAssignee,
+    allAssignees,
+    searchQuery,
+    setSearchQuery,
+  } = useTaskFilter(tasks);
   const {
     flatList,
     collapsed,
@@ -57,7 +126,87 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, searchQuery });
+  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, selectedAssignees, searchQuery });
+
+  const visibleTaskIds = useMemo(
+    () => [
+      ...flatList.map((node) => node.task.id),
+      ...(!backlogCollapsed ? backlogFlatList.map((node) => node.task.id) : []),
+    ],
+    [backlogCollapsed, backlogFlatList, flatList],
+  );
+
+  const visibleTaskMap = useMemo(
+    () => new Map(
+      [...flatList, ...(!backlogCollapsed ? backlogFlatList : [])].map((node) => [node.task.id, node]),
+    ),
+    [backlogCollapsed, backlogFlatList, flatList],
+  );
+
+  const toggleSelectedCollapse = useCallback((taskId: string) => {
+    const node = visibleTaskMap.get(taskId);
+    if (node && node.children.length > 0) {
+      toggleCollapse(taskId);
+    }
+  }, [toggleCollapse, visibleTaskMap]);
+
+  const applyTrackedTaskUpdate = useCallback(async (taskId: string, updates: Partial<Task>) => {
+    const beforeTask = tasks.find((task) => task.id === taskId);
+    if (!beforeTask) {
+      throw new Error("Task not found");
+    }
+
+    const updatedTask = await updateTask(taskId, updates);
+    const { undoPatch, redoPatch } = buildTaskHistoryPatches(beforeTask, updatedTask as Task);
+
+    if (Object.keys(redoPatch).length > 0) {
+      pushHistory({
+        label: beforeTask.title,
+        undo: async () => {
+          await updateTask(taskId, undoPatch);
+        },
+        redo: async () => {
+          await updateTask(taskId, redoPatch);
+        },
+      });
+    }
+
+    return updatedTask;
+  }, [pushHistory, tasks, updateTask]);
+
+  const handleTaskUpdate = useCallback(async (taskId: string, updates: Partial<Task>) => {
+    try {
+      await applyTrackedTaskUpdate(taskId, updates);
+    } catch (err) {
+      showToast(`Update failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [applyTrackedTaskUpdate, showToast]);
+
+  const handleUndo = useCallback(async () => {
+    try {
+      await undo();
+    } catch (err) {
+      showToast(`Undo failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [showToast, undo]);
+
+  const handleRedo = useCallback(async () => {
+    try {
+      await redo();
+    } catch (err) {
+      showToast(`Redo failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [redo, showToast]);
+
+  const { isHelpOpen, closeHelp, toggleHelp } = useKeyboardShortcuts({
+    orderedTaskIds: visibleTaskIds,
+    selectedTaskId,
+    onSelectTask: activateTask,
+    onToggleCollapse: toggleSelectedCollapse,
+    onFocusSearch: () => searchInputRef.current?.focus(),
+    onUndo: () => { void handleUndo(); },
+    onRedo: () => { void handleRedo(); },
+  });
 
   const { getRelated } = useRelatedTasks(tasks);
   const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
@@ -66,28 +215,42 @@ export function App() {
   );
 
   const handleReparent = useCallback(async (taskId: string, newParentId: string | null) => {
+    const task = tasks.find((entry) => entry.id === taskId);
+    if (!task) {
+      showToast("Task not found", "error");
+      return;
+    }
+    const previousParentId = task.parent ?? null;
+    if (previousParentId === newParentId) return;
+
     try {
-      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reparent`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newParentId }),
+      await reparentTask(taskId, newParentId);
+      pushHistory({
+        label: `Reparent ${task.title}`,
+        undo: async () => {
+          await reparentTask(taskId, previousParentId);
+        },
+        redo: async () => {
+          await reparentTask(taskId, newParentId);
+        },
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        showToast(err?.error ?? "Failed to reparent task", "error");
-        return;
-      }
-      await refresh();
     } catch (err) {
       showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, [refresh, showToast]);
+  }, [pushHistory, reparentTask, showToast, tasks]);
 
   const dragState = useTreeDragDrop({
     tasks,
     config,
     onReparent: handleReparent,
   });
+
+  useEffect(() => {
+    if (!selectedTaskId) return;
+    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-task-id]"));
+    const selectedRow = rows.find((row) => row.dataset.taskId === selectedTaskId);
+    selectedRow?.scrollIntoView({ block: "nearest" });
+  }, [selectedTaskId, visibleTaskIds]);
 
   const handlePull = useCallback(async () => {
     setSyncing("pull");
@@ -122,6 +285,7 @@ export function App() {
       if (added === 0 && updated === 0 && removed === 0) {
         showToast("Pull complete: Already up to date.", "info");
       } else {
+        clearHistory();
         showToast(`Pull complete: ${added} added, ${updated} updated, ${removed} removed`, "success");
       }
     } catch (err) {
@@ -129,7 +293,7 @@ export function App() {
     } finally {
       setSyncing(null);
     }
-  }, [refresh, showToast]);
+  }, [clearHistory, refresh, showToast]);
 
   const handlePush = useCallback(async () => {
     setSyncing("push");
@@ -184,8 +348,10 @@ export function App() {
       }
       const data = await res.json();
       if (data.message) {
+        clearHistory();
         showToast(data.message, "info");
       } else {
+        clearHistory();
         showToast(`Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`, "success");
       }
       await refresh();
@@ -194,7 +360,7 @@ export function App() {
     } finally {
       setSyncing(null);
     }
-  }, [refresh, showToast]);
+  }, [clearHistory, refresh, showToast]);
 
   if (loading) {
     return (
@@ -261,6 +427,15 @@ export function App() {
         onSelectAssignee={setSelectedAssignee}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
+        searchInputRef={searchInputRef}
+        onOpenShortcuts={toggleHelp}
+        onUndo={() => { void handleUndo(); }}
+        onRedo={() => { void handleRedo(); }}
+        canUndo={canUndo}
+        canRedo={canRedo}
+        undoCount={undoCount}
+        redoCount={redoCount}
+        undoRedoBusy={undoRedoBusy}
       />
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         <div style={{ flex: 1, overflow: "hidden" }}>
@@ -303,7 +478,7 @@ export function App() {
                 config={config}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
-                onUpdateTask={(taskId, updates) => updateTask(taskId, updates)}
+                onUpdateTask={(taskId, updates) => { void handleTaskUpdate(taskId, updates); }}
                 onViewScaleChange={handleViewScaleChange}
                 scrollContainerRef={scrollContainerRef}
                 header={handleGanttHeader}
@@ -327,12 +502,13 @@ export function App() {
               task={detailTask}
               config={config}
               comments={cache.comments[selectedTaskId] ?? []}
-              onUpdate={(updates) => updateTask(selectedTaskId, updates)}
+              onUpdate={(updates) => { void handleTaskUpdate(selectedTaskId, updates); }}
               onClose={() => setSelectedTaskId(null)}
             />
           );
         })()}
       </div>
+      <ShortcutHelpPanel open={isHelpOpen} onClose={closeHelp} />
     </div>
   );
 }

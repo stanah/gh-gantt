@@ -17,8 +17,22 @@ interface TaskTreeHeaderProps {
 }
 
 export function TaskTreeHeader({ config, enabledTypes, onToggleType }: TaskTreeHeaderProps) {
+  const hasSprintBand = (config.sprints?.length ?? 0) > 0;
+  const headerHeight = hasSprintBand ? 52 : 32;
   return (
-    <div style={{ padding: "0 8px", borderBottom: "1px solid #e0e0e0", height: 32, display: "flex", alignItems: "center" }}>
+    <div
+      style={{
+        paddingTop: hasSprintBand ? 20 : 0,
+        paddingRight: 8,
+        paddingBottom: 0,
+        paddingLeft: 8,
+        borderBottom: "1px solid #e0e0e0",
+        height: headerHeight,
+        display: "flex",
+        alignItems: "center",
+        boxSizing: "border-box",
+      }}
+    >
       <TypeFilter taskTypes={config.task_types} enabled={enabledTypes} onToggle={onToggleType} />
     </div>
   );

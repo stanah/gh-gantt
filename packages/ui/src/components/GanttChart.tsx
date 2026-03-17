@@ -74,9 +74,15 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   // Publish the timeline header to parent via render callback
   useEffect(() => {
     header(
-      <GanttTimeline xScale={xScale} dateRange={dateRange} viewScale={viewScale} totalWidth={totalWidth} />
+      <GanttTimeline
+        xScale={xScale}
+        dateRange={dateRange}
+        viewScale={viewScale}
+        totalWidth={totalWidth}
+        sprints={config.sprints}
+      />
     );
-  }, [header, xScale, dateRange, viewScale, totalWidth]);
+  }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
 
   const backlogHeaderH = (backlogTotalCount ?? 0) > 0 ? ROW_HEIGHT : 0;
   const backlogRowsH = !backlogCollapsed ? (backlogFlatList?.length ?? 0) * ROW_HEIGHT : 0;
@@ -172,6 +178,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         totalHeight={totalHeight}
         workingDays={config.gantt.working_days}
         pixelsPerDay={pixelsPerDay}
+        sprints={config.sprints}
       />
       <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} hoveredTaskId={hoveredTaskId ?? null} />
       <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}

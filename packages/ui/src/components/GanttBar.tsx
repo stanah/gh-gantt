@@ -1,7 +1,7 @@
 import React from "react";
 import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
-import { parseDate } from "../lib/date-utils.js";
+import { parseDate, isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
@@ -40,11 +40,25 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
   const barHeight = height - 8;
   const barY = y + 4;
   const handleWidth = 6;
+  const atRiskThresholdDays = 3;
+  const overdue = isOverdue(task);
+  const atRisk = !overdue && isAtRisk(task, atRiskThresholdDays);
+  const overdueDays = overdue ? getOverdueDays(task) : 0;
+  const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
+  const scheduleStroke = overdue ? "#e74c3c" : atRisk ? "#f39c12" : color;
+  const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color + "44";
+  const progressFill = overdue ? "#e74c3c" : atRisk ? "#f39c12" : (progress === 100 ? "#8957e5" : color);
 
   const hl = highlightStroke(highlightType);
+  const scheduleTooltip = overdue
+    ? `Overdue +${overdueDays}d`
+    : atRisk && daysUntilDue != null
+      ? `At risk D-${daysUntilDue}`
+      : null;
 
   return (
     <g onClick={onClick} style={{ cursor: "pointer" }} opacity={isDimmed ? 0.3 : 1}>
+      {scheduleTooltip && <title>{scheduleTooltip}</title>}
       {/* Background */}
       <rect
         x={x1}
@@ -52,9 +66,10 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         width={width}
         height={barHeight}
         rx={3}
-        fill={color + "44"}
-        stroke={isSelected ? "#333" : hl ? hl.stroke : color}
+        fill={backgroundFill}
+        stroke={isSelected ? "#333" : hl ? hl.stroke : scheduleStroke}
         strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
+        strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}
       />
       {/* Progress fill */}
       <rect
@@ -63,14 +78,19 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         width={width * (progress / 100)}
         height={barHeight}
         rx={3}
-        fill={progress === 100 ? "#8957e5" : color}
+        fill={progressFill}
         opacity={0.7}
       />
       {/* Label + Assignee */}
       {(() => {
         const issueLabel = showIssueId ? formatIssueId(task.id) : "";
         const prefix = issueLabel ? issueLabel + " " : "";
-        const fullText = prefix + task.title;
+        const riskPrefix = overdue
+          ? `+${overdueDays}d `
+          : atRisk && daysUntilDue != null
+            ? `D-${daysUntilDue} `
+            : "";
+        const fullText = riskPrefix + prefix + task.title;
         const charWidth = 7;
         const padding = 12;
         const fitsInside = fullText.length * charWidth + padding < width;
