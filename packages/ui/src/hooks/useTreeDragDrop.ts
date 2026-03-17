@@ -26,6 +26,12 @@ export interface UseTreeDragDropReturn {
   handleRootDrop: (e: React.DragEvent) => void;
 }
 
+export function shouldHandleRootDrop(tasks: Task[], dragId: string | null): boolean {
+  if (!dragId) return false;
+  const draggedTask = tasks.find((t) => t.id === dragId);
+  return Boolean(draggedTask?.parent);
+}
+
 export function useTreeDragDrop({
   tasks,
   config,
@@ -87,7 +93,7 @@ export function useTreeDragDrop({
 
       setDropIndicator({ targetTaskId, valid: true });
     },
-    [tasks, config?.type_hierarchy],
+    [tasks, config],
   );
 
   const handleDragLeave = useCallback(() => {
@@ -128,8 +134,7 @@ export function useTreeDragDrop({
     (e: React.DragEvent) => {
       const dragId = draggedRef.current;
       if (!dragId) return;
-      const draggedTask = tasks.find((t) => t.id === dragId);
-      if (!draggedTask?.parent) return; // already root
+      if (!shouldHandleRootDrop(tasks, dragId)) return;
       e.preventDefault();
       setDropIndicator({ targetTaskId: "__root__", valid: true });
     },
@@ -144,11 +149,12 @@ export function useTreeDragDrop({
       setDraggedTaskId(null);
       draggedRef.current = null;
       if (!dragId) return;
+      if (!shouldHandleRootDrop(tasks, dragId)) return;
       onReparent(dragId, null).catch((err) => {
         console.error("Reparent failed:", err);
       });
     },
-    [onReparent],
+    [tasks, onReparent],
   );
 
   return {
