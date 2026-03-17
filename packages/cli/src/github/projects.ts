@@ -1,5 +1,5 @@
 import type { graphql } from "@octokit/graphql";
-import { PROJECT_QUERY, REPOSITORY_ID_QUERY, REPOSITORY_METADATA_QUERY, buildUserIdsQuery } from "./queries.js";
+import { type OwnerType, buildProjectQuery, OWNER_TYPE_QUERY, REPOSITORY_ID_QUERY, REPOSITORY_METADATA_QUERY, buildUserIdsQuery } from "./queries.js";
 
 export interface RawProjectItem {
   id: string;
@@ -28,11 +28,25 @@ export interface RawProjectData {
   items: RawProjectItem[];
 }
 
+export async function detectOwnerType(
+  gql: typeof graphql,
+  login: string,
+): Promise<OwnerType> {
+  const result: any = await gql(OWNER_TYPE_QUERY, { login });
+  const typename = result.repositoryOwner?.__typename;
+  if (typename === "Organization") return "organization";
+  if (typename === "User") return "user";
+  throw new Error(`Could not resolve "${login}" as a GitHub user or organization`);
+}
+
 export async function fetchProject(
   gql: typeof graphql,
   owner: string,
   projectNumber: number,
 ): Promise<RawProjectData> {
+  const ownerType = await detectOwnerType(gql, owner);
+  const query = buildProjectQuery(ownerType);
+
   const items: RawProjectItem[] = [];
   let cursor: string | null = null;
   let projectNodeId = "";
@@ -40,8 +54,8 @@ export async function fetchProject(
   let fields: RawProjectData["fields"] = [];
 
   do {
-    const result: any = await gql(PROJECT_QUERY, { owner, number: projectNumber, cursor });
-    const project = result.user.projectV2;
+    const result: any = await gql(query, { owner, number: projectNumber, cursor });
+    const project = result[ownerType].projectV2;
     projectNodeId = project.id;
     projectTitle = project.title;
     fields = project.fields.nodes;
