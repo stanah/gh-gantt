@@ -108,7 +108,11 @@ function threeWayMerge(
 | false | false | true | 同じ値に変更 (current 採用) |
 | false | false | false | コンフリクト (FieldConflict に記録) |
 
-比較は JSON.stringify による deep equality。配列フィールド (assignees, labels, sub_tasks, blocked_by) はソート済みで比較。
+比較は JSON.stringify による deep equality。比較前に正規化を行う:
+- `assignees`, `labels`, `sub_tasks`: `.sort()` でソート
+- `blocked_by`: `.task` でソートし、同一 task の `type`/`lag` も比較対象
+- `custom_fields`: キーをソートしてから stringify
+この正規化は既存の `extractSyncFields()` と同じロジックを使用する。
 
 ### 2. conflict-marker.ts — JSON コンフリクトマーカー
 
@@ -150,29 +154,40 @@ function hasUnresolvedMarkers(
 gh-gantt pull
   │
   ├─ 1. ローカルに未 push の変更があるか? (computeLocalDiff)
+  │     ※ draft タスクは除外 (リモート対応がないため常に "変更あり" になる)
   │     ├─ あり → エラー終了
   │     │   "未pushの変更があります。先に push するか --force で上書きしてください"
   │     └─ なし → 続行
   │
-  ├─ 2. 未解決コンフリクトマーカーが残っているか?
+  ├─ 2. 未解決コンフリクトマーカーが残っているか? (has_conflicts フラグ)
   │     ├─ あり → エラー終了
   │     │   "未解決のコンフリクトがあります。先に resolve してください"
   │     └─ なし → 続行
   │
   ├─ 3. リモート取得 (fetch items, milestones, sub-issues, blocked_by)
   │
-  ├─ 4. 各タスクを 3-way merge
+  ├─ 4. 各タスクを処理
   │     ├─ snapshot なし (新規リモートタスク) → そのまま追加
-  │     ├─ マージ成功 (コンフリクトなし) → マージ結果を採用
-  │     └─ コンフリクトあり → マーカーを書き込み
+  │     ├─ リモートに存在 + snapshot あり → 3-way merge
+  │     │     ├─ マージ成功 (コンフリクトなし) → マージ結果を採用
+  │     │     └─ コンフリクトあり → マーカーを書き込み
+  │     ├─ リモートに不在 + snapshot あり + ローカル未変更 → 削除
+  │     ├─ リモートに不在 + snapshot あり + ローカル変更あり → delete/modify コンフリクト
+  │     │     → 警告表示し、タスクを保持 (ユーザーが手動で削除 or push で再作成)
+  │     └─ draft タスク → 常に保持 (pull の対象外)
   │
   ├─ 5. tasks.json 書き出し (マーカー付きタスク含む)
   │
   ├─ 6. snapshot 更新
   │     ├─ コンフリクトなしタスク → hash, remoteHash, syncFields 更新
-  │     └─ コンフリクトありタスク → remoteHash のみ更新 (hash は据え置き)
+  │     ├─ コンフリクトありタスク → remoteHash のみ更新 (hash は据え置き)
+  │     └─ 削除タスク → snapshot 削除
   │
-  └─ 7. サマリー出力
+  ├─ 7. read-only フィールドの更新
+  │     コンフリクトの有無に関わらず、以下はリモートから常に上書き:
+  │     created_at, updated_at, closed_at, state_reason, linked_prs, github_issue, github_repo
+  │
+  └─ 8. サマリー出力
         "+3 added  ~5 updated  !2 conflicts  -1 removed"
 ```
 
@@ -185,8 +200,9 @@ gh-gantt push
   │     ├─ あり → エラー終了
   │     └─ なし → 続行
   │
-  ├─ 2. リモートの現在のハッシュを取得
-  │     変更対象タスクについて remoteHash と実際のリモートを比較
+  ├─ 2. リモート変更チェック (lightweight fetch)
+  │     変更対象タスクの updated_at を GitHub API で取得し、
+  │     snapshot の updated_at と比較する (全フィールド再取得は不要)
   │     ├─ リモートが変わっている → エラー終了
   │     │   "リモートが更新されています。先に pull してください"
   │     │   (--force で強制 push 可能)
@@ -201,8 +217,10 @@ gh-gantt push
 
 | コマンド | `--force` の効果 |
 |---------|-----------------|
-| `pull --force` | 未push変更があっても pull 実行 (ローカル変更は 3-way merge に参加) |
-| `push --force` | リモート変更があっても push 実行 |
+| `pull --force` | ステップ1 (未push変更チェック) をスキップ。ステップ2 (未解決コンフリクトチェック) はスキップしない |
+| `push --force` | ステップ2 (リモート変更チェック) をスキップ。ステップ1 (未解決コンフリクトチェック) はスキップしない |
+
+未解決コンフリクトは `--force` でもスキップできない。必ず `resolve` が必要。
 
 ### 6. conflicts コマンド
 
@@ -262,11 +280,12 @@ gh-gantt resolve 8 --field start_date --ours
 ```typescript
 interface TasksFile {
   tasks: Task[]
+  cache?: TasksCache       // 既存フィールド (comments, reactions) — 変更なし
   has_conflicts?: boolean  // pull がコンフリクトを残した場合 true
 }
 ```
 
-`has_conflicts` により `tasks.json` 全体を走査せずにコンフリクト中かどうか即判定可能。
+`has_conflicts` により `tasks.json` 全体を走査せずにコンフリクト中かどうか即判定可能。既存の `cache` フィールドはそのまま保持。
 
 ### ConflictStrategy — 削除
 
@@ -289,7 +308,12 @@ TasksFileWithConflictsSchema  // tasks 配列内の各タスクに .passthrough(
 
 - read: まず `WithConflicts` で読み、`has_conflicts` フラグを確認
 - write: マーカー付きタスクはそのまま書き出し
-- push 前チェック: `hasUnresolvedMarkers()` が true なら拒否
+- push 前チェック: `has_conflicts` フラグで即判定 → true なら拒否
+
+マーカーのバリデーション (`detectMarkers` 内):
+- `{field}_current` があるのに `{field}_incoming` がない場合 (またはその逆) → 警告を出しつつ、ペアが揃っているもののみコンフリクトとして扱う
+- `SyncFields` に存在しないフィールドのマーカー → 無視
+- マーカー値の型チェックは行わない (resolve 時に選択した値をそのまま設定するため)
 
 ## File Changes
 
@@ -319,6 +343,18 @@ TasksFileWithConflictsSchema  // tasks 配列内の各タスクに .passthrough(
 | `sync/conflict-marker.ts` | マーカーの読み書き・検出・解決 |
 | `commands/conflicts.ts` | `gh-gantt conflicts` コマンド |
 | `commands/resolve.ts` | `gh-gantt resolve` コマンド |
+
+## UI Behavior (gh-gantt serve)
+
+コンフリクト状態での UI の振る舞い:
+
+- **GET /api/tasks**: `has_conflicts` フラグとマーカー付きタスクをそのまま返す。UI 側は `_current` / `_incoming` キーを `.passthrough()` で受け入れる
+- **バナー警告**: `has_conflicts === true` の場合、画面上部に「未解決のコンフリクトがあります。CLI で `gh-gantt resolve` を実行してください」と表示
+- **コンフリクトタスクの表示**: タスク行に警告アイコンを表示。TaskDetailPanel でコンフリクトフィールドを強調表示
+- **編集制限**: コンフリクト中のタスクのフィールド編集は無効化 (resolve してから編集)
+- **push ボタン**: `has_conflicts === true` の場合、push ボタンを無効化
+
+※ UI でのコンフリクト解決機能は将来的な拡張。初期実装は CLI のみ。
 
 ## Breaking Changes
 
