@@ -108,8 +108,8 @@ export function TaskRow({
   const atRisk = !isMilestone && !overdue && isAtRisk(task, atRiskThresholdDays);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
-  const bodyPreview = getBodyPreview(task.body);
-  const showBodyPreview = Boolean(isHovered && bodyPreview && !isDragging);
+  const bodyPreview = isHovered && !isDragging ? getBodyPreview(task.body) : null;
+  const showBodyPreview = Boolean(bodyPreview);
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isParentRelation = highlightType === "parent" || highlightType === "child";

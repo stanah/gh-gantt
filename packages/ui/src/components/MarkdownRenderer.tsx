@@ -29,8 +29,11 @@ const SAFE_URL_SCHEMES = ["http:", "https:", "mailto:"];
 
 function isSafeHref(rawHref: string): boolean {
   const href = rawHref.trim().toLowerCase();
-  // Relative URLs and fragment-only URLs are safe
-  if (href.startsWith("/") || href.startsWith("#") || href.startsWith("?")) return true;
+  // Relative URLs and fragment-only URLs are safe (but reject protocol-relative "//")
+  if (href.startsWith("//")) return false;
+  if (href.startsWith("/") || href.startsWith("#") || href.startsWith("?") || href.startsWith("./") || href.startsWith("../")) return true;
+  // Allow bare relative paths (no scheme)
+  if (!href.includes(":")) return true;
   // Allow only known-safe schemes
   return SAFE_URL_SCHEMES.some((scheme) => href.startsWith(scheme));
 }

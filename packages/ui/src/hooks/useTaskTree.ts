@@ -91,10 +91,10 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       if (!task) return false;
       if (path.has(taskId)) return false;
 
-      const nextPath = new Set(path);
-      nextPath.add(taskId);
+      path.add(taskId);
       const childIds = task.sub_tasks.filter((id) => prefilteredMap.has(id));
-      const hasMatchedDescendant = childIds.some((id) => keepTaskById(id, nextPath));
+      const hasMatchedDescendant = childIds.some((id) => keepTaskById(id, path));
+      path.delete(taskId);
       const isContainer = CONTAINER_TYPES.has(task.type) || childIds.length > 0;
       const keep = isContainer
         ? matchesAssigneeFilter(task) || hasMatchedDescendant

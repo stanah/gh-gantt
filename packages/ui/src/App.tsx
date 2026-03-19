@@ -247,8 +247,7 @@ export function App() {
 
   useEffect(() => {
     if (!selectedTaskId) return;
-    const rows = Array.from(document.querySelectorAll<HTMLElement>("[data-task-id]"));
-    const selectedRow = rows.find((row) => row.dataset.taskId === selectedTaskId);
+    const selectedRow = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(selectedTaskId)}"]`);
     selectedRow?.scrollIntoView({ block: "nearest" });
   }, [selectedTaskId, visibleTaskIds]);
 
