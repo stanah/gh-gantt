@@ -73,6 +73,7 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
             <h2 style={{ margin: "4px 0 0", fontSize: 18, color: "#2d2418" }}>ショートカット一覧</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
             style={{
               border: "none",

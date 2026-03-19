@@ -46,7 +46,8 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const scheduleStroke = overdue ? "#e74c3c" : atRisk ? "#f39c12" : color;
-  const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color + "44";
+  const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color;
+  const backgroundOpacity = overdue || atRisk ? 1 : 0.27;
   const progressFill = overdue ? "#e74c3c" : atRisk ? "#f39c12" : (progress === 100 ? "#8957e5" : color);
 
   const hl = highlightStroke(highlightType);
@@ -67,6 +68,7 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         height={barHeight}
         rx={3}
         fill={backgroundFill}
+        fillOpacity={backgroundOpacity}
         stroke={isSelected ? "#333" : hl ? hl.stroke : scheduleStroke}
         strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
         strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}

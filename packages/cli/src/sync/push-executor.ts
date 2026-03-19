@@ -333,11 +333,11 @@ export async function executePush(
         }
 
         // Detect blocked_by changes from snapshot
-        const oldBlockedBy = new Set(snapshot.syncFields.blocked_by.map((d) => d.task));
-        const newBlockedBy = new Set(task.blocked_by.map((d) => d.task));
+        const oldBlockedBy = new Set((snapshot.syncFields.blocked_by ?? []).map((d) => d.task));
+        const newBlockedBy = new Set((task.blocked_by ?? []).map((d) => d.task));
 
         // Added blockers
-        for (const dep of task.blocked_by) {
+        for (const dep of task.blocked_by ?? []) {
           if (!oldBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
@@ -348,7 +348,7 @@ export async function executePush(
         }
 
         // Removed blockers
-        for (const dep of snapshot.syncFields.blocked_by) {
+        for (const dep of snapshot.syncFields.blocked_by ?? []) {
           if (!newBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {

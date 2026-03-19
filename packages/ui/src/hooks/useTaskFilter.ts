@@ -7,6 +7,7 @@ const ASSIGNEES_QUERY_KEY = "assignees";
 export interface TaskFilterState {
   hideClosed: boolean;
   selectedAssignee: string | null;
+  searchQuery: string;
 }
 
 function parseAssigneesFromQuery(search: string): string[] {

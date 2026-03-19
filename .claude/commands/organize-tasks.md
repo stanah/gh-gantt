@@ -94,3 +94,4 @@
 | `#6` | `owner/repo#6` |
 | `draft-1` | `owner/repo#draft-1` |
 | `owner/repo#6` | そのまま |
+| `M1` / `m1` | `milestone:owner/repo#1` |

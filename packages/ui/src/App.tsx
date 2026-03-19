@@ -157,7 +157,7 @@ export function App() {
     }
 
     const updatedTask = await updateTask(taskId, updates);
-    const { undoPatch, redoPatch } = buildTaskHistoryPatches(beforeTask, updatedTask as Task);
+    const { undoPatch, redoPatch } = buildTaskHistoryPatches(beforeTask, updatedTask);
 
     if (Object.keys(redoPatch).length > 0) {
       pushHistory({

@@ -13,6 +13,7 @@ const statusValues: Record<string, StatusValue> = {
 describe("computeStatusDateUpdates", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   it("returns start_date when transitioning to a starts_work status", () => {

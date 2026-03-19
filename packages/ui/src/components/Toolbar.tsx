@@ -113,7 +113,7 @@ export function Toolbar({
 
       {/* Filters */}
       <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-        <button onClick={onToggleHideClosed} style={btnStyle(hideClosed)}>
+        <button onClick={onToggleHideClosed} aria-pressed={hideClosed} style={btnStyle(hideClosed)}>
           Hide closed
         </button>
         <AssigneeFilter
@@ -133,6 +133,7 @@ export function Toolbar({
           value={searchQuery}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search tasks..."
+          aria-label="Search tasks"
           style={{
             padding: "3px 24px 3px 6px",
             border: "1px solid #ccc",
@@ -145,6 +146,7 @@ export function Toolbar({
         {searchQuery && (
           <button
             onClick={() => onSearchChange("")}
+            aria-label="Clear search"
             style={{
               position: "absolute",
               right: 2,
@@ -165,7 +167,13 @@ export function Toolbar({
       </div>
 
       {onOpenShortcuts && (
-        <button onClick={onOpenShortcuts} style={btnStyle()} title="Show keyboard shortcuts">
+        <button
+          onClick={onOpenShortcuts}
+          style={btnStyle()}
+          title="Show keyboard shortcuts"
+          aria-label="Show keyboard shortcuts"
+          aria-haspopup="dialog"
+        >
           ?
         </button>
       )}

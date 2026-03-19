@@ -77,7 +77,7 @@ export function useKeyboardShortcuts(options: KeyboardShortcutOptions) {
   useEffect(() => {
     helpOpenRef.current = isHelpOpen;
     options.onHelpOpenChange?.(isHelpOpen);
-  }, [isHelpOpen, options]);
+  }, [isHelpOpen, options.onHelpOpenChange]);
 
   const openHelp = useCallback(() => {
     setIsHelpOpen(true);

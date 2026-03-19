@@ -44,14 +44,14 @@ export function useApi() {
     });
   }, []);
 
-  const updateTask = useCallback(async (taskId: string, updates: Partial<Task>) => {
+  const updateTask = useCallback(async (taskId: string, updates: Partial<Task>): Promise<Task> => {
     const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     });
     if (!res.ok) throw new Error("Failed to update task");
-    const updated = await res.json();
+    const updated: Task = await res.json();
     setTasksResponse((prev) => {
       if (!prev) return prev;
       const tasks = prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t));

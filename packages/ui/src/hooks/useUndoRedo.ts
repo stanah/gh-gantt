@@ -103,7 +103,7 @@ export function createUndoRedoManager(maxHistory = 100): UndoRedoManager {
 }
 
 export function useUndoRedo(maxHistory = 100) {
-  const managerRef = useRef<UndoRedoManager>();
+  const managerRef = useRef<UndoRedoManager | null>(null);
   if (!managerRef.current) {
     managerRef.current = createUndoRedoManager(maxHistory);
   }

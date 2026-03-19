@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Task } from "../types/index.js";
+import { UNASSIGNED } from "./useTaskFilter.js";
 
 export interface TreeNode {
   task: Task;
@@ -64,8 +65,8 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       .filter((v) => v.length > 0));
     const selectedSet = new Set(selectedTokens);
     const hasAssigneeFilter = selectedSet.size > 0;
-    const includeUnassigned = selectedSet.has("__unassigned__");
-    const selectedUsers = new Set([...selectedSet].filter((v) => v !== "__unassigned__"));
+    const includeUnassigned = selectedSet.has(UNASSIGNED);
+    const selectedUsers = new Set([...selectedSet].filter((v) => v !== UNASSIGNED));
 
     const prefiltered = tasks.filter((t) => {
       if (!enabledTypes.has(t.type)) return false;
@@ -95,7 +96,9 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       const childIds = task.sub_tasks.filter((id) => prefilteredMap.has(id));
       const hasMatchedDescendant = childIds.some((id) => keepTaskById(id, nextPath));
       const isContainer = CONTAINER_TYPES.has(task.type) || childIds.length > 0;
-      const keep = isContainer ? hasMatchedDescendant : matchesAssigneeFilter(task);
+      const keep = isContainer
+        ? matchesAssigneeFilter(task) || hasMatchedDescendant
+        : matchesAssigneeFilter(task);
 
       keepMemo.set(taskId, keep);
       return keep;

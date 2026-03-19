@@ -30,8 +30,12 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 export function getDaysUntilDue(task: Task, today: Date = new Date()): number | null {
   if (!task.end_date) return null;
   const due = parseDate(task.end_date);
-  const diffMs = startOfDay(due).getTime() - startOfDay(today).getTime();
-  return Math.floor(diffMs / ONE_DAY_MS);
+  const dueDay = startOfDay(due);
+  const todayDay = startOfDay(today);
+  // Use UTC to avoid DST-induced off-by-one errors
+  const dueUTC = Date.UTC(dueDay.getFullYear(), dueDay.getMonth(), dueDay.getDate());
+  const todayUTC = Date.UTC(todayDay.getFullYear(), todayDay.getMonth(), todayDay.getDate());
+  return Math.round((dueUTC - todayUTC) / ONE_DAY_MS);
 }
 
 export function isOverdue(task: Task, today: Date = new Date()): boolean {
