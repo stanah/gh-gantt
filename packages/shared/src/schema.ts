@@ -56,6 +56,13 @@ const TaskSchema = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
+export const SprintSchema = z.object({
+  name: z.string(),
+  start_date: z.string(),
+  end_date: z.string(),
+  color: z.string(),
+});
+
 export const ConfigSchema = z.object({
   version: z.string(),
   project: z.object({
@@ -89,6 +96,7 @@ export const ConfigSchema = z.object({
       overdue: z.string(),
     }),
   }),
+  sprints: z.array(SprintSchema).optional(),
 });
 
 export const TasksFileSchema = z.object({
@@ -101,6 +109,23 @@ export const TasksFileSchema = z.object({
     }))),
     reactions: z.record(z.record(z.number())),
   }),
+});
+
+export const SyncFieldsSchema = z.object({
+  title: z.string(),
+  body: z.string().nullable(),
+  state: z.enum(["open", "closed"]),
+  type: z.string(),
+  assignees: z.array(z.string()),
+  labels: z.array(z.string()),
+  milestone: z.string().nullable(),
+  custom_fields: z.record(z.unknown()),
+  parent: z.string().nullable(),
+  sub_tasks: z.array(z.string()),
+  start_date: z.string().nullable(),
+  end_date: z.string().nullable(),
+  date: z.string().nullable(),
+  blocked_by: z.array(DependencySchema),
 });
 
 export const SyncStateSchema = z.object({
@@ -116,22 +141,7 @@ export const SyncStateSchema = z.object({
     hash: z.string(),
     synced_at: z.string(),
     updated_at: z.string().optional(),
-    syncFields: z.object({
-      title: z.string(),
-      body: z.string().nullable(),
-      state: z.enum(["open", "closed"]),
-      type: z.string(),
-      assignees: z.array(z.string()),
-      labels: z.array(z.string()),
-      milestone: z.string().nullable(),
-      custom_fields: z.record(z.unknown()),
-      parent: z.string().nullable(),
-      sub_tasks: z.array(z.string()),
-      start_date: z.string().nullable(),
-      end_date: z.string().nullable(),
-      date: z.string().nullable(),
-      blocked_by: z.array(DependencySchema),
-    }).optional(),
+    syncFields: SyncFieldsSchema.optional(),
     remoteHash: z.string().optional(),
   })),
   option_ids: z.record(z.record(z.string())).optional(),

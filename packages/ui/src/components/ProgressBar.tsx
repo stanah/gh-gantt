@@ -6,7 +6,7 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ progress, color }: ProgressBarProps) {
-  const fillColor = progress === 100 ? "#8957e5" : (color ?? "#3fb950");
+  const fillColor = color ?? (progress === 100 ? "#8957e5" : "#3fb950");
   return (
     <div
       style={{

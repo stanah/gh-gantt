@@ -1,7 +1,6 @@
-export const PROJECT_QUERY = `
-  query($owner: String!, $number: Int!, $cursor: String) {
-    user(login: $owner) {
-      projectV2(number: $number) {
+export type OwnerType = "user" | "organization";
+
+const PROJECT_V2_FRAGMENT = `
         id
         title
         fields(first: 50) {
@@ -67,8 +66,24 @@ export const PROJECT_QUERY = `
               }
             }
           }
-        }
+        }`;
+
+export function buildProjectQuery(ownerType: OwnerType): string {
+  return `
+  query($owner: String!, $number: Int!, $cursor: String) {
+    ${ownerType}(login: $owner) {
+      projectV2(number: $number) {
+${PROJECT_V2_FRAGMENT}
       }
+    }
+  }
+`;
+}
+
+export const OWNER_TYPE_QUERY = `
+  query($login: String!) {
+    repositoryOwner(login: $login) {
+      __typename
     }
   }
 `;

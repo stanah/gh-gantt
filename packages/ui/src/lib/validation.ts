@@ -11,8 +11,11 @@ export function wouldCreateParentCycle(
 ): boolean {
   const taskMap = new Map(tasks.map((t) => [t.id, t]));
   let current = newParentId;
+  const visited = new Set<string>();
   while (current) {
     if (current === childId) return true;
+    if (visited.has(current)) return true;
+    visited.add(current);
     const task = taskMap.get(current);
     if (!task?.parent) break;
     current = task.parent;

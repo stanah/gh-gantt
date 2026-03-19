@@ -49,15 +49,11 @@ export function createApiRouter(projectRoot: string): Router {
         ...tasksFile.cache,
         comments: { ...(tasksFile.cache.comments ?? {}), ...normalizedComments },
       };
-      const tasksWithProgress = tasksFile.tasks.map((task) => ({
-        ...task,
-        _progress: computeProgress(
-          task,
-          tasksFile.tasks,
-          config.statuses.values,
-          config.statuses.field_name,
-        ),
-      }));
+      const tasksWithProgress = attachProgress(
+        tasksFile.tasks,
+        config.statuses.values,
+        config.statuses.field_name,
+      );
       res.json({ tasks: tasksWithProgress, cache: mergedCache });
     } catch (err) {
       res.status(500).json({ error: "Failed to read tasks" });
@@ -245,15 +241,11 @@ export function createApiRouter(projectRoot: string): Router {
 
       await tasksStore.write(tasksFile);
 
-      const tasksWithProgress = tasksFile.tasks.map((t) => ({
-        ...t,
-        _progress: computeProgress(
-          t,
-          tasksFile.tasks,
-          config.statuses.values,
-          config.statuses.field_name,
-        ),
-      }));
+      const tasksWithProgress = attachProgress(
+        tasksFile.tasks,
+        config.statuses.values,
+        config.statuses.field_name,
+      );
       res.json({ tasks: tasksWithProgress });
     } catch (err) {
       res.status(500).json({ error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)) });
@@ -448,7 +440,7 @@ export function createApiRouter(projectRoot: string): Router {
 
 function computeProgress(
   task: Task,
-  allTasks: Task[],
+  taskMap: Map<string, Task>,
   statusValues: Record<string, StatusValue>,
   statusFieldName: string,
   visited: Set<string> = new Set(),
@@ -459,7 +451,6 @@ function computeProgress(
   if (statusName && statusValues[statusName]?.done) return 100;
 
   if (task.sub_tasks.length > 0) {
-    const taskMap = new Map(allTasks.map((t) => [t.id, t]));
     visited.add(task.id);
     let total = 0;
     let done = 0;
@@ -469,11 +460,23 @@ function computeProgress(
       if (child) {
         total++;
         visited.add(childId);
-        done += computeProgress(child, allTasks, statusValues, statusFieldName, visited) / 100;
+        done += computeProgress(child, taskMap, statusValues, statusFieldName, visited) / 100;
       }
     }
     return total > 0 ? Math.round((done / total) * 100) : 0;
   }
 
   return 0;
+}
+
+function attachProgress(
+  tasks: Task[],
+  statusValues: Record<string, StatusValue>,
+  statusFieldName: string,
+): Array<Task & { _progress: number }> {
+  const taskMap = new Map(tasks.map((task) => [task.id, task]));
+  return tasks.map((task) => ({
+    ...task,
+    _progress: computeProgress(task, taskMap, statusValues, statusFieldName),
+  }));
 }

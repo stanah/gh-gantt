@@ -43,6 +43,13 @@ export interface Task {
   _progress?: number;
 }
 
+export interface SprintConfig {
+  name: string;
+  start_date: string;
+  end_date: string;
+  color: string;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -65,6 +72,7 @@ export interface Config {
     working_days: number[];
     colors: { critical_path: string; on_track: string; at_risk: string; overdue: string };
   };
+  sprints?: SprintConfig[];
 }
 
 export interface TasksResponse {

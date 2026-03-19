@@ -9,7 +9,7 @@ export function resolveTaskId(input: string, config: Config): string {
     return input;
   }
 
-  // M1, M42 → milestone:owner/repo#1
+  // M1, m1, M42, m42 → milestone:owner/repo#1
   const milestoneMatch = input.match(/^M(\d+)$/i);
   if (milestoneMatch) {
     return `milestone:${repoFullName}#${milestoneMatch[1]}`;

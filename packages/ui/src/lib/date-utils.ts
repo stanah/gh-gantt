@@ -21,6 +21,44 @@ export function parseDate(dateStr: string): Date {
   return new Date(year, month - 1, day);
 }
 
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+export function getDaysUntilDue(task: Task, today: Date = new Date()): number | null {
+  if (!task.end_date) return null;
+  const due = parseDate(task.end_date);
+  const dueDay = startOfDay(due);
+  const todayDay = startOfDay(today);
+  // Use UTC to avoid DST-induced off-by-one errors
+  const dueUTC = Date.UTC(dueDay.getFullYear(), dueDay.getMonth(), dueDay.getDate());
+  const todayUTC = Date.UTC(todayDay.getFullYear(), todayDay.getMonth(), todayDay.getDate());
+  return Math.round((dueUTC - todayUTC) / ONE_DAY_MS);
+}
+
+export function isOverdue(task: Task, today: Date = new Date()): boolean {
+  if (task.state === "closed") return false;
+  const daysUntilDue = getDaysUntilDue(task, today);
+  if (daysUntilDue == null) return false;
+  return daysUntilDue < 0;
+}
+
+export function getOverdueDays(task: Task, today: Date = new Date()): number {
+  const daysUntilDue = getDaysUntilDue(task, today);
+  if (daysUntilDue == null || daysUntilDue >= 0) return 0;
+  return Math.abs(daysUntilDue);
+}
+
+export function isAtRisk(task: Task, thresholdDays: number, today: Date = new Date()): boolean {
+  if (task.state === "closed") return false;
+  const daysUntilDue = getDaysUntilDue(task, today);
+  if (daysUntilDue == null) return false;
+  if (daysUntilDue < 0) return false;
+  return daysUntilDue <= Math.max(0, thresholdDays);
+}
+
 export function getDateRange(tasks: Task[]): [Date, Date] {
   const dates: Date[] = [];
   for (const task of tasks) {

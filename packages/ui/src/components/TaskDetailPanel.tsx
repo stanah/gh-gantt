@@ -1,8 +1,8 @@
 import React, { useState, useCallback } from "react";
 import type { Task, Config } from "../types/index.js";
 import { MarkdownEditor } from "./MarkdownEditor.js";
-import { StatusBadge } from "./StatusBadge.js";
 import { ProgressBar } from "./ProgressBar.js";
+import { MarkdownRenderer } from "./MarkdownRenderer.js";
 
 interface TaskDetailPanelProps {
   task: Task;
@@ -10,9 +10,17 @@ interface TaskDetailPanelProps {
   comments: Array<{ author: string; body: string; created_at: string }>;
   onUpdate: (updates: Partial<Task>) => void;
   onClose: () => void;
+  renderMarkdownPreview?: (value: string) => React.ReactNode;
 }
 
-export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: TaskDetailPanelProps) {
+export function TaskDetailPanel({
+  task,
+  config,
+  comments,
+  onUpdate,
+  onClose,
+  renderMarkdownPreview,
+}: TaskDetailPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
   const [copyFeedback, setCopyFeedback] = useState<"success" | "error" | null>(null);
@@ -21,6 +29,7 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
   const statusOptions = Object.keys(config.statuses.values);
   const taskType = config.task_types[task.type];
   const isMilestone = task.type === "milestone";
+  const renderPreview = renderMarkdownPreview ?? ((value: string) => <MarkdownRenderer markdown={value} />);
 
   const copyTaskInfo = useCallback(() => {
     const ref = task.github_issue
@@ -243,7 +252,11 @@ export function TaskDetailPanel({ task, config, comments, onUpdate, onClose }: T
         {/* Body */}
         <div>
           <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Description</label>
-          <MarkdownEditor value={task.body ?? ""} onChange={(body) => onUpdate({ body })} />
+          <MarkdownEditor
+            value={task.body ?? ""}
+            onChange={(body) => onUpdate({ body })}
+            renderPreview={renderPreview}
+          />
         </div>
 
         {/* Sub-tasks */}

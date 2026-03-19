@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Task } from "../types/index.js";
+import { UNASSIGNED } from "./useTaskFilter.js";
 
 export interface TreeNode {
   task: Task;
@@ -14,6 +15,7 @@ function isBacklog(task: Task): boolean {
 export interface TaskFilterOptions {
   hideClosed?: boolean;
   selectedAssignee?: string | null;
+  selectedAssignees?: string[];
   searchQuery?: string;
 }
 
@@ -53,23 +55,58 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
     setBacklogCollapsed((prev) => !prev);
   }, []);
 
-  const { hideClosed = false, selectedAssignee = null, searchQuery = "" } = filterOptions;
+  const { hideClosed = false, selectedAssignee = null, selectedAssignees = [], searchQuery = "" } = filterOptions;
 
   const { scheduledTree, backlogTree } = useMemo(() => {
     const trimmedQuery = searchQuery.trim();
-    const filtered = tasks.filter((t) => {
+    const selectedTokens = (selectedAssignees.length > 0 ? selectedAssignees : (selectedAssignee ?? "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0));
+    const selectedSet = new Set(selectedTokens);
+    const hasAssigneeFilter = selectedSet.size > 0;
+    const includeUnassigned = selectedSet.has(UNASSIGNED);
+    const selectedUsers = new Set([...selectedSet].filter((v) => v !== UNASSIGNED));
+
+    const prefiltered = tasks.filter((t) => {
       if (!enabledTypes.has(t.type)) return false;
       if (hideClosed && t.state === "closed") return false;
-      if (selectedAssignee && !CONTAINER_TYPES.has(t.type)) {
-        if (selectedAssignee === "__unassigned__") {
-          if (t.assignees.length > 0) return false;
-        } else {
-          if (!t.assignees.includes(selectedAssignee)) return false;
-        }
-      }
       if (trimmedQuery && !matchesSearch(t, trimmedQuery)) return false;
       return true;
     });
+
+    const prefilteredMap = new Map(prefiltered.map((t) => [t.id, t]));
+
+    const matchesAssigneeFilter = (task: Task): boolean => {
+      if (!hasAssigneeFilter) return true;
+      if (includeUnassigned && task.assignees.length === 0) return true;
+      return task.assignees.some((a) => selectedUsers.has(a));
+    };
+
+    const keepMemo = new Map<string, boolean>();
+    const keepTaskById = (taskId: string, path: Set<string>): boolean => {
+      if (!hasAssigneeFilter) return prefilteredMap.has(taskId);
+      if (keepMemo.has(taskId)) return keepMemo.get(taskId) ?? false;
+      const task = prefilteredMap.get(taskId);
+      if (!task) return false;
+      if (path.has(taskId)) return false;
+
+      path.add(taskId);
+      const childIds = task.sub_tasks.filter((id) => prefilteredMap.has(id));
+      const hasMatchedDescendant = childIds.some((id) => keepTaskById(id, path));
+      path.delete(taskId);
+      const isContainer = CONTAINER_TYPES.has(task.type) || childIds.length > 0;
+      const keep = isContainer
+        ? matchesAssigneeFilter(task) || hasMatchedDescendant
+        : matchesAssigneeFilter(task);
+
+      keepMemo.set(taskId, keep);
+      return keep;
+    };
+
+    const filtered = hasAssigneeFilter
+      ? prefiltered.filter((t) => keepTaskById(t.id, new Set()))
+      : prefiltered;
 
     const scheduledTasks = filtered.filter((t) => !isBacklog(t));
     const backlogTasks = filtered.filter((t) => isBacklog(t));
@@ -99,7 +136,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee, searchQuery]);
+  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, searchQuery]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

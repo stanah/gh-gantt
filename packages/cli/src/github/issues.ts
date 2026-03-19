@@ -19,7 +19,7 @@ export function isMilestoneDraftTask(task: Task): boolean {
 
 export function milestoneToTask(m: RawMilestone, repo: string): Task {
   return {
-    id: `${MILESTONE_PREFIX}${repo}#${m.number}`,
+    id: buildMilestoneSyntheticId(repo, m.number),
     type: "milestone",
     github_issue: null,
     github_repo: repo,
