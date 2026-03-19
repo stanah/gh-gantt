@@ -104,6 +104,9 @@ export function useKeyboardShortcuts(options: KeyboardShortcutOptions) {
       const action = resolveShortcutAction(event);
       if (!action) return;
 
+      // While help dialog is open, only allow toggleHelp (Escape is handled above)
+      if (helpOpenRef.current && action !== "toggleHelp") return;
+
       const current = latestOptions.current;
       if (action === "focusSearch") {
         event.preventDefault();

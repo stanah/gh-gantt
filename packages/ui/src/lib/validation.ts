@@ -14,7 +14,7 @@ export function wouldCreateParentCycle(
   const visited = new Set<string>();
   while (current) {
     if (current === childId) return true;
-    if (visited.has(current)) break;
+    if (visited.has(current)) return true;
     visited.add(current);
     const task = taskMap.get(current);
     if (!task?.parent) break;

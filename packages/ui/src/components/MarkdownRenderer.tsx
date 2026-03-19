@@ -40,7 +40,7 @@ function isSafeHref(rawHref: string): boolean {
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
-  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^)]+)\)/g;
+  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = tokenRe.exec(text);
   let tokenIndex = 0;
@@ -156,7 +156,9 @@ function parseTable(lines: string[], startIndex: number): { nextIndex: number; t
   const rows: string[][] = [];
   let i = startIndex + 2;
   while (i < lines.length && lines[i].includes("|") && lines[i].trim()) {
-    rows.push(splitTableRow(lines[i]));
+    const cells = splitTableRow(lines[i]);
+    while (cells.length < headers.length) cells.push("");
+    rows.push(cells.slice(0, headers.length));
     i += 1;
   }
   return { nextIndex: i, table: { headers, rows } };
@@ -269,13 +271,17 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
         quoteLines.push(lines[i].replace(/^>\s?/, ""));
         i += 1;
       }
-      const quoteText = quoteLines.join(" ").trim();
       nodes.push(
         <blockquote
           key={`block-${blockKey}`}
           style={{ margin: "8px 0", padding: "6px 12px", borderLeft: "3px solid #94a3b8", color: "#334155", background: "#f8fafc" }}
         >
-          {renderInline(quoteText, `quote-${blockKey}`)}
+          {quoteLines.map((qLine, qIdx) => (
+            <React.Fragment key={qIdx}>
+              {renderInline(qLine, `quote-${blockKey}-${qIdx}`)}
+              {qIdx < quoteLines.length - 1 && <br />}
+            </React.Fragment>
+          ))}
         </blockquote>,
       );
       blockKey += 1;

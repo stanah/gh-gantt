@@ -127,9 +127,12 @@ export function TaskRow({
     <div
       data-task-id={task.id}
       draggable={isDraggable}
+      tabIndex={0}
       onClick={onClick}
       onMouseEnter={() => onHover?.(task.id)}
       onMouseLeave={() => onHover?.(null)}
+      onFocus={() => onHover?.(task.id)}
+      onBlur={() => onHover?.(null)}
       onDragStart={onDragStart}
       onDragOver={onDragOver}
       onDragLeave={onDragLeave}
@@ -237,6 +240,7 @@ export function TaskRow({
 
       {showBodyPreview && (
         <div
+          role="tooltip"
           style={{
             position: "absolute",
             left: Math.max(28 + indent, 40),

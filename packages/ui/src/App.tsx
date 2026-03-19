@@ -175,12 +175,13 @@ export function App() {
   }, [pushHistory, tasks, updateTask]);
 
   const handleTaskUpdate = useCallback(async (taskId: string, updates: Partial<Task>) => {
+    if (undoRedoBusy) return;
     try {
       await applyTrackedTaskUpdate(taskId, updates);
     } catch (err) {
       showToast(`Update failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, [applyTrackedTaskUpdate, showToast]);
+  }, [applyTrackedTaskUpdate, showToast, undoRedoBusy]);
 
   const handleUndo = useCallback(async () => {
     try {
@@ -215,6 +216,7 @@ export function App() {
   );
 
   const handleReparent = useCallback(async (taskId: string, newParentId: string | null) => {
+    if (undoRedoBusy) return;
     const task = tasks.find((entry) => entry.id === taskId);
     if (!task) {
       showToast("Task not found", "error");
@@ -237,7 +239,7 @@ export function App() {
     } catch (err) {
       showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     }
-  }, [pushHistory, reparentTask, showToast, tasks]);
+  }, [pushHistory, reparentTask, showToast, tasks, undoRedoBusy]);
 
   const dragState = useTreeDragDrop({
     tasks,

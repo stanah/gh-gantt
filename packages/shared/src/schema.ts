@@ -56,7 +56,7 @@ const TaskSchema = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
-const SprintSchema = z.object({
+export const SprintSchema = z.object({
   name: z.string(),
   start_date: z.string(),
   end_date: z.string(),
