@@ -4,5 +4,6 @@ dist/
 *.tsbuildinfo
 .DS_Store
 
+.worktrees/
 .playwright-mcp/
 gh-gantt-*.png
