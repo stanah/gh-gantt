@@ -2,7 +2,6 @@ import { z } from "zod";
 
 const TaskDisplaySchema = z.enum(["bar", "summary", "milestone"]);
 const DependencyTypeSchema = z.enum(["finish-to-start", "finish-to-finish", "start-to-start", "start-to-finish"]);
-const ConflictStrategySchema = z.enum(["remote-wins", "local-wins", "manual"]);
 const ViewScaleSchema = z.enum(["day", "week", "month", "quarter"]);
 
 const TaskTypeSchema = z.object({
@@ -74,7 +73,6 @@ export const ConfigSchema = z.object({
     }),
   }),
   sync: z.object({
-    conflict_strategy: ConflictStrategySchema,
     auto_create_issues: z.boolean(),
     field_mapping: z.object({
       start_date: z.string(),
@@ -82,7 +80,7 @@ export const ConfigSchema = z.object({
       status: z.string(),
       type: z.string().nullable().optional(),
     }),
-  }),
+  }).passthrough(),
   task_types: z.record(TaskTypeSchema),
   type_hierarchy: z.record(z.array(z.string())),
   statuses: StatusesSchema,
@@ -109,6 +107,20 @@ export const TasksFileSchema = z.object({
     }))),
     reactions: z.record(z.record(z.number())),
   }),
+  has_conflicts: z.boolean().optional(),
+});
+
+export const TasksFileWithConflictsSchema = z.object({
+  tasks: z.array(TaskSchema.passthrough()),
+  cache: z.object({
+    comments: z.record(z.array(z.object({
+      author: z.string(),
+      body: z.string(),
+      created_at: z.string(),
+    }))),
+    reactions: z.record(z.record(z.number())),
+  }),
+  has_conflicts: z.boolean().optional(),
 });
 
 export const SyncFieldsSchema = z.object({

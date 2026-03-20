@@ -140,7 +140,6 @@ export const initCommand = new Command("init")
         github: { owner: opts.owner, repo: opts.repo, project_number: opts.project },
       },
       sync: {
-        conflict_strategy: "remote-wins",
         auto_create_issues: false,
         field_mapping: fieldMapping,
       },

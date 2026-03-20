@@ -101,7 +101,7 @@ describe("createApiRouter", () => {
     await configStore.write({
       version: "1",
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
-      sync: { conflict_strategy: "remote-wins", auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "Status" } },
+      sync: { auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "Status" } },
       task_types: {
         epic: { label: "Epic", display: "summary", color: "#111111", github_label: null },
         feature: { label: "Feature", display: "bar", color: "#222222", github_label: null },

@@ -57,7 +57,6 @@ export interface Config {
     github: { owner: string; repo: string; project_number: number };
   };
   sync: {
-    conflict_strategy: string;
     auto_create_issues: boolean;
     field_mapping: { start_date: string; end_date: string; status: string };
   };

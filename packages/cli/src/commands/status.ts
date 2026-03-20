@@ -91,7 +91,7 @@ export const statusCommand = new Command("status")
         }
       }
       console.log();
-      console.log(`Strategy: ${config.sync.conflict_strategy}`);
+      console.log(`Sync: auto_create_issues=${config.sync.auto_create_issues}`);
     }
 
     // Draft tasks

@@ -21,7 +21,7 @@ describe("ConfigStore", () => {
     const config = {
       version: "1",
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
-      sync: { conflict_strategy: "remote-wins" as const, auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "St" } },
+      sync: { auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "St" } },
       task_types: { task: { label: "Task", display: "bar" as const, color: "#000", github_label: null } },
       type_hierarchy: { task: [] },
       statuses: { field_name: "Status", values: { Done: { color: "#0f0", done: true } } },
