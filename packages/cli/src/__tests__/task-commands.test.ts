@@ -121,6 +121,26 @@ describe("applyTaskUpdate", () => {
     expect(result.task.title).toBe("New title");
   });
 
+  it("updates body", () => {
+    const task = makeTask();
+    const result = applyTaskUpdate(task, { body: "New description" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.body).toBe("New description");
+  });
+
+  it("clears body with empty string", () => {
+    const task = makeTask({ body: "Existing body" });
+    const result = applyTaskUpdate(task, { body: "" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.body).toBe("");
+  });
+
+  it("does not change body when not specified", () => {
+    const task = makeTask({ body: "Keep this" });
+    const result = applyTaskUpdate(task, { title: "New title" }, config);
+    expect(result.task.body).toBe("Keep this");
+  });
+
   it("updates type", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { type: "epic" }, config);
