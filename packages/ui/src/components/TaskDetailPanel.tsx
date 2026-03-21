@@ -298,7 +298,7 @@ export function TaskDetailPanel({
                 <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>
                   <strong>{c.author}</strong> - {new Date(c.created_at).toLocaleString()}
                 </div>
-                <div style={{ fontSize: 12, whiteSpace: "pre-wrap" }}>{c.body}</div>
+                <MarkdownRenderer markdown={c.body} />
               </div>
             ))}
           </div>
