@@ -1,6 +1,6 @@
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { TasksFileSchema, GANTT_DIR, TASKS_FILE } from "@gh-gantt/shared";
+import { TasksFileWithConflictsSchema, GANTT_DIR, TASKS_FILE } from "@gh-gantt/shared";
 import type { TasksFile } from "@gh-gantt/shared";
 
 export class TasksStore {
@@ -12,7 +12,7 @@ export class TasksStore {
 
   async read(): Promise<TasksFile> {
     const raw = await readFile(this.path, "utf-8");
-    return TasksFileSchema.parse(JSON.parse(raw));
+    return TasksFileWithConflictsSchema.parse(JSON.parse(raw)) as TasksFile;
   }
 
   async write(data: TasksFile): Promise<void> {
