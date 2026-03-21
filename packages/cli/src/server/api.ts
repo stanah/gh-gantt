@@ -372,7 +372,9 @@ export function createApiRouter(projectRoot: string): Router {
         } else {
           const snapshot = syncState.snapshots[id];
           if (snapshot && hashTask(localTask) !== snapshot.hash) {
+            // Local changed but remote deleted → keep (delete/modify conflict)
             newTasks.push(localTask);
+            localTaskMap.delete(id); // Preserve snapshot
           } else {
             removed++;
           }

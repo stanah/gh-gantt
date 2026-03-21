@@ -37,9 +37,34 @@ const PROJECT_NUMBER = "4";
 
 function run(file: string, args: string[]): string {
   try {
-    return execFileSync(file, args, { cwd: TEST_DIR, encoding: "utf-8", timeout: 30000 }).trim();
+    // Capture both stdout and stderr (warnings go to stderr)
+    const result = execFileSync(file, args, {
+      cwd: TEST_DIR,
+      encoding: "utf-8",
+      timeout: 30000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return result.trim();
   } catch (err: any) {
     return ((err.stdout as string) ?? "") + ((err.stderr as string) ?? "");
+  }
+}
+
+/** Run and capture both stdout and stderr */
+function runWithStderr(file: string, args: string[]): { stdout: string; stderr: string } {
+  try {
+    const stdout = execFileSync(file, args, {
+      cwd: TEST_DIR,
+      encoding: "utf-8",
+      timeout: 30000,
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+    return { stdout, stderr: "" };
+  } catch (err: any) {
+    return {
+      stdout: ((err.stdout as string) ?? "").trim(),
+      stderr: ((err.stderr as string) ?? "").trim(),
+    };
   }
 }
 
@@ -65,6 +90,52 @@ function readSyncState(): any {
 
 function findTask(tasks: any[], issueNumber: number): any {
   return tasks.find((t: any) => t.github_issue === issueNumber);
+}
+
+/** Wait until project has exactly expectedCount items (with extra delay for GraphQL propagation) */
+function waitForProjectItemCount(expectedCount: number, maxRetries = 10): void {
+  for (let i = 0; i < maxRetries; i++) {
+    execFileSync("sleep", ["3"]);
+    const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+    const count = JSON.parse(json).items.length;
+    if (count === expectedCount) {
+      // Extra wait for GraphQL API propagation (REST and GraphQL may not be in sync)
+      execFileSync("sleep", ["3"]);
+      return;
+    }
+  }
+}
+
+/** Ensure issue is in the project and visible to pull (GraphQL propagation) */
+function ensureInProject(issueNumber: number): void {
+  const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+  const items = JSON.parse(json).items;
+  const found = items.find((i: any) => i.content?.number === issueNumber);
+  if (!found) {
+    gh(["project", "item-add", PROJECT_NUMBER, "--owner", "stanah", "--url", `https://github.com/${REPO}/issues/${issueNumber}`]);
+    waitForProjectItemCount(items.length + 1);
+  }
+  // Verify via pull --dry-run that GraphQL sees the item
+  let retries = 10;
+  while (retries > 0) {
+    const pullOutput = ghGantt(["pull", "--dry-run"]);
+    const fetchMatch = pullOutput.match(/Fetched (\d+) items/);
+    const fetchedCount = fetchMatch ? parseInt(fetchMatch[1]) : 0;
+    if (fetchedCount >= 3) return;
+    execFileSync("sleep", ["3"]);
+    retries--;
+  }
+}
+
+/** Remove issue from project if present */
+function removeFromProject(issueNumber: number): void {
+  const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+  const items = JSON.parse(json).items;
+  const found = items.find((i: any) => i.content?.number === issueNumber);
+  if (found) {
+    gh(["project", "item-delete", PROJECT_NUMBER, "--owner", "stanah", "--id", found.id]);
+    waitForProjectItemCount(items.length - 1);
+  }
 }
 
 describe("E2E sync engine", () => {
@@ -187,74 +258,58 @@ describe("E2E sync engine", () => {
 
   // #15: remote deleted + local unchanged = deleted
   it("#15: remotely deleted task (local unchanged) is removed", () => {
+    // Setup: ensure #3 is in project and synced locally
+    ensureInProject(3);
+    ghGantt(["pull"]);
+
     const beforeTasks = readTasks();
     const taskC = findTask(beforeTasks.tasks, 3);
     expect(taskC).toBeDefined();
 
-    // Remove issue #3 from project
-    const itemsJson = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
-    const items = JSON.parse(itemsJson);
-    const item3 = items.items.find((i: any) => i.content?.number === 3);
-    if (item3) {
-      gh(["project", "item-delete", PROJECT_NUMBER, "--owner", "stanah", "--id", item3.id]);
-    }
-
+    // Act: remove from project and pull
+    removeFromProject(3);
     ghGantt(["pull"]);
 
+    // Assert: task removed locally
     const afterTasks = readTasks();
     const taskCAfter = findTask(afterTasks.tasks, 3);
     expect(taskCAfter).toBeUndefined();
-  }, 30000);
+  }, 60000);
 
   // #16: remote deleted + local changed = kept
   it("#16: remotely deleted task (local changed) is kept", () => {
-    // Re-add issue #3 to project and verify it's in the project before pulling
-    gh(["project", "item-add", PROJECT_NUMBER, "--owner", "stanah", "--url", `https://github.com/${REPO}/issues/3`]);
-    // Wait for GitHub API propagation and verify item count
-    let retries = 5;
-    while (retries > 0) {
-      execFileSync("sleep", ["2"]);
-      const itemsCheck = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
-      const itemCount = JSON.parse(itemsCheck).items.length;
-      if (itemCount >= 3) break;
-      retries--;
+    // Setup: ensure #3 is in project and visible to GraphQL
+    ensureInProject(3);
+    // Re-init with retries until GraphQL sees 3 items
+    let setupTask: any = null;
+    for (let attempt = 0; attempt < 15; attempt++) {
+      rmSync(GANTT_DIR, { recursive: true });
+      ghGantt(["init", "--owner", "stanah", "--repo", "gh-gantt-e2e-test", "--project", PROJECT_NUMBER]);
+      ghGantt(["pull"]); // Creates snapshots
+      const tf = readTasks();
+      setupTask = findTask(tf.tasks, 3);
+      if (setupTask) break;
+      execFileSync("sleep", ["5"]);
     }
-    const pullOutput = ghGantt(["pull"]);
+    if (!setupTask) throw new Error("Setup failed: task #3 not visible to GraphQL after retries");
 
-    // Verify task #3 is back
-    let tasksFile = readTasks();
-    let task = findTask(tasksFile.tasks, 3);
-    if (!task) {
-      throw new Error(`Task #3 not found after re-add + pull. Pull output: ${pullOutput}`);
-    }
+    const tasksFile = readTasks();
+    const task = findTask(tasksFile.tasks, 3)!;
 
-    // Now modify locally
+    // Act: modify locally then remove from project
     task.title = "Task C: ローカル変更あり";
     writeTasks(tasksFile);
 
-    // Remove from project again and wait for propagation
-    const itemsJson = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
-    const items = JSON.parse(itemsJson);
-    const item3 = items.items.find((i: any) => i.content?.number === 3);
-    if (item3) {
-      gh(["project", "item-delete", PROJECT_NUMBER, "--owner", "stanah", "--id", item3.id]);
-    }
-    // Wait for deletion to propagate
-    let deleteRetries = 5;
-    while (deleteRetries > 0) {
-      execFileSync("sleep", ["2"]);
-      const checkItems = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
-      const count = JSON.parse(checkItems).items.length;
-      if (count <= 2) break;
-      deleteRetries--;
-    }
+    removeFromProject(3);
+    const { stdout, stderr } = runWithStderr("node", [CLI, "pull"]);
+    const output = stdout + "\n" + stderr;
 
-    const output = ghGantt(["pull"]);
+    // Assert: task kept with warning (warning goes to stderr)
     expect(output).toContain("locally modified but removed from remote");
 
     const afterTasks = readTasks();
     const taskAfter = findTask(afterTasks.tasks, 3);
     expect(taskAfter).toBeDefined();
     expect(taskAfter.title).toBe("Task C: ローカル変更あり");
-  }, 30000);
+  }, 120000);
 });

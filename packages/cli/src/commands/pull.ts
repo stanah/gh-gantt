@@ -183,6 +183,7 @@ export const pullCommand = new Command("pull")
           // Local changed but remote deleted → keep with warning
           console.warn(`  ⚠ ${id}: ${localTask.title} (locally modified but removed from remote — keeping)`);
           mergedTasks.push(localTask);
+          localTaskMap.delete(id); // Remove from map so snapshot is preserved
           continue;
         }
       }

@@ -103,6 +103,7 @@ export function executePullMerge(input: PullMergeInput): PullMergeResult {
       if (localHash !== snapshot.hash) {
         warnings.push(`${id}: ${localTask.title} (locally modified but removed from remote — keeping)`);
         mergedTasks.push(localTask);
+        localTaskMap.delete(id); // Remove from map so snapshot is preserved
         continue;
       }
     }
