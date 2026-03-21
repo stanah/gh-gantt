@@ -98,7 +98,13 @@ export const pushCommand = new Command("push")
 
     const gql = await createGraphQLClient();
     const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-      await executePush(gql, config, tasksFile, syncState, { force: opts.force });
+      await executePush(gql, config, tasksFile, syncState, {
+        force: opts.force,
+        saveProgress: async (tf, ss) => {
+          await tasksStore.write(tf);
+          await stateStore.write(ss);
+        },
+      });
 
     await tasksStore.write(updatedTasksFile);
     await stateStore.write(updatedSyncState);

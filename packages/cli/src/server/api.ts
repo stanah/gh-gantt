@@ -459,7 +459,13 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-        await executePush(gql, config, tasksFile, syncState, { force });
+        await executePush(gql, config, tasksFile, syncState, {
+          force,
+          saveProgress: async (tf, ss) => {
+            await tasksStore.write(tf);
+            await stateStore.write(ss);
+          },
+        });
 
       await tasksStore.write(updatedTasksFile);
       await stateStore.write(updatedSyncState);
