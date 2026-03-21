@@ -130,15 +130,17 @@ export const resolveCommand = new Command("resolve")
       if (!id.includes("#")) continue;
 
       try {
-        const taskTyped = task as unknown as Task;
-        const hash = hashTask(taskTyped);
-        const syncFields = extractSyncFields(taskTyped);
-
-        syncState.snapshots[id] = {
-          hash,
-          synced_at: new Date().toISOString(),
-          syncFields,
-        };
+        const existing = syncState.snapshots[id];
+        // Do NOT update snapshot.hash — resolved task should remain pushable
+        // (hash differs from snapshot.hash → computeLocalDiff detects it as modified)
+        // Only update syncFields for future 3-way merge base
+        if (existing) {
+          const taskTyped = task as unknown as Task;
+          syncState.snapshots[id] = {
+            ...existing,
+            syncFields: extractSyncFields(taskTyped),
+          };
+        }
       } catch {
         // If task can't be hashed (e.g. missing fields after conflict resolution),
         // skip snapshot update
