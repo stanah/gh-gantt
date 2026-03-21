@@ -1,5 +1,4 @@
 import { describe, it, expect } from "vitest";
-import { mergeRemoteIntoLocal } from "../sync/mapper.js";
 import { applyBlockedByLinks } from "../github/issues.js";
 import type { Task, Dependency } from "@gh-gantt/shared";
 import type { BlockedByLink } from "../github/sub-issues.js";
@@ -29,58 +28,7 @@ const baseTask: Task = {
   blocked_by: [],
 };
 
-describe("mergeRemoteIntoLocal blocked_by merge", () => {
-  it("uses remote blocked_by references with local type/lag preserved", () => {
-    const localDep: Dependency = { task: "owner/repo#5", type: "start-to-start", lag: 2 };
-    const remoteDep: Dependency = { task: "owner/repo#5", type: "finish-to-start", lag: 0 };
-    const local = { ...baseTask, blocked_by: [localDep] };
-    const remote = { ...baseTask, blocked_by: [remoteDep] };
-
-    const merged = mergeRemoteIntoLocal(local, remote);
-    // Local type/lag should be preserved because the reference matches
-    expect(merged.blocked_by).toEqual([localDep]);
-  });
-
-  it("adds new remote blocked_by with default type/lag", () => {
-    const remoteDep: Dependency = { task: "owner/repo#10", type: "finish-to-start", lag: 0 };
-    const local = { ...baseTask, blocked_by: [] };
-    const remote = { ...baseTask, blocked_by: [remoteDep] };
-
-    const merged = mergeRemoteIntoLocal(local, remote);
-    expect(merged.blocked_by).toEqual([remoteDep]);
-  });
-
-  it("removes blocked_by that no longer exists on remote", () => {
-    const localDep: Dependency = { task: "owner/repo#5", type: "finish-to-start", lag: 0 };
-    const local = { ...baseTask, blocked_by: [localDep] };
-    const remote = { ...baseTask, blocked_by: [] };
-
-    const merged = mergeRemoteIntoLocal(local, remote);
-    expect(merged.blocked_by).toEqual([]);
-  });
-
-  it("handles mixed add/remove/preserve scenario", () => {
-    const keptDep: Dependency = { task: "owner/repo#5", type: "start-to-start", lag: 3 };
-    const removedDep: Dependency = { task: "owner/repo#6", type: "finish-to-start", lag: 0 };
-    const addedDep: Dependency = { task: "owner/repo#7", type: "finish-to-start", lag: 0 };
-
-    const local = { ...baseTask, blocked_by: [keptDep, removedDep] };
-    const remote = {
-      ...baseTask,
-      blocked_by: [
-        { task: "owner/repo#5", type: "finish-to-start" as const, lag: 0 },
-        addedDep,
-      ],
-    };
-
-    const merged = mergeRemoteIntoLocal(local, remote);
-    expect(merged.blocked_by).toHaveLength(2);
-    // #5 should preserve local type/lag
-    expect(merged.blocked_by[0]).toEqual(keptDep);
-    // #7 is new, uses remote values
-    expect(merged.blocked_by[1]).toEqual(addedDep);
-  });
-});
+// mergeRemoteIntoLocal tests removed — replaced by 3-way merge in three-way-merge.test.ts
 
 describe("applyBlockedByLinks", () => {
   it("applies blocked_by links to tasks", () => {

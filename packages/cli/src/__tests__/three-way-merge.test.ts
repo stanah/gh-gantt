@@ -178,21 +178,21 @@ describe("threeWayMerge", () => {
     it("compares blocked_by sorted by task field", () => {
       const base = makeSyncFields({
         blocked_by: [
-          { task: "repo#2", type: "finish_to_start", lag: 0 },
-          { task: "repo#1", type: "finish_to_start", lag: 0 },
+          { task: "repo#2", type: "finish-to-start", lag: 0 },
+          { task: "repo#1", type: "finish-to-start", lag: 0 },
         ],
       });
       // Same deps, different order → no change
       const current = makeSyncFields({
         blocked_by: [
-          { task: "repo#1", type: "finish_to_start", lag: 0 },
-          { task: "repo#2", type: "finish_to_start", lag: 0 },
+          { task: "repo#1", type: "finish-to-start", lag: 0 },
+          { task: "repo#2", type: "finish-to-start", lag: 0 },
         ],
       });
       const incoming = makeSyncFields({
         blocked_by: [
-          { task: "repo#2", type: "finish_to_start", lag: 0 },
-          { task: "repo#1", type: "finish_to_start", lag: 0 },
+          { task: "repo#2", type: "finish-to-start", lag: 0 },
+          { task: "repo#1", type: "finish-to-start", lag: 0 },
         ],
       });
       const result = threeWayMerge(base, current, incoming);
@@ -201,18 +201,18 @@ describe("threeWayMerge", () => {
 
     it("detects changes in blocked_by lag", () => {
       const base = makeSyncFields({
-        blocked_by: [{ task: "repo#1", type: "finish_to_start", lag: 0 }],
+        blocked_by: [{ task: "repo#1", type: "finish-to-start", lag: 0 }],
       });
       const current = makeSyncFields({
-        blocked_by: [{ task: "repo#1", type: "finish_to_start", lag: 0 }],
+        blocked_by: [{ task: "repo#1", type: "finish-to-start", lag: 0 }],
       });
       const incoming = makeSyncFields({
-        blocked_by: [{ task: "repo#1", type: "finish_to_start", lag: 1 }],
+        blocked_by: [{ task: "repo#1", type: "finish-to-start", lag: 1 }],
       });
       const result = threeWayMerge(base, current, incoming);
       expect(result.conflicts).toEqual([]);
       expect(result.merged.blocked_by).toEqual([
-        { task: "repo#1", type: "finish_to_start", lag: 1 },
+        { task: "repo#1", type: "finish-to-start", lag: 1 },
       ]);
     });
   });
