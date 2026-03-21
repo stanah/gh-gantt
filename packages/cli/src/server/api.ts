@@ -260,6 +260,10 @@ export function createApiRouter(projectRoot: string): Router {
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
 
+      // Record locally changed tasks BEFORE merging
+      const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+      const locallyChangedIds = new Set(prePullDiffs.filter((d: any) => d.type === "modified").map((d: any) => d.id));
+
       const gql = await createGraphQLClient();
       const { owner, project_number } = config.project.github;
       const projectData = await fetchProject(gql, owner, project_number);
@@ -387,8 +391,8 @@ export function createApiRouter(projectRoot: string): Router {
         const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
         const existing = syncState.snapshots[task.id];
 
-        // Check if task has unpushed local changes
-        const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+        // Check if task had unpushed local changes BEFORE this pull
+        const hasLocalChanges = locallyChangedIds.has(task.id);
 
         if (hasLocalChanges) {
           // Preserve snapshot hash so local changes remain pushable
