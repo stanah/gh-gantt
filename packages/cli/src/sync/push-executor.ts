@@ -61,10 +61,8 @@ export async function executePush(
     const modifiedDiffs = diffs.filter((d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id));
     if (modifiedDiffs.length > 0) {
       // Fetch current updated_at from GitHub for modified issues
-      const issueNumbers = modifiedDiffs
-        .map((d) => d.task.github_issue)
-        .filter((n): n is number => n !== null);
-      if (issueNumbers.length > 0) {
+      const hasIssueNumbers = modifiedDiffs.some((d) => d.task.github_issue !== null);
+      if (hasIssueNumbers) {
         const { owner, repo } = config.project.github;
         const staleTaskIds: string[] = [];
         for (const diff of modifiedDiffs) {
@@ -83,8 +81,9 @@ export async function executePush(
             if (repository.issue.updatedAt !== snapshot.updated_at) {
               staleTaskIds.push(diff.id);
             }
-          } catch {
-            // If we can't check, skip (don't block push on transient errors)
+          } catch (err) {
+            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${err instanceof Error ? err.message : String(err)}`);
+            staleTaskIds.push(diff.id);
           }
         }
         if (staleTaskIds.length > 0) {

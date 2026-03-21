@@ -26,7 +26,7 @@ git のメンタルモデルに準拠する:
 | `git push` (fast-forward のみ) | `gh-gantt push` = リモート未変更なら適用、変更あれば拒否 |
 | merge conflict | 同一フィールドが双方で変更 → コンフリクトマーカー記録 |
 | conflict resolution | `gh-gantt resolve` で CLI 解決 |
-| `--force` | 強制上書き (警告付き) |
+| `push --force` | リモート変更チェックをスキップして強制 push (警告付き) |
 
 ## Architecture
 
@@ -153,20 +153,17 @@ function hasUnresolvedMarkers(
 ```
 gh-gantt pull
   │
-  ├─ 1. ローカルに未 push の変更があるか? (computeLocalDiff)
-  │     ※ draft タスクは除外 (リモート対応がないため常に "変更あり" になる)
-  │     ├─ あり → エラー終了
-  │     │   "未pushの変更があります。先に push するか --force で上書きしてください"
-  │     └─ なし → 続行
-  │
-  ├─ 2. 未解決コンフリクトマーカーが残っているか? (has_conflicts フラグ)
+  ├─ 1. 未解決コンフリクトマーカーが残っているか? (has_conflicts フラグ)
   │     ├─ あり → エラー終了
   │     │   "未解決のコンフリクトがあります。先に resolve してください"
   │     └─ なし → 続行
   │
-  ├─ 3. リモート取得 (fetch items, milestones, sub-issues, blocked_by)
+  │  ※ 未 push のローカル変更があっても pull は常に実行可能。
+  │    3-way merge により安全にマージされ、ローカル変更は保持される。
   │
-  ├─ 4. 各タスクを処理
+  ├─ 2. リモート取得 (fetch items, milestones, sub-issues, blocked_by)
+  │
+  ├─ 3. 各タスクを処理
   │     ├─ snapshot なし (新規リモートタスク) → そのまま追加
   │     ├─ リモートに存在 + snapshot あり → 3-way merge
   │     │     ├─ マージ成功 (コンフリクトなし) → マージ結果を採用
@@ -176,18 +173,18 @@ gh-gantt pull
   │     │     → 警告表示し、タスクを保持 (ユーザーが手動で削除 or push で再作成)
   │     └─ draft タスク → 常に保持 (pull の対象外)
   │
-  ├─ 5. tasks.json 書き出し (マーカー付きタスク含む)
+  ├─ 4. tasks.json 書き出し (マーカー付きタスク含む)
   │
-  ├─ 6. snapshot 更新
+  ├─ 5. snapshot 更新
   │     ├─ コンフリクトなしタスク → hash, remoteHash, syncFields 更新
   │     ├─ コンフリクトありタスク → remoteHash のみ更新 (hash は据え置き)
   │     └─ 削除タスク → snapshot 削除
   │
-  ├─ 7. read-only フィールドの更新
+  ├─ 6. read-only フィールドの更新
   │     コンフリクトの有無に関わらず、以下はリモートから常に上書き:
   │     created_at, updated_at, closed_at, state_reason, linked_prs, github_issue, github_repo
   │
-  └─ 8. サマリー出力
+  └─ 7. サマリー出力
         "+3 added  ~5 updated  !2 conflicts  -1 removed"
 ```
 
@@ -217,7 +214,7 @@ gh-gantt push
 
 | コマンド | `--force` の効果 |
 |---------|-----------------|
-| `pull --force` | ステップ1 (未push変更チェック) をスキップ。ステップ2 (未解決コンフリクトチェック) はスキップしない |
+| `pull` | `--force` 不要。未 push のローカル変更があっても常に実行可能。未解決コンフリクトのみブロック |
 | `push --force` | ステップ2 (リモート変更チェック) をスキップ。ステップ1 (未解決コンフリクトチェック) はスキップしない |
 
 未解決コンフリクトは `--force` でもスキップできない。必ず `resolve` が必要。
@@ -359,7 +356,7 @@ TasksFileWithConflictsSchema  // tasks 配列内の各タスクに .passthrough(
 ## Breaking Changes
 
 - `gantt.config.json` から `conflict_strategy` が消える — ConfigSchema を `.passthrough()` にすることで既存 config は読み込み可能
-- `pull` の挙動変更: 未push変更があると中断 — `--force` で従来動作
+- `pull` の挙動変更: 未解決コンフリクトがある場合のみ中断。未 push 変更があっても常に実行可能 (3-way merge で安全にマージ)
 - `push` の挙動変更: リモート変更があると中断 — `--force` で従来動作
 
 ## Conflict Resolution Skill

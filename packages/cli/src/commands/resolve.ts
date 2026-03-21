@@ -112,15 +112,6 @@ export const resolveCommand = new Command("resolve")
       }
     }
 
-    // Update has_conflicts flag on each task
-    for (const task of tasks) {
-      if (hasUnresolvedMarkers(task)) {
-        task.has_conflicts = true;
-      } else {
-        delete task.has_conflicts;
-      }
-    }
-
     // Update snapshots for fully resolved tasks
     for (const task of tasks) {
       if (hasUnresolvedMarkers(task)) continue;
