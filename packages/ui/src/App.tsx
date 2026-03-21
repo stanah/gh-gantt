@@ -241,10 +241,29 @@ export function App() {
     }
   }, [pushHistory, reparentTask, showToast, tasks, undoRedoBusy]);
 
+  const handleAddDependency = useCallback(async (taskId: string, blockedByTaskId: string) => {
+    if (undoRedoBusy) return;
+    const task = tasks.find((entry) => entry.id === taskId);
+    if (!task) {
+      showToast("Task not found", "error");
+      return;
+    }
+    if (task.blocked_by.some((d) => d.task === blockedByTaskId)) return;
+
+    const newBlockedBy = [...task.blocked_by, { task: blockedByTaskId, type: "finish-to-start" as const, lag: 0 }];
+    try {
+      await applyTrackedTaskUpdate(taskId, { blocked_by: newBlockedBy });
+      showToast(`依存関係を追加: ${blockedByTaskId}`, "success");
+    } catch (err) {
+      showToast(`依存関係の追加に失敗: ${err instanceof Error ? err.message : String(err)}`, "error");
+    }
+  }, [applyTrackedTaskUpdate, showToast, tasks, undoRedoBusy]);
+
   const dragState = useTreeDragDrop({
     tasks,
     config,
     onReparent: handleReparent,
+    onAddDependency: handleAddDependency,
   });
 
   useEffect(() => {
