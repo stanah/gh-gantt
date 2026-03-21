@@ -9,7 +9,6 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
-import { computeLocalDiff } from "../sync/diff.js";
 import { threeWayMerge } from "../sync/three-way-merge.js";
 import { applyConflictMarkers } from "../sync/conflict-marker.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
@@ -18,7 +17,6 @@ import { formatValue } from "../util/format.js";
 export const pullCommand = new Command("pull")
   .description("Pull latest changes from GitHub Project")
   .option("--dry-run", "Show changes without applying")
-  .option("--force", "Skip unpushed changes guard")
   .option("--with-comments", "Also fetch issue comments")
   .option("--force-comments", "Re-fetch all comments (implies --with-comments)")
   .action(async (opts) => {
@@ -31,15 +29,7 @@ export const pullCommand = new Command("pull")
     const tasksFile = await tasksStore.read();
     const syncState = await stateStore.read();
 
-    // Guard 1: Unpushed local changes
-    const localDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-    const nonDraftDiffs = localDiffs.filter((d) => !isDraftTask(d.id));
-    if (nonDraftDiffs.length > 0 && !opts.force) {
-      console.error("未pushの変更があります。先に push するか --force で上書きしてください");
-      process.exit(1);
-    }
-
-    // Guard 2: Unresolved conflicts (--force does NOT skip this)
+    // Guard: Unresolved conflicts must be resolved before next pull
     if (tasksFile.has_conflicts) {
       console.error("未解決のコンフリクトがあります。先に resolve してください");
       process.exit(1);
@@ -225,17 +215,21 @@ export const pullCommand = new Command("pull")
         return conflicts.length > 0;
       })();
 
-      if (isConflicted) {
-        // Conflicted: update remoteHash only, preserve hash for local state
+      // Check if this task has unpushed local changes
+      const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+
+      if (isConflicted || hasLocalChanges) {
+        // Conflicted or has unpushed local changes:
+        // Update remoteHash only, preserve hash so local changes remain pushable
         newSnapshots[task.id] = {
-          ...existing!,
+          ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
           remoteHash,
         };
       } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
         // Unchanged remote → preserve existing snapshot
         newSnapshots[task.id] = { ...existing, remoteHash };
       } else {
-        // Conflict-free merged or new task → full snapshot update
+        // Conflict-free merged with no local changes, or new task → full snapshot update
         newSnapshots[task.id] = {
           hash: hashTask(task),
           synced_at: new Date().toISOString(),

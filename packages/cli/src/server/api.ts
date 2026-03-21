@@ -256,7 +256,6 @@ export function createApiRouter(projectRoot: string): Router {
   // POST /api/sync/pull
   router.post("/api/sync/pull", async (req, res) => {
     try {
-      const { force } = req.body ?? {};
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
@@ -310,17 +309,7 @@ export function createApiRouter(projectRoot: string): Router {
       applyBlockedByLinks(remoteTaskArray, blockedByLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
-      // Guard 1: Unpushed local changes
-      const localDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-      const nonDraftDiffs = localDiffs.filter((d) => !isDraftTask(d.id));
-      if (nonDraftDiffs.length > 0 && !force) {
-        res.status(409).json({
-          message: "未pushの変更があります。先に push するか force: true で上書きしてください",
-        });
-        return;
-      }
-
-      // Guard 2: Unresolved conflicts
+      // Guard: Unresolved conflicts must be resolved before next pull
       if (tasksFile.has_conflicts) {
         res.status(409).json({
           message: "未解決のコンフリクトがあります。先に resolve してください",
@@ -395,17 +384,24 @@ export function createApiRouter(projectRoot: string): Router {
         const remoteTask = remoteTasks.get(task.id);
         const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
         const existing = syncState.snapshots[task.id];
-        if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+
+        // Check if task has unpushed local changes
+        const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+
+        if (hasLocalChanges) {
+          // Preserve snapshot hash so local changes remain pushable
+          newSnapshots[task.id] = { ...existing!, remoteHash };
+        } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
           newSnapshots[task.id] = { ...existing, remoteHash };
-          continue;
+        } else {
+          newSnapshots[task.id] = {
+            hash: hashTask(task),
+            synced_at: new Date().toISOString(),
+            updated_at: task.updated_at,
+            remoteHash,
+            syncFields: extractSyncFields(task),
+          };
         }
-        newSnapshots[task.id] = {
-          hash: hashTask(task),
-          synced_at: new Date().toISOString(),
-          updated_at: task.updated_at,
-          remoteHash,
-          syncFields: extractSyncFields(task),
-        };
       }
       for (const id of localTaskMap.keys()) {
         if (!isDraftTask(id)) delete newSnapshots[id];

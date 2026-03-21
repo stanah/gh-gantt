@@ -48,11 +48,10 @@ gh-gantt init --owner <owner> --repo <repo> --project <number>
 GitHub Project から最新の変更を取得し、ローカルタスクとマージする。
 
 ```bash
-gh-gantt pull [--force] [--dry-run] [--with-comments] [--force-comments]
+gh-gantt pull [--dry-run] [--with-comments] [--force-comments]
 ```
 
 **オプション:**
-- `--force` — 未 push の変更があっても pull を実行（3-way merge に参加）
 - `--dry-run` — 変更をプレビューのみ（適用しない）
 - `--with-comments` — Issue コメントも差分取得
 - `--force-comments` — Issue コメントを全件再取得
@@ -60,8 +59,9 @@ gh-gantt pull [--force] [--dry-run] [--with-comments] [--force-comments]
 **出力:** `Pull summary: +N ~N !N -N`（追加、更新、コンフリクト、削除）
 
 **動作:**
-- **ガード 1:** 未 push の非ドラフト変更があれば中断（`--force` でスキップ可能）
-- **ガード 2:** 未解決コンフリクトがあれば中断（`--force` でもスキップ不可）
+- git と同じく、pull はいつでも実行可能。未 push のローカル変更があっても安全にマージされる
+- 未解決コンフリクトがあれば中断（先に resolve が必要）
+- ローカル変更は push 対象として保持される（snapshot が保護する）
 - snapshot の syncFields を base としたフィールド単位 3-way merge
 - 片方だけの変更は自動マージ
 - 双方が同じフィールドを変更 → コンフリクトマーカー（`_current` / `_incoming`）を記録

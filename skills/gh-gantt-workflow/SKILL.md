@@ -77,15 +77,16 @@ gh-gantt pull
 ### pull (GitHub → ローカル)
 
 ```bash
-gh-gantt pull          # 通常の pull（未 push 変更があればブロック）
-gh-gantt pull --force  # 未 push 変更があっても pull 実行
+gh-gantt pull
 ```
+
+git と同じく、pull はいつでも実行可能。未 push のローカル変更があっても安全にマージされる。
 
 - フィールド単位の 3-way merge（snapshot を base として比較）
 - 片方だけの変更は自動マージ
 - 双方が同じフィールドを変更 → コンフリクトマーカーを `tasks.json` に記録
-- 未 push の変更があると pull をブロック（`--force` でスキップ可能）
-- 未解決コンフリクトがあると pull をブロック（`--force` でもスキップ不可）
+- ローカル変更は push 対象として保持される（snapshot が保護する）
+- 未解決コンフリクトがあると pull をブロック（先に resolve が必要）
 
 ### push (ローカル → GitHub)
 
