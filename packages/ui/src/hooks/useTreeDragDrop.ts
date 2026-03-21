@@ -45,6 +45,7 @@ export function useTreeDragDrop({
   const [draggedTaskId, setDraggedTaskId] = useState<string | null>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
   const draggedRef = useRef<string | null>(null);
+  const dropModeRef = useRef<DropMode>("reparent");
 
   const getDropMode = (e: { altKey: boolean }): DropMode =>
     e.altKey && onAddDependency ? "dependency" : "reparent";
@@ -118,6 +119,7 @@ export function useTreeDragDrop({
       e.preventDefault();
 
       const mode = getDropMode(e);
+      dropModeRef.current = mode;
       const indicator = mode === "dependency"
         ? validateDependency(dragId, targetTaskId)
         : validateReparent(dragId, targetTaskId);
@@ -135,7 +137,7 @@ export function useTreeDragDrop({
     (e: React.DragEvent, targetTaskId: string) => {
       e.preventDefault();
       const dragId = draggedRef.current;
-      const mode = getDropMode(e);
+      const mode = dropModeRef.current;
       setDropIndicator(null);
       setDraggedTaskId(null);
       draggedRef.current = null;
