@@ -1,7 +1,13 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { join } from "node:path";
 import { TasksFileWithConflictsSchema, GANTT_DIR, TASKS_FILE } from "@gh-gantt/shared";
 import type { TasksFile } from "@gh-gantt/shared";
+
+async function writeAtomic(filePath: string, content: string): Promise<void> {
+  const tmpPath = filePath + ".tmp";
+  await writeFile(tmpPath, content);
+  await rename(tmpPath, filePath);
+}
 
 export class TasksStore {
   private path: string;
@@ -17,6 +23,6 @@ export class TasksStore {
 
   async write(data: TasksFile): Promise<void> {
     await mkdir(join(this.path, ".."), { recursive: true });
-    await writeFile(this.path, JSON.stringify(data, null, 2) + "\n");
+    await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
   }
 }

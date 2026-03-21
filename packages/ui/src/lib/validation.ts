@@ -28,6 +28,32 @@ export function wouldCreateParentCycle(
  * Missing key or empty array → no restriction (all child types allowed).
  * Non-empty array → whitelist of allowed child types.
  */
+/**
+ * Check if adding a dependency (dragId blocked_by targetId) would create a cycle.
+ * Walks the blocked_by chain from targetId; if it reaches dragId, it's a cycle.
+ */
+export function wouldCreateDependencyCycle(
+  tasks: Task[],
+  dragId: string,
+  targetId: string,
+): boolean {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  const visited = new Set<string>();
+  const queue = [targetId];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    if (current === dragId) return true;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const task = taskMap.get(current);
+    if (!task) continue;
+    for (const dep of task.blocked_by) {
+      queue.push(dep.task);
+    }
+  }
+  return false;
+}
+
 export function isTypeHierarchyAllowed(
   typeHierarchy: Record<string, string[]>,
   parentType: string,

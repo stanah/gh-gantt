@@ -80,7 +80,7 @@ gh-gantt pull
 gh-gantt pull
 ```
 
-git と同じく、未 push のローカル変更があっても常に実行可能。ただし未解決コンフリクトがある場合は先に resolve が必要。
+git と同じく、pull は未 push のローカル変更があっても常に実行可能。ただし未解決コンフリクトがある場合は先に resolve が必要。
 
 - フィールド単位の 3-way merge（snapshot を base として比較）
 - 片方だけの変更は自動マージ

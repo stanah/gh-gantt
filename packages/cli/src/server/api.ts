@@ -5,7 +5,7 @@ import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
-import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
+import { computeLocalDiff, formatDiffPreview, type TaskDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { threeWayMerge } from "../sync/three-way-merge.js";
@@ -262,7 +262,7 @@ export function createApiRouter(projectRoot: string): Router {
 
       // Record locally changed tasks BEFORE merging
       const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-      const locallyChangedIds = new Set(prePullDiffs.filter((d: any) => d.type === "modified").map((d: any) => d.id));
+      const locallyChangedIds = new Set(prePullDiffs.filter((d: TaskDiff) => d.type === "modified").map((d: TaskDiff) => d.id));
 
       const gql = await createGraphQLClient();
       const { owner, project_number } = config.project.github;

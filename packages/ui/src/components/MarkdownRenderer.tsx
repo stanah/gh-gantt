@@ -41,7 +41,7 @@ function isSafeHref(rawHref: string): boolean {
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
   // Order matters: code first (no nested parsing), then links, then bold, italic, strikethrough
-  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)|\*\*(.+?)\*\*|__(.+?)__|\*(.+?)\*|_(.+?)_|~~(.+?)~~/g;
+  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)|\*\*(.+?)\*\*|(?<!\w)__(.+?)__(?!\w)|\*(.+?)\*|(?<!\w)_(.+?)_(?!\w)|~~(.+?)~~/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = tokenRe.exec(text);
   let tokenIndex = 0;

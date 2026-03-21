@@ -89,6 +89,14 @@ describe("MarkdownRenderer", () => {
     expect(html).toContain("italic");
   });
 
+  it("does not convert underscores within identifiers to italic", () => {
+    const markdown = "Variable foo_bar_baz should not be italic.";
+    const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);
+
+    expect(html).not.toContain("<em");
+    expect(html).toContain("foo_bar_baz");
+  });
+
   it("does not interpret raw HTML and blocks unsafe javascript links", () => {
     const markdown = "<script>alert(1)</script>\n\n[bad](javascript:alert(1))";
     const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);

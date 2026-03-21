@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from "react";
 import type { Task, Config } from "../types/index.js";
-import { wouldCreateParentCycle, isTypeHierarchyAllowed } from "../lib/validation.js";
+import { wouldCreateParentCycle, wouldCreateDependencyCycle, isTypeHierarchyAllowed } from "../lib/validation.js";
 
 export type DropMode = "reparent" | "dependency";
 
@@ -88,12 +88,18 @@ export function useTreeDragDrop({
   const validateDependency = useCallback(
     (dragId: string, targetTaskId: string): DropIndicator | null => {
       const draggedTask = tasks.find((t) => t.id === dragId);
-      const targetTask = tasks.find((t) => t.id === targetTaskId);
-      if (!draggedTask || !targetTask) return null;
+      const targetExists = tasks.some((t) => t.id === targetTaskId);
+      if (!draggedTask || !targetExists) return null;
 
       // Already has this dependency
       if (draggedTask.blocked_by.some((d) => d.task === targetTaskId)) {
         return { targetTaskId, valid: false, mode: "dependency", reason: "既に依存関係があります" };
+      }
+
+      // Check for dependency cycle: if target already (transitively) depends on dragged task,
+      // adding this dependency would create a cycle.
+      if (wouldCreateDependencyCycle(tasks, dragId, targetTaskId)) {
+        return { targetTaskId, valid: false, mode: "dependency", reason: "循環依存が発生します" };
       }
 
       return { targetTaskId, valid: true, mode: "dependency" };

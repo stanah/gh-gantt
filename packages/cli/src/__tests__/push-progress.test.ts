@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { executePush } from "../sync/push-executor.js";
-import { hashTask, extractSyncFields } from "../sync/hash.js";
+import { extractSyncFields } from "../sync/hash.js";
 import type { Task, TasksFile, SyncState, Config } from "@gh-gantt/shared";
 
 function makeTask(id: string, overrides: Partial<Task> = {}): Task {
@@ -113,7 +113,6 @@ describe("push progress saving", () => {
       tasks: [task],
       cache: { comments: {}, reactions: {} },
     };
-    const hash = hashTask(task);
     const syncState: SyncState = {
       last_synced_at: "",
       project_node_id: "PVT_1",
