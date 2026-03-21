@@ -9,6 +9,7 @@ const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 export interface TaskUpdateOptions {
   title?: string;
+  body?: string;
   type?: string;
   state?: "open" | "closed";
   status?: string;
@@ -49,6 +50,7 @@ export function applyTaskUpdate(
   const updated = { ...task };
 
   if (opts.title) updated.title = opts.title;
+  if (opts.body !== undefined) updated.body = opts.body;
   if (opts.type) {
     // Remove old type's github_label, add new type's github_label
     const oldTypeDef = config.task_types[task.type];
@@ -157,6 +159,7 @@ export const taskUpdateCommand = new Command("update")
   .description("Update a task (single or bulk)")
   .argument("[id]", "Task ID (e.g. 6, #6, owner/repo#6). Omit for bulk update with filters.")
   .option("--title <title>", "Set title")
+  .option("--body <body>", "Set body/description")
   .option("--type <type>", "Set task type")
   .option("--state <state>", "Set state (open/closed)")
   .option("--start-date <date>", "Set start date (YYYY-MM-DD or 'none' to clear)")
@@ -183,6 +186,7 @@ export const taskUpdateCommand = new Command("update")
 
       const updateOpts: TaskUpdateOptions = {
         title: opts.title,
+        body: opts.body,
         type: opts.type,
         state: opts.state,
         status: opts.status,
