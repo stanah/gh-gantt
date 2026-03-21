@@ -47,12 +47,33 @@ export async function executePush(
   config: Config,
   tasksFile: TasksFile,
   syncState: SyncState,
+  opts?: { force?: boolean },
 ): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
   const diffs = computeLocalDiff(tasksFile.tasks, syncState);
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
 
   if (diffs.length === 0) {
     return { result, tasksFile, syncState };
+  }
+
+  // TODO: updated_at comparison is a heuristic — false positives when local edits change updated_at
+  if (!opts?.force) {
+    const staleTaskIds: string[] = [];
+    for (const diff of diffs) {
+      if (diff.type !== "modified") continue;
+      const snapshot = syncState.snapshots[diff.id];
+      if (!snapshot?.updated_at) continue;
+      const localTask = tasksFile.tasks.find((t) => t.id === diff.id);
+      if (localTask && localTask.updated_at !== snapshot.updated_at) {
+        staleTaskIds.push(diff.id);
+      }
+    }
+    if (staleTaskIds.length > 0) {
+      console.error("リモートが更新されています。先に pull してください");
+      for (const id of staleTaskIds) console.error("  " + id);
+      console.error("--force で強制 push できます");
+      return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
+    }
   }
 
   const fm = config.sync.field_mapping;

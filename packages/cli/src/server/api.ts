@@ -427,9 +427,17 @@ export function createApiRouter(projectRoot: string): Router {
   // POST /api/sync/push
   router.post("/api/sync/push", async (req, res) => {
     try {
-      const { dry_run } = req.body ?? {};
+      const { dry_run, force } = req.body ?? {};
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
+
+      // Guard: unresolved conflicts (not skippable with force)
+      if (tasksFile.has_conflicts) {
+        res.status(409).json({
+          message: "未解決のコンフリクトがあります。先に resolve してください",
+        });
+        return;
+      }
 
       const diffs = computeLocalDiff(tasksFile.tasks, syncState);
       if (diffs.length === 0) {
@@ -449,7 +457,7 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-        await executePush(gql, config, tasksFile, syncState);
+        await executePush(gql, config, tasksFile, syncState, { force });
 
       await tasksStore.write(updatedTasksFile);
       await stateStore.write(updatedSyncState);

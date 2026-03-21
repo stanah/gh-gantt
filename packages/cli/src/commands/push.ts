@@ -22,6 +22,7 @@ export const pushCommand = new Command("push")
   .description("Push local changes to GitHub Project")
   .option("--dry-run", "Show changes without applying")
   .option("-y, --yes", "Skip confirmation prompt")
+  .option("--force", "Skip remote change check")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -31,6 +32,12 @@ export const pushCommand = new Command("push")
     const config = await configStore.read();
     const tasksFile = await tasksStore.read();
     const syncState = await stateStore.read();
+
+    // Guard: unresolved conflicts (not skippable with --force)
+    if (tasksFile.has_conflicts) {
+      console.error("未解決のコンフリクトがあります。先に resolve してください");
+      process.exit(1);
+    }
 
     const diffs = computeLocalDiff(tasksFile.tasks, syncState);
 
@@ -91,7 +98,7 @@ export const pushCommand = new Command("push")
 
     const gql = await createGraphQLClient();
     const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-      await executePush(gql, config, tasksFile, syncState);
+      await executePush(gql, config, tasksFile, syncState, { force: opts.force });
 
     await tasksStore.write(updatedTasksFile);
     await stateStore.write(updatedSyncState);
