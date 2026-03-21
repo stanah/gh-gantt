@@ -56,23 +56,44 @@ export async function executePush(
     return { result, tasksFile, syncState };
   }
 
-  // TODO: updated_at comparison is a heuristic — false positives when local edits change updated_at
+  // Check if remote has changed since last pull (like git push rejecting non-fast-forward)
   if (!opts?.force) {
-    const staleTaskIds: string[] = [];
-    for (const diff of diffs) {
-      if (diff.type !== "modified") continue;
-      const snapshot = syncState.snapshots[diff.id];
-      if (!snapshot?.updated_at) continue;
-      const localTask = tasksFile.tasks.find((t) => t.id === diff.id);
-      if (localTask && localTask.updated_at !== snapshot.updated_at) {
-        staleTaskIds.push(diff.id);
+    const modifiedDiffs = diffs.filter((d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id));
+    if (modifiedDiffs.length > 0) {
+      // Fetch current updated_at from GitHub for modified issues
+      const issueNumbers = modifiedDiffs
+        .map((d) => d.task.github_issue)
+        .filter((n): n is number => n !== null);
+      if (issueNumbers.length > 0) {
+        const { owner, repo } = config.project.github;
+        const staleTaskIds: string[] = [];
+        for (const diff of modifiedDiffs) {
+          if (!diff.task.github_issue) continue;
+          const snapshot = syncState.snapshots[diff.id];
+          if (!snapshot?.updated_at) continue;
+          try {
+            const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $number) { updatedAt }
+                }
+              }`,
+              { owner, repo, number: diff.task.github_issue },
+            );
+            if (repository.issue.updatedAt !== snapshot.updated_at) {
+              staleTaskIds.push(diff.id);
+            }
+          } catch {
+            // If we can't check, skip (don't block push on transient errors)
+          }
+        }
+        if (staleTaskIds.length > 0) {
+          console.error("リモートが更新されています。先に pull してください");
+          for (const id of staleTaskIds) console.error("  " + id);
+          console.error("--force で強制 push できます");
+          return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
+        }
       }
-    }
-    if (staleTaskIds.length > 0) {
-      console.error("リモートが更新されています。先に pull してください");
-      for (const id of staleTaskIds) console.error("  " + id);
-      console.error("--force で強制 push できます");
-      return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
     }
   }
 

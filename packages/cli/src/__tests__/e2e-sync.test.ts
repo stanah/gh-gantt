@@ -25,7 +25,7 @@
  *   #16 remote deleted + local changed = kept
  */
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -52,20 +52,15 @@ function run(file: string, args: string[]): string {
 
 /** Run and capture both stdout and stderr */
 function runWithStderr(file: string, args: string[]): { stdout: string; stderr: string } {
-  try {
-    const stdout = execFileSync(file, args, {
-      cwd: TEST_DIR,
-      encoding: "utf-8",
-      timeout: 30000,
-      stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
-    return { stdout, stderr: "" };
-  } catch (err: any) {
-    return {
-      stdout: ((err.stdout as string) ?? "").trim(),
-      stderr: ((err.stderr as string) ?? "").trim(),
-    };
-  }
+  const result = spawnSync(file, args, {
+    cwd: TEST_DIR,
+    encoding: "utf-8",
+    timeout: 30000,
+  });
+  return {
+    stdout: (result.stdout ?? "").trim(),
+    stderr: (result.stderr ?? "").trim(),
+  };
 }
 
 function ghGantt(args: string[]): string {
@@ -263,25 +258,46 @@ describe("E2E sync engine", () => {
     ghGantt(["pull"]);
   }, 30000);
 
-  // #3: push blocked when remote has changed
+  // #3: push blocked when remote has diverged
   it("#3: push blocked when remote has diverged", () => {
-    // Modify task #1 locally
+    // Modify task #1 locally (without pulling first)
     const tasksFile = readTasks();
     const task = findTask(tasksFile.tasks, 1);
-    task.body = "local body change";
+    task.body = "local body change for #3";
     writeTasks(tasksFile);
 
-    // Modify task #1 on GitHub (simulate remote divergence)
-    gh(["issue", "edit", "1", "--repo", REPO, "--body", "remote body change"]);
+    // Modify task #1 on GitHub (simulate concurrent remote change)
+    gh(["issue", "edit", "1", "--repo", REPO, "--body", "remote body change for #3"]);
 
-    // Pull to get updated remote state (this merges without conflict since different fields could overlap)
-    ghGantt(["pull"]);
+    // Wait until GraphQL returns a different updatedAt than our snapshot
+    const syncState = readSyncState();
+    const snapUpdatedAt = syncState.snapshots["stanah/gh-gantt-e2e-test#1"]?.updated_at;
+    let remoteUpdated = false;
+    for (let i = 0; i < 15; i++) {
+      execFileSync("sleep", ["2"]);
+      const remoteAt = gh(["api", "graphql",
+        "-f", `query=query { repository(owner: "stanah", name: "gh-gantt-e2e-test") { issue(number: 1) { updatedAt } } }`,
+        "-q", ".data.repository.issue.updatedAt"]);
+      if (remoteAt !== snapUpdatedAt) {
+        remoteUpdated = true;
+        break;
+      }
+    }
+    expect(remoteUpdated).toBe(true);
 
-    // Now push — should detect remote changed via updated_at mismatch
-    const output = ghGantt(["push", "--yes"]);
-    // The push may succeed or warn depending on updated_at heuristic
-    // At minimum, verify push doesn't crash
-    expect(output).toBeDefined();
+    // Push without pulling first — should detect remote changed
+    const { stdout, stderr } = runWithStderr("node", [CLI, "push", "--yes"]);
+    const output = stdout + "\n" + stderr;
+    expect(output).toContain("リモートが更新されています");
+  }, 30000);
+
+  // #4: push --force bypasses remote change check
+  it("#4: push --force bypasses remote change check", () => {
+    // Same state as #3 — local and remote have diverged
+    const { stdout: forceOut, stderr: forceErr } = runWithStderr("node", [CLI, "push", "--force", "--yes"]);
+    const output = forceOut + "\n" + forceErr;
+    expect(output).not.toContain("リモートが更新されています");
+    expect(output).toContain("Push complete:");
   }, 30000);
 
   // Restore issue #1 body
