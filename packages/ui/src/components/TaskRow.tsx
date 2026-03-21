@@ -116,10 +116,16 @@ export function TaskRow({
   const highlightBg = isBlockRelation ? "#fef2f2" : isParentRelation ? "#f5f0ff" : undefined;
   const highlightBorder = isBlockRelation ? "3px solid #e74c3c" : isParentRelation ? "3px solid #8957e5" : undefined;
 
-  const dropValid = dropIndicator?.targetTaskId === task.id && dropIndicator.valid;
-  const dropInvalid = dropIndicator?.targetTaskId === task.id && !dropIndicator.valid;
-  const dropBorderLeft = dropValid ? "2px solid #4285f4" : dropInvalid ? "2px dashed #e74c3c" : highlightBorder;
-  const dropBg = dropValid ? "#e8f0fe" : dropInvalid ? "#fef2f2" : undefined;
+  const dropActive = dropIndicator?.targetTaskId === task.id;
+  const dropValid = dropActive && dropIndicator.valid;
+  const dropInvalid = dropActive && !dropIndicator.valid;
+  const isDependencyDrop = dropActive && dropIndicator.mode === "dependency";
+  const dropBorderLeft = dropValid
+    ? isDependencyDrop ? "2px solid #e67e22" : "2px solid #4285f4"
+    : dropInvalid ? "2px dashed #e74c3c" : highlightBorder;
+  const dropBg = dropValid
+    ? isDependencyDrop ? "#fef3e2" : "#e8f0fe"
+    : dropInvalid ? "#fef2f2" : undefined;
 
   const bg = dropBg ?? (isSelected ? "#e8f0fe" : highlightBg ?? (isHovered ? "#f5f8ff" : "transparent"));
 

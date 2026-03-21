@@ -11,6 +11,7 @@ import { CommentsStore } from "../store/comments.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { threeWayMerge } from "../sync/three-way-merge.js";
 import { applyConflictMarkers } from "../sync/conflict-marker.js";
+import { computeLocalDiff } from "../sync/diff.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { formatValue } from "../util/format.js";
 
@@ -28,6 +29,10 @@ export const pullCommand = new Command("pull")
     const config = await configStore.read();
     const tasksFile = await tasksStore.read();
     const syncState = await stateStore.read();
+
+    // Record which tasks have unpushed local changes BEFORE merging
+    const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+    const locallyChangedIds = new Set(prePullDiffs.filter((d) => d.type === "modified").map((d) => d.id));
 
     // Guard: Unresolved conflicts must be resolved before next pull
     if (tasksFile.has_conflicts) {
@@ -216,8 +221,8 @@ export const pullCommand = new Command("pull")
         return conflicts.length > 0;
       })();
 
-      // Check if this task has unpushed local changes
-      const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+      // Check if this task had unpushed local changes BEFORE this pull
+      const hasLocalChanges = locallyChangedIds.has(task.id);
 
       if (isConflicted || hasLocalChanges) {
         // Conflicted or has unpushed local changes:

@@ -40,7 +40,8 @@ function isSafeHref(rawHref: string): boolean {
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
-  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)/g;
+  // Order matters: code first (no nested parsing), then links, then bold, italic, strikethrough
+  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)|\*\*(.+?)\*\*|(?<!\w)__(.+?)__(?!\w)|\*(.+?)\*|(?<!\w)_(.+?)_(?!\w)|~~(.+?)~~/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = tokenRe.exec(text);
   let tokenIndex = 0;
@@ -51,6 +52,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
     }
 
     if (match[1] != null) {
+      // Inline code
       result.push(
         <code
           key={`${keyPrefix}-code-${tokenIndex}`}
@@ -67,6 +69,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
         </code>,
       );
     } else if (match[2] != null && match[3] != null) {
+      // Link
       const href = match[3].trim();
       if (isSafeHref(href)) {
         result.push(
@@ -83,6 +86,27 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       } else {
         result.push(match[0]);
       }
+    } else if (match[4] != null || match[5] != null) {
+      // Bold: **text** or __text__
+      result.push(
+        <strong key={`${keyPrefix}-bold-${tokenIndex}`}>
+          {renderInline(match[4] ?? match[5], `${keyPrefix}-bold-${tokenIndex}`)}
+        </strong>,
+      );
+    } else if (match[6] != null || match[7] != null) {
+      // Italic: *text* or _text_
+      result.push(
+        <em key={`${keyPrefix}-em-${tokenIndex}`}>
+          {renderInline(match[6] ?? match[7], `${keyPrefix}-em-${tokenIndex}`)}
+        </em>,
+      );
+    } else if (match[8] != null) {
+      // Strikethrough: ~~text~~
+      result.push(
+        <del key={`${keyPrefix}-del-${tokenIndex}`}>
+          {renderInline(match[8], `${keyPrefix}-del-${tokenIndex}`)}
+        </del>,
+      );
     } else {
       result.push(match[0]);
     }

@@ -67,6 +67,36 @@ describe("MarkdownRenderer", () => {
     expect(html).toContain("<td");
   });
 
+  it("renders bold, italic, and strikethrough inline formatting", () => {
+    const markdown = "This is **bold** and *italic* and ~~deleted~~ text.";
+    const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);
+
+    expect(html).toContain("<strong");
+    expect(html).toContain("bold");
+    expect(html).toContain("<em");
+    expect(html).toContain("italic");
+    expect(html).toContain("<del");
+    expect(html).toContain("deleted");
+  });
+
+  it("renders __underline bold__ and _underline italic_", () => {
+    const markdown = "Use __bold__ and _italic_ with underscores.";
+    const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);
+
+    expect(html).toContain("<strong");
+    expect(html).toContain("bold");
+    expect(html).toContain("<em");
+    expect(html).toContain("italic");
+  });
+
+  it("does not convert underscores within identifiers to italic", () => {
+    const markdown = "Variable foo_bar_baz should not be italic.";
+    const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);
+
+    expect(html).not.toContain("<em");
+    expect(html).toContain("foo_bar_baz");
+  });
+
   it("does not interpret raw HTML and blocks unsafe javascript links", () => {
     const markdown = "<script>alert(1)</script>\n\n[bad](javascript:alert(1))";
     const html = renderToStaticMarkup(<MarkdownRenderer markdown={markdown} />);

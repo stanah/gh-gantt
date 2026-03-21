@@ -47,7 +47,7 @@ export async function executePush(
   config: Config,
   tasksFile: TasksFile,
   syncState: SyncState,
-  opts?: { force?: boolean },
+  opts?: { force?: boolean; saveProgress?: (tasksFile: TasksFile, syncState: SyncState) => Promise<void> },
 ): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
   const diffs = computeLocalDiff(tasksFile.tasks, syncState);
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
@@ -144,6 +144,20 @@ export async function executePush(
       replacedDraftIds.add(oldId);
       pushedTaskIds.add(newId);
       result.created++;
+
+      // Save progress: remove old draft snapshot, add new snapshot
+      if (opts?.saveProgress) {
+        const newSnapshots = { ...syncState.snapshots };
+        delete newSnapshots[oldId];
+        newSnapshots[newId] = {
+          hash: hashTask(task),
+          synced_at: new Date().toISOString(),
+          syncFields: extractSyncFields(task),
+          remoteHash: hashTask(task),
+        };
+        syncState = { ...syncState, snapshots: newSnapshots };
+        await opts.saveProgress(tasksFile, syncState);
+      }
     }
   }
 
@@ -251,6 +265,20 @@ export async function executePush(
       pushedTaskIds.add(newId);
       createdTaskIds.push(newId);
       result.created++;
+
+      // Save progress: remove old draft snapshot, add new snapshot
+      if (opts?.saveProgress) {
+        const newSnapshots = { ...syncState.snapshots };
+        delete newSnapshots[oldId];
+        newSnapshots[newId] = {
+          hash: hashTask(task),
+          synced_at: new Date().toISOString(),
+          syncFields: extractSyncFields(task),
+          remoteHash: hashTask(task),
+        };
+        syncState = { ...syncState, snapshots: newSnapshots };
+        await opts.saveProgress(tasksFile, syncState);
+      }
     }
 
     // Set up sub-issue relationships for newly created issues

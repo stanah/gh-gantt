@@ -5,7 +5,7 @@ import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
-import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
+import { computeLocalDiff, formatDiffPreview, type TaskDiff } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { threeWayMerge } from "../sync/three-way-merge.js";
@@ -260,6 +260,10 @@ export function createApiRouter(projectRoot: string): Router {
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
 
+      // Record locally changed tasks BEFORE merging
+      const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+      const locallyChangedIds = new Set(prePullDiffs.filter((d: TaskDiff) => d.type === "modified").map((d: TaskDiff) => d.id));
+
       const gql = await createGraphQLClient();
       const { owner, project_number } = config.project.github;
       const projectData = await fetchProject(gql, owner, project_number);
@@ -387,8 +391,8 @@ export function createApiRouter(projectRoot: string): Router {
         const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
         const existing = syncState.snapshots[task.id];
 
-        // Check if task has unpushed local changes
-        const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+        // Check if task had unpushed local changes BEFORE this pull
+        const hasLocalChanges = locallyChangedIds.has(task.id);
 
         if (hasLocalChanges) {
           // Preserve snapshot hash so local changes remain pushable
@@ -455,7 +459,13 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-        await executePush(gql, config, tasksFile, syncState, { force });
+        await executePush(gql, config, tasksFile, syncState, {
+          force,
+          saveProgress: async (tf, ss) => {
+            await tasksStore.write(tf);
+            await stateStore.write(ss);
+          },
+        });
 
       await tasksStore.write(updatedTasksFile);
       await stateStore.write(updatedSyncState);

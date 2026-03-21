@@ -339,11 +339,7 @@ describe("E2E sync engine", () => {
   }, 60000);
 
   // #16: remote deleted + local changed = kept
-  // NOTE: This test is skipped due to GitHub GraphQL API propagation lag.
-  // The feature works correctly when tested manually (verified).
-  // The issue is that `gh project item-add` propagates to REST API before GraphQL,
-  // causing init/pull to not see the re-added item reliably.
-  it.skip("#16: remotely deleted task (local changed) is kept", () => {
+  it("#16: remotely deleted task (local changed) is kept", () => {
     // Setup: ensure #3 is in project and visible to GraphQL (init must see 3 tasks)
     ensureInProject(3);
     let initSuccess = false;

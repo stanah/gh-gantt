@@ -1,7 +1,19 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename, unlink } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { SyncStateSchema, GANTT_DIR, SYNC_STATE_FILE } from "@gh-gantt/shared";
 import type { SyncState } from "@gh-gantt/shared";
+
+async function writeAtomic(filePath: string, content: string): Promise<void> {
+  const tmpPath = `${filePath}.${randomUUID()}.tmp`;
+  await writeFile(tmpPath, content);
+  try {
+    await rename(tmpPath, filePath);
+  } catch (err) {
+    await unlink(tmpPath).catch(() => {});
+    throw err;
+  }
+}
 
 export class SyncStateStore {
   private path: string;
@@ -17,6 +29,6 @@ export class SyncStateStore {
 
   async write(data: SyncState): Promise<void> {
     await mkdir(join(this.path, ".."), { recursive: true });
-    await writeFile(this.path, JSON.stringify(data, null, 2) + "\n");
+    await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
   }
 }
