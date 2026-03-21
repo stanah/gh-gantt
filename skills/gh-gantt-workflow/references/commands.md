@@ -264,7 +264,7 @@ gh-gantt はタスクの種類（epic, task, feature 等）を `gantt.config.jso
 ```
 
 - `display` — ガントチャートでの描画形式（`bar`, `summary`, `milestone`）
-- `github_label` — GitHub Issue ラベルとの対応（pull 時のタイプ解決、create 時のラベル自動付与に使用）
+- `github_label` — GitHub Issue ラベルとの対応（pull 時のタイプ解決、create / update --type 時のラベル自動同期に使用）
 - `github_field_value` — Projects V2 カスタムフィールド値との対応（`github_label` より優先）
 
 ### pull 時のタイプ解決（優先度順）

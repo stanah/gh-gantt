@@ -38,13 +38,17 @@ export const statusCommand = new Command("status")
       if (task) remoteTasks.push(task);
     }
 
-    // Compute remote changes (same logic as pull's quick check: updated_at based)
+    // Compute remote changes (aligned with pull's quick check)
     let remoteChanged = 0;
     for (const remote of remoteTasks) {
       const snapshot = syncState.snapshots[remote.id];
       if (!snapshot) {
         remoteChanged++;
-      } else if (remote.updated_at !== snapshot.updated_at) {
+      } else if (remote.updated_at && snapshot.updated_at) {
+        if (remote.updated_at !== snapshot.updated_at) {
+          remoteChanged++;
+        }
+      } else if (hashTask(remote) !== (snapshot.remoteHash ?? snapshot.hash)) {
         remoteChanged++;
       }
     }
