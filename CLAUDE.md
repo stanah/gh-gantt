@@ -2,109 +2,80 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Project Overview
+## なぜ gh-gantt を作るのか
 
-gh-gantt is a GitHub Projects Gantt chart tool with hierarchical progress tracking. It syncs tasks bidirectionally with GitHub Projects (V2) via GraphQL API and renders an interactive Gantt chart in the browser. Authentication uses `gh auth token` (GitHub CLI).
+GitHub Projects (V2) はタスクをボードやテーブルで整理できるが、以下が欠けている：
 
-## Commands
+1. **プロジェクト全体の構造が見えない** — タスクの親子関係（エピック→フィーチャー→タスク）、依存関係、階層的な進捗の集約がない。個々のタスクは見えても「プロジェクトは予定通りか」「ボトルネックはどこか」が判断できない。
+
+2. **AI エージェントが操作できない** — GitHub Projects の操作は Web UI に閉じている。CLI インターフェースがあれば、Claude Code のような AI エージェントも人間と同じワークフローでタスクを管理できる。
+
+3. **セッションをまたいだコンテキストがない** — AI エージェントは会話が切り替わるとコンテキストを失う。プロジェクトデータをローカルファイル（`.gantt-sync/`）に保持することで、新しい会話でも `gh-gantt status` 一つで現在地を把握できる。
+
+gh-gantt はこれらを解決する CLI ツール。GitHub Projects (V2) と双方向同期し、ガントチャートでタスクの時間軸・依存関係・階層的進捗を可視化する。
+
+## このプロジェクトでの使い方
+
+**gh-gantt 自身も gh-gantt でタスク管理している（セルフホスティング）。**
+gh-gantt CLI は開発対象であると同時に、このプロジェクトの作業ツールでもある。
+
+- **何をすべきか知る** → `gh-gantt task list`, `gh-gantt status`
+- **作業を始める** → `gh-gantt pull` で最新取得、Issue 確認
+- **作業が終わる** → `gh-gantt push` で GitHub に反映
+
+gh-gantt CLI はグローバルにインストール済み。`gh-gantt` コマンドで直接実行できる。
+**タスク管理や開発の進め方は `gh-gantt-workflow` スキルに従うこと。**
+
+このプロジェクトは個人リポジトリのため GitHub Issue Types は使えない。
+代わりに GitHub Labels でタスクの種類を管理している（`gantt.config.json` の `task_types` で定義）。
+利用可能なタイプ: `task`, `epic`, `feature`, `milestone`
+
+**IMPORTANT: `.gantt-sync/` 配下のファイルを直接読み書きしてはならない。**
+常に `gh-gantt` CLI コマンドを使うこと。直接操作はバリデーションをバイパスし、同期状態を破損させる。
+
+## スキル
+
+`.claude/skills/` 配下のスキルは **gh-gantt ツール自体の使い方** を記述したもの。
+このプロジェクト固有の運用ではなく、gh-gantt を使う任意のプロジェクトで適用できる汎用的な知識。
+
+- **`gh-gantt-workflow`** — 開発サイクル全体のワークフロー（同期→タスク選択→ブランチ→PR→同期）
+- **`conflict-resolution`** — pull 後のコンフリクト解決手順
+
+## 開発コマンド
+
+コード変更には以下を使う。
 
 ```bash
-# Install dependencies
-pnpm install
+pnpm install          # 依存インストール
+pnpm build            # 全パッケージビルド（shared → cli/ui の順）
+pnpm dev              # 開発モード（CLI watch + Vite dev server）
+pnpm test             # 全テスト実行
+pnpm typecheck        # 型チェック
 
-# Build all packages (shared must build first as cli/ui depend on it)
-pnpm build
-
-# Dev mode (runs all packages in parallel - CLI watch + Vite dev server)
-pnpm dev
-
-# Run all tests
-pnpm test
-
-# Run tests for a single package
+# 単一パッケージのテスト
 pnpm --filter @gh-gantt/cli test
 pnpm --filter @gh-gantt/shared test
 pnpm --filter @gh-gantt/ui test
 
-# Run a single test file
+# 単一テストファイル
 pnpm --filter @gh-gantt/cli exec vitest run src/__tests__/hash.test.ts
 
-# Type checking
-pnpm typecheck
-
-# CLI entry point (after build)
-./gh-gantt <command>
+# CLI をグローバルにリンク（初回 or 再ビルド後）
+pnpm build && pnpm --filter @gh-gantt/cli exec pnpm link --global
 ```
 
-## Architecture
+## アーキテクチャ
 
-**Monorepo** using pnpm workspaces with three packages under `packages/`:
+pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 
-### `@gh-gantt/shared` — Shared types and validation
-- `types.ts` — Core domain types: `Task`, `Config`, `SyncState`, `TasksFile`
-- `schema.ts` — Zod schemas mirroring every type (used for JSON file validation)
-- `constants.ts` — File paths (`.gantt-sync/` dir), port numbers
+- **`@gh-gantt/shared`** — 型定義と Zod スキーマ
+- **`@gh-gantt/cli`** — CLI (Commander) + REST API (Express) + 同期エンジン + GitHub GraphQL クライアント
+- **`@gh-gantt/ui`** — React SPA (Vite + D3)
 
-### `@gh-gantt/cli` — Node.js CLI (Commander + Express)
-- **Commands** (`commands/`): `init`, `pull`, `push`, `status`, `serve`
-- **GitHub layer** (`github/`): GraphQL client via `@octokit/graphql`, queries for Projects V2, issue mutations, sub-issue link resolution
-- **Store** (`store/`): File-based persistence — reads/writes JSON files in `.gantt-sync/` directory (`gantt.config.json`, `tasks.json`, `sync-state.json`), validates with Zod on read
-- **Sync engine** (`sync/`): Diff computation, hash-based change detection, conflict resolution, remote-to-local field mapping
-- **Server** (`server/api.ts`): Express REST API mounted by `serve` command — `GET /api/config`, `GET /api/tasks`, `PATCH /api/tasks/:id`, `POST /api/sync/pull`, `POST /api/sync/push`, `GET /api/sync/status`
+## 開発規約
 
-### `@gh-gantt/ui` — React SPA (Vite + D3)
-- `App.tsx` — Root component wiring together tree view, Gantt chart, toolbar, and detail panel
-- **Components** (`components/`): `GanttChart` (D3-based timeline with bars/milestones/summary), `TaskTree` (hierarchical task list), `TaskDetailPanel` (side panel editor), `Toolbar` (zoom/view controls + sync buttons)
-- **Hooks** (`hooks/`): `useApi` (data fetching), `useTaskTree` (hierarchy flattening + collapse), `useGanttScale` (D3 time scale + zoom), `useDragResize` (bar drag/resize), `useTypeFilter`
-- **Lib** (`lib/`): Pure utility functions — `date-utils`, `dependency-graph`, `progress`, `summary-calc`
-
-### Data Flow
-1. `gh-gantt init` scaffolds `.gantt-sync/` with config
-2. `gh-gantt pull` fetches from GitHub Projects V2 → writes `tasks.json`
-3. `gh-gantt serve` starts Express (port 3000) serving both API and built UI
-4. In dev mode, Vite dev server (port 5173) proxies `/api` to Express
-5. UI fetches tasks/config via REST, edits go through `PATCH /api/tasks/:id`
-6. `push` (via API or CLI) diffs local tasks against snapshots and updates GitHub
-
-## Key Conventions
-
-- **ESM throughout** — all packages use `"type": "module"`, imports need `.js` extensions
-- **Zod validation on all file reads** — stores parse JSON through schemas, never trust raw data
-- **Build tool**: tsup for cli/shared, Vite for ui
-- **Test framework**: Vitest (no separate config files, uses package.json scripts)
-- **TypeScript target**: ES2022, strict mode, bundler module resolution
-- **Local state directory**: `.gantt-sync/` (gitignored) holds all project data files
-
-## Task Management via CLI
-
-**IMPORTANT: `.gantt-sync/tasks.json` を直接編集してはならない。**
-常に CLI コマンドでタスクを管理すること。直接編集はバリデーションをバイパスし、同期状態を破損させる可能性がある。
-
-### よく使うコマンド
-```bash
-# タスク作成
-./gh-gantt create --title "タスク名" --type task --start-date 2026-03-01 --end-date 2026-03-15
-
-# タスク更新（単体）
-./gh-gantt task update 6 --milestone v1.0
-./gh-gantt task update 6 --start-date 2026-03-01 --end-date 2026-03-15
-./gh-gantt task update 6 --label priority
-
-# タスク更新（バルク）
-./gh-gantt task update --filter-state open --milestone v1.0
-
-# 依存関係・親子関係
-./gh-gantt task link 7 --blocked-by 6
-./gh-gantt task link 6 --set-parent draft-1
-
-# マイルストーン
-./gh-gantt milestone list
-./gh-gantt milestone create "v1.0" --due-date 2026-06-01
-
-# マイルストーン作成 → GitHub に反映
-./gh-gantt milestone create "v2.0" --due-date 2026-12-01
-./gh-gantt push  # GitHub Milestone が自動作成される（Issue ではなく Milestone として）
-
-# 同期
-./gh-gantt pull && ./gh-gantt push
-```
+- ESM（`"type": "module"`、import に `.js` 拡張子必須）
+- ファイル読み込みは Zod バリデーション必須
+- ビルド: tsup (cli/shared)、Vite (ui)
+- テスト: Vitest
+- ローカルデータ: `.gantt-sync/`（gitignore 済み）

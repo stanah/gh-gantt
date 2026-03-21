@@ -128,6 +128,39 @@ describe("applyTaskUpdate", () => {
     expect(result.task.type).toBe("epic");
   });
 
+  it("updates type and adds github_label", () => {
+    const task = makeTask({ type: "task", labels: [] });
+    const result = applyTaskUpdate(task, { type: "epic" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.type).toBe("epic");
+    expect(result.task.labels).toContain("epic");
+  });
+
+  it("removes old github_label when changing type", () => {
+    const task = makeTask({ type: "epic", labels: ["epic"] });
+    const result = applyTaskUpdate(task, { type: "task" }, config);
+    expect(result.error).toBeUndefined();
+    expect(result.task.type).toBe("task");
+    expect(result.task.labels).not.toContain("epic");
+  });
+
+  it("swaps github_label when both types have labels", () => {
+    const configWithBug = makeConfig({
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#000", github_label: null },
+        epic: { label: "Epic", display: "summary", color: "#00f", github_label: "epic" },
+        bug: { label: "Bug", display: "bar", color: "#f00", github_label: "bug" },
+      },
+    });
+    const task = makeTask({ type: "bug", labels: ["bug", "other"] });
+    const result = applyTaskUpdate(task, { type: "epic" }, configWithBug);
+    expect(result.error).toBeUndefined();
+    expect(result.task.type).toBe("epic");
+    expect(result.task.labels).toContain("epic");
+    expect(result.task.labels).not.toContain("bug");
+    expect(result.task.labels).toContain("other");
+  });
+
   it("rejects unknown type", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { type: "unknown" }, config);

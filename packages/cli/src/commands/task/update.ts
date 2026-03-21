@@ -49,7 +49,18 @@ export function applyTaskUpdate(
   const updated = { ...task };
 
   if (opts.title) updated.title = opts.title;
-  if (opts.type) updated.type = opts.type;
+  if (opts.type) {
+    // Remove old type's github_label, add new type's github_label
+    const oldTypeDef = config.task_types[task.type];
+    const newTypeDef = config.task_types[opts.type];
+    if (oldTypeDef?.github_label) {
+      updated.labels = updated.labels.filter((l) => l !== oldTypeDef.github_label);
+    }
+    if (newTypeDef?.github_label && !updated.labels.includes(newTypeDef.github_label)) {
+      updated.labels = [...updated.labels, newTypeDef.github_label];
+    }
+    updated.type = opts.type;
+  }
   if (opts.state) updated.state = opts.state;
 
   if (opts.startDate) {
