@@ -47,12 +47,53 @@ export async function executePush(
   config: Config,
   tasksFile: TasksFile,
   syncState: SyncState,
+  opts?: { force?: boolean },
 ): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
   const diffs = computeLocalDiff(tasksFile.tasks, syncState);
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
 
   if (diffs.length === 0) {
     return { result, tasksFile, syncState };
+  }
+
+  // Check if remote has changed since last pull (like git push rejecting non-fast-forward)
+  if (!opts?.force) {
+    const modifiedDiffs = diffs.filter((d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id));
+    if (modifiedDiffs.length > 0) {
+      // Fetch current updated_at from GitHub for modified issues
+      const hasIssueNumbers = modifiedDiffs.some((d) => d.task.github_issue !== null);
+      if (hasIssueNumbers) {
+        const { owner, repo } = config.project.github;
+        const staleTaskIds: string[] = [];
+        for (const diff of modifiedDiffs) {
+          if (!diff.task.github_issue) continue;
+          const snapshot = syncState.snapshots[diff.id];
+          if (!snapshot?.updated_at) continue;
+          try {
+            const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
+              `query($owner: String!, $repo: String!, $number: Int!) {
+                repository(owner: $owner, name: $repo) {
+                  issue(number: $number) { updatedAt }
+                }
+              }`,
+              { owner, repo, number: diff.task.github_issue },
+            );
+            if (repository.issue.updatedAt !== snapshot.updated_at) {
+              staleTaskIds.push(diff.id);
+            }
+          } catch (err) {
+            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${err instanceof Error ? err.message : String(err)}`);
+            staleTaskIds.push(diff.id);
+          }
+        }
+        if (staleTaskIds.length > 0) {
+          console.error("リモートが更新されています。先に pull してください");
+          for (const id of staleTaskIds) console.error("  " + id);
+          console.error("--force で強制 push できます");
+          return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
+        }
+      }
+    }
   }
 
   const fm = config.sync.field_mapping;

@@ -1,80 +1,100 @@
 import { describe, it, expect } from "vitest";
-import { ConfigSchema } from "../schema.js";
+import { ConfigSchema, TasksFileSchema, TasksFileWithConflictsSchema } from "../schema.js";
+
+const validTask = {
+  id: "owner/repo#1",
+  type: "task",
+  github_issue: 1,
+  github_repo: "owner/repo",
+  parent: null,
+  sub_tasks: [],
+  title: "Test",
+  body: null,
+  state: "open" as const,
+  state_reason: null,
+  assignees: [],
+  labels: [],
+  milestone: null,
+  linked_prs: [],
+  created_at: "",
+  updated_at: "",
+  closed_at: null,
+  custom_fields: {},
+  start_date: null,
+  end_date: null,
+  date: null,
+  blocked_by: [],
+};
+
+const validConfig = {
+  version: "1",
+  project: {
+    name: "test",
+    github: { owner: "stanah", repo: "my-repo", project_number: 1 },
+  },
+  sync: {
+    auto_create_issues: false,
+    field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" },
+  },
+  task_types: {
+    task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
+  },
+  type_hierarchy: { task: [] },
+  statuses: {
+    field_name: "Status",
+    values: {
+      Done: { color: "#2ECC71", done: true },
+      Todo: { color: "#3498DB", done: false },
+    },
+  },
+  gantt: {
+    default_view: "month",
+    working_days: [1, 2, 3, 4, 5],
+    colors: { critical_path: "#E74C3C", on_track: "#2ECC71", at_risk: "#F39C12", overdue: "#E74C3C" },
+  },
+};
 
 describe("ConfigSchema", () => {
-  it("validates a minimal valid config", () => {
-    const config = {
-      version: "1",
-      project: {
-        name: "test",
-        github: { owner: "stanah", repo: "my-repo", project_number: 1 },
-      },
+  it("validates a minimal valid config without conflict_strategy", () => {
+    expect(ConfigSchema.parse(validConfig)).toBeDefined();
+  });
+
+  it("accepts config with legacy conflict_strategy via passthrough", () => {
+    const configWithLegacy = {
+      ...validConfig,
       sync: {
+        ...validConfig.sync,
         conflict_strategy: "remote-wins",
-        auto_create_issues: false,
-        field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" },
-      },
-      task_types: {
-        task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
-      },
-      type_hierarchy: { task: [] },
-      statuses: {
-        field_name: "Status",
-        values: {
-          Done: { color: "#2ECC71", done: true },
-          Todo: { color: "#3498DB", done: false },
-        },
-      },
-      gantt: {
-        default_view: "month",
-        working_days: [1, 2, 3, 4, 5],
-        colors: { critical_path: "#E74C3C", on_track: "#2ECC71", at_risk: "#F39C12", overdue: "#E74C3C" },
       },
     };
-    expect(ConfigSchema.parse(config)).toBeDefined();
+    expect(() => ConfigSchema.parse(configWithLegacy)).not.toThrow();
+  });
+
+  it("preserves legacy conflict_strategy in parsed output via passthrough", () => {
+    const configWithLegacy = {
+      ...validConfig,
+      sync: {
+        ...validConfig.sync,
+        conflict_strategy: "remote-wins",
+      },
+    };
+    const result = ConfigSchema.parse(configWithLegacy);
+    expect((result.sync as Record<string, unknown>).conflict_strategy).toBe("remote-wins");
   });
 
   it("rejects config with invalid display type", () => {
     const config = {
-      version: "1",
-      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
-      sync: { conflict_strategy: "remote-wins", auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "St" } },
+      ...validConfig,
+      sync: { ...validConfig.sync, conflict_strategy: "remote-wins" },
       task_types: { task: { label: "Task", display: "invalid", color: "#000", github_label: null } },
-      type_hierarchy: { task: [] },
-      statuses: { field_name: "Status", values: {} },
-      gantt: { default_view: "month", working_days: [1], colors: { critical_path: "#000", on_track: "#000", at_risk: "#000", overdue: "#000" } },
     };
     expect(() => ConfigSchema.parse(config)).toThrow();
   });
 
   it("accepts optional sprints config", () => {
     const config = {
-      version: "1",
-      project: {
-        name: "test",
-        github: { owner: "stanah", repo: "my-repo", project_number: 1 },
-      },
-      sync: {
-        conflict_strategy: "remote-wins",
-        auto_create_issues: false,
-        field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" },
-      },
-      task_types: {
-        task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
-      },
-      type_hierarchy: { task: [] },
-      statuses: {
-        field_name: "Status",
-        values: {
-          Done: { color: "#2ECC71", done: true },
-          Todo: { color: "#3498DB", done: false },
-        },
-      },
-      gantt: {
-        default_view: "month",
-        working_days: [1, 2, 3, 4, 5],
-        colors: { critical_path: "#E74C3C", on_track: "#2ECC71", at_risk: "#F39C12", overdue: "#E74C3C" },
-      },
+      ...validConfig,
+      sync: { ...validConfig.sync, conflict_strategy: "remote-wins" },
       sprints: [
         {
           name: "Sprint 1",
@@ -91,32 +111,8 @@ describe("ConfigSchema", () => {
 
   it("rejects sprint config missing required fields", () => {
     const config = {
-      version: "1",
-      project: {
-        name: "test",
-        github: { owner: "stanah", repo: "my-repo", project_number: 1 },
-      },
-      sync: {
-        conflict_strategy: "remote-wins",
-        auto_create_issues: false,
-        field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" },
-      },
-      task_types: {
-        task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
-      },
-      type_hierarchy: { task: [] },
-      statuses: {
-        field_name: "Status",
-        values: {
-          Done: { color: "#2ECC71", done: true },
-          Todo: { color: "#3498DB", done: false },
-        },
-      },
-      gantt: {
-        default_view: "month",
-        working_days: [1, 2, 3, 4, 5],
-        colors: { critical_path: "#E74C3C", on_track: "#2ECC71", at_risk: "#F39C12", overdue: "#E74C3C" },
-      },
+      ...validConfig,
+      sync: { ...validConfig.sync, conflict_strategy: "remote-wins" },
       sprints: [
         {
           name: "Sprint 1",
@@ -127,5 +123,87 @@ describe("ConfigSchema", () => {
     };
 
     expect(() => ConfigSchema.parse(config)).toThrow();
+  });
+});
+
+describe("TasksFileSchema", () => {
+  it("should accept valid tasks file", () => {
+    const data = {
+      tasks: [validTask],
+      cache: { comments: {}, reactions: {} },
+    };
+    expect(() => TasksFileSchema.parse(data)).not.toThrow();
+  });
+
+  it("should accept tasks file with has_conflicts flag", () => {
+    const data = {
+      tasks: [validTask],
+      cache: { comments: {}, reactions: {} },
+      has_conflicts: true,
+    };
+    expect(() => TasksFileSchema.parse(data)).not.toThrow();
+  });
+
+  it("should strip unknown keys from tasks (strict mode)", () => {
+    const taskWithMarkers = {
+      ...validTask,
+      state_current: "open",
+      state_incoming: "closed",
+    };
+    const data = {
+      tasks: [taskWithMarkers],
+      cache: { comments: {}, reactions: {} },
+    };
+    const result = TasksFileSchema.parse(data);
+    const parsed = result.tasks[0] as Record<string, unknown>;
+    expect(parsed.state_current).toBeUndefined();
+    expect(parsed.state_incoming).toBeUndefined();
+  });
+});
+
+describe("TasksFileWithConflictsSchema", () => {
+  it("should accept tasks with conflict marker keys", () => {
+    const data = {
+      tasks: [{
+        ...validTask,
+        state_current: "open",
+        state_incoming: "closed",
+      }],
+      cache: { comments: {}, reactions: {} },
+      has_conflicts: true,
+    };
+    expect(() => TasksFileWithConflictsSchema.parse(data)).not.toThrow();
+    const result = TasksFileWithConflictsSchema.parse(data);
+    const parsed = result.tasks[0] as Record<string, unknown>;
+    expect(parsed.state_current).toBe("open");
+    expect(parsed.state_incoming).toBe("closed");
+  });
+
+  it("should preserve multiple conflict marker fields", () => {
+    const data = {
+      tasks: [{
+        ...validTask,
+        title_current: "Local title",
+        title_incoming: "Remote title",
+        start_date_current: "2026-01-01",
+        start_date_incoming: "2026-02-01",
+      }],
+      cache: { comments: {}, reactions: {} },
+      has_conflicts: true,
+    };
+    const result = TasksFileWithConflictsSchema.parse(data);
+    const parsed = result.tasks[0] as Record<string, unknown>;
+    expect(parsed.title_current).toBe("Local title");
+    expect(parsed.title_incoming).toBe("Remote title");
+    expect(parsed.start_date_current).toBe("2026-01-01");
+    expect(parsed.start_date_incoming).toBe("2026-02-01");
+  });
+
+  it("should work without conflict markers too", () => {
+    const data = {
+      tasks: [validTask],
+      cache: { comments: {}, reactions: {} },
+    };
+    expect(() => TasksFileWithConflictsSchema.parse(data)).not.toThrow();
   });
 });

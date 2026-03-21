@@ -46,7 +46,6 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
       github: { owner: "owner", repo: "repo", project_number: 1 },
     },
     sync: {
-      conflict_strategy: "remote-wins",
       auto_create_issues: false,
       field_mapping: { start_date: "Start", end_date: "End", status: "Status" },
     },

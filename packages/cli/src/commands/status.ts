@@ -6,10 +6,10 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { computeLocalDiff } from "../sync/diff.js";
-import { detectConflicts, type ConflictFieldDetail } from "../sync/conflict.js";
+import { threeWayMerge, type FieldConflict } from "../sync/three-way-merge.js";
 import { formatValue } from "../util/format.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
-import { hashTask } from "../sync/hash.js";
+import { hashTask, extractSyncFields } from "../sync/hash.js";
 import type { Task } from "@gh-gantt/shared";
 
 export const statusCommand = new Command("status")
@@ -47,8 +47,30 @@ export const statusCommand = new Command("status")
       }
     }
 
-    // Detect conflicts
-    const conflicts = detectConflicts(tasksFile.tasks, remoteTasks, syncState);
+    // Detect conflicts via 3-way merge
+    interface StatusConflict {
+      taskId: string;
+      title: string;
+      fieldConflicts: FieldConflict[];
+    }
+    const conflicts: StatusConflict[] = [];
+    const remoteTaskMap = new Map(remoteTasks.map((t) => [t.id, t]));
+    for (const local of tasksFile.tasks) {
+      const remote = remoteTaskMap.get(local.id);
+      if (!remote) continue;
+      const snapshot = syncState.snapshots[local.id];
+      if (!snapshot?.syncFields) continue;
+      const localHash = hashTask(local);
+      const remoteHash = hashTask(remote);
+      if (localHash !== snapshot.hash && remoteHash !== snapshot.hash) {
+        const localFields = extractSyncFields(local);
+        const remoteFields = extractSyncFields(remote);
+        const { conflicts: fieldConflicts } = threeWayMerge(snapshot.syncFields, localFields, remoteFields);
+        if (fieldConflicts.length > 0) {
+          conflicts.push({ taskId: local.id, title: local.title, fieldConflicts });
+        }
+      }
+    }
 
     // Print status
     console.log(`Last synced: ${syncState.last_synced_at}`);
@@ -79,19 +101,12 @@ export const statusCommand = new Command("status")
       console.log(`Conflicts (${conflicts.length}):`);
       for (const c of conflicts) {
         console.log(`  ! ${c.taskId}: ${c.title}`);
-        for (const d of c.fieldDetails) {
-          const isLocal = c.localChangedFields.includes(d.field);
-          const isRemote = c.remoteChangedFields.includes(d.field);
-          const tag = `[${isLocal ? "L" : " "}${isRemote ? "R" : " "}]`;
-          if (isLocal && isRemote) {
-            console.log(`      ${tag} ${d.field}: local=${formatValue(d.local)} remote=${formatValue(d.remote)} \u2190 ${formatValue(d.snapshot)}`);
-          } else {
-            console.log(`      ${tag} ${d.field}: ${formatValue(isLocal ? d.local : d.remote)} \u2190 ${formatValue(d.snapshot)}`);
-          }
+        for (const fc of c.fieldConflicts) {
+          console.log(`      ${fc.field}: local=${formatValue(fc.current)} remote=${formatValue(fc.incoming)} <- ${formatValue(fc.base)}`);
         }
       }
       console.log();
-      console.log(`Strategy: ${config.sync.conflict_strategy}`);
+      console.log(`Sync: auto_create_issues=${config.sync.auto_create_issues}`);
     }
 
     // Draft tasks

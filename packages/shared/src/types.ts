@@ -1,6 +1,5 @@
 export type TaskDisplay = "bar" | "summary" | "milestone";
 export type DependencyType = "finish-to-start" | "finish-to-finish" | "start-to-start" | "start-to-finish";
-export type ConflictStrategy = "remote-wins" | "local-wins" | "manual";
 export type ViewScale = "day" | "week" | "month" | "quarter";
 
 export interface TaskType {
@@ -63,6 +62,7 @@ export interface TasksFile {
     comments: Record<string, Array<{ author: string; body: string; created_at: string }>>;
     reactions: Record<string, Record<string, number>>;
   };
+  has_conflicts?: boolean;
 }
 
 export interface GithubConfig {
@@ -72,7 +72,6 @@ export interface GithubConfig {
 }
 
 export interface SyncConfig {
-  conflict_strategy: ConflictStrategy;
   auto_create_issues: boolean;
   field_mapping: {
     start_date: string;

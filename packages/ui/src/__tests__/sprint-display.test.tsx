@@ -42,7 +42,6 @@ const config: Config = {
     },
   },
   sync: {
-    conflict_strategy: "remote-wins",
     auto_create_issues: false,
     field_mapping: {
       start_date: "Start Date",

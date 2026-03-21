@@ -7,8 +7,9 @@ import { setParent, removeParent } from "../commands/task/link.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
-import { mapRemoteItemToTask, mergeRemoteIntoLocal } from "../sync/mapper.js";
-import { detectConflicts } from "../sync/conflict.js";
+import { mapRemoteItemToTask } from "../sync/mapper.js";
+import { threeWayMerge } from "../sync/three-way-merge.js";
+import { applyConflictMarkers } from "../sync/conflict-marker.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
@@ -255,7 +256,6 @@ export function createApiRouter(projectRoot: string): Router {
   // POST /api/sync/pull
   router.post("/api/sync/pull", async (req, res) => {
     try {
-      const { force } = req.body ?? {};
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
@@ -309,20 +309,18 @@ export function createApiRouter(projectRoot: string): Router {
       applyBlockedByLinks(remoteTaskArray, blockedByLinks);
       for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
-      const remoteTaskArrayWithMilestones = Array.from(remoteTasks.values());
-      const conflicts = detectConflicts(tasksFile.tasks, remoteTaskArrayWithMilestones, syncState);
-      if (conflicts.length > 0 && !force) {
+      // Guard: Unresolved conflicts must be resolved before next pull
+      if (tasksFile.has_conflicts) {
         res.status(409).json({
-          conflicts: conflicts.map((c) => ({ taskId: c.taskId, title: c.title })),
-          message: `${conflicts.length} task(s) have conflicting changes. Local and remote were both modified since last sync.`,
+          message: "未解決のコンフリクトがあります。先に resolve してください",
         });
         return;
       }
 
-      const typeFieldConfigured = !!config.sync.field_mapping.type;
       const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
       const newTasks: Task[] = [];
-      let added = 0, updated = 0, removed = 0;
+      let added = 0, updated = 0, removed = 0, conflictCount = 0;
+      let hasConflictsFlag = false;
 
       for (const [id, remoteTask] of remoteTasks) {
         const localTask = localTaskMap.get(id);
@@ -330,13 +328,40 @@ export function createApiRouter(projectRoot: string): Router {
           newTasks.push(remoteTask);
           added++;
         } else {
-          const currentRemoteHash = hashTask(remoteTask);
-          const prevRemoteHash = syncState.snapshots[id]?.remoteHash ?? syncState.snapshots[id]?.hash;
-          if (currentRemoteHash !== prevRemoteHash) {
-            newTasks.push(mergeRemoteIntoLocal(localTask, remoteTask, { typeFieldConfigured }));
+          const snapshot = syncState.snapshots[id];
+          const remoteHash = hashTask(remoteTask);
+          const snapshotRemoteHash = snapshot?.remoteHash ?? snapshot?.hash;
+
+          if (remoteHash === snapshotRemoteHash) {
+            newTasks.push(localTask);
+          } else if (!snapshot || !snapshot.syncFields) {
+            newTasks.push(remoteTask);
             updated++;
           } else {
-            newTasks.push(localTask);
+            const localFields = extractSyncFields(localTask);
+            const remoteFields = extractSyncFields(remoteTask);
+            const { merged, conflicts } = threeWayMerge(snapshot.syncFields, localFields, remoteFields);
+
+            const mergedTask: Task = { ...localTask, ...merged };
+            mergedTask.created_at = remoteTask.created_at;
+            mergedTask.updated_at = remoteTask.updated_at;
+            mergedTask.closed_at = remoteTask.closed_at;
+            mergedTask.state_reason = remoteTask.state_reason;
+            mergedTask.linked_prs = remoteTask.linked_prs;
+
+            if (conflicts.length > 0) {
+              const marked = applyConflictMarkers(mergedTask, conflicts);
+              newTasks.push(marked as unknown as Task);
+              hasConflictsFlag = true;
+              conflictCount++;
+            } else {
+              newTasks.push(mergedTask);
+              const localHash = hashTask(localTask);
+              const mergedHash = hashTask(mergedTask);
+              if (localHash !== mergedHash) {
+                updated++;
+              }
+            }
           }
           localTaskMap.delete(id);
         }
@@ -345,7 +370,14 @@ export function createApiRouter(projectRoot: string): Router {
         if (isDraftTask(id)) {
           newTasks.push(localTask);
         } else {
-          removed++;
+          const snapshot = syncState.snapshots[id];
+          if (snapshot && hashTask(localTask) !== snapshot.hash) {
+            // Local changed but remote deleted → keep (delete/modify conflict)
+            newTasks.push(localTask);
+            localTaskMap.delete(id); // Preserve snapshot
+          } else {
+            removed++;
+          }
         }
       }
 
@@ -354,27 +386,37 @@ export function createApiRouter(projectRoot: string): Router {
         const remoteTask = remoteTasks.get(task.id);
         const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
         const existing = syncState.snapshots[task.id];
-        // Preserve existing snapshot for unchanged tasks to protect unpushed local changes
-        if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+
+        // Check if task has unpushed local changes
+        const hasLocalChanges = existing && hashTask(task) !== existing.hash;
+
+        if (hasLocalChanges) {
+          // Preserve snapshot hash so local changes remain pushable
+          newSnapshots[task.id] = { ...existing!, remoteHash };
+        } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
           newSnapshots[task.id] = { ...existing, remoteHash };
-          continue;
+        } else {
+          newSnapshots[task.id] = {
+            hash: hashTask(task),
+            synced_at: new Date().toISOString(),
+            updated_at: task.updated_at,
+            remoteHash,
+            syncFields: extractSyncFields(task),
+          };
         }
-        newSnapshots[task.id] = {
-          hash: hashTask(task),
-          synced_at: new Date().toISOString(),
-          updated_at: task.updated_at,
-          remoteHash,
-          syncFields: extractSyncFields(task),
-        };
       }
       for (const id of localTaskMap.keys()) {
         if (!isDraftTask(id)) delete newSnapshots[id];
       }
 
-      await tasksStore.write({ tasks: newTasks, cache: tasksFile.cache });
+      await tasksStore.write({
+        tasks: newTasks,
+        cache: tasksFile.cache,
+        ...(hasConflictsFlag ? { has_conflicts: true } : {}),
+      });
       await stateStore.write({ ...syncState, last_synced_at: new Date().toISOString(), snapshots: newSnapshots });
 
-      res.json({ added, updated, removed });
+      res.json({ added, updated, removed, conflicts: conflictCount });
     } catch (err) {
       res.status(500).json({ error: "Pull failed: " + (err instanceof Error ? err.message : String(err)) });
     }
@@ -383,9 +425,17 @@ export function createApiRouter(projectRoot: string): Router {
   // POST /api/sync/push
   router.post("/api/sync/push", async (req, res) => {
     try {
-      const { dry_run } = req.body ?? {};
+      const { dry_run, force } = req.body ?? {};
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
+
+      // Guard: unresolved conflicts (not skippable with force)
+      if (tasksFile.has_conflicts) {
+        res.status(409).json({
+          message: "未解決のコンフリクトがあります。先に resolve してください",
+        });
+        return;
+      }
 
       const diffs = computeLocalDiff(tasksFile.tasks, syncState);
       if (diffs.length === 0) {
@@ -405,7 +455,7 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const gql = await createGraphQLClient();
       const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-        await executePush(gql, config, tasksFile, syncState);
+        await executePush(gql, config, tasksFile, syncState, { force });
 
       await tasksStore.write(updatedTasksFile);
       await stateStore.write(updatedSyncState);
