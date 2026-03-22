@@ -82,6 +82,26 @@ describe("ConfigSchema", () => {
     expect((result.sync as Record<string, unknown>).conflict_strategy).toBe("remote-wins");
   });
 
+  it("accepts config with priority in field_mapping", () => {
+    const configWithPriority = {
+      ...validConfig,
+      sync: {
+        ...validConfig.sync,
+        field_mapping: {
+          ...validConfig.sync.field_mapping,
+          priority: "Priority",
+        },
+      },
+    };
+    const parsed = ConfigSchema.parse(configWithPriority);
+    expect(parsed.sync.field_mapping.priority).toBe("Priority");
+  });
+
+  it("accepts config without priority in field_mapping", () => {
+    const parsed = ConfigSchema.parse(validConfig);
+    expect(parsed.sync.field_mapping.priority).toBeUndefined();
+  });
+
   it("rejects config with invalid display type", () => {
     const config = {
       ...validConfig,

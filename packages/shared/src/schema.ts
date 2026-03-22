@@ -79,6 +79,7 @@ export const ConfigSchema = z.object({
       end_date: z.string(),
       status: z.string(),
       type: z.string().nullable().optional(),
+      priority: z.string().optional(),
     }),
   }).passthrough(),
   task_types: z.record(TaskTypeSchema),

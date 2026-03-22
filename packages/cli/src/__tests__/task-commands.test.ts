@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterTasks } from "../commands/task/list.js";
+import { filterTasks, sortTasks } from "../commands/task/list.js";
 import { applyTaskUpdate, filterTasksForUpdate } from "../commands/task/update.js";
 import { collectMilestones } from "../commands/milestone/list.js";
 import {
@@ -106,6 +106,191 @@ describe("filterTasks", () => {
     const result = filterTasks(tasks, { backlog: true, state: "closed" });
     expect(result).toHaveLength(1);
     expect(result[0].id).toBe("owner/repo#4");
+  });
+
+  // --- new filters ---
+
+  const tasksExtended = [
+    makeTask({
+      id: "owner/repo#1",
+      state: "open",
+      assignees: ["alice"],
+      labels: ["bug"],
+      title: "Fix login error",
+      body: "Users cannot login with SSO",
+      custom_fields: { Status: "In Progress" },
+      blocked_by: [],
+      start_date: "2026-01-01",
+      end_date: "2026-01-10",
+    }),
+    makeTask({
+      id: "owner/repo#2",
+      state: "open",
+      assignees: ["bob"],
+      labels: ["feature"],
+      title: "Add search feature",
+      body: "Full text search for tasks",
+      custom_fields: { Status: "Todo" },
+      blocked_by: [{ task: "owner/repo#1", type: "finish-to-start", lag: 0 }],
+    }),
+    makeTask({
+      id: "owner/repo#3",
+      state: "open",
+      assignees: [],
+      labels: [],
+      title: "Update docs",
+      body: null,
+      custom_fields: { Status: "Todo" },
+      blocked_by: [],
+    }),
+    makeTask({
+      id: "owner/repo#4",
+      state: "closed",
+      assignees: ["alice", "bob"],
+      labels: ["bug"],
+      title: "Fix crash on startup",
+      body: "App crashes when config missing",
+      custom_fields: { Status: "Done" },
+      blocked_by: [{ task: "owner/repo#5", type: "finish-to-start", lag: 0 }],
+    }),
+    makeTask({
+      id: "owner/repo#5",
+      state: "closed",
+      assignees: [],
+      labels: [],
+      title: "Setup CI",
+      body: null,
+      custom_fields: {},
+      blocked_by: [],
+    }),
+  ];
+
+  it("filters unblocked tasks (no dependencies)", () => {
+    const result = filterTasks(tasksExtended, { unblocked: true });
+    // #1: no deps → unblocked
+    // #2: blocked by #1 (open) → blocked
+    // #3: no deps → unblocked
+    // #4: blocked by #5 but #5 is closed → unblocked
+    // #5: no deps → unblocked
+    expect(result.map((t) => t.id)).toEqual([
+      "owner/repo#1", "owner/repo#3", "owner/repo#4", "owner/repo#5",
+    ]);
+  });
+
+  it("filters by assignee", () => {
+    const result = filterTasks(tasksExtended, { assignee: "alice" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#4"]);
+  });
+
+  it("filters unassigned tasks", () => {
+    const result = filterTasks(tasksExtended, { unassigned: true });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#3", "owner/repo#5"]);
+  });
+
+  it("filters by status custom field", () => {
+    const result = filterTasks(tasksExtended, { status: "Todo", statusFieldName: "Status" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2", "owner/repo#3"]);
+  });
+
+  it("filters by label", () => {
+    const result = filterTasks(tasksExtended, { label: "bug" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#4"]);
+  });
+
+  it("filters by search query in title", () => {
+    const result = filterTasks(tasksExtended, { search: "login" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1"]);
+  });
+
+  it("filters by search query in body (case insensitive)", () => {
+    const result = filterTasks(tasksExtended, { search: "SSO" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1"]);
+  });
+
+  it("search matches partial text", () => {
+    const result = filterTasks(tasksExtended, { search: "search" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2"]);
+  });
+
+  it("combines new filters with AND logic", () => {
+    const result = filterTasks(tasksExtended, { assignee: "alice", label: "bug", state: "open" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1"]);
+  });
+
+  it("combines unblocked with state", () => {
+    const result = filterTasks(tasksExtended, { unblocked: true, state: "open" });
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#3"]);
+  });
+});
+
+// --- sortTasks ---
+
+describe("sortTasks", () => {
+  const tasksForSort = [
+    makeTask({ id: "owner/repo#1", title: "Banana", type: "task", end_date: "2026-03-01", start_date: "2026-01-15" }),
+    makeTask({ id: "owner/repo#2", title: "Apple", type: "epic", end_date: null, start_date: "2026-01-01" }),
+    makeTask({ id: "owner/repo#3", title: "Cherry", type: "task", end_date: "2026-02-01", start_date: null }),
+  ];
+
+  const config = makeConfig();
+
+  it("sorts by title alphabetically", () => {
+    const result = sortTasks(tasksForSort, "title", config);
+    expect(result.map((t) => t.title)).toEqual(["Apple", "Banana", "Cherry"]);
+  });
+
+  it("sorts by end_date ascending (null last)", () => {
+    const result = sortTasks(tasksForSort, "end_date", config);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#3", "owner/repo#1", "owner/repo#2"]);
+  });
+
+  it("sorts by start_date ascending (null last)", () => {
+    const result = sortTasks(tasksForSort, "start_date", config);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2", "owner/repo#1", "owner/repo#3"]);
+  });
+
+  it("sorts by type using config task_types order", () => {
+    const result = sortTasks(tasksForSort, "type", config);
+    // config has: task, epic → task first
+    expect(result.map((t) => t.type)).toEqual(["task", "task", "epic"]);
+  });
+
+  it("sorts by multiple fields (comma-separated, first takes priority)", () => {
+    const result = sortTasks(tasksForSort, "type,title", config);
+    // tasks first (sorted by title): Banana, Cherry; then epic: Apple
+    expect(result.map((t) => t.title)).toEqual(["Banana", "Cherry", "Apple"]);
+  });
+
+  it("sorts by priority using config field_mapping.priority", () => {
+    const configWithPriority = makeConfig({
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "Start", end_date: "End", status: "Status", priority: "Priority" },
+      },
+    });
+    const tasksWithPriority = [
+      makeTask({ id: "owner/repo#1", title: "Low", custom_fields: { Priority: "P2" } }),
+      makeTask({ id: "owner/repo#2", title: "High", custom_fields: { Priority: "P0" } }),
+      makeTask({ id: "owner/repo#3", title: "Medium", custom_fields: { Priority: "P1" } }),
+    ];
+    // Single Select field order is alphabetical when no option_ids available
+    const result = sortTasks(tasksWithPriority, "priority", configWithPriority);
+    expect(result.map((t) => t.title)).toEqual(["High", "Medium", "Low"]);
+  });
+
+  it("skips priority sort when field_mapping.priority is not configured", () => {
+    const tasksWithPriority = [
+      makeTask({ id: "owner/repo#1", title: "B" }),
+      makeTask({ id: "owner/repo#2", title: "A" }),
+    ];
+    // priority sort should be skipped, fallback to original order
+    const result = sortTasks(tasksWithPriority, "priority", config);
+    expect(result.map((t) => t.title)).toEqual(["B", "A"]);
+  });
+
+  it("returns original order when sort field is empty", () => {
+    const result = sortTasks(tasksForSort, "", config);
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#2", "owner/repo#3"]);
   });
 });
 
