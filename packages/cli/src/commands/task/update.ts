@@ -121,7 +121,13 @@ export function applyTaskUpdate(
         error: `Invalid priority: "${opts.priority}". Available: ${validPriorities.join(", ")}`,
       };
     }
-    const priorityFieldName = config.sync?.field_mapping?.priority ?? "Priority";
+    const priorityFieldName = config.sync?.field_mapping?.priority;
+    if (!priorityFieldName) {
+      return {
+        task,
+        error: `Priority field is not configured. Set sync.field_mapping.priority in config.`,
+      };
+    }
     updated.custom_fields = { ...updated.custom_fields, [priorityFieldName]: priority };
   }
 
