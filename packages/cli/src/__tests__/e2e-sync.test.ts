@@ -26,7 +26,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const CLI = join(__dirname, "../../dist/index.js");
@@ -167,9 +167,7 @@ function removeFromProject(issueNumber: number): void {
 
 describe("E2E sync engine", () => {
   beforeAll(() => {
-    if (existsSync(GANTT_DIR)) {
-      rmSync(GANTT_DIR, { recursive: true });
-    }
+    rmSync(GANTT_DIR, { recursive: true, force: true });
     const output = ghGantt([
       "init",
       "--owner",
@@ -373,7 +371,7 @@ describe("E2E sync engine", () => {
     // Re-init until GraphQL sees 3 tasks
     let found = false;
     for (let i = 0; i < 20; i++) {
-      rmSync(GANTT_DIR, { recursive: true });
+      rmSync(GANTT_DIR, { recursive: true, force: true });
       const initOut = ghGantt([
         "init",
         "--owner",
@@ -412,7 +410,7 @@ describe("E2E sync engine", () => {
     ensureInProject(3);
     let initSuccess = false;
     for (let attempt = 0; attempt < 20; attempt++) {
-      rmSync(GANTT_DIR, { recursive: true });
+      rmSync(GANTT_DIR, { recursive: true, force: true });
       const initOutput = ghGantt([
         "init",
         "--owner",
