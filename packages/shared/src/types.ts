@@ -78,6 +78,7 @@ export interface SyncConfig {
     end_date: string;
     status: string;
     type?: string | null;
+    priority?: string;
   };
 }
 
