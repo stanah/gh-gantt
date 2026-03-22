@@ -79,7 +79,8 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
 
     const matchesPriorityOwn = (t: Task): boolean => {
       if (!hasPriorityFilter || !priorityFieldName) return true;
-      const taskPriority = t.custom_fields[priorityFieldName] as string | undefined;
+      const rawPriority = t.custom_fields[priorityFieldName];
+      const taskPriority = typeof rawPriority === "string" ? rawPriority : undefined;
       if (!taskPriority) return includeNoPriority;
       return prioritySet.has(taskPriority.toLowerCase());
     };
