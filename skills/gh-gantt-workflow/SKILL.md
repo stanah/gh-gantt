@@ -25,6 +25,7 @@ Evidence: コマンド出力をそのまま提示する。
 2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
 3. タスク確認 — `gh-gantt task list --state open --unblocked` を実行する。
    ソートが必要なら `--sort priority,end_date` を追加。
+   注: `--unblocked` および `--sort` オプションは feat/cli-improvements ブランチで追加予定。未マージの場合は `gh-gantt task list --state open` を使用する。
    **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
    ユーザーに選択を促す。件数が多い場合はフィルタの併用を提案する。
 4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt task update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
