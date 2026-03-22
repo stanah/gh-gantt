@@ -18,7 +18,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm --filter @gh-gantt/ui dev",
+    command: "pnpm --filter @gh-gantt/ui dev -- --port 5173 --strictPort",
     url: "http://localhost:5173",
     reuseExistingServer: !process.env.CI,
   },
