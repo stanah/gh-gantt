@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "test": "vitest run",
+    "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -17,6 +17,6 @@
   "devDependencies": {
     "tsdown": "^0.21.4",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vite-plus": "^0.1.13"
   }
 }
