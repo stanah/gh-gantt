@@ -79,7 +79,7 @@ describe("ConfigSchema", () => {
       },
     };
     const result = ConfigSchema.parse(configWithLegacy);
-    expect((result.sync as Record<string, unknown>).conflict_strategy).toBe("remote-wins");
+    expect((result.sync as unknown as Record<string, unknown>).conflict_strategy).toBe("remote-wins");
   });
 
   it("accepts config with priority in field_mapping", () => {
@@ -175,7 +175,7 @@ describe("TasksFileSchema", () => {
       cache: { comments: {}, reactions: {} },
     };
     const result = TasksFileSchema.parse(data);
-    const parsed = result.tasks[0] as Record<string, unknown>;
+    const parsed = result.tasks[0] as unknown as Record<string, unknown>;
     expect(parsed.state_current).toBeUndefined();
     expect(parsed.state_incoming).toBeUndefined();
   });
@@ -194,7 +194,7 @@ describe("TasksFileWithConflictsSchema", () => {
     };
     expect(() => TasksFileWithConflictsSchema.parse(data)).not.toThrow();
     const result = TasksFileWithConflictsSchema.parse(data);
-    const parsed = result.tasks[0] as Record<string, unknown>;
+    const parsed = result.tasks[0] as unknown as Record<string, unknown>;
     expect(parsed.state_current).toBe("open");
     expect(parsed.state_incoming).toBe("closed");
   });
@@ -212,7 +212,7 @@ describe("TasksFileWithConflictsSchema", () => {
       has_conflicts: true,
     };
     const result = TasksFileWithConflictsSchema.parse(data);
-    const parsed = result.tasks[0] as Record<string, unknown>;
+    const parsed = result.tasks[0] as unknown as Record<string, unknown>;
     expect(parsed.title_current).toBe("Local title");
     expect(parsed.title_incoming).toBe("Remote title");
     expect(parsed.start_date_current).toBe("2026-01-01");
