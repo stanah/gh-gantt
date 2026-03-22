@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Task } from "../types/index.js";
 
 export const UNASSIGNED = "__unassigned__";
+export const NO_PRIORITY = "__no_priority__";
 const ASSIGNEES_QUERY_KEY = "assignees";
 
 export interface TaskFilterState {
