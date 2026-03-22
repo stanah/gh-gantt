@@ -13,6 +13,7 @@ export interface TaskUpdateOptions {
   type?: string;
   state?: "open" | "closed";
   status?: string;
+  priority?: string;
   startDate?: string;
   endDate?: string;
   assignee?: string;
@@ -111,6 +112,25 @@ export function applyTaskUpdate(
     }
   }
 
+  if (opts.priority) {
+    const priority = opts.priority.toLowerCase();
+    const validPriorities = ["critical", "high", "medium", "low"];
+    if (!validPriorities.includes(priority)) {
+      return {
+        task,
+        error: `Invalid priority: "${opts.priority}". Available: ${validPriorities.join(", ")}`,
+      };
+    }
+    const priorityFieldName = config.sync?.field_mapping?.priority;
+    if (!priorityFieldName) {
+      return {
+        task,
+        error: `Priority field is not configured. Set sync.field_mapping.priority in config.`,
+      };
+    }
+    updated.custom_fields = { ...updated.custom_fields, [priorityFieldName]: priority };
+  }
+
   if (opts.label) {
     if (!updated.labels.includes(opts.label)) {
       updated.labels = [...updated.labels, opts.label];
@@ -169,6 +189,7 @@ export const taskUpdateCommand = new Command("update")
   .option("--milestone <name>", "Set milestone ('none' to clear)")
   .option("--label <name>", "Add label")
   .option("--status <status>", "Set status (auto-updates dates based on transition)")
+  .option("--priority <priority>", "Set priority (critical, high, medium, low)")
   .option("--remove-label <name>", "Remove label")
   .option("--filter-state <state>", "Bulk filter: match tasks by state")
   .option("--filter-type <type>", "Bulk filter: match tasks by type")
@@ -190,6 +211,7 @@ export const taskUpdateCommand = new Command("update")
         type: opts.type,
         state: opts.state,
         status: opts.status,
+        priority: opts.priority,
         startDate: opts.startDate,
         endDate: opts.endDate,
         assignee: opts.assignee,

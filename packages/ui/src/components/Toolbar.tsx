@@ -2,6 +2,7 @@ import React from "react";
 import type { ViewScale } from "../hooks/useGanttScale.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 import { AssigneeFilter } from "./AssigneeFilter.js";
+import { PriorityFilter } from "./PriorityFilter.js";
 
 interface ToolbarProps {
   viewScale: ViewScale;
@@ -20,6 +21,8 @@ interface ToolbarProps {
   selectedAssignee: string | null;
   allAssignees: string[];
   onSelectAssignee: (assignee: string | null) => void;
+  selectedPriorities?: string[];
+  onSelectPriorities?: (values: string[]) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchInputRef?: React.Ref<HTMLInputElement>;
@@ -50,6 +53,8 @@ export function Toolbar({
   selectedAssignee,
   allAssignees,
   onSelectAssignee,
+  selectedPriorities,
+  onSelectPriorities,
   searchQuery,
   onSearchChange,
   searchInputRef,
@@ -121,6 +126,12 @@ export function Toolbar({
           selectedValues={selectedAssignees}
           onChange={(values) => onSelectAssignee(values.length > 0 ? values.join(",") : null)}
         />
+        {selectedPriorities && onSelectPriorities && (
+          <PriorityFilter
+            selectedValues={selectedPriorities}
+            onChange={onSelectPriorities}
+          />
+        )}
       </div>
 
       <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />

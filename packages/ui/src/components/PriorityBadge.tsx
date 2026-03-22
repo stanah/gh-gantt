@@ -15,7 +15,7 @@ interface PriorityBadgeProps {
 }
 
 export function PriorityBadge({ priority }: PriorityBadgeProps) {
-  if (!priority) return null;
+  if (!priority || typeof priority !== "string") return null;
   const level = priority.toLowerCase() as PriorityLevel;
   const colors = PRIORITY_COLORS[level];
   if (!colors) return null;
@@ -41,7 +41,7 @@ export function PriorityBadge({ priority }: PriorityBadgeProps) {
 }
 
 export function getPriorityColor(priority: string | undefined): string | null {
-  if (!priority) return null;
+  if (!priority || typeof priority !== "string") return null;
   const level = priority.toLowerCase() as PriorityLevel;
   return PRIORITY_COLORS[level]?.fg ?? null;
 }

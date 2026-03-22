@@ -115,9 +115,12 @@ export function App() {
     selectedAssignees,
     setSelectedAssignee,
     allAssignees,
+    selectedPriorities,
+    setSelectedPriorities,
     searchQuery,
     setSearchQuery,
   } = useTaskFilter(tasks);
+  const priorityFieldName = config?.sync?.field_mapping?.priority;
   const {
     flatList,
     collapsed,
@@ -126,7 +129,7 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, selectedAssignees, searchQuery });
+  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName: priorityFieldName ?? undefined, searchQuery });
 
   const visibleTaskIds = useMemo(
     () => [
@@ -445,6 +448,12 @@ export function App() {
         selectedAssignee={selectedAssignee}
         allAssignees={allAssignees}
         onSelectAssignee={setSelectedAssignee}
+        {...(priorityFieldName
+          ? {
+              selectedPriorities,
+              onSelectPriorities: setSelectedPriorities,
+            }
+          : {})}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}

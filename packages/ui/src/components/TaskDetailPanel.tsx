@@ -157,6 +157,30 @@ export function TaskDetailPanel({
           </div>
         )}
 
+        {/* Priority (tasks only) */}
+        {!isMilestone && (() => {
+          const priorityFieldName = config.sync?.field_mapping?.priority;
+          if (!priorityFieldName) return null;
+          const rawPriority = task.custom_fields[priorityFieldName];
+          const currentPriority = typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
+          return (
+            <div>
+              <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>Priority</label>
+              <select
+                value={currentPriority}
+                onChange={(e) => onUpdate({ custom_fields: { ...task.custom_fields, [priorityFieldName]: e.target.value || undefined } })}
+                style={{ padding: "4px 8px", fontSize: 12, border: "1px solid #ccc", borderRadius: 4 }}
+              >
+                <option value="">None</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
+          );
+        })()}
+
         {/* State */}
         <div>
           <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>State</label>
