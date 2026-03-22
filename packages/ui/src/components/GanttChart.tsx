@@ -89,14 +89,14 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   const scheduledHeight = flatList.length * ROW_HEIGHT;
   const totalHeight = scheduledHeight + backlogHeaderH + backlogRowsH;
 
-  const handleDragUpdate = useCallback(
+  const handleDragCommit = useCallback(
     (taskId: string, updates: { start_date?: string; end_date?: string }) => {
       onUpdateTask?.(taskId, updates);
     },
     [onUpdateTask],
   );
 
-  const { startDrag } = useDragResize(xScale, handleDragUpdate);
+  const { startDrag, dragPreview } = useDragResize(xScale, handleDragCommit);
 
   const handleSchedule = useCallback(
     (taskId: string, updates: { start_date: string; end_date: string }) => {
@@ -204,7 +204,11 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           );
         })}
         {flatList.map((node, i) => {
-          const task = node.task;
+          const rawTask = node.task;
+          // Apply drag preview to override dates during drag
+          const task = dragPreview?.taskId === rawTask.id
+            ? { ...rawTask, start_date: dragPreview.start_date, end_date: dragPreview.end_date }
+            : rawTask;
           const y = i * ROW_HEIGHT;
           const taskType = config.task_types[task.type];
           const display = taskType?.display ?? "bar";
@@ -249,6 +253,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
             );
           }
 
+          const priorityFieldName = config.sync?.field_mapping?.priority;
+
           return (
             <GanttBar
               key={task.id}
@@ -262,6 +268,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
               showIssueId={showIssueId}
               showAssignees={showAssignees}
+              priorityFieldName={priorityFieldName}
               isDimmed={isDimmed}
               highlightType={highlightType}
             />

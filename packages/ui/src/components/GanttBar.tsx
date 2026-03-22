@@ -3,6 +3,7 @@ import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
 import { parseDate, isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
+import { getPriorityColor } from "./PriorityBadge.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 
@@ -17,6 +18,7 @@ interface GanttBarProps {
   onDragStart?: (e: React.MouseEvent, mode: DragMode) => void;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  priorityFieldName?: string;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
 }
@@ -27,7 +29,7 @@ function highlightStroke(type: RelationType | null | undefined): { stroke: strin
   return { stroke: "#e74c3c", strokeWidth: 2 };
 }
 
-export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees, isDimmed, highlightType }: GanttBarProps) {
+export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees, priorityFieldName, isDimmed, highlightType }: GanttBarProps) {
   if (!task.start_date || !task.end_date) return null;
 
   const x1 = xScale(parseDate(task.start_date));
@@ -49,6 +51,9 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
   const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color;
   const backgroundOpacity = overdue || atRisk ? 1 : 0.27;
   const progressFill = overdue ? "#e74c3c" : atRisk ? "#f39c12" : (progress === 100 ? "#8957e5" : color);
+
+  const priority = priorityFieldName ? task.custom_fields[priorityFieldName] as string | undefined : undefined;
+  const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
   const scheduleTooltip = overdue
@@ -83,6 +88,18 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         fill={progressFill}
         opacity={0.7}
       />
+      {/* Priority indicator (left stripe) */}
+      {priorityColor && (
+        <rect
+          x={x1}
+          y={barY}
+          width={3}
+          height={barHeight}
+          rx={1}
+          fill={priorityColor}
+          opacity={0.9}
+        />
+      )}
       {/* Label + Assignee */}
       {(() => {
         const issueLabel = showIssueId ? formatIssueId(task.id) : "";
