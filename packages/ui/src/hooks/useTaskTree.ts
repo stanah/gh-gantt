@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Task } from "../types/index.js";
 import { UNASSIGNED } from "./useTaskFilter.js";
+import { NO_PRIORITY } from "../components/PriorityFilter.js";
 
 export interface TreeNode {
   task: Task;
@@ -16,6 +17,8 @@ export interface TaskFilterOptions {
   hideClosed?: boolean;
   selectedAssignee?: string | null;
   selectedAssignees?: string[];
+  selectedPriorities?: string[];
+  priorityFieldName?: string;
   searchQuery?: string;
 }
 
@@ -55,7 +58,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
     setBacklogCollapsed((prev) => !prev);
   }, []);
 
-  const { hideClosed = false, selectedAssignee = null, selectedAssignees = [], searchQuery = "" } = filterOptions;
+  const { hideClosed = false, selectedAssignee = null, selectedAssignees = [], selectedPriorities = [], priorityFieldName, searchQuery = "" } = filterOptions;
 
   const { scheduledTree, backlogTree } = useMemo(() => {
     const trimmedQuery = searchQuery.trim();
@@ -68,10 +71,25 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
     const includeUnassigned = selectedSet.has(UNASSIGNED);
     const selectedUsers = new Set([...selectedSet].filter((v) => v !== UNASSIGNED));
 
+    const hasPriorityFilter = selectedPriorities.length > 0;
+    const prioritySet = new Set(selectedPriorities);
+    const includeNoPriority = prioritySet.has(NO_PRIORITY);
+
     const prefiltered = tasks.filter((t) => {
       if (!enabledTypes.has(t.type)) return false;
       if (hideClosed && t.state === "closed") return false;
       if (trimmedQuery && !matchesSearch(t, trimmedQuery)) return false;
+      if (hasPriorityFilter && priorityFieldName) {
+        const taskPriority = t.custom_fields[priorityFieldName] as string | undefined;
+        const isContainer = CONTAINER_TYPES.has(t.type) || t.sub_tasks.length > 0;
+        if (!isContainer) {
+          if (!taskPriority) {
+            if (!includeNoPriority) return false;
+          } else if (!prioritySet.has(taskPriority.toLowerCase())) {
+            return false;
+          }
+        }
+      }
       return true;
     });
 
@@ -136,7 +154,7 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, searchQuery]);
+  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName, searchQuery]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];
