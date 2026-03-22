@@ -83,7 +83,7 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 
 - ESM（`"type": "module"`、import に `.js` 拡張子必須）
 - ファイル読み込みは Zod バリデーション必須
-- ビルド: tsdown (cli/shared)、Vite Plus / vp (ui)
+- ビルド: vp pack (cli/shared)、vp build (ui) — すべて vite-plus 統合
 - テスト: vp test (Vitest 4.1 ベース、vite-plus 同梱)
 - リント: vp check (Oxlint + Oxfmt)
 - ローカルデータ: `.gantt-sync/`（gitignore 済み）

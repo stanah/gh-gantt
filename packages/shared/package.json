@@ -6,8 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsdown",
-    "dev": "tsdown --watch",
+    "build": "vp pack",
+    "dev": "vp pack --watch",
     "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
@@ -15,7 +15,6 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "tsdown": "^0.21.4",
     "typescript": "^5.5.0",
     "vite-plus": "^0.1.13"
   }
