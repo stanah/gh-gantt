@@ -16,15 +16,30 @@ describe("createUndoRedoManager", () => {
     const actionB = { undo: vi.fn(), redo: vi.fn() };
 
     manager.push(actionA);
-    expect(manager.getSnapshot()).toMatchObject({ undoCount: 1, redoCount: 0, canUndo: true, canRedo: false });
+    expect(manager.getSnapshot()).toMatchObject({
+      undoCount: 1,
+      redoCount: 0,
+      canUndo: true,
+      canRedo: false,
+    });
 
     const undone = await manager.undo();
     expect(undone).toBe(true);
     expect(actionA.undo).toHaveBeenCalledTimes(1);
-    expect(manager.getSnapshot()).toMatchObject({ undoCount: 0, redoCount: 1, canUndo: false, canRedo: true });
+    expect(manager.getSnapshot()).toMatchObject({
+      undoCount: 0,
+      redoCount: 1,
+      canUndo: false,
+      canRedo: true,
+    });
 
     manager.push(actionB);
-    expect(manager.getSnapshot()).toMatchObject({ undoCount: 1, redoCount: 0, canUndo: true, canRedo: false });
+    expect(manager.getSnapshot()).toMatchObject({
+      undoCount: 1,
+      redoCount: 0,
+      canUndo: true,
+      canRedo: false,
+    });
   });
 
   it("handles async undo/redo handlers", async () => {
@@ -42,7 +57,12 @@ describe("createUndoRedoManager", () => {
     expect(await manager.undo()).toBe(true);
     expect(await manager.redo()).toBe(true);
     expect(history).toEqual(["undo", "redo"]);
-    expect(manager.getSnapshot()).toMatchObject({ undoCount: 1, redoCount: 0, canUndo: true, canRedo: false });
+    expect(manager.getSnapshot()).toMatchObject({
+      undoCount: 1,
+      redoCount: 0,
+      canUndo: true,
+      canRedo: false,
+    });
   });
 
   it("can clear redo stack explicitly", async () => {
@@ -81,6 +101,11 @@ describe("createUndoRedoManager", () => {
     expect(manager.getSnapshot()).toMatchObject({ undoCount: 0, redoCount: 1 });
 
     manager.clearAll();
-    expect(manager.getSnapshot()).toMatchObject({ undoCount: 0, redoCount: 0, canUndo: false, canRedo: false });
+    expect(manager.getSnapshot()).toMatchObject({
+      undoCount: 0,
+      redoCount: 0,
+      canUndo: false,
+      canRedo: false,
+    });
   });
 });

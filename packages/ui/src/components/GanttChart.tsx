@@ -1,4 +1,12 @@
-import React, { useRef, useState, useCallback, useImperativeHandle, forwardRef, useEffect, useLayoutEffect } from "react";
+import React, {
+  useRef,
+  useState,
+  useCallback,
+  useImperativeHandle,
+  forwardRef,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
@@ -43,7 +51,24 @@ interface GanttChartProps {
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
-  { tasks, flatList, config, selectedTaskId, onSelectTask, onUpdateTask, onViewScaleChange, scrollContainerRef, header, backlogFlatList, backlogCollapsed, backlogTotalCount, displayOptions, hoveredTaskId, onHoverTask, highlightRelationMap },
+  {
+    tasks,
+    flatList,
+    config,
+    selectedTaskId,
+    onSelectTask,
+    onUpdateTask,
+    onViewScaleChange,
+    scrollContainerRef,
+    header,
+    backlogFlatList,
+    backlogCollapsed,
+    backlogTotalCount,
+    displayOptions,
+    hoveredTaskId,
+    onHoverTask,
+    highlightRelationMap,
+  },
   ref,
 ) {
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -60,11 +85,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     return () => observer.disconnect();
   }, []);
 
-  const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } = useGanttScale(
-    tasks,
-    config.gantt.default_view,
-    containerWidth,
-  );
+  const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } =
+    useGanttScale(tasks, config.gantt.default_view, containerWidth);
 
   // Notify parent when viewScale changes (e.g. due to zoom)
   useEffect(() => {
@@ -80,7 +102,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         viewScale={viewScale}
         totalWidth={totalWidth}
         sprints={config.sprints}
-      />
+      />,
     );
   }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
 
@@ -124,30 +146,33 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   }, [zoomIn, zoomOut]);
 
   // Drag to pan — operates on the shared scroll container
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    // Middle button or left button with alt
-    if (e.button !== 1 && !(e.button === 0 && e.altKey)) return;
-    e.preventDefault();
-    const el = scrollContainerRef?.current;
-    if (!el) return;
-    const startX = e.clientX;
-    const startY = e.clientY;
-    const startScrollLeft = el.scrollLeft;
-    const startScrollTop = el.scrollTop;
-    el.style.cursor = "grabbing";
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      // Middle button or left button with alt
+      if (e.button !== 1 && !(e.button === 0 && e.altKey)) return;
+      e.preventDefault();
+      const el = scrollContainerRef?.current;
+      if (!el) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      const startScrollLeft = el.scrollLeft;
+      const startScrollTop = el.scrollTop;
+      el.style.cursor = "grabbing";
 
-    const onMouseMove = (ev: MouseEvent) => {
-      el.scrollLeft = startScrollLeft - (ev.clientX - startX);
-      el.scrollTop = startScrollTop - (ev.clientY - startY);
-    };
-    const onMouseUp = () => {
-      el.style.cursor = "";
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-    };
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-  }, [scrollContainerRef]);
+      const onMouseMove = (ev: MouseEvent) => {
+        el.scrollLeft = startScrollLeft - (ev.clientX - startX);
+        el.scrollTop = startScrollTop - (ev.clientY - startY);
+      };
+      const onMouseUp = () => {
+        el.style.cursor = "";
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [scrollContainerRef],
+  );
 
   const scrollToToday = useCallback(() => {
     const el = scrollContainerRef?.current;
@@ -157,13 +182,17 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
   }, [xScale, scrollContainerRef]);
 
-  useImperativeHandle(ref, () => ({
-    viewScale,
-    setViewScale,
-    zoomIn,
-    zoomOut,
-    scrollToToday,
-  }), [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      viewScale,
+      setViewScale,
+      zoomIn,
+      zoomOut,
+      scrollToToday,
+    }),
+    [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday],
+  );
 
   return (
     <div
@@ -180,8 +209,18 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         pixelsPerDay={pixelsPerDay}
         sprints={config.sprints}
       />
-      <GanttBlockLines tasks={tasks} flatList={flatList} xScale={xScale} totalWidth={totalWidth} totalHeight={totalHeight} hoveredTaskId={hoveredTaskId ?? null} />
-      <svg width={totalWidth} height={scheduledHeight} style={{ position: "absolute", top: 0, left: 0 }}
+      <GanttBlockLines
+        tasks={tasks}
+        flatList={flatList}
+        xScale={xScale}
+        totalWidth={totalWidth}
+        totalHeight={totalHeight}
+        hoveredTaskId={hoveredTaskId ?? null}
+      />
+      <svg
+        width={totalWidth}
+        height={scheduledHeight}
+        style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
         {/* Row hover backgrounds */}
@@ -196,7 +235,13 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               y={y}
               width={totalWidth}
               height={ROW_HEIGHT}
-              fill={isSelected ? "rgba(66, 133, 244, 0.12)" : isHovered ? "rgba(66, 133, 244, 0.06)" : "transparent"}
+              fill={
+                isSelected
+                  ? "rgba(66, 133, 244, 0.12)"
+                  : isHovered
+                    ? "rgba(66, 133, 244, 0.06)"
+                    : "transparent"
+              }
               style={{ cursor: "pointer" }}
               onClick={() => onSelectTask(node.task.id)}
               onMouseEnter={() => onHoverTask?.(node.task.id)}
@@ -259,7 +304,18 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               height={ROW_HEIGHT}
               onClick={() => onSelectTask(task.id)}
               isSelected={selectedTaskId === task.id}
-              onDragStart={task.start_date && task.end_date ? (e, mode) => startDrag(e, task.id, mode, parseDate(task.start_date!), parseDate(task.end_date!)) : undefined}
+              onDragStart={
+                task.start_date && task.end_date
+                  ? (e, mode) =>
+                      startDrag(
+                        e,
+                        task.id,
+                        mode,
+                        parseDate(task.start_date!),
+                        parseDate(task.end_date!),
+                      )
+                  : undefined
+              }
               showIssueId={showIssueId}
               showAssignees={showAssignees}
               isDimmed={isDimmed}
@@ -281,46 +337,48 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           <line x1={0} y1={ROW_HEIGHT} x2={totalWidth} y2={ROW_HEIGHT} stroke="#e0e0e0" />
 
           {/* Backlog task rows */}
-          {!backlogCollapsed && backlogFlatList?.map((node, i) => {
-            const y = ROW_HEIGHT + i * ROW_HEIGHT;
-            return (
-              <rect
-                key={node.task.id}
-                x={0}
-                y={y}
-                width={totalWidth}
-                height={ROW_HEIGHT}
-                fill="transparent"
-                style={{ cursor: "crosshair" }}
-                onMouseDown={(e) => {
-                  if (e.button !== 0 || e.altKey) return;
-                  if (backlogSvgRef.current) {
-                    startDraw(e, node.task.id, backlogSvgRef.current);
-                  }
-                }}
-              />
-            );
-          })}
+          {!backlogCollapsed &&
+            backlogFlatList?.map((node, i) => {
+              const y = ROW_HEIGHT + i * ROW_HEIGHT;
+              return (
+                <rect
+                  key={node.task.id}
+                  x={0}
+                  y={y}
+                  width={totalWidth}
+                  height={ROW_HEIGHT}
+                  fill="transparent"
+                  style={{ cursor: "crosshair" }}
+                  onMouseDown={(e) => {
+                    if (e.button !== 0 || e.altKey) return;
+                    if (backlogSvgRef.current) {
+                      startDraw(e, node.task.id, backlogSvgRef.current);
+                    }
+                  }}
+                />
+              );
+            })}
 
           {/* Draw preview */}
-          {preview && (() => {
-            const idx = backlogFlatList?.findIndex((n) => n.task.id === preview.taskId) ?? -1;
-            if (idx < 0) return null;
-            const y = ROW_HEIGHT + idx * ROW_HEIGHT;
-            return (
-              <rect
-                x={preview.x}
-                y={y + 4}
-                width={Math.max(preview.width, 2)}
-                height={ROW_HEIGHT - 8}
-                fill="rgba(52, 152, 219, 0.3)"
-                stroke="#3498db"
-                strokeWidth={1.5}
-                strokeDasharray="4 2"
-                rx={3}
-              />
-            );
-          })()}
+          {preview &&
+            (() => {
+              const idx = backlogFlatList?.findIndex((n) => n.task.id === preview.taskId) ?? -1;
+              if (idx < 0) return null;
+              const y = ROW_HEIGHT + idx * ROW_HEIGHT;
+              return (
+                <rect
+                  x={preview.x}
+                  y={y + 4}
+                  width={Math.max(preview.width, 2)}
+                  height={ROW_HEIGHT - 8}
+                  fill="rgba(52, 152, 219, 0.3)"
+                  stroke="#3498db"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 2"
+                  rx={3}
+                />
+              );
+            })()}
         </svg>
       )}
     </div>

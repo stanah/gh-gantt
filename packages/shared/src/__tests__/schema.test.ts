@@ -50,7 +50,12 @@ const validConfig = {
   gantt: {
     default_view: "month",
     working_days: [1, 2, 3, 4, 5],
-    colors: { critical_path: "#E74C3C", on_track: "#2ECC71", at_risk: "#F39C12", overdue: "#E74C3C" },
+    colors: {
+      critical_path: "#E74C3C",
+      on_track: "#2ECC71",
+      at_risk: "#F39C12",
+      overdue: "#E74C3C",
+    },
   },
 };
 
@@ -79,7 +84,9 @@ describe("ConfigSchema", () => {
       },
     };
     const result = ConfigSchema.parse(configWithLegacy);
-    expect((result.sync as unknown as Record<string, unknown>).conflict_strategy).toBe("remote-wins");
+    expect((result.sync as unknown as Record<string, unknown>).conflict_strategy).toBe(
+      "remote-wins",
+    );
   });
 
   it("accepts config with priority in field_mapping", () => {
@@ -106,7 +113,9 @@ describe("ConfigSchema", () => {
     const config = {
       ...validConfig,
       sync: { ...validConfig.sync, conflict_strategy: "remote-wins" },
-      task_types: { task: { label: "Task", display: "invalid", color: "#000", github_label: null } },
+      task_types: {
+        task: { label: "Task", display: "invalid", color: "#000", github_label: null },
+      },
     };
     expect(() => ConfigSchema.parse(config)).toThrow();
   });
@@ -184,11 +193,13 @@ describe("TasksFileSchema", () => {
 describe("TasksFileWithConflictsSchema", () => {
   it("should accept tasks with conflict marker keys", () => {
     const data = {
-      tasks: [{
-        ...validTask,
-        state_current: "open",
-        state_incoming: "closed",
-      }],
+      tasks: [
+        {
+          ...validTask,
+          state_current: "open",
+          state_incoming: "closed",
+        },
+      ],
       cache: { comments: {}, reactions: {} },
       has_conflicts: true,
     };
@@ -201,13 +212,15 @@ describe("TasksFileWithConflictsSchema", () => {
 
   it("should preserve multiple conflict marker fields", () => {
     const data = {
-      tasks: [{
-        ...validTask,
-        title_current: "Local title",
-        title_incoming: "Remote title",
-        start_date_current: "2026-01-01",
-        start_date_incoming: "2026-02-01",
-      }],
+      tasks: [
+        {
+          ...validTask,
+          title_current: "Local title",
+          title_incoming: "Remote title",
+          start_date_current: "2026-01-01",
+          start_date_incoming: "2026-02-01",
+        },
+      ],
       cache: { comments: {}, reactions: {} },
       has_conflicts: true,
     };

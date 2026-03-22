@@ -24,13 +24,14 @@ export const initCommand = new Command("init")
 
     const gql = await createGraphQLClient();
     const projectData = await fetchProject(gql, opts.owner, opts.project);
-    console.log(`Fetched project "${projectData.projectTitle}" with ${projectData.items.length} items`);
+    console.log(
+      `Fetched project "${projectData.projectTitle}" with ${projectData.items.length} items`,
+    );
 
     // Auto-detect statuses from Status field
-    const statusField = projectData.fields.find(
-      (f) => f.name === opts.statusField && f.options,
-    );
-    const statusValues: Record<string, { color: string; done: boolean; starts_work?: boolean }> = {};
+    const statusField = projectData.fields.find((f) => f.name === opts.statusField && f.options);
+    const statusValues: Record<string, { color: string; done: boolean; starts_work?: boolean }> =
+      {};
     const defaultDoneNames = ["done", "completed", "closed", "finished"];
     const defaultStartsWorkNames = ["in progress", "in review", "active", "working"];
     if (statusField?.options) {
@@ -48,26 +49,24 @@ export const initCommand = new Command("init")
 
     // Auto-detect Type custom field
     const typeFieldName = opts.typeField ?? null;
-    let detectedTypeField: typeof projectData.fields[number] | undefined;
+    let detectedTypeField: (typeof projectData.fields)[number] | undefined;
 
     if (typeFieldName) {
       // Explicit --type-field option
-      detectedTypeField = projectData.fields.find(
-        (f) => f.name === typeFieldName && f.options,
-      );
+      detectedTypeField = projectData.fields.find((f) => f.name === typeFieldName && f.options);
       if (!detectedTypeField) {
         console.warn(`WARNING: Type field "${typeFieldName}" not found or has no options`);
       }
     } else {
       // Auto-detect: look for a Single Select field named "Type"
-      detectedTypeField = projectData.fields.find(
-        (f) => f.name === "Type" && f.options,
-      );
+      detectedTypeField = projectData.fields.find((f) => f.name === "Type" && f.options);
     }
 
     const resolvedTypeFieldName = detectedTypeField?.name ?? null;
     if (detectedTypeField) {
-      console.log(`Detected Type field: "${detectedTypeField.name}" with ${detectedTypeField.options?.length ?? 0} options`);
+      console.log(
+        `Detected Type field: "${detectedTypeField.name}" with ${detectedTypeField.options?.length ?? 0} options`,
+      );
     }
 
     // Auto-detect task types from labels
@@ -89,11 +88,29 @@ export const initCommand = new Command("init")
       for (const opt of detectedTypeField.options) {
         const lower = opt.name.toLowerCase();
         if (lower === "epic") {
-          taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: null, github_field_value: opt.name };
+          taskTypes.epic = {
+            label: "Epic",
+            display: "summary",
+            color: "#8E44AD",
+            github_label: null,
+            github_field_value: opt.name,
+          };
         } else if (lower === "bug") {
-          taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: null, github_field_value: opt.name };
+          taskTypes.bug = {
+            label: "Bug",
+            display: "bar",
+            color: "#E74C3C",
+            github_label: null,
+            github_field_value: opt.name,
+          };
         } else if (lower === "feature" || lower === "enhancement") {
-          taskTypes.feature = { label: "Feature", display: "bar", color: "#3498DB", github_label: null, github_field_value: opt.name };
+          taskTypes.feature = {
+            label: "Feature",
+            display: "bar",
+            color: "#3498DB",
+            github_label: null,
+            github_field_value: opt.name,
+          };
         } else if (lower === "task") {
           // Update default task type with field value mapping
           taskTypes.task.github_field_value = opt.name;
@@ -101,7 +118,13 @@ export const initCommand = new Command("init")
           // Unknown field value → create as bar type
           const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
           if (taskTypes[key]) continue; // Already mapped by a known pattern above
-          taskTypes[key] = { label: opt.name, display: "bar", color: "#95A5A6", github_label: null, github_field_value: opt.name };
+          taskTypes[key] = {
+            label: opt.name,
+            display: "bar",
+            color: "#95A5A6",
+            github_label: null,
+            github_field_value: opt.name,
+          };
         }
       }
     }
@@ -112,11 +135,21 @@ export const initCommand = new Command("init")
       const lower = label.toLowerCase();
       if (typeLabels.includes(lower)) {
         if (lower === "epic" && !taskTypes.epic) {
-          taskTypes.epic = { label: "Epic", display: "summary", color: "#8E44AD", github_label: label };
+          taskTypes.epic = {
+            label: "Epic",
+            display: "summary",
+            color: "#8E44AD",
+            github_label: label,
+          };
         } else if (lower === "bug" && !taskTypes.bug) {
           taskTypes.bug = { label: "Bug", display: "bar", color: "#E74C3C", github_label: label };
         } else if ((lower === "enhancement" || lower === "feature") && !taskTypes.feature) {
-          taskTypes.feature = { label: "Feature", display: "bar", color: "#3498DB", github_label: label };
+          taskTypes.feature = {
+            label: "Feature",
+            display: "bar",
+            color: "#3498DB",
+            github_label: label,
+          };
         }
       }
     }
@@ -180,7 +213,12 @@ export const initCommand = new Command("init")
     const repoMetadata = await fetchRepositoryMetadata(gql, opts.owner, opts.repo);
     const milestonesWithDueDate = repoMetadata.milestones.filter((m) => m.dueOn);
     if (milestonesWithDueDate.length > 0) {
-      taskTypes.milestone = { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: null };
+      taskTypes.milestone = {
+        label: "Milestone",
+        display: "milestone",
+        color: "#E74C3C",
+        github_label: null,
+      };
       for (const m of milestonesWithDueDate) {
         tasks.push(milestoneToTask(m, repoFullName));
       }

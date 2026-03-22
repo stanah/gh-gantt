@@ -3,7 +3,9 @@ import { useState, useCallback } from "react";
 export type DisplayOption = "issueId" | "assignees";
 
 export function useDisplayOptions() {
-  const [enabled, setEnabled] = useState<Set<DisplayOption>>(() => new Set<DisplayOption>(["issueId"]));
+  const [enabled, setEnabled] = useState<Set<DisplayOption>>(
+    () => new Set<DisplayOption>(["issueId"]),
+  );
 
   const toggle = useCallback((opt: DisplayOption) => {
     setEnabled((prev) => {

@@ -76,12 +76,7 @@ export async function fetchAllComments(
     try {
       if (fetched > 0) await delay(DELAY_MS);
 
-      const comments = await fetchIssueComments(
-        gql,
-        item.owner,
-        item.repo,
-        item.issueNumber,
-      );
+      const comments = await fetchIssueComments(gql, item.owner, item.repo, item.issueNumber);
 
       data.comments[item.taskId] = comments;
       data.fetched_at[item.taskId] = new Date().toISOString();
@@ -94,11 +89,15 @@ export async function fetchAllComments(
         await saveProgress(data);
         break;
       }
-      console.warn(`Failed to fetch comments for ${item.taskId}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(
+        `Failed to fetch comments for ${item.taskId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
       failed++;
     }
   }
 
-  console.log(`Comments: ${fetched} fetched, ${skipped} cached${failed > 0 ? `, ${failed} failed` : ""}`);
+  console.log(
+    `Comments: ${fetched} fetched, ${skipped} cached${failed > 0 ? `, ${failed} failed` : ""}`,
+  );
   return data;
 }

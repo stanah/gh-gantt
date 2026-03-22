@@ -15,7 +15,14 @@ interface GanttBlockLinesProps {
   hoveredTaskId: string | null;
 }
 
-export function GanttBlockLines({ tasks, flatList, xScale, totalWidth, totalHeight, hoveredTaskId }: GanttBlockLinesProps) {
+export function GanttBlockLines({
+  tasks,
+  flatList,
+  xScale,
+  totalWidth,
+  totalHeight,
+  hoveredTaskId,
+}: GanttBlockLinesProps) {
   const edges = useMemo(() => buildDependencyEdges(tasks), [tasks]);
   const cycles = useMemo(() => {
     const c = detectCycles(tasks);

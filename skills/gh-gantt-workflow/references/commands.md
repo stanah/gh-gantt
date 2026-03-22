@@ -28,11 +28,13 @@ gh-gantt init --owner <owner> --repo <repo> --project <number>
 ```
 
 **必須オプション:**
+
 - `--owner <owner>` — GitHub ユーザーまたは org
 - `--repo <repo>` — リポジトリ名
 - `--project <number>` — GitHub Project 番号
 
 **任意オプション:**
+
 - `--start-date-field <name>` — 開始日フィールド名（デフォルト: "Start Date"）
 - `--end-date-field <name>` — 終了日フィールド名（デフォルト: "End Date"）
 - `--status-field <name>` — ステータスフィールド名（デフォルト: "Status"）
@@ -48,6 +50,7 @@ gh-gantt pull [--dry-run] [--with-comments] [--force-comments]
 ```
 
 **オプション:**
+
 - `--dry-run` — 変更をプレビューのみ（適用しない）
 - `--with-comments` — Issue コメントも差分取得
 - `--force-comments` — Issue コメントを全件再取得
@@ -55,6 +58,7 @@ gh-gantt pull [--dry-run] [--with-comments] [--force-comments]
 **出力:** `Pull summary: +N ~N !N -N`（追加、更新、コンフリクト、削除）
 
 **注意:**
+
 - 未 push のローカル変更があっても安全に実行できる
 - 未解決コンフリクトがある場合は先に `resolve` が必要
 
@@ -69,6 +73,7 @@ gh-gantt push [--force] [--dry-run] [--yes]
 ```
 
 **オプション:**
+
 - `--force` — リモートが更新されていても push を実行
 - `--dry-run` — 変更をプレビューのみ（適用しない）
 - `--yes` — 確認プロンプトをスキップ
@@ -76,6 +81,7 @@ gh-gantt push [--force] [--dry-run] [--yes]
 **出力:** `Push complete: N created, N updated, N skipped.`
 
 **注意:**
+
 - 未解決コンフリクトがあれば中断（`--force` でもスキップ不可）
 - リモートが更新されていれば中断（`--force` でスキップ可能）
 
@@ -100,6 +106,7 @@ gh-gantt conflicts [issue]
 ```
 
 **引数:**
+
 - `[issue]` — Issue 番号で絞り込み（省略時は全タスク）
 
 ---
@@ -113,6 +120,7 @@ gh-gantt resolve [issue] [--ours] [--theirs] [--field <field>]
 ```
 
 **オプション:**
+
 - `--ours` — ローカル側の値を採用
 - `--theirs` — リモート側の値を採用
 - `--field <field>` — 特定フィールドのみ解決
@@ -141,6 +149,7 @@ gh-gantt serve [-p <port>] [--api-only]
 ```
 
 **オプション:**
+
 - `-p, --port <port>` — サーバーポート（デフォルト: 3000）
 - `--api-only` — API サーバーのみ（UI なし）
 
@@ -155,6 +164,7 @@ gh-gantt task list [--backlog] [--scheduled] [--type <type>] [--state <state>] [
 ```
 
 **オプション:**
+
 - `--backlog` — バックログタスクのみ（日付未設定）
 - `--scheduled` — スケジュール済みタスクのみ（日付あり）
 - `--type <type>` — タスクタイプで絞り込み
@@ -182,6 +192,7 @@ gh-gantt task update <id> [options]
 ```
 
 **オプション:**
+
 - `--title <title>` — タイトル
 - `--type <type>` — タスクタイプ
 - `--state <state>` — 状態（open/closed）
@@ -195,6 +206,7 @@ gh-gantt task update <id> [options]
 - `--json` — 更新後のタスクを JSON 出力
 
 **バルク更新（フィルタ指定で複数タスクを一括更新）:**
+
 ```bash
 gh-gantt task update --filter-state open --milestone v1.0
 gh-gantt task update --filter-type task --filter-label bug --state closed
@@ -241,11 +253,11 @@ gh-gantt はタスクの種類（epic, task, feature 等）を `gantt.config.jso
 
 ### GitHub の機能との対応
 
-| GitHub の機能 | 利用条件 | gh-gantt での扱い |
-|--------------|---------|-----------------|
-| **Issue Types** | Organization のみ（個人リポジトリは未対応） | 未サポート |
-| **Labels** | どこでも使える | `github_label` フィールドでマッピング |
-| **Projects V2 カスタムフィールド** | どこでも使える | `github_field_value` フィールドでマッピング |
+| GitHub の機能                      | 利用条件                                    | gh-gantt での扱い                           |
+| ---------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| **Issue Types**                    | Organization のみ（個人リポジトリは未対応） | 未サポート                                  |
+| **Labels**                         | どこでも使える                              | `github_label` フィールドでマッピング       |
+| **Projects V2 カスタムフィールド** | どこでも使える                              | `github_field_value` フィールドでマッピング |
 
 個人リポジトリでは Issue Types が使えないため、gh-gantt はラベルとカスタムフィールドでタスクの種類を管理する。
 
@@ -282,8 +294,8 @@ gh-gantt はタスクの種類（epic, task, feature 等）を `gantt.config.jso
 
 ## タスク ID
 
-| 入力形式 | 展開結果 |
-|---------|---------|
+| 入力形式        | 展開結果                                    |
+| --------------- | ------------------------------------------- |
 | `6` または `#6` | `owner/repo#6`（config のリポジトリを使用） |
-| `draft-1` | `draft-owner/repo-1` |
-| `owner/repo#6` | そのまま |
+| `draft-1`       | `draft-owner/repo-1`                        |
+| `owner/repo#6`  | そのまま                                    |

@@ -73,7 +73,10 @@ export const milestoneCreateCommand = new Command("create")
       if (opts.dueDate) console.log(`  Due: ${opts.dueDate}`);
       if (opts.description) console.log(`  Description: ${opts.description}`);
     } catch (err) {
-      console.error("Failed to create milestone:", err instanceof Error ? err.message : String(err));
+      console.error(
+        "Failed to create milestone:",
+        err instanceof Error ? err.message : String(err),
+      );
       process.exitCode = 1;
     }
   });

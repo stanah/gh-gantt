@@ -71,7 +71,11 @@ export const statusCommand = new Command("status")
       if (localHash !== snapshot.hash && remoteHash !== snapshot.hash) {
         const localFields = extractSyncFields(local);
         const remoteFields = extractSyncFields(remote);
-        const { conflicts: fieldConflicts } = threeWayMerge(snapshot.syncFields, localFields, remoteFields);
+        const { conflicts: fieldConflicts } = threeWayMerge(
+          snapshot.syncFields,
+          localFields,
+          remoteFields,
+        );
         if (fieldConflicts.length > 0) {
           conflicts.push({ taskId: local.id, title: local.title, fieldConflicts });
         }
@@ -108,7 +112,9 @@ export const statusCommand = new Command("status")
       for (const c of conflicts) {
         console.log(`  ! ${c.taskId}: ${c.title}`);
         for (const fc of c.fieldConflicts) {
-          console.log(`      ${fc.field}: local=${formatValue(fc.current)} remote=${formatValue(fc.incoming)} <- ${formatValue(fc.base)}`);
+          console.log(
+            `      ${fc.field}: local=${formatValue(fc.current)} remote=${formatValue(fc.incoming)} <- ${formatValue(fc.base)}`,
+          );
         }
       }
       console.log();

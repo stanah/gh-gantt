@@ -84,7 +84,17 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
           </button>
 
           {PRIORITY_LEVELS.map((level) => (
-            <label key={level} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 6, cursor: "pointer" }}>
+            <label
+              key={level}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                marginBottom: 6,
+                cursor: "pointer",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={selectedSet.has(level)}
@@ -96,7 +106,16 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
 
           <div style={{ borderTop: "1px solid #f0f0f0", margin: "6px 0", paddingTop: 6 }} />
 
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 6, cursor: "pointer" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 11,
+              marginBottom: 6,
+              cursor: "pointer",
+            }}
+          >
             <input
               type="checkbox"
               checked={selectedSet.has(NO_PRIORITY)}

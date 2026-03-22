@@ -172,7 +172,11 @@
   "cache": {
     "comments": {
       "task-1": [
-        { "author": "alice", "body": "Wireframes are ready for review.", "created_at": "2026-01-14T00:00:00Z" }
+        {
+          "author": "alice",
+          "body": "Wireframes are ready for review.",
+          "created_at": "2026-01-14T00:00:00Z"
+        }
       ]
     },
     "reactions": {}

@@ -18,7 +18,17 @@ interface GanttSummaryBarProps {
   highlightType?: RelationType | null;
 }
 
-export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height, showIssueId, isDimmed, highlightType }: GanttSummaryBarProps) {
+export function GanttSummaryBar({
+  task,
+  allTasks,
+  taskType,
+  xScale,
+  y,
+  height,
+  showIssueId,
+  isDimmed,
+  highlightType,
+}: GanttSummaryBarProps) {
   const dates = calculateSummaryDates(task, allTasks);
   if (!dates) return null;
 
@@ -29,7 +39,9 @@ export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height, s
   const width = Math.max(x2 - x1, 4);
   const baseColor = taskType?.color ?? "#8E44AD";
   const color = highlightType
-    ? (highlightType === "parent" || highlightType === "child" ? "#8957e5" : "#e74c3c")
+    ? highlightType === "parent" || highlightType === "child"
+      ? "#8957e5"
+      : "#e74c3c"
     : baseColor;
   const barY = y + height / 2 - 3;
   const progress = task._progress ?? 0;
@@ -45,13 +57,7 @@ export function GanttSummaryBar({ task, allTasks, taskType, xScale, y, height, s
       {/* Right bracket */}
       <rect x={x2 - 3} y={barY - 2} width={3} height={10} fill={color} />
       {showIssueId && (
-        <text
-          x={x2 + 4}
-          y={barY + 9}
-          fontSize={9}
-          fill="#888"
-          style={{ pointerEvents: "none" }}
-        >
+        <text x={x2 + 4} y={barY + 9} fontSize={9} fill="#888" style={{ pointerEvents: "none" }}>
           {formatIssueId(task.id)}
         </text>
       )}

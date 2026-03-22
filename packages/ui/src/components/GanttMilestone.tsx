@@ -16,7 +16,16 @@ interface GanttMilestoneProps {
   highlightType?: RelationType | null;
 }
 
-export function GanttMilestone({ task, taskType, xScale, y, height, showIssueId, isDimmed, highlightType }: GanttMilestoneProps) {
+export function GanttMilestone({
+  task,
+  taskType,
+  xScale,
+  y,
+  height,
+  showIssueId,
+  isDimmed,
+  highlightType,
+}: GanttMilestoneProps) {
   const dateStr = task.date ?? task.start_date ?? task.end_date;
   if (!dateStr) return null;
 
@@ -26,7 +35,9 @@ export function GanttMilestone({ task, taskType, xScale, y, height, showIssueId,
   const color = taskType?.color ?? "#E74C3C";
 
   const hlStroke = highlightType
-    ? (highlightType === "parent" || highlightType === "child" ? "#8957e5" : "#e74c3c")
+    ? highlightType === "parent" || highlightType === "child"
+      ? "#8957e5"
+      : "#e74c3c"
     : color;
 
   return (

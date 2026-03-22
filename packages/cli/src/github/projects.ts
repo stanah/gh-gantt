@@ -1,5 +1,12 @@
 import type { graphql } from "@octokit/graphql";
-import { type OwnerType, buildProjectQuery, OWNER_TYPE_QUERY, REPOSITORY_ID_QUERY, REPOSITORY_METADATA_QUERY, buildUserIdsQuery } from "./queries.js";
+import {
+  type OwnerType,
+  buildProjectQuery,
+  OWNER_TYPE_QUERY,
+  REPOSITORY_ID_QUERY,
+  REPOSITORY_METADATA_QUERY,
+  buildUserIdsQuery,
+} from "./queries.js";
 
 export interface RawProjectItem {
   id: string;
@@ -28,10 +35,7 @@ export interface RawProjectData {
   items: RawProjectItem[];
 }
 
-export async function detectOwnerType(
-  gql: typeof graphql,
-  login: string,
-): Promise<OwnerType> {
+export async function detectOwnerType(gql: typeof graphql, login: string): Promise<OwnerType> {
   const result: any = await gql(OWNER_TYPE_QUERY, { login });
   const typename = result.repositoryOwner?.__typename;
   if (typename === "Organization") return "organization";

@@ -1,5 +1,9 @@
 export type TaskDisplay = "bar" | "summary" | "milestone";
-export type DependencyType = "finish-to-start" | "finish-to-finish" | "start-to-start" | "start-to-finish";
+export type DependencyType =
+  | "finish-to-start"
+  | "finish-to-finish"
+  | "start-to-start"
+  | "start-to-finish";
 export type ViewScale = "day" | "week" | "month" | "quarter";
 
 export interface TaskType {

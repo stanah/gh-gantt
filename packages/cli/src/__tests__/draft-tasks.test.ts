@@ -71,19 +71,14 @@ describe("getNextDraftNumber", () => {
   });
 
   it("ignores non-draft tasks", () => {
-    const tasks = [
-      makeTask({ id: "owner/repo#100" }),
-      makeTask({ id: "owner/repo#draft-5" }),
-    ];
+    const tasks = [makeTask({ id: "owner/repo#100" }), makeTask({ id: "owner/repo#draft-5" })];
     expect(getNextDraftNumber(tasks)).toBe(6);
   });
 });
 
 describe("replaceTaskIdReferences", () => {
   it("replaces parent reference", () => {
-    const tasks = [
-      makeTask({ id: "owner/repo#2", parent: "owner/repo#draft-1" }),
-    ];
+    const tasks = [makeTask({ id: "owner/repo#2", parent: "owner/repo#draft-1" })];
     replaceTaskIdReferences(tasks, "owner/repo#draft-1", "owner/repo#42");
     expect(tasks[0].parent).toBe("owner/repo#42");
   });

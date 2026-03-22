@@ -3,7 +3,13 @@ import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import { fetchAllComments } from "../github/comments.js";
-import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, milestoneToTask } from "../github/issues.js";
+import {
+  applySubIssueLinks,
+  applyBlockedByLinks,
+  isDraftTask,
+  isMilestoneSyntheticTask,
+  milestoneToTask,
+} from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -32,7 +38,9 @@ export const pullCommand = new Command("pull")
 
     // Record which tasks have unpushed local changes BEFORE merging
     const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-    const locallyChangedIds = new Set(prePullDiffs.filter((d) => d.type === "modified").map((d) => d.id));
+    const locallyChangedIds = new Set(
+      prePullDiffs.filter((d) => d.type === "modified").map((d) => d.id),
+    );
 
     // Guard: Unresolved conflicts must be resolved before next pull
     if (tasksFile.has_conflicts) {
@@ -67,14 +75,24 @@ export const pullCommand = new Command("pull")
     const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
     const localIds = new Set(localNonDraft.map((t) => t.id));
     const remoteIds = new Set(remoteTasks.keys());
-    const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
+    const sameIdSets =
+      localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
     if (sameIdSets) {
       let changed = false;
       for (const [id, remote] of remoteTasks) {
         const snap = syncState.snapshots[id];
-        if (!snap?.updated_at) { changed = true; break; }
-        if (remote.updated_at !== snap.updated_at) { changed = true; break; }
-        if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
+        if (!snap?.updated_at) {
+          changed = true;
+          break;
+        }
+        if (remote.updated_at !== snap.updated_at) {
+          changed = true;
+          break;
+        }
+        if (isMilestoneSyntheticTask(id) && !snap.hash) {
+          changed = true;
+          break;
+        }
       }
       if (!changed) {
         if (!opts.withComments && !opts.forceComments) {
@@ -136,7 +154,11 @@ export const pullCommand = new Command("pull")
           // 3-way merge
           const localFields = extractSyncFields(localTask);
           const remoteFields = extractSyncFields(remoteTask);
-          const { merged, conflicts } = threeWayMerge(snapshot.syncFields, localFields, remoteFields);
+          const { merged, conflicts } = threeWayMerge(
+            snapshot.syncFields,
+            localFields,
+            remoteFields,
+          );
 
           const mergedTask: import("@gh-gantt/shared").Task = { ...localTask, ...merged };
           // Always update read-only fields from remote
@@ -154,7 +176,9 @@ export const pullCommand = new Command("pull")
             if (opts.dryRun) {
               console.log(`  ! ${id}: ${remoteTask.title} (${conflicts.length} conflict(s))`);
               for (const c of conflicts) {
-                console.log(`      ${c.field}: local=${formatValue(c.current)} remote=${formatValue(c.incoming)}`);
+                console.log(
+                  `      ${c.field}: local=${formatValue(c.current)} remote=${formatValue(c.incoming)}`,
+                );
               }
             }
           } else {
@@ -186,7 +210,9 @@ export const pullCommand = new Command("pull")
         const localHash = hashTask(localTask);
         if (localHash !== snapshot.hash) {
           // Local changed but remote deleted → keep with warning
-          console.warn(`  ⚠ ${id}: ${localTask.title} (locally modified but removed from remote — keeping)`);
+          console.warn(
+            `  ⚠ ${id}: ${localTask.title} (locally modified but removed from remote — keeping)`,
+          );
           mergedTasks.push(localTask);
           localTaskMap.delete(id); // Remove from map so snapshot is preserved
           continue;
@@ -214,12 +240,16 @@ export const pullCommand = new Command("pull")
       const existing = syncState.snapshots[task.id];
 
       // Check if this task has conflicts (was marked)
-      const isConflicted = hasConflictsFlag && remoteTask && existing?.syncFields && (() => {
-        const localFields = extractSyncFields(task);
-        const remoteFields = extractSyncFields(remoteTask);
-        const { conflicts } = threeWayMerge(existing.syncFields!, localFields, remoteFields);
-        return conflicts.length > 0;
-      })();
+      const isConflicted =
+        hasConflictsFlag &&
+        remoteTask &&
+        existing?.syncFields &&
+        (() => {
+          const localFields = extractSyncFields(task);
+          const remoteFields = extractSyncFields(remoteTask);
+          const { conflicts } = threeWayMerge(existing.syncFields!, localFields, remoteFields);
+          return conflicts.length > 0;
+        })();
 
       // Check if this task had unpushed local changes BEFORE this pull
       const hasLocalChanges = locallyChangedIds.has(task.id);
@@ -275,7 +305,9 @@ export const pullCommand = new Command("pull")
     });
 
     if (hasConflictsFlag) {
-      console.warn(`\n${conflictCount} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`);
+      console.warn(
+        `\n${conflictCount} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`,
+      );
     }
 
     console.log("Pull complete.");
@@ -287,7 +319,9 @@ export const pullCommand = new Command("pull")
         const commentsFile = await commentsStore.read();
 
         const commentItems = mergedTasks
-          .filter((t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id))
+          .filter(
+            (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
+          )
           .map((t) => {
             const [owner, repo] = t.github_repo.split("/");
             return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
@@ -312,7 +346,9 @@ export const pullCommand = new Command("pull")
 
         await commentsStore.write(updatedComments);
       } catch (err) {
-        console.warn(`Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(
+          `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   });

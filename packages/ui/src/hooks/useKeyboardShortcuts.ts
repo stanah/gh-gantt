@@ -21,15 +21,26 @@ type ShortcutAction =
   | "undo"
   | "redo";
 
-type KeyboardLikeEvent = Partial<Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "target">>;
+type KeyboardLikeEvent = Partial<
+  Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "target">
+>;
 
-type MaybeEditableTarget = EventTarget | { tagName?: string; isContentEditable?: boolean } | null | undefined;
+type MaybeEditableTarget =
+  | EventTarget
+  | { tagName?: string; isContentEditable?: boolean }
+  | null
+  | undefined;
 
 export function isEditableTarget(target: MaybeEditableTarget): boolean {
   if (!target || typeof target !== "object") return false;
   const candidate = target as { tagName?: string; isContentEditable?: boolean };
   const tagName = candidate.tagName?.toLowerCase();
-  return candidate.isContentEditable === true || tagName === "input" || tagName === "textarea" || tagName === "select";
+  return (
+    candidate.isContentEditable === true ||
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select"
+  );
 }
 
 export function resolveShortcutAction(event: KeyboardLikeEvent): ShortcutAction | null {
@@ -45,16 +56,25 @@ export function resolveShortcutAction(event: KeyboardLikeEvent): ShortcutAction 
     return hasShift ? "redo" : "undo";
   }
   if (hasMeta && key === "k") return "focusSearch";
-  if (!hasMeta && !event.altKey && (rawKey === "?" || (rawKey === "/" && event.shiftKey))) return "toggleHelp";
+  if (!hasMeta && !event.altKey && (rawKey === "?" || (rawKey === "/" && event.shiftKey)))
+    return "toggleHelp";
   if (!hasMeta && !hasOtherModifiers && key === "j") return "selectNext";
   if (!hasMeta && !hasOtherModifiers && key === "k") return "selectPrev";
-  if (!hasMeta && !hasOtherModifiers && (rawKey === " " || rawKey === "Spacebar" || event.code === "Space")) {
+  if (
+    !hasMeta &&
+    !hasOtherModifiers &&
+    (rawKey === " " || rawKey === "Spacebar" || event.code === "Space")
+  ) {
     return "toggleCollapse";
   }
   return null;
 }
 
-export function getNextSelection(taskIds: string[], selectedTaskId: string | null, direction: "next" | "prev"): string | null {
+export function getNextSelection(
+  taskIds: string[],
+  selectedTaskId: string | null,
+  direction: "next" | "prev",
+): string | null {
   if (taskIds.length === 0) return null;
   if (!selectedTaskId) return direction === "next" ? taskIds[0] : taskIds[taskIds.length - 1];
 

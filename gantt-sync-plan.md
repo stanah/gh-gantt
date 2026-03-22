@@ -25,18 +25,18 @@ GitHub Projects単体では実現できない**階層的進捗率の自動集約
 
 ## 技術スタック
 
-| レイヤー | 技術 | 理由 |
-|---|---|---|
-| 言語 | TypeScript | 型安全、`@octokit`との親和性 |
-| CLIフレームワーク | Commander.js | サブコマンド管理 |
-| GitHub API | `@octokit/graphql` | ProjectV2 GraphQL API対応 |
-| 認証 | `gh auth token` 流用 | gh CLIとの統合 |
-| 配布 | gh extension | `gh extension install stanah/gh-gantt` |
-| ローカルストア | JSON (中間ファイル) | マシン効率優先、アプリ管理 |
-| バリデーション | zod | アプリ層でのスキーマ検証 |
-| UI | React + D3.js | フル制御可能、MIT |
-| UI⇔CLI通信 | REST API (v0.1) | pull/push手動トリガー |
-| ビルド | Vite (UI) / tsup (CLI) | 高速ビルド |
+| レイヤー          | 技術                   | 理由                                   |
+| ----------------- | ---------------------- | -------------------------------------- |
+| 言語              | TypeScript             | 型安全、`@octokit`との親和性           |
+| CLIフレームワーク | Commander.js           | サブコマンド管理                       |
+| GitHub API        | `@octokit/graphql`     | ProjectV2 GraphQL API対応              |
+| 認証              | `gh auth token` 流用   | gh CLIとの統合                         |
+| 配布              | gh extension           | `gh extension install stanah/gh-gantt` |
+| ローカルストア    | JSON (中間ファイル)    | マシン効率優先、アプリ管理             |
+| バリデーション    | zod                    | アプリ層でのスキーマ検証               |
+| UI                | React + D3.js          | フル制御可能、MIT                      |
+| UI⇔CLI通信        | REST API (v0.1)        | pull/push手動トリガー                  |
+| ビルド            | Vite (UI) / tsup (CLI) | 高速ビルド                             |
 
 ---
 
@@ -124,10 +124,10 @@ my-project/
   "statuses": {
     "field_name": "Status",
     "values": {
-      "Backlog":     { "color": "#95A5A6", "done": false },
-      "Todo":        { "color": "#3498DB", "done": false },
+      "Backlog": { "color": "#95A5A6", "done": false },
+      "Todo": { "color": "#3498DB", "done": false },
       "In Progress": { "color": "#F39C12", "done": false },
-      "Done":        { "color": "#2ECC71", "done": true }
+      "Done": { "color": "#2ECC71", "done": true }
     }
   },
   "gantt": {
@@ -334,6 +334,7 @@ my-project/
 ```
 
 **元設計からの変更点:**
+
 - `progress` フィールド削除 → state + Status の `done` フラグで自動算出（ランタイム計算）
 - `github_repo` フィールド追加 → 複数リポジトリ横断対応
 
@@ -347,39 +348,39 @@ my-project/
 
 ### タスクフィールドの同期区分
 
-| フィールド | 同期方向 | 備考 |
-|---|---|---|
-| title | 双方向 | |
-| body | 双方向 | Issue本文まるごと |
-| state, state_reason | 双方向 | |
-| assignees | 双方向 | |
-| labels | 双方向 | type判別にも利用 |
-| milestone | 双方向 | |
-| custom_fields | 双方向 | ProjectV2フィールド（Status含む） |
-| parent, sub_tasks | 双方向 | Sub Issues APIと同期 |
-| start_date, end_date | ローカルのみ※ | ※ProjectV2にDateフィールドがあれば双方向 |
-| linked_prs | GitHub → ローカル | 自動検出 |
-| created_at, updated_at, closed_at | GitHub → ローカル | 読み取り専用 |
-| blocked_by | ローカルのみ | ブロック関係 |
-| type | ローカル管理 | github_labelで自動判別可 |
-| cache (comments, reactions) | GitHub → ローカル | 読み取りキャッシュ |
+| フィールド                        | 同期方向          | 備考                                     |
+| --------------------------------- | ----------------- | ---------------------------------------- |
+| title                             | 双方向            |                                          |
+| body                              | 双方向            | Issue本文まるごと                        |
+| state, state_reason               | 双方向            |                                          |
+| assignees                         | 双方向            |                                          |
+| labels                            | 双方向            | type判別にも利用                         |
+| milestone                         | 双方向            |                                          |
+| custom_fields                     | 双方向            | ProjectV2フィールド（Status含む）        |
+| parent, sub_tasks                 | 双方向            | Sub Issues APIと同期                     |
+| start_date, end_date              | ローカルのみ※     | ※ProjectV2にDateフィールドがあれば双方向 |
+| linked_prs                        | GitHub → ローカル | 自動検出                                 |
+| created_at, updated_at, closed_at | GitHub → ローカル | 読み取り専用                             |
+| blocked_by                        | ローカルのみ      | ブロック関係                             |
+| type                              | ローカル管理      | github_labelで自動判別可                 |
+| cache (comments, reactions)       | GitHub → ローカル | 読み取りキャッシュ                       |
 
 ### タスクtypeと表示
 
-| display | 表示 | 日付 | 備考 |
-|---|---|---|---|
-| `summary` | 括弧型バー / 太バー | sub_tasksから自動算出 | epic, feature等の親タスク |
-| `bar` | 通常バー | start_date / end_date | task, bug等の実作業 |
-| `milestone` | ◆ダイヤモンド | `date`（単一日付） | リリース日等 |
+| display     | 表示                | 日付                  | 備考                      |
+| ----------- | ------------------- | --------------------- | ------------------------- |
+| `summary`   | 括弧型バー / 太バー | sub_tasksから自動算出 | epic, feature等の親タスク |
+| `bar`       | 通常バー            | start_date / end_date | task, bug等の実作業       |
+| `milestone` | ◆ダイヤモンド       | `date`（単一日付）    | リリース日等              |
 
 ### blocked_by のtype
 
-| type | 意味 |
-|---|---|
-| `finish-to-start` | Aが完了しないとBを開始できない (FS) |
+| type               | 意味                                |
+| ------------------ | ----------------------------------- |
+| `finish-to-start`  | Aが完了しないとBを開始できない (FS) |
 | `finish-to-finish` | Aが完了しないとBを完了できない (FF) |
-| `start-to-start` | Aが開始しないとBを開始できない (SS) |
-| `start-to-finish` | Aが開始しないとBを完了できない (SF) |
+| `start-to-start`   | Aが開始しないとBを開始できない (SS) |
+| `start-to-finish`  | Aが開始しないとBを完了できない (SF) |
 
 ### sync-state.json（内部状態）
 
@@ -500,6 +501,7 @@ gh-gantt/
 ```
 
 **元設計からの変更点:**
+
 - `commands/sync.ts` 削除（v0.1スコープ外）
 - `sync/engine.ts` 削除（v0.1では pull/push 分離で対応）
 - `server/ws.ts` 削除（WebSocketはv0.1スコープ外、REST APIのみ）
@@ -525,6 +527,7 @@ gh gantt init --owner stanah --repo my-repo --project 1
 ```
 
 処理:
+
 1. `gh auth token` でトークン取得
 2. ProjectV2 GraphQL APIでProject情報・全アイテム・全Issue詳細(body含む)取得
 3. Sub Issues APIで親子関係取得
@@ -542,6 +545,7 @@ gh gantt serve --sync-on-start   # 起動時に自動pull
 ```
 
 処理:
+
 1. ViteでReact UIを起動
 2. REST APIサーバー(port+1): tasks CRUD, sync trigger, config取得
 3. UI上の全編集 → REST API → tasks.json書き込み
@@ -569,6 +573,7 @@ gh gantt status
 ```
 
 出力例:
+
 ```
 Remote changes (since last sync):
   M  t1 "OAuth2プロバイダ実装" — state: open → closed, body updated
@@ -688,6 +693,7 @@ Conflicts: none
 ### コンフリクト検出
 
 CLI / UI ともに警告表示し、ユーザーに手動解決を委ねる:
+
 ```
 ⚠️  Conflict: t1 "OAuth2プロバイダ実装"
 
@@ -710,9 +716,9 @@ ReactにDOM管理を委ね、D3はスケール計算・パス生成に限定。
 // D3はスケール計算のみ、ReactがDOM描画
 const xScale = useMemo(
   () => d3.scaleTime().domain([startDate, endDate]).range([0, width]),
-  [startDate, endDate, width]
+  [startDate, endDate, width],
 );
-return tasks.map(t => (
+return tasks.map((t) => (
   <rect
     x={xScale(t.start_date)}
     width={xScale(t.end_date) - xScale(t.start_date)}
@@ -741,6 +747,7 @@ return tasks.map(t => (
 詳細な実装計画: `docs/plans/2026-02-09-gh-gantt-v0.1-implementation.md`
 
 **v0.1 に含めるもの:**
+
 - CLI: `gh gantt init`, `pull`, `push`, `serve`, `status`
 - 同期: pull(GitHub→Local), push(Local→GitHub), コンフリクト検出＋警告
 - メイン画面: ツリー＋ガント一体型ビュー
@@ -753,20 +760,20 @@ return tasks.map(t => (
 
 ### v0.2以降（将来フェーズ）
 
-| 機能 | 備考 |
-|---|---|
-| `gh gantt sync`（双方向自動同期） | コンフリクト自動解決含む |
-| クリティカルパス計算 | CPM forward/backward pass |
-| WebSocketリアルタイム通信 | serve中の即時反映 |
-| TUI | ターミナルでのツリー＋進捗表示 |
-| サマリーダッシュボード | Epic一覧＋進捗率バー |
-| ResourceView | アサイニーごとの負荷ビュー |
-| MiniMap | 全体俯瞰ミニマップ |
-| 仮想スクロール | 1000タスク超対応 |
-| SVG/PNGエクスポート | |
-| Undo/Redo | Ctrl+Z / Ctrl+Shift+Z |
-| ブロック線インタラクティブ追加 | タスクバー端からドラッグ接続 |
-| 自動スケジューリング | blocked_byに基づく日程自動調整 |
+| 機能                              | 備考                           |
+| --------------------------------- | ------------------------------ |
+| `gh gantt sync`（双方向自動同期） | コンフリクト自動解決含む       |
+| クリティカルパス計算              | CPM forward/backward pass      |
+| WebSocketリアルタイム通信         | serve中の即時反映              |
+| TUI                               | ターミナルでのツリー＋進捗表示 |
+| サマリーダッシュボード            | Epic一覧＋進捗率バー           |
+| ResourceView                      | アサイニーごとの負荷ビュー     |
+| MiniMap                           | 全体俯瞰ミニマップ             |
+| 仮想スクロール                    | 1000タスク超対応               |
+| SVG/PNGエクスポート               |                                |
+| Undo/Redo                         | Ctrl+Z / Ctrl+Shift+Z          |
+| ブロック線インタラクティブ追加    | タスクバー端からドラッグ接続   |
+| 自動スケジューリング              | blocked_byに基づく日程自動調整 |
 
 ---
 
@@ -780,6 +787,7 @@ async function getToken(): Promise<string> {
 ```
 
 インストール:
+
 ```bash
 gh extension install stanah/gh-gantt
 ```

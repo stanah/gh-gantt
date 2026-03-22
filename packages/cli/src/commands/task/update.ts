@@ -73,7 +73,10 @@ export function applyTaskUpdate(
   }
 
   if (updated.start_date && updated.end_date && updated.start_date > updated.end_date) {
-    return { task, error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).` };
+    return {
+      task,
+      error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).`,
+    };
   }
 
   if (opts.assignee) {
@@ -107,7 +110,10 @@ export function applyTaskUpdate(
     if (dateUpdates.end_date && !opts.endDate) updated.end_date = dateUpdates.end_date;
 
     if (updated.start_date && updated.end_date && updated.start_date > updated.end_date) {
-      return { task, error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).` };
+      return {
+        task,
+        error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).`,
+      };
     }
   }
 
@@ -235,7 +241,11 @@ export const taskUpdateCommand = new Command("update")
           filterLabel: opts.filterLabel,
         };
 
-        const hasFilter = filters.filterState || filters.filterType || filters.filterMilestone || filters.filterLabel;
+        const hasFilter =
+          filters.filterState ||
+          filters.filterType ||
+          filters.filterMilestone ||
+          filters.filterLabel;
         if (!hasFilter) {
           console.error("Bulk update requires at least one --filter-* option.");
           process.exitCode = 1;

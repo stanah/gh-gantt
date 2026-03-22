@@ -2,10 +2,10 @@
   "name": "@gh-gantt/cli",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "bin": {
     "gh-gantt": "./dist/index.js"
   },
+  "type": "module",
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",

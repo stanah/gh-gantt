@@ -1,7 +1,7 @@
 import React from "react";
 
 export const PRIORITY_LEVELS = ["critical", "high", "medium", "low"] as const;
-export type PriorityLevel = typeof PRIORITY_LEVELS[number];
+export type PriorityLevel = (typeof PRIORITY_LEVELS)[number];
 
 const PRIORITY_COLORS: Record<PriorityLevel, { bg: string; fg: string; border: string }> = {
   critical: { bg: "#fdecea", fg: "#c0392b", border: "#e74c3c44" },

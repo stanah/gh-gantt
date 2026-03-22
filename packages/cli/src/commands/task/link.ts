@@ -10,10 +10,7 @@ export function addDependency(task: Task, blockerTaskId: string): Task {
   }
   return {
     ...task,
-    blocked_by: [
-      ...task.blocked_by,
-      { task: blockerTaskId, type: "finish-to-start", lag: 0 },
-    ],
+    blocked_by: [...task.blocked_by, { task: blockerTaskId, type: "finish-to-start", lag: 0 }],
     updated_at: new Date().toISOString(),
   };
 }
@@ -26,11 +23,7 @@ export function removeDependency(task: Task, blockerTaskId: string): Task {
   };
 }
 
-export function setParent(
-  tasks: Task[],
-  taskId: string,
-  newParentId: string,
-): Task[] {
+export function setParent(tasks: Task[], taskId: string, newParentId: string): Task[] {
   return tasks.map((t) => {
     if (t.id === taskId) {
       return { ...t, parent: newParentId, updated_at: new Date().toISOString() };
@@ -56,7 +49,11 @@ export function removeParent(tasks: Task[], taskId: string): Task[] {
       return { ...t, parent: null, updated_at: new Date().toISOString() };
     }
     if (oldParentId && t.id === oldParentId) {
-      return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId), updated_at: new Date().toISOString() };
+      return {
+        ...t,
+        sub_tasks: t.sub_tasks.filter((s) => s !== taskId),
+        updated_at: new Date().toISOString(),
+      };
     }
     return t;
   });
@@ -89,19 +86,13 @@ export const taskLinkCommand = new Command("link")
 
     if (opts.blockedBy) {
       const blockerId = resolveTaskId(opts.blockedBy, config);
-      tasksFile.tasks[taskIndex] = addDependency(
-        tasksFile.tasks[taskIndex],
-        blockerId,
-      );
+      tasksFile.tasks[taskIndex] = addDependency(tasksFile.tasks[taskIndex], blockerId);
       console.log(`Added dependency: ${resolvedId} blocked by ${blockerId}`);
     }
 
     if (opts.unblock) {
       const blockerId = resolveTaskId(opts.unblock, config);
-      tasksFile.tasks[taskIndex] = removeDependency(
-        tasksFile.tasks[taskIndex],
-        blockerId,
-      );
+      tasksFile.tasks[taskIndex] = removeDependency(tasksFile.tasks[taskIndex], blockerId);
       console.log(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
     }
 

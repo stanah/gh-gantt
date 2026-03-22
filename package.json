@@ -14,11 +14,11 @@
     "test:e2e:ui": "playwright test --ui",
     "typecheck": "pnpm -r typecheck"
   },
-  "engines": {
-    "node": ">=20"
-  },
   "devDependencies": {
     "@playwright/test": "^1.58.2"
+  },
+  "engines": {
+    "node": ">=20"
   },
   "pnpm": {
     "overrides": {

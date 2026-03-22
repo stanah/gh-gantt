@@ -9,10 +9,26 @@
     "field_mapping": { "start_date": "Start", "end_date": "End", "status": "Status" }
   },
   "task_types": {
-    "epic": { "label": "Epic", "display": "summary", "color": "#6A1B9A", "github_label": "epic", "default_collapsed": false },
-    "feature": { "label": "Feature", "display": "bar", "color": "#1565C0", "github_label": "feature" },
+    "epic": {
+      "label": "Epic",
+      "display": "summary",
+      "color": "#6A1B9A",
+      "github_label": "epic",
+      "default_collapsed": false
+    },
+    "feature": {
+      "label": "Feature",
+      "display": "bar",
+      "color": "#1565C0",
+      "github_label": "feature"
+    },
     "task": { "label": "Task", "display": "bar", "color": "#2E7D32", "github_label": "task" },
-    "milestone": { "label": "Milestone", "display": "milestone", "color": "#E65100", "github_label": "milestone" }
+    "milestone": {
+      "label": "Milestone",
+      "display": "milestone",
+      "color": "#E65100",
+      "github_label": "milestone"
+    }
   },
   "type_hierarchy": {
     "epic": ["feature", "milestone"],

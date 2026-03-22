@@ -114,10 +114,13 @@ export function useUndoRedo(maxHistory = 100) {
     setSnapshot(manager.getSnapshot());
   }, [manager]);
 
-  const push = useCallback((action: UndoRedoAction) => {
-    manager.push(action);
-    syncSnapshot();
-  }, [manager, syncSnapshot]);
+  const push = useCallback(
+    (action: UndoRedoAction) => {
+      manager.push(action);
+      syncSnapshot();
+    },
+    [manager, syncSnapshot],
+  );
 
   const undo = useCallback(async (): Promise<boolean> => {
     const pending = manager.undo();

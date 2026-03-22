@@ -59,10 +59,7 @@ test("Space toggles collapse on selected task", async ({ page }) => {
 
   // Navigate to epic-1
   await page.keyboard.press("j");
-  await expect(page.locator("[data-task-id='epic-1']")).toHaveCSS(
-    "background",
-    /232, 240, 254/,
-  );
+  await expect(page.locator("[data-task-id='epic-1']")).toHaveCSS("background", /232, 240, 254/);
 
   const feature1 = page.locator("[data-task-id='feature-1']");
   await expect(feature1).toBeVisible();

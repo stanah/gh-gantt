@@ -92,16 +92,16 @@ describe("threeWayMerge", () => {
       milestone: null,
     });
     const current = makeSyncFields({
-      title: "Old title",       // unchanged
-      body: "Local body",       // local-only change
-      state: "closed",          // conflict
-      milestone: "v1.0",        // local-only change
+      title: "Old title", // unchanged
+      body: "Local body", // local-only change
+      state: "closed", // conflict
+      milestone: "v1.0", // local-only change
     });
     const incoming = makeSyncFields({
-      title: "Remote title",    // remote-only change
-      body: "Old body",         // unchanged
-      state: "open",            // conflict (changed in current but not incoming -> local-only actually)
-      milestone: null,          // unchanged
+      title: "Remote title", // remote-only change
+      body: "Old body", // unchanged
+      state: "open", // conflict (changed in current but not incoming -> local-only actually)
+      milestone: null, // unchanged
     });
     // Wait: state: base=open, current=closed, incoming=open → local-only change (base==incoming)
     // Let me fix the test case for a real conflict
@@ -111,14 +111,14 @@ describe("threeWayMerge", () => {
       state: "open",
     });
     const current2 = makeSyncFields({
-      title: "Old title",       // unchanged
-      body: "Local body",       // local-only change
-      state: "closed",          // both changed differently → conflict
+      title: "Old title", // unchanged
+      body: "Local body", // local-only change
+      state: "closed", // both changed differently → conflict
     });
     const incoming2 = makeSyncFields({
-      title: "Remote title",    // remote-only change
-      body: "Old body",         // unchanged
-      state: "open",            // unchanged from base
+      title: "Remote title", // remote-only change
+      body: "Old body", // unchanged
+      state: "open", // unchanged from base
     });
     // Actually state: base=open, current=closed, incoming=open → base==incoming → local-only
     // Let me make a proper conflict:
@@ -128,14 +128,14 @@ describe("threeWayMerge", () => {
       milestone: "v0",
     });
     const current3 = makeSyncFields({
-      title: "Local",         // conflict
-      body: "Local body",     // local-only
-      milestone: "v1",        // conflict
+      title: "Local", // conflict
+      body: "Local body", // local-only
+      milestone: "v1", // conflict
     });
     const incoming3 = makeSyncFields({
-      title: "Remote",        // conflict
-      body: "Old body",       // unchanged
-      milestone: "v2",        // conflict
+      title: "Remote", // conflict
+      body: "Old body", // unchanged
+      milestone: "v2", // conflict
     });
     const result = threeWayMerge(base3, current3, incoming3);
     expect(result.conflicts).toHaveLength(2);

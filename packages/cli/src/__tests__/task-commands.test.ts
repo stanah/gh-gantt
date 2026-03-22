@@ -2,12 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { filterTasks, sortTasks } from "../commands/task/list.js";
 import { applyTaskUpdate, filterTasksForUpdate } from "../commands/task/update.js";
 import { collectMilestones } from "../commands/milestone/list.js";
-import {
-  addDependency,
-  removeDependency,
-  setParent,
-  removeParent,
-} from "../commands/task/link.js";
+import { addDependency, removeDependency, setParent, removeParent } from "../commands/task/link.js";
 import type { Config, Task } from "@gh-gantt/shared";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
@@ -173,7 +168,10 @@ describe("filterTasks", () => {
     // #4: blocked by #5 but #5 is closed → unblocked
     // #5: no deps → unblocked
     expect(result.map((t) => t.id)).toEqual([
-      "owner/repo#1", "owner/repo#3", "owner/repo#4", "owner/repo#5",
+      "owner/repo#1",
+      "owner/repo#3",
+      "owner/repo#4",
+      "owner/repo#5",
     ]);
   });
 
@@ -227,9 +225,27 @@ describe("filterTasks", () => {
 
 describe("sortTasks", () => {
   const tasksForSort = [
-    makeTask({ id: "owner/repo#1", title: "Banana", type: "task", end_date: "2026-03-01", start_date: "2026-01-15" }),
-    makeTask({ id: "owner/repo#2", title: "Apple", type: "epic", end_date: null, start_date: "2026-01-01" }),
-    makeTask({ id: "owner/repo#3", title: "Cherry", type: "task", end_date: "2026-02-01", start_date: null }),
+    makeTask({
+      id: "owner/repo#1",
+      title: "Banana",
+      type: "task",
+      end_date: "2026-03-01",
+      start_date: "2026-01-15",
+    }),
+    makeTask({
+      id: "owner/repo#2",
+      title: "Apple",
+      type: "epic",
+      end_date: null,
+      start_date: "2026-01-01",
+    }),
+    makeTask({
+      id: "owner/repo#3",
+      title: "Cherry",
+      type: "task",
+      end_date: "2026-02-01",
+      start_date: null,
+    }),
   ];
 
   const config = makeConfig();
@@ -265,7 +281,12 @@ describe("sortTasks", () => {
     const configWithPriority = makeConfig({
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "Start", end_date: "End", status: "Status", priority: "Priority" },
+        field_mapping: {
+          start_date: "Start",
+          end_date: "End",
+          status: "Status",
+          priority: "Priority",
+        },
       },
     });
     const tasksWithPriority = [
@@ -458,9 +479,9 @@ describe("applyTaskUpdate", () => {
       statuses: {
         field_name: "Status",
         values: {
-          "Todo": { color: "#ccc", done: false },
+          Todo: { color: "#ccc", done: false },
           "In Progress": { color: "#36f", done: false, starts_work: true },
-          "Done": { color: "#0c0", done: true },
+          Done: { color: "#0c0", done: true },
         },
       },
     });
@@ -514,9 +535,27 @@ describe("applyTaskUpdate", () => {
 
 describe("filterTasksForUpdate", () => {
   const tasks = [
-    makeTask({ id: "owner/repo#1", state: "open", type: "task", milestone: "v1.0", labels: ["bug"] }),
-    makeTask({ id: "owner/repo#2", state: "open", type: "epic", milestone: null, labels: ["feature"] }),
-    makeTask({ id: "owner/repo#3", state: "closed", type: "task", milestone: "v1.0", labels: ["bug", "feature"] }),
+    makeTask({
+      id: "owner/repo#1",
+      state: "open",
+      type: "task",
+      milestone: "v1.0",
+      labels: ["bug"],
+    }),
+    makeTask({
+      id: "owner/repo#2",
+      state: "open",
+      type: "epic",
+      milestone: null,
+      labels: ["feature"],
+    }),
+    makeTask({
+      id: "owner/repo#3",
+      state: "closed",
+      type: "task",
+      milestone: "v1.0",
+      labels: ["bug", "feature"],
+    }),
     makeTask({ id: "owner/repo#4", state: "open", type: "task", milestone: null, labels: [] }),
   ];
 
@@ -562,7 +601,12 @@ describe("filterTasksForUpdate", () => {
 describe("collectMilestones", () => {
   it("collects milestone-type tasks", () => {
     const tasks = [
-      makeTask({ id: "milestone:owner/repo#1", type: "milestone", title: "v1.0", date: "2026-06-01" }),
+      makeTask({
+        id: "milestone:owner/repo#1",
+        type: "milestone",
+        title: "v1.0",
+        date: "2026-06-01",
+      }),
     ];
     const result = collectMilestones(tasks);
     expect(result).toHaveLength(1);
@@ -572,7 +616,12 @@ describe("collectMilestones", () => {
 
   it("collects milestone_type tasks", () => {
     const tasks = [
-      makeTask({ id: "owner/repo#5", type: "milestone_type", title: "v1.0 Release", end_date: "2026-06-01" }),
+      makeTask({
+        id: "owner/repo#5",
+        type: "milestone_type",
+        title: "v1.0 Release",
+        end_date: "2026-06-01",
+      }),
     ];
     const result = collectMilestones(tasks);
     expect(result).toHaveLength(1);
@@ -582,7 +631,12 @@ describe("collectMilestones", () => {
 
   it("counts tasks referencing milestones", () => {
     const tasks = [
-      makeTask({ id: "milestone:owner/repo#1", type: "milestone", title: "v1.0", date: "2026-06-01" }),
+      makeTask({
+        id: "milestone:owner/repo#1",
+        type: "milestone",
+        title: "v1.0",
+        date: "2026-06-01",
+      }),
       makeTask({ id: "owner/repo#2", milestone: "v1.0" }),
       makeTask({ id: "owner/repo#3", milestone: "v1.0" }),
     ];
@@ -592,9 +646,7 @@ describe("collectMilestones", () => {
   });
 
   it("discovers milestones from task references only", () => {
-    const tasks = [
-      makeTask({ id: "owner/repo#1", milestone: "v2.0" }),
-    ];
+    const tasks = [makeTask({ id: "owner/repo#1", milestone: "v2.0" })];
     const result = collectMilestones(tasks);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe("v2.0");

@@ -9,12 +9,28 @@ import type { Task, TasksFile, SyncState, Config } from "@gh-gantt/shared";
 
 function makeTask(id: string, overrides: Partial<Task> = {}): Task {
   return {
-    id, type: "task", github_issue: null, github_repo: "o/r",
-    parent: null, sub_tasks: [], title: `Task ${id}`, body: null,
-    state: "open", state_reason: null, assignees: [], labels: [],
-    milestone: null, linked_prs: [], created_at: "", updated_at: "",
-    closed_at: null, custom_fields: {}, start_date: null, end_date: null,
-    date: null, blocked_by: [],
+    id,
+    type: "task",
+    github_issue: null,
+    github_repo: "o/r",
+    parent: null,
+    sub_tasks: [],
+    title: `Task ${id}`,
+    body: null,
+    state: "open",
+    state_reason: null,
+    assignees: [],
+    labels: [],
+    milestone: null,
+    linked_prs: [],
+    created_at: "",
+    updated_at: "",
+    closed_at: null,
+    custom_fields: {},
+    start_date: null,
+    end_date: null,
+    date: null,
+    blocked_by: [],
     ...overrides,
   };
 }
@@ -23,11 +39,18 @@ function makeConfig(): Config {
   return {
     version: "1",
     project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
-    sync: { auto_create_issues: true, field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" } },
+    sync: {
+      auto_create_issues: true,
+      field_mapping: { start_date: "Start Date", end_date: "End Date", status: "Status" },
+    },
     task_types: {},
     type_hierarchy: {},
     statuses: { field_name: "Status", values: {} },
-    gantt: { default_view: "week", working_days: [1, 2, 3, 4, 5], colors: { critical_path: "", on_track: "", at_risk: "", overdue: "" } },
+    gantt: {
+      default_view: "week",
+      working_days: [1, 2, 3, 4, 5],
+      colors: { critical_path: "", on_track: "", at_risk: "", overdue: "" },
+    },
   } as Config;
 }
 

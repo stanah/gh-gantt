@@ -42,7 +42,9 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark style={{ background: "#fef08a", padding: 0, borderRadius: 2 }}>{text.slice(idx, idx + query.length)}</mark>
+      <mark style={{ background: "#fef08a", padding: 0, borderRadius: 2 }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
       {text.slice(idx + query.length)}
     </>
   );
@@ -114,20 +116,33 @@ export function TaskRow({
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isParentRelation = highlightType === "parent" || highlightType === "child";
   const highlightBg = isBlockRelation ? "#fef2f2" : isParentRelation ? "#f5f0ff" : undefined;
-  const highlightBorder = isBlockRelation ? "3px solid #e74c3c" : isParentRelation ? "3px solid #8957e5" : undefined;
+  const highlightBorder = isBlockRelation
+    ? "3px solid #e74c3c"
+    : isParentRelation
+      ? "3px solid #8957e5"
+      : undefined;
 
   const dropActive = dropIndicator?.targetTaskId === task.id;
   const dropValid = dropActive && dropIndicator.valid;
   const dropInvalid = dropActive && !dropIndicator.valid;
   const isDependencyDrop = dropActive && dropIndicator.mode === "dependency";
   const dropBorderLeft = dropValid
-    ? isDependencyDrop ? "2px solid #e67e22" : "2px solid #4285f4"
-    : dropInvalid ? "2px dashed #e74c3c" : highlightBorder;
+    ? isDependencyDrop
+      ? "2px solid #e67e22"
+      : "2px solid #4285f4"
+    : dropInvalid
+      ? "2px dashed #e74c3c"
+      : highlightBorder;
   const dropBg = dropValid
-    ? isDependencyDrop ? "#fef3e2" : "#e8f0fe"
-    : dropInvalid ? "#fef2f2" : undefined;
+    ? isDependencyDrop
+      ? "#fef3e2"
+      : "#e8f0fe"
+    : dropInvalid
+      ? "#fef2f2"
+      : undefined;
 
-  const bg = dropBg ?? (isSelected ? "#e8f0fe" : highlightBg ?? (isHovered ? "#f5f8ff" : "transparent"));
+  const bg =
+    dropBg ?? (isSelected ? "#e8f0fe" : (highlightBg ?? (isHovered ? "#f5f8ff" : "transparent")));
 
   return (
     <div
@@ -162,8 +177,18 @@ export function TaskRow({
     >
       {hasChildren ? (
         <span
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          style={{ width: 16, textAlign: "center", fontSize: 10, color: "#888", flexShrink: 0, cursor: "pointer" }}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+          style={{
+            width: 16,
+            textAlign: "center",
+            fontSize: 10,
+            color: "#888",
+            flexShrink: 0,
+            cursor: "pointer",
+          }}
         >
           {isCollapsed ? "\u25B6" : "\u25BC"}
         </span>
@@ -189,7 +214,15 @@ export function TaskRow({
         </span>
       )}
 
-      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>
+      <span
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          fontSize: 12,
+        }}
+      >
         <HighlightedText text={task.title} query={searchQuery?.trim() ?? ""} />
       </span>
 

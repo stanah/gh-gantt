@@ -8,7 +8,13 @@ interface LayoutProps {
   scrollContainerRef?: React.Ref<HTMLDivElement>;
 }
 
-export function Layout({ leftHeader, leftBody, rightHeader, rightBody, scrollContainerRef }: LayoutProps) {
+export function Layout({
+  leftHeader,
+  leftBody,
+  rightHeader,
+  rightBody,
+  scrollContainerRef,
+}: LayoutProps) {
   const [splitPos, setSplitPos] = useState(350);
   const outerRef = useRef<HTMLDivElement>(null);
   const dragging = useRef(false);
@@ -40,16 +46,18 @@ export function Layout({ leftHeader, leftBody, rightHeader, rightBody, scrollCon
       <div ref={scrollContainerRef} style={{ height: "100%", overflow: "auto" }}>
         <div style={{ display: "flex", width: "fit-content", minWidth: "100%" }}>
           {/* Left column — sticky to left edge */}
-          <div style={{
-            width: splitPos,
-            minWidth: 200,
-            flexShrink: 0,
-            position: "sticky",
-            left: 0,
-            zIndex: 3,
-            background: "#fff",
-            borderRight: "1px solid #e0e0e0",
-          }}>
+          <div
+            style={{
+              width: splitPos,
+              minWidth: 200,
+              flexShrink: 0,
+              position: "sticky",
+              left: 0,
+              zIndex: 3,
+              background: "#fff",
+              borderRight: "1px solid #e0e0e0",
+            }}
+          >
             {/* Left header — sticky to top */}
             <div style={{ position: "sticky", top: 0, zIndex: 4, background: "#fff" }}>
               {leftHeader}

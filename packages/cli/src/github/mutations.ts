@@ -222,18 +222,15 @@ export async function createGithubMilestone(
   if (options.description) body.description = options.description;
   if (options.dueOn) body.due_on = `${options.dueOn}T00:00:00Z`;
 
-  const response = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/milestones`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `token ${token}`,
-        Accept: "application/vnd.github+json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
+  const response = await fetch(`https://api.github.com/repos/${owner}/${repo}/milestones`, {
+    method: "POST",
+    headers: {
+      Authorization: `token ${token}`,
+      Accept: "application/vnd.github+json",
+      "Content-Type": "application/json",
     },
-  );
+    body: JSON.stringify(body),
+  });
 
   if (!response.ok) {
     const text = await response.text();

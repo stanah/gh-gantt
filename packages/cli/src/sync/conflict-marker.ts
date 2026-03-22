@@ -10,7 +10,7 @@ const SYNC_FIELD_KEY_SET: Set<string> = new Set(SYNC_FIELD_KEYS);
  */
 export function applyConflictMarkers(
   task: Task,
-  conflicts: FieldConflict[]
+  conflicts: FieldConflict[],
 ): Record<string, unknown> {
   const result: Record<string, unknown> = { ...task };
 
@@ -28,9 +28,7 @@ export function applyConflictMarkers(
  * Only considers SyncFields keys; ignores orphaned/non-SyncFields markers.
  * base is set to undefined (retrieved from snapshot externally).
  */
-export function detectMarkers(
-  task: Record<string, unknown>
-): FieldConflict[] {
+export function detectMarkers(task: Record<string, unknown>): FieldConflict[] {
   const conflicts: FieldConflict[] = [];
 
   for (const key of Object.keys(task)) {
@@ -61,7 +59,7 @@ export function detectMarkers(
 export function resolveMarker(
   task: Record<string, unknown>,
   field: string,
-  choice: "ours" | "theirs"
+  choice: "ours" | "theirs",
 ): void {
   const currentKey = `${field}_current`;
   const incomingKey = `${field}_incoming`;
@@ -77,8 +75,6 @@ export function resolveMarker(
 /**
  * Check if task has unresolved conflict markers.
  */
-export function hasUnresolvedMarkers(
-  task: Record<string, unknown>
-): boolean {
+export function hasUnresolvedMarkers(task: Record<string, unknown>): boolean {
   return detectMarkers(task).length > 0;
 }
