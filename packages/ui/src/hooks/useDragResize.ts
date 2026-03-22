@@ -85,6 +85,8 @@ export function useDragResize(
           }
         }
 
+        if (newStartDate === state.lastStartDate && newEndDate === state.lastEndDate) return;
+
         state.lastStartDate = newStartDate;
         state.lastEndDate = newEndDate;
         state.changed = dayDelta !== 0;

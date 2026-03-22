@@ -1,5 +1,5 @@
 ---
-name: conflict-resolution
+name: gh-gantt-conflict-resolution
 description: gh-gantt の同期コンフリクトを CLI で自動解決する。pull 後にコンフリクトが発生した場合、または「コンフリクトを解決して」と指示された場合にトリガー。
 ---
 

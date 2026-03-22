@@ -448,8 +448,12 @@ export function App() {
         selectedAssignee={selectedAssignee}
         allAssignees={allAssignees}
         onSelectAssignee={setSelectedAssignee}
-        selectedPriorities={selectedPriorities}
-        onSelectPriorities={setSelectedPriorities}
+        {...(priorityFieldName
+          ? {
+              selectedPriorities,
+              onSelectPriorities: setSelectedPriorities,
+            }
+          : {})}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}

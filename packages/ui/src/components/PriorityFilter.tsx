@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { PRIORITY_LEVELS } from "./PriorityBadge.js";
-
-export const NO_PRIORITY = "__no_priority__";
+import { NO_PRIORITY } from "../hooks/useTaskFilter.js";
 
 interface PriorityFilterProps {
   selectedValues: string[];
@@ -55,12 +54,20 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
 
   return (
     <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen((prev) => !prev)} style={btnStyle} title={formatLabel(selectedValues)}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={btnStyle}
+        title={formatLabel(selectedValues)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
         {formatLabel(selectedValues)}
       </button>
       {open && (
-        <div style={menuStyle}>
+        <div role="dialog" aria-label="Filter by priority" style={menuStyle}>
           <button
+            type="button"
             onClick={() => onChange([])}
             style={{
               width: "100%",
@@ -100,6 +107,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
+              type="button"
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",

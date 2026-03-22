@@ -54,7 +54,8 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
   }
 
   if (opts.assignee) {
-    result = result.filter((t) => t.assignees.includes(opts.assignee!));
+    const assignee = opts.assignee;
+    result = result.filter((t) => t.assignees.includes(assignee));
   }
 
   if (opts.unassigned) {
@@ -62,13 +63,15 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
   }
 
   if (opts.status && opts.statusFieldName) {
+    const fieldName = opts.statusFieldName;
     result = result.filter(
-      (t) => t.custom_fields[opts.statusFieldName!] === opts.status,
+      (t) => t.custom_fields[fieldName] === opts.status,
     );
   }
 
   if (opts.label) {
-    result = result.filter((t) => t.labels.includes(opts.label!));
+    const label = opts.label;
+    result = result.filter((t) => t.labels.includes(label));
   }
 
   if (opts.search) {
@@ -90,6 +93,7 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
   if (fields.length === 0) return [...tasks];
 
   const typeOrder = Object.keys(config.task_types);
+  const typeRank = new Map(typeOrder.map((t, i) => [t, i]));
   const priorityFieldName = config.sync.field_mapping.priority;
 
   const sorted = [...tasks];
@@ -106,10 +110,12 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
         case "start_date":
           cmp = compareDates(a.start_date, b.start_date);
           break;
-        case "type":
-          cmp = (typeOrder.indexOf(a.type) === -1 ? typeOrder.length : typeOrder.indexOf(a.type))
-            - (typeOrder.indexOf(b.type) === -1 ? typeOrder.length : typeOrder.indexOf(b.type));
+        case "type": {
+          const aIdx = typeRank.get(a.type) ?? typeOrder.length;
+          const bIdx = typeRank.get(b.type) ?? typeOrder.length;
+          cmp = aIdx - bIdx;
           break;
+        }
         case "priority": {
           if (!priorityFieldName) continue;
           const aVal = String(a.custom_fields[priorityFieldName] ?? "");

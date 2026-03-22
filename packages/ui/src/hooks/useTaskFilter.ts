@@ -2,6 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from "react";
 import type { Task } from "../types/index.js";
 
 export const UNASSIGNED = "__unassigned__";
+export const NO_PRIORITY = "__no_priority__";
 const ASSIGNEES_QUERY_KEY = "assignees";
 const PRIORITIES_QUERY_KEY = "priorities";
 
@@ -33,7 +34,7 @@ function parsePrioritiesFromQuery(search: string): string[] {
   if (!raw) return [];
   return raw
     .split(",")
-    .map((v) => v.trim())
+    .map((v) => v.trim().toLowerCase())
     .filter((v) => v.length > 0);
 }
 

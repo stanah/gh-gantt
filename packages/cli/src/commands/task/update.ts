@@ -113,15 +113,16 @@ export function applyTaskUpdate(
   }
 
   if (opts.priority) {
+    const priority = opts.priority.toLowerCase();
     const validPriorities = ["critical", "high", "medium", "low"];
-    if (!validPriorities.includes(opts.priority)) {
+    if (!validPriorities.includes(priority)) {
       return {
         task,
         error: `Invalid priority: "${opts.priority}". Available: ${validPriorities.join(", ")}`,
       };
     }
     const priorityFieldName = config.sync?.field_mapping?.priority ?? "Priority";
-    updated.custom_fields = { ...updated.custom_fields, [priorityFieldName]: opts.priority };
+    updated.custom_fields = { ...updated.custom_fields, [priorityFieldName]: priority };
   }
 
   if (opts.label) {

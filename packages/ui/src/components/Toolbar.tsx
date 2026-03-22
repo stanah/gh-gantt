@@ -21,8 +21,8 @@ interface ToolbarProps {
   selectedAssignee: string | null;
   allAssignees: string[];
   onSelectAssignee: (assignee: string | null) => void;
-  selectedPriorities: string[];
-  onSelectPriorities: (values: string[]) => void;
+  selectedPriorities?: string[];
+  onSelectPriorities?: (values: string[]) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchInputRef?: React.Ref<HTMLInputElement>;
@@ -126,10 +126,12 @@ export function Toolbar({
           selectedValues={selectedAssignees}
           onChange={(values) => onSelectAssignee(values.length > 0 ? values.join(",") : null)}
         />
-        <PriorityFilter
-          selectedValues={selectedPriorities}
-          onChange={onSelectPriorities}
-        />
+        {selectedPriorities && onSelectPriorities && (
+          <PriorityFilter
+            selectedValues={selectedPriorities}
+            onChange={onSelectPriorities}
+          />
+        )}
       </div>
 
       <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
