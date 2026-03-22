@@ -15,30 +15,23 @@
 ### Task 1: ファイル命名規約の統一とディレクトリ準備
 
 **Files:**
-- Rename: `.claude/skills/conflict-resolution/SKILL.md` → `skills/gh-gantt-conflict-resolution/SKILL.md`
-- Rename: `skills/gh-gantt-workflow/SKILL.md`（実際は配置変更済み）
+- Rename: `skills/gh-gantt-conflict-resolution/SKILL.md`（`.claude/skills/` から移動済み）
+- Rename: `skills/gh-gantt-workflow/SKILL.md`（`.claude/skills/` から移動済み）
 - Create: `skills/gh-gantt-sync/`
 - Create: `skills/gh-gantt-decompose/`
 - Create: `skills/gh-gantt-triage/`
 - Create: `skills/gh-gantt-dependencies/`
 - Create: `skills/gh-gantt-progress/`
 
-- [ ] **Step 1: conflict-resolution のリネーム**
+- [x] **Step 1: conflict-resolution のリネーム**（完了済み）
 
-```bash
-# (run from project root)
-git mv .claude/skills/conflict-resolution/SKILL.md skills/gh-gantt-conflict-resolution/SKILL.md
-```
+`.claude/skills/conflict-resolution/SKILL.md` → `skills/gh-gantt-conflict-resolution/SKILL.md` にリネーム済み。
 
-- [ ] **Step 2: gh-gantt-workflow のリネーム**
+- [x] **Step 2: gh-gantt-workflow のリネーム**（完了済み）
 
-macOS のファイルシステムは case-insensitive のため、一時ファイル経由でリネーム:
+`.claude/skills/gh-gantt-workflow/SKILL.md` → `skills/gh-gantt-workflow/SKILL.md` にリネーム済み。
 
-```bash
-git mv .claude/skills/gh-gantt-workflow/SKILL.md skills/gh-gantt-workflow/SKILL.md
-```
-
-- [ ] **Step 3: 新スキルのディレクトリ作成**
+- [x] **Step 3: 新スキルのディレクトリ作成**（完了済み）
 
 ```bash
 mkdir -p skills/gh-gantt-sync

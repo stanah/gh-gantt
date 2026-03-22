@@ -10,22 +10,23 @@ description: 要望を調査・分解して適切な粒度で Issue 化する。
 <HARD-GATE>
 既存タスクとの重複・矛盾チェックなしに Issue を作成してはならない。
 
-チェック条件: `gh-gantt task list` で既存タスクを調査する。
+チェック条件: 事前に **REQUIRED:** `gh-gantt-sync`（pull）を invoke して最新状態を取得し、その上で `gh-gantt task list` で既存タスクを調査する。
 失敗時: 重複・類似タスクがある場合、ユーザーに提示して方針を確認する（既存タスクの更新 / 新規作成 / 中止）。
-Evidence: `gh-gantt task list` の出力と、重複なしの判断根拠を提示する。
+Evidence: `gh-gantt-sync`（pull）と `gh-gantt task list` の出力、および重複なしの判断根拠を提示する。
 </HARD-GATE>
 
 ## プロセス
 
-1. **要件の参照元を確認** — `.gantt-sync/workflow.md` に要件管理スキルが指定されていれば参照を促す
-2. **既存タスク調査** — `gh-gantt task list` で重複・類似タスクを検索 — evidence として結果を提示
-3. **矛盾チェック** — 既存タスクと矛盾する要望ではないか確認
-4. **粒度の判断** — エピック / フィーチャー / タスクのどのレベルか。ユーザーに提示して確認
-5. **分解** — 大きすぎる要望は適切な粒度に分割
-6. **Issue 作成** — 各タスクの body に要件を記述。`gh-gantt create` で作成
-7. **作成確認** — `gh-gantt task show <number>` で作成内容を確認 — evidence として出力を提示
-8. **構造化** — `gh-gantt task link --set-parent` で親子関係を設定。**OPTIONAL:** `gh-gantt-dependencies` で依存関係を設定
-9. **同期** — **REQUIRED:** `gh-gantt-sync`（push）を invoke
+1. **同期（取得）** — **REQUIRED:** `gh-gantt-sync`（pull）を invoke してリモートの最新状態を取得する
+2. **要件の参照元を確認** — `.gantt-sync/workflow.md` に要件管理スキルが指定されていれば参照を促す
+3. **既存タスク調査** — `gh-gantt task list` で重複・類似タスクを検索 — evidence として結果を提示
+4. **矛盾チェック** — 既存タスクと矛盾する要望ではないか確認
+5. **粒度の判断** — エピック / フィーチャー / タスクのどのレベルか。ユーザーに提示して確認
+6. **分解** — 大きすぎる要望は適切な粒度に分割
+7. **Issue 作成** — 各タスクの body に要件を記述。`gh-gantt create` で作成
+8. **作成確認** — `gh-gantt task show <number>` で作成内容を確認 — evidence として出力を提示
+9. **構造化** — `gh-gantt task link --set-parent` で親子関係を設定。**OPTIONAL:** `gh-gantt-dependencies` で依存関係を設定
+10. **同期** — **REQUIRED:** `gh-gantt-sync`（push）を invoke
 
 ## Red Flags
 
