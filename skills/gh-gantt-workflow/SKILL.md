@@ -19,11 +19,16 @@ Evidence: コマンド出力をそのまま提示する。
 
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
-3. タスク確認 — `gh-gantt task list --state open`。ユーザーに選択を促す
-4. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
-5. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
-6. コミット & PR
-7. **REQUIRED:** `gh-gantt-sync`（タスク更新 + push）を invoke
+3. タスク確認 — `gh-gantt task list --state open --unblocked` を実行する。
+   ソートが必要なら `--sort priority,end_date` を追加。
+   **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
+   ユーザーに選択を促す。件数が多い場合はフィルタの併用を提案する。
+4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt task update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
+5. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
+6. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
+7. コミット & PR — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
+8. レビュー指摘対応 — 指摘内容を精査し妥当性を判断してから対応する。Bot のレビューを鵜呑みにしない。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）
+9. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
 ## Red Flags
 
@@ -32,12 +37,18 @@ Evidence: コマンド出力をそのまま提示する。
 | pull せずに作業開始 | 古いデータで作業、コンフリクトリスク |
 | タスク選択をスキップ | Issue と紐づかない |
 | コミット後にタスク更新を忘れる | GitHub と乖離 |
+| エージェントがタスクを勝手に絞り込む | ユーザーが見るべきタスクが隠される |
+| レビュー指摘を Issue 化する | レビュー修正は同じ PR に追加コミットするだけ |
+| Bot レビューを全て鵜呑みにする | 誤検知や文脈に合わない指摘がある。精査してから対応する |
+| PR マージ前に手動で Issue を close する | `Closes #N` で自動クローズに任せる |
 
 | 言い訳 | 現実 |
 |--------|------|
 | 「さっき pull したばかり」 | status の出力を確認すること。記憶は evidence ではない |
 | 「小さい変更だからタスク不要」 | 追跡されない変更はプロジェクトの盲点になる |
 | 「後で push する」 | 後では来ない。コミットと push はセットで行う |
+| 「見やすくまとめた」 | CLI 出力の加工は情報の欠落。そのまま出すこと |
+| 「レビュー指摘だから Issue にしよう」 | Issue は新しい作業単位。レビュー修正は既存 PR の一部 |
 
 ## リファレンス
 
