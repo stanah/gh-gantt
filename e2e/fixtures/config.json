@@ -1,0 +1,41 @@
+{
+  "version": "1",
+  "project": {
+    "name": "Test Project",
+    "github": { "owner": "test-owner", "repo": "test-repo", "project_number": 1 }
+  },
+  "sync": {
+    "auto_create_issues": false,
+    "field_mapping": { "start_date": "Start", "end_date": "End", "status": "Status" }
+  },
+  "task_types": {
+    "epic": { "label": "Epic", "display": "summary", "color": "#6A1B9A", "github_label": "epic", "default_collapsed": false },
+    "feature": { "label": "Feature", "display": "bar", "color": "#1565C0", "github_label": "feature" },
+    "task": { "label": "Task", "display": "bar", "color": "#2E7D32", "github_label": "task" },
+    "milestone": { "label": "Milestone", "display": "milestone", "color": "#E65100", "github_label": "milestone" }
+  },
+  "type_hierarchy": {
+    "epic": ["feature", "milestone"],
+    "feature": ["task"],
+    "task": [],
+    "milestone": []
+  },
+  "statuses": {
+    "field_name": "Status",
+    "values": {
+      "Todo": { "color": "#999999", "done": false },
+      "In Progress": { "color": "#1565C0", "done": false },
+      "Done": { "color": "#2E7D32", "done": true }
+    }
+  },
+  "gantt": {
+    "default_view": "month",
+    "working_days": [1, 2, 3, 4, 5],
+    "colors": {
+      "critical_path": "#E53935",
+      "on_track": "#43A047",
+      "at_risk": "#FB8C00",
+      "overdue": "#E53935"
+    }
+  }
+}
