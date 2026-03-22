@@ -93,6 +93,7 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
   if (fields.length === 0) return [...tasks];
 
   const typeOrder = Object.keys(config.task_types);
+  const typeRank = new Map(typeOrder.map((t, i) => [t, i]));
   const priorityFieldName = config.sync.field_mapping.priority;
 
   const sorted = [...tasks];
@@ -110,10 +111,9 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
           cmp = compareDates(a.start_date, b.start_date);
           break;
         case "type": {
-          const aIdx = typeOrder.indexOf(a.type);
-          const bIdx = typeOrder.indexOf(b.type);
-          cmp = (aIdx === -1 ? typeOrder.length : aIdx)
-            - (bIdx === -1 ? typeOrder.length : bIdx);
+          const aIdx = typeRank.get(a.type) ?? typeOrder.length;
+          const bIdx = typeRank.get(b.type) ?? typeOrder.length;
+          cmp = aIdx - bIdx;
           break;
         }
         case "priority": {
