@@ -1,105 +1,61 @@
 ---
 name: gh-gantt-workflow
-description: gh-gantt CLI を使った開発ワークフロー。タスク確認・同期・ブランチ作成・PR 作成の一連の流れ。「タスクを確認して」「次に何をすべき？」「同期して」「作業を始めたい」などの指示で使用。
+description: gh-gantt の開発サイクル全体を回すオーケストレーター。「作業を始めたい」「次に何をすべき？」「開発サイクルを回して」で使用。特定の要望のタスク化は gh-gantt-decompose、進捗確認のみは gh-gantt-progress、同期のみは gh-gantt-sync を使うこと。
 ---
 
 # gh-gantt 開発ワークフロー
 
-gh-gantt CLI でタスクを管理しながら開発を進める。
+開発サイクル全体をオーケストレーションする。`.gantt-sync/workflow.md` が存在すればプロジェクト固有のコンテキストとして参照する。
 
 ## セットアップ
 
-既存の GitHub Project に対して初期化:
+`.gantt-sync/workflow.md` が存在しない場合、[templates/workflow.md](templates/workflow.md) を参考に `.gantt-sync/workflow.md` を作成する。実例は [templates/workflow.example.md](templates/workflow.example.md) を参照。
+注: `gh-gantt init` がワークフローファイルの自動生成に対応している場合はそちらを使用する。
 
-```bash
-gh-gantt init --owner <owner> --repo <repo> --project <number>
-```
+<HARD-GATE>
+ステップ 1（sync pull）の完了を evidence で確認するまで、ステップ 3 以降に進んではならない。
 
-`.gantt-sync/` に config・タスク・同期状態が作成される。
+チェック条件: `gh-gantt status` を実行し出力を確認する。
+失敗時: `gh-gantt-sync` スキルを invoke して pull を実行する。
+Evidence: コマンド出力をそのまま提示する。
+</HARD-GATE>
 
-## 開発サイクル
+## デフォルトフロー
 
-### 1. 同期 & タスク確認
+1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
+2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
+3. タスク確認 — `gh-gantt task list --state open` を実行する。
+   件数が多い場合は CLI でサポートされているフィルタ（例: `--backlog`, `--scheduled`, `--type`, `--json`）の併用を提案する。
+   注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用し、利用できない場合はフォールバックとして `gh-gantt task list --state open` を使用する。
+   **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
+   ユーザーに選択を促す。
+4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt task update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
+5. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
+6. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
+7. コミット & PR — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
+8. レビュー指摘対応 — 指摘内容を精査し妥当性を判断してから対応する。Bot のレビューを鵜呑みにしない。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）
+9. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
-```bash
-gh-gantt pull                    # GitHub → ローカル同期
-gh-gantt task list --state open  # 未完了タスク一覧
-```
+## Red Flags
 
-必要に応じて詳細を確認:
+| やりがちなこと | 問題 |
+|--------------|------|
+| pull せずに作業開始 | 古いデータで作業、コンフリクトリスク |
+| タスク選択をスキップ | Issue と紐づかない |
+| コミット後にタスク更新を忘れる | GitHub と乖離 |
+| エージェントがタスクを勝手に絞り込む | ユーザーが見るべきタスクが隠される |
+| レビュー指摘を Issue 化する | レビュー修正は同じ PR に追加コミットするだけ |
+| Bot レビューを全て鵜呑みにする | 誤検知や文脈に合わない指摘がある。精査してから対応する |
+| PR マージ前に手動で Issue を close する | `Closes #N` で自動クローズに任せる |
 
-```bash
-gh-gantt task show <number>      # タスク詳細
-gh-gantt status                  # 同期状態（未 push の変更、コンフリクト有無）
-```
-
-### 2. タスク選択
-
-一覧から着手するタスクを選ぶ。優先度の判断基準:
-
-1. **期限が近い** — `End Date` が今日に近いタスク
-2. **ブロックされていない** — `blocked_by` が空、または依存先が完了済み
-3. **エピックの子タスク** — 親エピックの期限が迫っている場合、その子タスクを優先
-
-ユーザーに確認せずタスクを勝手に選ばない。一覧を提示して選択を促す。
-
-### 3. ブランチ作成
-
-```bash
-# 命名規則
-feat/issue-<number>-<short-description>    # 機能追加
-fix/issue-<number>-<short-description>     # バグ修正
-
-git checkout -b feat/issue-<number>-<description> main
-```
-
-### 4. 開発 & 検証
-
-```bash
-pnpm typecheck
-pnpm test
-pnpm build
-```
-
-### 5. コミット & PR
-
-conventional commit (`feat:`, `fix:`, `refactor:`, `chore:`, `docs:`, `test:`)。
-
-```bash
-git push -u origin <branch-name>
-gh pr create --title "<title>" --body "Closes #<number>"
-```
-
-### 6. マージ後の同期
-
-```bash
-gh-gantt pull
-```
-
-## タスク操作
-
-```bash
-# 作成
-gh-gantt create --title "タスク名" --type task --start-date 2026-03-01 --end-date 2026-03-15
-gh-gantt push                    # GitHub に反映
-
-# 更新
-gh-gantt task update <number> --milestone v1.0
-gh-gantt task update <number> --start-date 2026-03-01 --end-date 2026-03-15
-
-# 依存関係・親子関係
-gh-gantt task link <number> --blocked-by <number>
-gh-gantt task link <number> --set-parent <id>
-
-# マイルストーン
-gh-gantt milestone list
-gh-gantt milestone create "v1.0" --due-date 2026-06-01
-```
-
-## コンフリクト発生時
-
-`conflict-resolution` スキルを使用する。
+| 言い訳 | 現実 |
+|--------|------|
+| 「さっき pull したばかり」 | status の出力を確認すること。記憶は evidence ではない |
+| 「小さい変更だからタスク不要」 | 追跡されない変更はプロジェクトの盲点になる |
+| 「後で push する」 | 後では来ない。コミットと push はセットで行う |
+| 「見やすくまとめた」 | CLI 出力の加工は情報の欠落。そのまま出すこと |
+| 「レビュー指摘だから Issue にしよう」 | Issue は新しい作業単位。レビュー修正は既存 PR の一部 |
 
 ## リファレンス
 
-- コマンドの詳細なオプション・動作: [references/commands.md](references/commands.md)
+- コマンド詳細: [references/commands.md](references/commands.md)

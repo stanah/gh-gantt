@@ -1,0 +1,48 @@
+---
+name: gh-gantt-decompose
+description: 要望を調査・分解して適切な粒度で Issue 化する。「X を実装して」「タスク化して」「Issue を作って」で使用。既存タスクとの重複・矛盾チェック、粒度判断、親子/依存関係の設定を行う。開発サイクル全体を回すなら gh-gantt-workflow を使うこと。
+---
+
+# gh-gantt Decompose
+
+要望をそのまま Issue にせず、調査・分析してから適切な粒度でタスク化する。
+
+<HARD-GATE>
+既存タスクとの重複・矛盾チェックなしに Issue を作成してはならない。
+
+チェック条件: 事前に **REQUIRED:** `gh-gantt-sync`（pull）を invoke して最新状態を取得し、その上で `gh-gantt task list` で既存タスクを調査する。
+失敗時: 重複・類似タスクがある場合、ユーザーに提示して方針を確認する（既存タスクの更新 / 新規作成 / 中止）。
+Evidence: `gh-gantt-sync`（pull）と `gh-gantt task list` の出力、および重複なしの判断根拠を提示する。
+</HARD-GATE>
+
+## プロセス
+
+1. **同期（取得）** — **REQUIRED:** `gh-gantt-sync`（pull）を invoke してリモートの最新状態を取得する
+2. **要件の参照元を確認** — `.gantt-sync/workflow.md` に要件管理スキルが指定されていれば参照を促す
+3. **既存タスク調査** — `gh-gantt task list` で重複・類似タスクを検索 — evidence として結果を提示
+4. **矛盾チェック** — 既存タスクと矛盾する要望ではないか確認
+5. **粒度の判断** — エピック / フィーチャー / タスクのどのレベルか。ユーザーに提示して確認
+6. **分解** — 大きすぎる要望は適切な粒度に分割
+7. **Issue 作成** — 各タスクの body に要件を記述。`gh-gantt create` で作成
+8. **作成確認** — `gh-gantt task show <number>` で作成内容を確認 — evidence として出力を提示
+9. **構造化** — `gh-gantt task link --set-parent` で親子関係を設定。**OPTIONAL:** `gh-gantt-dependencies` で依存関係を設定
+10. **同期** — **REQUIRED:** `gh-gantt-sync`（push）を invoke
+
+## Red Flags
+
+| やりがちなこと | 問題 |
+|--------------|------|
+| 要望をそのまま 1 Issue にする | 粒度がばらける |
+| 既存タスクを調べない | 重複・矛盾が生じる |
+| body を空にする | 要件が不明確なタスクが増える |
+| 親子関係を設定しない | 構造が見えない、進捗集計できない |
+
+| 言い訳 | 現実 |
+|--------|------|
+| 「タスクリストが長くて探すのが大変」 | `gh-gantt task list` で検索できる。手間を惜しむと重複が増える |
+| 「後で整理する」 | 後では来ない。作成時に構造化する |
+| 「小さいから body は不要」 | 3 ヶ月後の自分は覚えていない |
+
+## リファレンス
+
+- コマンド詳細: [commands.md](../gh-gantt-workflow/references/commands.md)
