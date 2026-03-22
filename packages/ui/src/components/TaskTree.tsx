@@ -94,6 +94,7 @@ export function TaskTreeBody({
       taskType={config.task_types[node.task.type]}
       showIssueId={displayOptions?.has("issueId")}
       showAssignees={displayOptions?.has("assignees")}
+      priorityFieldName={config.sync?.field_mapping?.priority}
       highlightType={highlightRelationMap?.get(node.task.id) ?? null}
       isDimmed={
         hoveredTaskId != null &&

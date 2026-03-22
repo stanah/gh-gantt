@@ -4,11 +4,13 @@ import type { Task } from "../types/index.js";
 export const UNASSIGNED = "__unassigned__";
 export const NO_PRIORITY = "__no_priority__";
 const ASSIGNEES_QUERY_KEY = "assignees";
+const PRIORITIES_QUERY_KEY = "priorities";
 
 export interface TaskFilterState {
   hideClosed: boolean;
   selectedAssignee: string | null;
   searchQuery: string;
+  selectedPriorities: string[];
 }
 
 function parseAssigneesFromQuery(search: string): string[] {
@@ -26,11 +28,25 @@ function encodeAssignees(values: string[]): string | null {
   return values.join(",");
 }
 
+function parsePrioritiesFromQuery(search: string): string[] {
+  const params = new URLSearchParams(search);
+  const raw = params.get(PRIORITIES_QUERY_KEY);
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((v) => v.trim().toLowerCase())
+    .filter((v) => v.length > 0);
+}
+
 export function useTaskFilter(tasks: Task[]) {
   const [hideClosed, setHideClosed] = useState(true);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     return parseAssigneesFromQuery(window.location.search);
+  });
+  const [selectedPriorities, setSelectedPriorities] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    return parsePrioritiesFromQuery(window.location.search);
   });
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -71,8 +87,13 @@ export function useTaskFilter(tasks: Task[]) {
     } else {
       url.searchParams.set(ASSIGNEES_QUERY_KEY, selectedAssignees.join(","));
     }
+    if (selectedPriorities.length === 0) {
+      url.searchParams.delete(PRIORITIES_QUERY_KEY);
+    } else {
+      url.searchParams.set(PRIORITIES_QUERY_KEY, selectedPriorities.join(","));
+    }
     window.history.replaceState({}, "", url.toString());
-  }, [selectedAssignees]);
+  }, [selectedAssignees, selectedPriorities]);
 
   return {
     hideClosed,
@@ -82,6 +103,8 @@ export function useTaskFilter(tasks: Task[]) {
     selectedAssignees,
     setSelectedAssignees,
     allAssignees,
+    selectedPriorities,
+    setSelectedPriorities,
     searchQuery,
     setSearchQuery,
   };

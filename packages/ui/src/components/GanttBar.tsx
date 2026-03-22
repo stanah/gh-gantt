@@ -9,6 +9,7 @@ import {
   getDaysUntilDue,
 } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
+import { getPriorityColor } from "./PriorityBadge.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 
@@ -23,6 +24,7 @@ interface GanttBarProps {
   onDragStart?: (e: React.MouseEvent, mode: DragMode) => void;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  priorityFieldName?: string;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
 }
@@ -46,6 +48,7 @@ export function GanttBar({
   onDragStart,
   showIssueId,
   showAssignees,
+  priorityFieldName,
   isDimmed,
   highlightType,
 }: GanttBarProps) {
@@ -76,6 +79,9 @@ export function GanttBar({
       : progress === 100
         ? "#8957e5"
         : color;
+
+  const priority = priorityFieldName ? task.custom_fields[priorityFieldName] as string | undefined : undefined;
+  const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
   const scheduleTooltip = overdue
@@ -110,6 +116,18 @@ export function GanttBar({
         fill={progressFill}
         opacity={0.7}
       />
+      {/* Priority indicator (left stripe) */}
+      {priorityColor && (
+        <rect
+          x={x1}
+          y={barY}
+          width={3}
+          height={barHeight}
+          rx={1}
+          fill={priorityColor}
+          opacity={0.9}
+        />
+      )}
       {/* Label + Assignee */}
       {(() => {
         const issueLabel = showIssueId ? formatIssueId(task.id) : "";

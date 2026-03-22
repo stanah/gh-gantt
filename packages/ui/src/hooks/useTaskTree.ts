@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Task } from "../types/index.js";
 import { UNASSIGNED } from "./useTaskFilter.js";
+import { NO_PRIORITY } from "./useTaskFilter.js";
 
 export interface TreeNode {
   task: Task;
@@ -16,6 +17,8 @@ export interface TaskFilterOptions {
   hideClosed?: boolean;
   selectedAssignee?: string | null;
   selectedAssignees?: string[];
+  selectedPriorities?: string[];
+  priorityFieldName?: string;
   searchQuery?: string;
 }
 
@@ -63,6 +66,8 @@ export function useTaskTree(
     hideClosed = false,
     selectedAssignee = null,
     selectedAssignees = [],
+    selectedPriorities = [],
+    priorityFieldName,
     searchQuery = "",
   } = filterOptions;
 
@@ -80,10 +85,57 @@ export function useTaskTree(
     const includeUnassigned = selectedSet.has(UNASSIGNED);
     const selectedUsers = new Set([...selectedSet].filter((v) => v !== UNASSIGNED));
 
-    const prefiltered = tasks.filter((t) => {
+    const hasPriorityFilter = selectedPriorities.length > 0;
+    const prioritySet = new Set(selectedPriorities);
+    const includeNoPriority = prioritySet.has(NO_PRIORITY);
+
+    const taskById = new Map(tasks.map((t) => [t.id, t]));
+
+    const matchesPriorityOwn = (t: Task): boolean => {
+      if (!hasPriorityFilter || !priorityFieldName) return true;
+      const rawPriority = t.custom_fields[priorityFieldName];
+      const taskPriority = typeof rawPriority === "string" ? rawPriority : undefined;
+      if (!taskPriority) return includeNoPriority;
+      return prioritySet.has(taskPriority.toLowerCase());
+    };
+
+    const passesBaseFilters = (t: Task): boolean => {
       if (!enabledTypes.has(t.type)) return false;
       if (hideClosed && t.state === "closed") return false;
       if (trimmedQuery && !matchesSearch(t, trimmedQuery)) return false;
+      return true;
+    };
+
+    const priorityKeepMemo = new Map<string, boolean>();
+    const keepByPriority = (taskId: string, seen: Set<string>): boolean => {
+      if (priorityKeepMemo.has(taskId)) return priorityKeepMemo.get(taskId)!;
+      const t = taskById.get(taskId);
+      if (!t || !passesBaseFilters(t)) return false;
+      if (seen.has(taskId)) return false;
+      seen.add(taskId);
+
+      const isContainer = CONTAINER_TYPES.has(t.type) || t.sub_tasks.length > 0;
+      if (!isContainer) {
+        const result = matchesPriorityOwn(t);
+        priorityKeepMemo.set(taskId, result);
+        return result;
+      }
+
+      if (matchesPriorityOwn(t)) {
+        priorityKeepMemo.set(taskId, true);
+        return true;
+      }
+
+      const hasMatchingDescendant = t.sub_tasks.some((id) => keepByPriority(id, seen));
+      priorityKeepMemo.set(taskId, hasMatchingDescendant);
+      return hasMatchingDescendant;
+    };
+
+    const prefiltered = tasks.filter((t) => {
+      if (!passesBaseFilters(t)) return false;
+      if (hasPriorityFilter && priorityFieldName) {
+        return keepByPriority(t.id, new Set());
+      }
       return true;
     });
 
@@ -148,7 +200,7 @@ export function useTaskTree(
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, searchQuery]);
+  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName, searchQuery]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

@@ -58,7 +58,7 @@ export interface Config {
   };
   sync: {
     auto_create_issues: boolean;
-    field_mapping: { start_date: string; end_date: string; status: string };
+    field_mapping: { start_date: string; end_date: string; status: string; priority?: string };
   };
   task_types: Record<string, TaskType>;
   type_hierarchy: Record<string, string[]>;

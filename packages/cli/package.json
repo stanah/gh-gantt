@@ -9,7 +9,8 @@
   "scripts": {
     "build": "tsdown",
     "dev": "tsdown --watch",
-    "test": "vp test run",
+    "test": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts'",
+    "test:e2e-sync": "vp test run src/__tests__/e2e-sync.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

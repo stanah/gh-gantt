@@ -529,6 +529,42 @@ describe("applyTaskUpdate", () => {
       expect(result.error).toContain("NonExistent");
     });
   });
+
+  describe("priority", () => {
+    const configWithPriority = makeConfig({
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "Start", end_date: "End", status: "Status", priority: "Priority" },
+      },
+    });
+
+    it("sets valid priority in custom_fields", () => {
+      const task = makeTask();
+      const result = applyTaskUpdate(task, { priority: "high" }, configWithPriority);
+      expect(result.error).toBeUndefined();
+      expect(result.task.custom_fields["Priority"]).toBe("high");
+    });
+
+    it("normalizes priority to lowercase", () => {
+      const task = makeTask();
+      const result = applyTaskUpdate(task, { priority: "High" }, configWithPriority);
+      expect(result.error).toBeUndefined();
+      expect(result.task.custom_fields["Priority"]).toBe("high");
+    });
+
+    it("rejects invalid priority", () => {
+      const task = makeTask();
+      const result = applyTaskUpdate(task, { priority: "urgent" }, configWithPriority);
+      expect(result.error).toContain("Invalid priority");
+      expect(result.error).toContain("urgent");
+    });
+
+    it("rejects priority when field_mapping.priority is not configured", () => {
+      const task = makeTask();
+      const result = applyTaskUpdate(task, { priority: "high" }, config);
+      expect(result.error).toContain("not configured");
+    });
+  });
 });
 
 // --- filterTasksForUpdate (bulk) ---

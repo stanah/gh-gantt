@@ -1,26 +1,39 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useRef, useState } from "react";
 import type { ScaleTime } from "d3-scale";
 import { formatDate } from "../lib/date-utils.js";
 
 export type DragMode = "move" | "resize-left" | "resize-right";
 
-interface DragState {
-  mode: DragMode;
-  startX: number;
-  originalStart: Date;
-  originalEnd: Date;
+export interface DragPreview {
+  taskId: string;
+  start_date: string;
+  end_date: string;
 }
 
 export function useDragResize(
   xScale: ScaleTime<number, number>,
-  onUpdate: (taskId: string, updates: { start_date?: string; end_date?: string }) => void,
+  onCommit: (taskId: string, updates: { start_date?: string; end_date?: string }) => void,
 ) {
-  const dragState = useRef<(DragState & { taskId: string }) | null>(null);
+  const [preview, setPreview] = useState<DragPreview | null>(null);
+
+  const dragState = useRef<{
+    taskId: string;
+    mode: DragMode;
+    startX: number;
+    originalStart: Date;
+    originalEnd: Date;
+    lastStartDate: string;
+    lastEndDate: string;
+    changed: boolean;
+  } | null>(null);
 
   const startDrag = useCallback(
     (e: React.MouseEvent, taskId: string, mode: DragMode, startDate: Date, endDate: Date) => {
       e.preventDefault();
       e.stopPropagation();
+
+      const startStr = formatDate(startDate);
+      const endStr = formatDate(endDate);
 
       dragState.current = {
         taskId,
@@ -28,20 +41,21 @@ export function useDragResize(
         startX: e.clientX,
         originalStart: startDate,
         originalEnd: endDate,
+        lastStartDate: startStr,
+        lastEndDate: endStr,
+        changed: false,
       };
 
       const onMouseMove = (ev: MouseEvent) => {
         if (!dragState.current) return;
         const dx = ev.clientX - dragState.current.startX;
 
-        // Convert pixel delta to day delta
         const dayWidth = xScale(new Date(2026, 0, 2)) - xScale(new Date(2026, 0, 1));
         const dayDelta = Math.round(dx / dayWidth);
 
-        if (dayDelta === 0) return;
-
         const state = dragState.current;
-        const updates: { start_date?: string; end_date?: string } = {};
+        let newStartDate = formatDate(state.originalStart);
+        let newEndDate = formatDate(state.originalEnd);
 
         switch (state.mode) {
           case "move": {
@@ -49,15 +63,15 @@ export function useDragResize(
             newStart.setDate(newStart.getDate() + dayDelta);
             const newEnd = new Date(state.originalEnd);
             newEnd.setDate(newEnd.getDate() + dayDelta);
-            updates.start_date = formatDate(newStart);
-            updates.end_date = formatDate(newEnd);
+            newStartDate = formatDate(newStart);
+            newEndDate = formatDate(newEnd);
             break;
           }
           case "resize-left": {
             const newStart = new Date(state.originalStart);
             newStart.setDate(newStart.getDate() + dayDelta);
             if (newStart < state.originalEnd) {
-              updates.start_date = formatDate(newStart);
+              newStartDate = formatDate(newStart);
             }
             break;
           }
@@ -65,28 +79,47 @@ export function useDragResize(
             const newEnd = new Date(state.originalEnd);
             newEnd.setDate(newEnd.getDate() + dayDelta);
             if (newEnd > state.originalStart) {
-              updates.end_date = formatDate(newEnd);
+              newEndDate = formatDate(newEnd);
             }
             break;
           }
         }
 
-        if (Object.keys(updates).length > 0) {
-          onUpdate(state.taskId, updates);
-        }
+        if (newStartDate === state.lastStartDate && newEndDate === state.lastEndDate) return;
+
+        state.lastStartDate = newStartDate;
+        state.lastEndDate = newEndDate;
+        state.changed = dayDelta !== 0;
+
+        setPreview({ taskId: state.taskId, start_date: newStartDate, end_date: newEndDate });
       };
 
       const onMouseUp = () => {
+        const state = dragState.current;
         dragState.current = null;
+        setPreview(null);
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
+
+        if (!state || !state.changed) return;
+
+        const updates: { start_date?: string; end_date?: string } = {};
+        const origStart = formatDate(state.originalStart);
+        const origEnd = formatDate(state.originalEnd);
+
+        if (state.lastStartDate !== origStart) updates.start_date = state.lastStartDate;
+        if (state.lastEndDate !== origEnd) updates.end_date = state.lastEndDate;
+
+        if (Object.keys(updates).length > 0) {
+          onCommit(state.taskId, updates);
+        }
       };
 
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
     },
-    [xScale, onUpdate],
+    [xScale, onCommit],
   );
 
-  return { startDrag };
+  return { startDrag, dragPreview: preview };
 }

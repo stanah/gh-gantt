@@ -1,6 +1,7 @@
 import React from "react";
 import type { Task, StatusValue, TaskType } from "../types/index.js";
 import { StatusBadge } from "./StatusBadge.js";
+import { PriorityBadge } from "./PriorityBadge.js";
 import { ProgressBar } from "./ProgressBar.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
@@ -22,6 +23,7 @@ interface TaskRowProps {
   taskType: TaskType | undefined;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  priorityFieldName?: string;
   highlightType?: RelationType | null;
   isDimmed?: boolean;
   searchQuery?: string;
@@ -89,6 +91,7 @@ export function TaskRow({
   taskType,
   showIssueId,
   showAssignees,
+  priorityFieldName,
   highlightType,
   isDimmed,
   searchQuery,
@@ -274,6 +277,9 @@ export function TaskRow({
         </span>
       )}
 
+      {!isMilestone && priorityFieldName && (
+        <PriorityBadge priority={task.custom_fields[priorityFieldName] as string | undefined} />
+      )}
       {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}
       {!isMilestone && <ProgressBar progress={progress} color={taskType?.color} />}
 
