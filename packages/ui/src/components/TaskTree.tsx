@@ -1,6 +1,5 @@
 import React from "react";
 import { TaskRow } from "./TaskRow.js";
-import { TypeFilter } from "./TypeFilter.js";
 import { BacklogSectionHeader } from "./BacklogSectionHeader.js";
 import type { Task, Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
@@ -12,11 +11,9 @@ export const ROW_HEIGHT = 28;
 
 interface TaskTreeHeaderProps {
   config: Config;
-  enabledTypes: Set<string>;
-  onToggleType: (typeName: string) => void;
 }
 
-export function TaskTreeHeader({ config, enabledTypes, onToggleType }: TaskTreeHeaderProps) {
+export function TaskTreeHeader({ config }: TaskTreeHeaderProps) {
   const hasSprintBand = (config.sprints?.length ?? 0) > 0;
   const headerHeight = hasSprintBand ? 52 : 32;
   return (
@@ -32,9 +29,7 @@ export function TaskTreeHeader({ config, enabledTypes, onToggleType }: TaskTreeH
         alignItems: "center",
         boxSizing: "border-box",
       }}
-    >
-      <TypeFilter taskTypes={config.task_types} enabled={enabledTypes} onToggle={onToggleType} />
-    </div>
+    />
   );
 }
 

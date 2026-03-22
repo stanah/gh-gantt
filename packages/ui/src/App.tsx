@@ -10,7 +10,7 @@ import { Layout } from "./components/Layout.js";
 import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
-import { Toolbar } from "./components/Toolbar.js";
+import { Toolbar } from "./components/toolbar/Toolbar.js";
 import type { ViewScale } from "./hooks/useGanttScale.js";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
@@ -575,13 +575,16 @@ export function App() {
         undoCount={undoCount}
         redoCount={redoCount}
         undoRedoBusy={undoRedoBusy}
+        taskTypes={config?.task_types ?? {}}
+        enabledTypes={enabled}
+        onToggleType={toggleType}
       />
       <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
         <div style={{ flex: 1, overflow: "hidden" }}>
           <Layout
             scrollContainerRef={scrollContainerRef}
             leftHeader={
-              <TaskTreeHeader config={config} enabledTypes={enabled} onToggleType={toggleType} />
+              <TaskTreeHeader config={config} />
             }
             leftBody={
               <TaskTreeBody
