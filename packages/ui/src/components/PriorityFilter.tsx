@@ -59,13 +59,13 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
         onClick={() => setOpen((prev) => !prev)}
         style={btnStyle}
         title={formatLabel(selectedValues)}
-        aria-haspopup="listbox"
+        aria-haspopup="dialog"
         aria-expanded={open}
       >
         {formatLabel(selectedValues)}
       </button>
       {open && (
-        <div style={menuStyle}>
+        <div role="dialog" aria-label="Filter by priority" style={menuStyle}>
           <button
             type="button"
             onClick={() => onChange([])}

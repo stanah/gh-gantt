@@ -222,7 +222,7 @@ export const taskListCommand = new Command("list")
       assignee: opts.assignee,
       unassigned: opts.unassigned,
       status: opts.status,
-      statusFieldName: config.statuses?.field_name,
+      statusFieldName: config.statuses.field_name,
       label: opts.label,
       search: opts.search,
     });
