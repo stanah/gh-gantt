@@ -20,10 +20,11 @@ Evidence: コマンド出力をそのまま提示する。
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
 3. タスク確認 — `gh-gantt task list --state open`。ユーザーに選択を促す
-4. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
-5. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
-6. コミット & PR
-7. **REQUIRED:** `gh-gantt-sync`（タスク更新 + push）を invoke
+4. タスクのステータスを作業中に更新 — `gh-gantt task update <number> --status <作業中ステータス>`（config の `statuses.values` から `done: false` のステータスを使用）
+5. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
+6. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
+7. コミット & PR
+8. **REQUIRED:** `gh-gantt-sync`（タスクのステータスを `done: true` のステータスに更新し `--state closed` + push）を invoke
 
 ## Red Flags
 
