@@ -6,17 +6,16 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
-    "dev": "tsup src/index.ts --format esm --dts --watch",
-    "test": "vitest run",
+    "build": "vp pack",
+    "dev": "vp pack --watch",
+    "test": "vp test run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "tsup": "^8.0.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vite-plus": "^0.1.13"
   }
 }

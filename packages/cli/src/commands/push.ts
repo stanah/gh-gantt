@@ -54,8 +54,12 @@ export const pushCommand = new Command("push")
       return;
     }
 
-    const milestoneCount = pushableDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task)).length;
-    const draftCount = pushableDiffs.filter((d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task)).length;
+    const milestoneCount = pushableDiffs.filter(
+      (d) => d.type !== "deleted" && isMilestoneDraftTask(d.task),
+    ).length;
+    const draftCount = pushableDiffs.filter(
+      (d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task),
+    ).length;
     const deletedCount = pushableDiffs.filter((d) => d.type === "deleted").length;
     const existingCount = pushableDiffs.length - draftCount - milestoneCount - deletedCount;
 
@@ -67,10 +71,18 @@ export const pushCommand = new Command("push")
 
     for (const diff of pushableDiffs) {
       const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);
-      const symbol = isMilestone ? "*" : diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
+      const symbol = isMilestone
+        ? "*"
+        : diff.type === "added"
+          ? "+"
+          : diff.type === "modified"
+            ? "~"
+            : "-";
       const tag = isMilestone
         ? ` [milestone${diff.task.date ? `, due: ${diff.task.date}` : ""}]`
-        : isDraftTask(diff.id) ? " [draft]" : "";
+        : isDraftTask(diff.id)
+          ? " [draft]"
+          : "";
       const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
       console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
     }
@@ -97,17 +109,22 @@ export const pushCommand = new Command("push")
     }
 
     const gql = await createGraphQLClient();
-    const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-      await executePush(gql, config, tasksFile, syncState, {
-        force: opts.force,
-        saveProgress: async (tf, ss) => {
-          await tasksStore.write(tf);
-          await stateStore.write(ss);
-        },
-      });
+    const {
+      result,
+      tasksFile: updatedTasksFile,
+      syncState: updatedSyncState,
+    } = await executePush(gql, config, tasksFile, syncState, {
+      force: opts.force,
+      saveProgress: async (tf, ss) => {
+        await tasksStore.write(tf);
+        await stateStore.write(ss);
+      },
+    });
 
     await tasksStore.write(updatedTasksFile);
     await stateStore.write(updatedSyncState);
 
-    console.log(`Push complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`);
+    console.log(
+      `Push complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`,
+    );
   });

@@ -102,7 +102,10 @@ const originalConsoleError = console.error.bind(console);
 describe("Sprint display integration", () => {
   beforeAll(() => {
     vi.spyOn(console, "error").mockImplementation((message: unknown, ...args: unknown[]) => {
-      if (typeof message === "string" && message.includes("useLayoutEffect does nothing on the server")) {
+      if (
+        typeof message === "string" &&
+        message.includes("useLayoutEffect does nothing on the server")
+      ) {
         return;
       }
       originalConsoleError(message, ...args);
@@ -130,11 +133,7 @@ describe("Sprint display integration", () => {
 
   it("reserves extra task tree header height when sprint bands are enabled", () => {
     const html = renderToStaticMarkup(
-      <TaskTreeHeader
-        config={config}
-        enabledTypes={new Set(["task"])}
-        onToggleType={() => {}}
-      />,
+      <TaskTreeHeader config={config} enabledTypes={new Set(["task"])} onToggleType={() => {}} />,
     );
 
     expect(html).toContain("height:52px");

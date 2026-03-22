@@ -5,7 +5,11 @@ import { TasksStore } from "../store/tasks.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import type { Task } from "@gh-gantt/shared";
 
-async function prompt(rl: ReturnType<typeof createInterface>, question: string, defaultValue?: string): Promise<string> {
+async function prompt(
+  rl: ReturnType<typeof createInterface>,
+  question: string,
+  defaultValue?: string,
+): Promise<string> {
   const suffix = defaultValue ? ` (${defaultValue})` : "";
   const answer = await rl.question(`${question}${suffix}: `);
   return answer.trim() || defaultValue || "";

@@ -3,11 +3,7 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import {
-  detectMarkers,
-  resolveMarker,
-  hasUnresolvedMarkers,
-} from "../sync/conflict-marker.js";
+import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import { formatConflictList } from "./conflicts.js";
 import type { Task, SyncState } from "@gh-gantt/shared";

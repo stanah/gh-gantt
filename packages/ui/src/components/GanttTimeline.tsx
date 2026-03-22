@@ -27,7 +27,13 @@ function isValidDate(date: Date): boolean {
   return !Number.isNaN(date.getTime());
 }
 
-export function GanttTimeline({ xScale, dateRange, viewScale, totalWidth, sprints }: GanttTimelineProps) {
+export function GanttTimeline({
+  xScale,
+  dateRange,
+  viewScale,
+  totalWidth,
+  sprints,
+}: GanttTimelineProps) {
   const ticks = useMemo(() => {
     const interval = viewScale === "day" ? timeDay : viewScale === "week" ? timeWeek : timeMonth;
     return interval.range(dateRange[0], dateRange[1]);
@@ -48,7 +54,10 @@ export function GanttTimeline({ xScale, dateRange, viewScale, totalWidth, sprint
           end,
         };
       })
-      .filter((item): item is { key: string; name: string; color: string; start: Date; end: Date } => item != null);
+      .filter(
+        (item): item is { key: string; name: string; color: string; start: Date; end: Date } =>
+          item != null,
+      );
   }, [sprints]);
 
   const formatTick = (date: Date) => {
@@ -58,7 +67,20 @@ export function GanttTimeline({ xScale, dateRange, viewScale, totalWidth, sprint
     if (viewScale === "week") {
       return `${date.getMonth() + 1}/${date.getDate()}`;
     }
-    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const months = [
+      "Jan",
+      "Feb",
+      "Mar",
+      "Apr",
+      "May",
+      "Jun",
+      "Jul",
+      "Aug",
+      "Sep",
+      "Oct",
+      "Nov",
+      "Dec",
+    ];
     if (viewScale === "month") {
       return `${months[date.getMonth()]} ${date.getFullYear()}`;
     }
@@ -73,7 +95,14 @@ export function GanttTimeline({ xScale, dateRange, viewScale, totalWidth, sprint
   today.setHours(0, 0, 0, 0);
 
   return (
-    <div style={{ height: totalHeight, borderBottom: "1px solid #e0e0e0", position: "relative", background: "#fafafa" }}>
+    <div
+      style={{
+        height: totalHeight,
+        borderBottom: "1px solid #e0e0e0",
+        position: "relative",
+        background: "#fafafa",
+      }}
+    >
       <svg width={totalWidth} height={totalHeight}>
         {sprintBands.map((sprint) => {
           const bandStart = xScale(sprint.start);
@@ -96,7 +125,12 @@ export function GanttTimeline({ xScale, dateRange, viewScale, totalWidth, sprint
                 strokeWidth={isCurrent ? 1.5 : 1}
               />
               {labelVisible && (
-                <text x={bandStart + 6} y={13} fontSize={10} fill={isCurrent ? "#0f172a" : "#334155"}>
+                <text
+                  x={bandStart + 6}
+                  y={13}
+                  fontSize={10}
+                  fill={isCurrent ? "#0f172a" : "#334155"}
+                >
                   {sprint.name}
                 </text>
               )}

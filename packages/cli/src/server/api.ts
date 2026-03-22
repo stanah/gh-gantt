@@ -13,7 +13,15 @@ import { applyConflictMarkers } from "../sync/conflict-marker.js";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
 import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
-import { applySubIssueLinks, applyBlockedByLinks, isDraftTask, isMilestoneSyntheticTask, buildDraftTaskId, getNextDraftNumber, milestoneToTask } from "../github/issues.js";
+import {
+  applySubIssueLinks,
+  applyBlockedByLinks,
+  isDraftTask,
+  isMilestoneSyntheticTask,
+  buildDraftTaskId,
+  getNextDraftNumber,
+  milestoneToTask,
+} from "../github/issues.js";
 import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
@@ -42,13 +50,20 @@ export function createApiRouter(projectRoot: string): Router {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const commentsFile = await commentsStore.read();
-      const normalizedComments: Record<string, Array<{ author: string; body: string; created_at: string }>> = {};
+      const normalizedComments: Record<
+        string,
+        Array<{ author: string; body: string; created_at: string }>
+      > = {};
       for (const [key, arr] of Object.entries(commentsFile.comments)) {
-        normalizedComments[key] = arr.map((c) => ({ author: c.author, body: c.body, created_at: c.created_at }));
+        normalizedComments[key] = arr.map((c) => ({
+          author: c.author,
+          body: c.body,
+          created_at: c.created_at,
+        }));
       }
       const mergedCache = {
         ...tasksFile.cache,
-        comments: { ...(tasksFile.cache.comments ?? {}), ...normalizedComments },
+        comments: { ...tasksFile.cache.comments, ...normalizedComments },
       };
       const tasksWithProgress = attachProgress(
         tasksFile.tasks,
@@ -125,7 +140,9 @@ export function createApiRouter(projectRoot: string): Router {
 
       res.status(201).json(task);
     } catch (err) {
-      res.status(500).json({ error: "Failed to create task: " + (err instanceof Error ? err.message : String(err)) });
+      res.status(500).json({
+        error: "Failed to create task: " + (err instanceof Error ? err.message : String(err)),
+      });
     }
   });
 
@@ -143,9 +160,20 @@ export function createApiRouter(projectRoot: string): Router {
       }
 
       const UPDATABLE_FIELDS = [
-        "title", "body", "state", "state_reason", "assignees", "labels",
-        "milestone", "custom_fields", "start_date", "end_date", "date",
-        "parent", "sub_tasks", "blocked_by",
+        "title",
+        "body",
+        "state",
+        "state_reason",
+        "assignees",
+        "labels",
+        "milestone",
+        "custom_fields",
+        "start_date",
+        "end_date",
+        "date",
+        "parent",
+        "sub_tasks",
+        "blocked_by",
       ] as const;
 
       const oldTask = tasksFile.tasks[idx];
@@ -167,13 +195,21 @@ export function createApiRouter(projectRoot: string): Router {
           start_date: updatedTask.start_date,
           end_date: updatedTask.end_date,
         });
-        if (dateUpdates.start_date && !safeUpdates.start_date) updatedTask.start_date = dateUpdates.start_date;
-        if (dateUpdates.end_date && !safeUpdates.end_date) updatedTask.end_date = dateUpdates.end_date;
+        if (dateUpdates.start_date && !safeUpdates.start_date)
+          updatedTask.start_date = dateUpdates.start_date;
+        if (dateUpdates.end_date && !safeUpdates.end_date)
+          updatedTask.end_date = dateUpdates.end_date;
       }
 
       // Prevent start > end regardless of how dates were changed
-      if (updatedTask.start_date && updatedTask.end_date && updatedTask.start_date > updatedTask.end_date) {
-        res.status(400).json({ error: `start_date (${updatedTask.start_date}) must not be after end_date (${updatedTask.end_date})` });
+      if (
+        updatedTask.start_date &&
+        updatedTask.end_date &&
+        updatedTask.start_date > updatedTask.end_date
+      ) {
+        res.status(400).json({
+          error: `start_date (${updatedTask.start_date}) must not be after end_date (${updatedTask.end_date})`,
+        });
         return;
       }
 
@@ -202,7 +238,9 @@ export function createApiRouter(projectRoot: string): Router {
       }
 
       if (newParentId === taskId) {
-        res.status(400).json({ error: "Cannot set a task as its own parent", code: "SELF_REFERENCE" });
+        res
+          .status(400)
+          .json({ error: "Cannot set a task as its own parent", code: "SELF_REFERENCE" });
         return;
       }
 
@@ -218,7 +256,9 @@ export function createApiRouter(projectRoot: string): Router {
         let current: string | null = newParentId;
         while (current) {
           if (current === taskId) {
-            res.status(400).json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
+            res
+              .status(400)
+              .json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
             return;
           }
           const t = taskMap.get(current);
@@ -249,7 +289,9 @@ export function createApiRouter(projectRoot: string): Router {
       );
       res.json({ tasks: tasksWithProgress });
     } catch (err) {
-      res.status(500).json({ error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)) });
+      res.status(500).json({
+        error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)),
+      });
     }
   });
 
@@ -262,7 +304,9 @@ export function createApiRouter(projectRoot: string): Router {
 
       // Record locally changed tasks BEFORE merging
       const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-      const locallyChangedIds = new Set(prePullDiffs.filter((d: TaskDiff) => d.type === "modified").map((d: TaskDiff) => d.id));
+      const locallyChangedIds = new Set(
+        prePullDiffs.filter((d: TaskDiff) => d.type === "modified").map((d: TaskDiff) => d.id),
+      );
 
       const gql = await createGraphQLClient();
       const { owner, project_number } = config.project.github;
@@ -289,14 +333,24 @@ export function createApiRouter(projectRoot: string): Router {
       const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
       const localIds = new Set(localNonDraft.map((t) => t.id));
       const remoteIds = new Set(remoteTasks.keys());
-      const sameIdSets = localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
+      const sameIdSets =
+        localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
       if (sameIdSets) {
         let changed = false;
         for (const [id, remote] of remoteTasks) {
           const snap = syncState.snapshots[id];
-          if (!snap?.updated_at) { changed = true; break; }
-          if (remote.updated_at !== snap.updated_at) { changed = true; break; }
-          if (isMilestoneSyntheticTask(id) && !snap.hash) { changed = true; break; }
+          if (!snap?.updated_at) {
+            changed = true;
+            break;
+          }
+          if (remote.updated_at !== snap.updated_at) {
+            changed = true;
+            break;
+          }
+          if (isMilestoneSyntheticTask(id) && !snap.hash) {
+            changed = true;
+            break;
+          }
         }
         if (!changed) {
           res.json({ added: 0, updated: 0, removed: 0 });
@@ -307,7 +361,10 @@ export function createApiRouter(projectRoot: string): Router {
       const issueItems = projectData.items
         .filter((i) => i.content)
         .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-      const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
+      const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(
+        gql,
+        issueItems,
+      );
       const remoteTaskArray = Array.from(remoteTasks.values());
       applySubIssueLinks(remoteTaskArray, subIssueLinks);
       applyBlockedByLinks(remoteTaskArray, blockedByLinks);
@@ -323,7 +380,10 @@ export function createApiRouter(projectRoot: string): Router {
 
       const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
       const newTasks: Task[] = [];
-      let added = 0, updated = 0, removed = 0, conflictCount = 0;
+      let added = 0,
+        updated = 0,
+        removed = 0,
+        conflictCount = 0;
       let hasConflictsFlag = false;
 
       for (const [id, remoteTask] of remoteTasks) {
@@ -344,7 +404,11 @@ export function createApiRouter(projectRoot: string): Router {
           } else {
             const localFields = extractSyncFields(localTask);
             const remoteFields = extractSyncFields(remoteTask);
-            const { merged, conflicts } = threeWayMerge(snapshot.syncFields, localFields, remoteFields);
+            const { merged, conflicts } = threeWayMerge(
+              snapshot.syncFields,
+              localFields,
+              remoteFields,
+            );
 
             const mergedTask: Task = { ...localTask, ...merged };
             mergedTask.created_at = remoteTask.created_at;
@@ -418,11 +482,17 @@ export function createApiRouter(projectRoot: string): Router {
         cache: tasksFile.cache,
         ...(hasConflictsFlag ? { has_conflicts: true } : {}),
       });
-      await stateStore.write({ ...syncState, last_synced_at: new Date().toISOString(), snapshots: newSnapshots });
+      await stateStore.write({
+        ...syncState,
+        last_synced_at: new Date().toISOString(),
+        snapshots: newSnapshots,
+      });
 
       res.json({ added, updated, removed, conflicts: conflictCount });
     } catch (err) {
-      res.status(500).json({ error: "Pull failed: " + (err instanceof Error ? err.message : String(err)) });
+      res
+        .status(500)
+        .json({ error: "Pull failed: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 
@@ -458,21 +528,26 @@ export function createApiRouter(projectRoot: string): Router {
         return;
       }
       const gql = await createGraphQLClient();
-      const { result, tasksFile: updatedTasksFile, syncState: updatedSyncState } =
-        await executePush(gql, config, tasksFile, syncState, {
-          force,
-          saveProgress: async (tf, ss) => {
-            await tasksStore.write(tf);
-            await stateStore.write(ss);
-          },
-        });
+      const {
+        result,
+        tasksFile: updatedTasksFile,
+        syncState: updatedSyncState,
+      } = await executePush(gql, config, tasksFile, syncState, {
+        force,
+        saveProgress: async (tf, ss) => {
+          await tasksStore.write(tf);
+          await stateStore.write(ss);
+        },
+      });
 
       await tasksStore.write(updatedTasksFile);
       await stateStore.write(updatedSyncState);
 
       res.json(result);
     } catch (err) {
-      res.status(500).json({ error: "Push failed: " + (err instanceof Error ? err.message : String(err)) });
+      res
+        .status(500)
+        .json({ error: "Push failed: " + (err instanceof Error ? err.message : String(err)) });
     }
   });
 

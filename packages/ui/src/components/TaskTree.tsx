@@ -86,7 +86,6 @@ export function TaskTreeBody({
       isCollapsed={collapsed.has(node.task.id)}
       onToggle={() => onToggleCollapse(node.task.id)}
       onClick={() => onSelectTask(node.task.id)}
-
       isSelected={selectedTaskId === node.task.id}
       isHovered={hoveredTaskId === node.task.id}
       onHover={onHoverTask}
@@ -97,11 +96,17 @@ export function TaskTreeBody({
       showAssignees={displayOptions?.has("assignees")}
       priorityFieldName={config.sync?.field_mapping?.priority}
       highlightType={highlightRelationMap?.get(node.task.id) ?? null}
-      isDimmed={hoveredTaskId != null && hoveredTaskId !== node.task.id && !highlightedTaskIds?.has(node.task.id)}
+      isDimmed={
+        hoveredTaskId != null &&
+        hoveredTaskId !== node.task.id &&
+        !highlightedTaskIds?.has(node.task.id)
+      }
       searchQuery={searchQuery}
       draggable={!!dragState}
       isDragging={dragState?.draggedTaskId === node.task.id}
-      dropIndicator={dragState?.dropIndicator?.targetTaskId === node.task.id ? dragState.dropIndicator : null}
+      dropIndicator={
+        dragState?.dropIndicator?.targetTaskId === node.task.id ? dragState.dropIndicator : null
+      }
       onDragStart={dragState ? (e) => dragState.handleDragStart(e, node.task.id) : undefined}
       onDragOver={dragState ? (e) => dragState.handleDragOver(e, node.task.id) : undefined}
       onDragLeave={dragState?.handleDragLeave}
@@ -137,7 +142,8 @@ export function TaskTreeBody({
             justifyContent: "center",
             fontSize: 11,
             color: "#888",
-            background: dragState.dropIndicator?.targetTaskId === "__root__" ? "#f0f4ff" : "transparent",
+            background:
+              dragState.dropIndicator?.targetTaskId === "__root__" ? "#f0f4ff" : "transparent",
           }}
         >
           ルートレベルに移動

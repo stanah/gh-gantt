@@ -69,9 +69,9 @@ export function Toolbar({
 }: ToolbarProps) {
   const selectedAssignees = selectedAssignee
     ? selectedAssignee
-      .split(",")
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0)
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0)
     : [];
 
   const btnStyle = (active = false): React.CSSProperties => ({
@@ -85,11 +85,25 @@ export function Toolbar({
   });
 
   return (
-    <div style={{ padding: "6px 16px", borderBottom: "1px solid #e0e0e0", background: "#fff", display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+    <div
+      style={{
+        padding: "6px 16px",
+        borderBottom: "1px solid #e0e0e0",
+        background: "#fff",
+        display: "flex",
+        alignItems: "center",
+        gap: 8,
+        fontSize: 11,
+      }}
+    >
       {/* View scale */}
       <div style={{ display: "flex", gap: 2 }}>
         {(["day", "week", "month", "quarter"] as const).map((scale) => (
-          <button key={scale} onClick={() => onSetViewScale(scale)} style={btnStyle(viewScale === scale)}>
+          <button
+            key={scale}
+            onClick={() => onSetViewScale(scale)}
+            style={btnStyle(viewScale === scale)}
+          >
             {scale}
           </button>
         ))}
@@ -98,18 +112,30 @@ export function Toolbar({
       <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
 
       {/* Zoom */}
-      <button onClick={onZoomIn} style={btnStyle()}>+</button>
-      <button onClick={onZoomOut} style={btnStyle()}>-</button>
-      <button onClick={onScrollToToday} style={btnStyle()}>Today</button>
+      <button onClick={onZoomIn} style={btnStyle()}>
+        +
+      </button>
+      <button onClick={onZoomOut} style={btnStyle()}>
+        -
+      </button>
+      <button onClick={onScrollToToday} style={btnStyle()}>
+        Today
+      </button>
 
       <div style={{ width: 1, height: 20, background: "#e0e0e0" }} />
 
       {/* Display options */}
       <div style={{ display: "flex", gap: 2 }}>
-        <button onClick={() => onToggleDisplayOption("issueId")} style={btnStyle(displayOptions.has("issueId"))}>
+        <button
+          onClick={() => onToggleDisplayOption("issueId")}
+          style={btnStyle(displayOptions.has("issueId"))}
+        >
           #ID
         </button>
-        <button onClick={() => onToggleDisplayOption("assignees")} style={btnStyle(displayOptions.has("assignees"))}>
+        <button
+          onClick={() => onToggleDisplayOption("assignees")}
+          style={btnStyle(displayOptions.has("assignees"))}
+        >
           Assignee
         </button>
       </div>
@@ -127,10 +153,7 @@ export function Toolbar({
           onChange={(values) => onSelectAssignee(values.length > 0 ? values.join(",") : null)}
         />
         {selectedPriorities && onSelectPriorities && (
-          <PriorityFilter
-            selectedValues={selectedPriorities}
-            onChange={onSelectPriorities}
-          />
+          <PriorityFilter selectedValues={selectedPriorities} onChange={onSelectPriorities} />
         )}
       </div>
 
@@ -216,10 +239,18 @@ export function Toolbar({
       <div style={{ flex: 1 }} />
 
       {/* Sync */}
-      <button onClick={onPull} disabled={!!syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
+      <button
+        onClick={onPull}
+        disabled={!!syncing}
+        style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}
+      >
         {syncing === "pull" ? "Pulling…" : "Pull"}
       </button>
-      <button onClick={onPush} disabled={!!syncing} style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}>
+      <button
+        onClick={onPush}
+        disabled={!!syncing}
+        style={{ ...btnStyle(), opacity: syncing ? 0.5 : 1 }}
+      >
         {syncing === "push" ? "Pushing…" : "Push"}
       </button>
 

@@ -47,9 +47,7 @@ describe("applyBlockedByLinks", () => {
 
     applyBlockedByLinks(tasks, links);
 
-    expect(task2.blocked_by).toEqual([
-      { task: "owner/repo#1", type: "finish-to-start", lag: 0 },
-    ]);
+    expect(task2.blocked_by).toEqual([{ task: "owner/repo#1", type: "finish-to-start", lag: 0 }]);
     // Task 1 should not be affected
     expect(task1.blocked_by).toEqual([]);
   });
@@ -123,9 +121,7 @@ describe("parent change detection for push", () => {
 describe("blocked_by diff computation for push", () => {
   it("detects added blockers", () => {
     const oldBlockedBy: Dependency[] = [];
-    const newBlockedBy: Dependency[] = [
-      { task: "owner/repo#5", type: "finish-to-start", lag: 0 },
-    ];
+    const newBlockedBy: Dependency[] = [{ task: "owner/repo#5", type: "finish-to-start", lag: 0 }];
 
     const oldSet = new Set(oldBlockedBy.map((d) => d.task));
     const added = newBlockedBy.filter((d) => !oldSet.has(d.task));
@@ -138,9 +134,7 @@ describe("blocked_by diff computation for push", () => {
       { task: "owner/repo#5", type: "finish-to-start", lag: 0 },
       { task: "owner/repo#6", type: "finish-to-start", lag: 0 },
     ];
-    const newBlockedBy: Dependency[] = [
-      { task: "owner/repo#5", type: "finish-to-start", lag: 0 },
-    ];
+    const newBlockedBy: Dependency[] = [{ task: "owner/repo#5", type: "finish-to-start", lag: 0 }];
 
     const newSet = new Set(newBlockedBy.map((d) => d.task));
     const removed = oldBlockedBy.filter((d) => !newSet.has(d.task));

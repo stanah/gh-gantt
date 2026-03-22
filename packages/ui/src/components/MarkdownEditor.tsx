@@ -35,7 +35,14 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          marginBottom: 6,
+        }}
+      >
         <div style={{ display: "flex", gap: 4 }}>
           <button onClick={() => setMode("edit")} style={tabButtonStyle(mode === "edit")}>
             Edit
@@ -79,7 +86,10 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
 
       <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
         <button
-          onClick={() => { onChange(draft); setMode("preview"); }}
+          onClick={() => {
+            onChange(draft);
+            setMode("preview");
+          }}
           disabled={!dirty}
           style={{
             padding: "4px 12px",
@@ -94,7 +104,10 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
           Save
         </button>
         <button
-          onClick={() => { setDraft(value); setMode("preview"); }}
+          onClick={() => {
+            setDraft(value);
+            setMode("preview");
+          }}
           disabled={!dirty}
           style={{
             padding: "4px 12px",

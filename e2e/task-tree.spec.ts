@@ -25,9 +25,7 @@ test("renders child tasks under their parent", async ({ page }) => {
 });
 
 test("displays task titles", async ({ page }) => {
-  await expect(page.locator("[data-task-id='epic-1']")).toContainText(
-    "Epic: Platform Redesign",
-  );
+  await expect(page.locator("[data-task-id='epic-1']")).toContainText("Epic: Platform Redesign");
   await expect(page.locator("[data-task-id='task-2']")).toContainText(
     "Implement dashboard components",
   );
@@ -40,11 +38,19 @@ test("collapse and expand a parent task", async ({ page }) => {
   await expect(task2).toBeVisible();
 
   // Click the collapse toggle (▼/▶) on feature-1
-  await feature1.locator("span").filter({ hasText: /[▼▶]/ }).first().click();
+  await feature1
+    .locator("span")
+    .filter({ hasText: /[▼▶]/ })
+    .first()
+    .click();
   await expect(task2).not.toBeVisible();
 
   // Expand again
-  await feature1.locator("span").filter({ hasText: /[▼▶]/ }).first().click();
+  await feature1
+    .locator("span")
+    .filter({ hasText: /[▼▶]/ })
+    .first()
+    .click();
   await expect(task2).toBeVisible();
 });
 

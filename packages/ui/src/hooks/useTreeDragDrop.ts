@@ -1,6 +1,10 @@
 import { useState, useCallback, useRef } from "react";
 import type { Task, Config } from "../types/index.js";
-import { wouldCreateParentCycle, wouldCreateDependencyCycle, isTypeHierarchyAllowed } from "../lib/validation.js";
+import {
+  wouldCreateParentCycle,
+  wouldCreateDependencyCycle,
+  isTypeHierarchyAllowed,
+} from "../lib/validation.js";
 
 export type DropMode = "reparent" | "dependency";
 
@@ -50,15 +54,12 @@ export function useTreeDragDrop({
   const getDropMode = (e: { altKey: boolean }): DropMode =>
     e.altKey && onAddDependency ? "dependency" : "reparent";
 
-  const handleDragStart = useCallback(
-    (e: React.DragEvent, taskId: string) => {
-      e.dataTransfer.setData("text/plain", taskId);
-      e.dataTransfer.effectAllowed = "move";
-      draggedRef.current = taskId;
-      setDraggedTaskId(taskId);
-    },
-    [],
-  );
+  const handleDragStart = useCallback((e: React.DragEvent, taskId: string) => {
+    e.dataTransfer.setData("text/plain", taskId);
+    e.dataTransfer.effectAllowed = "move";
+    draggedRef.current = taskId;
+    setDraggedTaskId(taskId);
+  }, []);
 
   const validateReparent = useCallback(
     (dragId: string, targetTaskId: string): DropIndicator | null => {
@@ -72,7 +73,10 @@ export function useTreeDragDrop({
         return { targetTaskId, valid: false, mode: "reparent", reason: "サイクルが発生します" };
       }
 
-      if (config && !isTypeHierarchyAllowed(config.type_hierarchy, targetTask.type, draggedTask.type)) {
+      if (
+        config &&
+        !isTypeHierarchyAllowed(config.type_hierarchy, targetTask.type, draggedTask.type)
+      ) {
         return {
           targetTaskId,
           valid: false,
@@ -120,9 +124,10 @@ export function useTreeDragDrop({
 
       const mode = getDropMode(e);
       dropModeRef.current = mode;
-      const indicator = mode === "dependency"
-        ? validateDependency(dragId, targetTaskId)
-        : validateReparent(dragId, targetTaskId);
+      const indicator =
+        mode === "dependency"
+          ? validateDependency(dragId, targetTaskId)
+          : validateReparent(dragId, targetTaskId);
 
       setDropIndicator(indicator);
     },

@@ -9,7 +9,10 @@ describe("mapRemoteItemToTask", () => {
     const item = { id: "item1", content: null, fieldValues: {} };
     const config = {
       project: { github: { owner: "o", repo: "r", project_number: 1 } },
-      sync: { field_mapping: { start_date: "Start", end_date: "End", type: "" }, auto_create_issues: false },
+      sync: {
+        field_mapping: { start_date: "Start", end_date: "End", type: "" },
+        auto_create_issues: false,
+      },
       task_types: { task: { github_label: null } },
       statuses: { field_name: "Status", values: {} },
       type_hierarchy: {},

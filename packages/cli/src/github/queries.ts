@@ -110,7 +110,9 @@ export const REPOSITORY_METADATA_QUERY = `
 `;
 
 export function buildUserIdsQuery(logins: string[]): string {
-  const fields = logins.map((login, i) => `u${i}: user(login: "${login}") { id login }`).join("\n    ");
+  const fields = logins
+    .map((login, i) => `u${i}: user(login: "${login}") { id login }`)
+    .join("\n    ");
   return `query { ${fields} }`;
 }
 

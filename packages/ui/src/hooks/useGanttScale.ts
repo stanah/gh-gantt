@@ -53,9 +53,7 @@ export function useGanttScale(tasks: Task[], initialView: ViewScale = "month", m
   }, [baseDateRange, totalWidth, dataWidth, pixelsPerDay]);
 
   const xScale = useMemo(() => {
-    return scaleTime()
-      .domain(dateRange)
-      .range([0, totalWidth]);
+    return scaleTime().domain(dateRange).range([0, totalWidth]);
   }, [dateRange, totalWidth]);
 
   const zoomIn = useCallback(() => {

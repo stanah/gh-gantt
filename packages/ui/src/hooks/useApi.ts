@@ -11,10 +11,7 @@ export function useApi() {
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
-      const [configRes, tasksRes] = await Promise.all([
-        fetch("/api/config"),
-        fetch("/api/tasks"),
-      ]);
+      const [configRes, tasksRes] = await Promise.all([fetch("/api/config"), fetch("/api/tasks")]);
 
       if (!configRes.ok || !tasksRes.ok) {
         throw new Error("Failed to fetch data from API");
@@ -44,49 +41,55 @@ export function useApi() {
     });
   }, []);
 
-  const updateTask = useCallback(async (taskId: string, updates: Partial<Task>): Promise<Task> => {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updates),
-    });
-    if (!res.ok) throw new Error("Failed to update task");
-    const updated: Task = await res.json();
-    setTasksResponse((prev) => {
-      if (!prev) return prev;
-      const tasks = prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t));
-      if (config) {
-        const { values, field_name } = config.statuses;
-        return {
-          ...prev,
-          tasks: tasks.map((t) => ({
-            ...t,
-            _progress: calculateProgress(t, tasks, values, field_name),
-          })),
-        };
-      }
-      return { ...prev, tasks };
-    });
-    return updated;
-  }, [config]);
+  const updateTask = useCallback(
+    async (taskId: string, updates: Partial<Task>): Promise<Task> => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) throw new Error("Failed to update task");
+      const updated: Task = await res.json();
+      setTasksResponse((prev) => {
+        if (!prev) return prev;
+        const tasks = prev.tasks.map((t) => (t.id === taskId ? { ...t, ...updated } : t));
+        if (config) {
+          const { values, field_name } = config.statuses;
+          return {
+            ...prev,
+            tasks: tasks.map((t) => ({
+              ...t,
+              _progress: calculateProgress(t, tasks, values, field_name),
+            })),
+          };
+        }
+        return { ...prev, tasks };
+      });
+      return updated;
+    },
+    [config],
+  );
 
-  const reparentTask = useCallback(async (taskId: string, newParentId: string | null) => {
-    const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reparent`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ newParentId }),
-    });
-    if (!res.ok) {
-      const errorBody = await res.json().catch(() => null);
-      throw new Error(errorBody?.error ?? "Failed to reparent task");
-    }
-    const payload = await res.json();
-    if (Array.isArray(payload.tasks)) {
-      replaceTasks(payload.tasks);
-      return payload.tasks as Task[];
-    }
-    throw new Error("Invalid reparent response");
-  }, [replaceTasks]);
+  const reparentTask = useCallback(
+    async (taskId: string, newParentId: string | null) => {
+      const res = await fetch(`/api/tasks/${encodeURIComponent(taskId)}/reparent`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newParentId }),
+      });
+      if (!res.ok) {
+        const errorBody = await res.json().catch(() => null);
+        throw new Error(errorBody?.error ?? "Failed to reparent task");
+      }
+      const payload = await res.json();
+      if (Array.isArray(payload.tasks)) {
+        replaceTasks(payload.tasks);
+        return payload.tasks as Task[];
+      }
+      throw new Error("Invalid reparent response");
+    },
+    [replaceTasks],
+  );
 
   return {
     config,

@@ -41,7 +41,11 @@ function matchesSearch(task: Task, query: string): boolean {
   return false;
 }
 
-export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOptions: TaskFilterOptions = {}) {
+export function useTaskTree(
+  tasks: Task[],
+  enabledTypes: Set<string>,
+  filterOptions: TaskFilterOptions = {},
+) {
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [backlogCollapsed, setBacklogCollapsed] = useState(true);
 
@@ -58,14 +62,24 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
     setBacklogCollapsed((prev) => !prev);
   }, []);
 
-  const { hideClosed = false, selectedAssignee = null, selectedAssignees = [], selectedPriorities = [], priorityFieldName, searchQuery = "" } = filterOptions;
+  const {
+    hideClosed = false,
+    selectedAssignee = null,
+    selectedAssignees = [],
+    selectedPriorities = [],
+    priorityFieldName,
+    searchQuery = "",
+  } = filterOptions;
 
   const { scheduledTree, backlogTree } = useMemo(() => {
     const trimmedQuery = searchQuery.trim();
-    const selectedTokens = (selectedAssignees.length > 0 ? selectedAssignees : (selectedAssignee ?? "")
-      .split(",")
-      .map((v) => v.trim())
-      .filter((v) => v.length > 0));
+    const selectedTokens =
+      selectedAssignees.length > 0
+        ? selectedAssignees
+        : (selectedAssignee ?? "")
+            .split(",")
+            .map((v) => v.trim())
+            .filter((v) => v.length > 0);
     const selectedSet = new Set(selectedTokens);
     const hasAssigneeFilter = selectedSet.size > 0;
     const includeUnassigned = selectedSet.has(UNASSIGNED);
@@ -186,7 +200,16 @@ export function useTaskTree(tasks: Task[], enabledTypes: Set<string>, filterOpti
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName, searchQuery]);
+  }, [
+    tasks,
+    enabledTypes,
+    hideClosed,
+    selectedAssignee,
+    selectedAssignees,
+    selectedPriorities,
+    priorityFieldName,
+    searchQuery,
+  ]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

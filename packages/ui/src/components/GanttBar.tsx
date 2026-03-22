@@ -1,7 +1,13 @@
 import React from "react";
 import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
-import { parseDate, isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
+import {
+  parseDate,
+  isOverdue,
+  isAtRisk,
+  getOverdueDays,
+  getDaysUntilDue,
+} from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { getPriorityColor } from "./PriorityBadge.js";
 import type { DragMode } from "../hooks/useDragResize.js";
@@ -23,13 +29,29 @@ interface GanttBarProps {
   highlightType?: RelationType | null;
 }
 
-function highlightStroke(type: RelationType | null | undefined): { stroke: string; strokeWidth: number } | null {
+function highlightStroke(
+  type: RelationType | null | undefined,
+): { stroke: string; strokeWidth: number } | null {
   if (!type) return null;
   if (type === "parent" || type === "child") return { stroke: "#8957e5", strokeWidth: 2 };
   return { stroke: "#e74c3c", strokeWidth: 2 };
 }
 
-export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelected, onDragStart, showIssueId, showAssignees, priorityFieldName, isDimmed, highlightType }: GanttBarProps) {
+export function GanttBar({
+  task,
+  taskType,
+  xScale,
+  y,
+  height,
+  onClick,
+  isSelected,
+  onDragStart,
+  showIssueId,
+  showAssignees,
+  priorityFieldName,
+  isDimmed,
+  highlightType,
+}: GanttBarProps) {
   if (!task.start_date || !task.end_date) return null;
 
   const x1 = xScale(parseDate(task.start_date));
@@ -50,9 +72,17 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
   const scheduleStroke = overdue ? "#e74c3c" : atRisk ? "#f39c12" : color;
   const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color;
   const backgroundOpacity = overdue || atRisk ? 1 : 0.27;
-  const progressFill = overdue ? "#e74c3c" : atRisk ? "#f39c12" : (progress === 100 ? "#8957e5" : color);
+  const progressFill = overdue
+    ? "#e74c3c"
+    : atRisk
+      ? "#f39c12"
+      : progress === 100
+        ? "#8957e5"
+        : color;
 
-  const priority = priorityFieldName ? task.custom_fields[priorityFieldName] as string | undefined : undefined;
+  const priority = priorityFieldName
+    ? (task.custom_fields[priorityFieldName] as string | undefined)
+    : undefined;
   const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
@@ -114,40 +144,52 @@ export function GanttBar({ task, taskType, xScale, y, height, onClick, isSelecte
         const padding = 12;
         const fitsInside = fullText.length * charWidth + padding < width;
 
-        const assigneeText = showAssignees && task.assignees.length > 0
-          ? (task.assignees.length <= 2
+        const assigneeText =
+          showAssignees && task.assignees.length > 0
+            ? task.assignees.length <= 2
               ? task.assignees.map((a) => `@${a}`).join(" ")
-              : `@${task.assignees[0]} +${task.assignees.length - 1}`)
-          : "";
+              : `@${task.assignees[0]} +${task.assignees.length - 1}`
+            : "";
 
         if (fitsInside) {
           const maxChars = Math.floor((width - padding) / charWidth);
-          const label = fullText.length > maxChars
-            ? fullText.slice(0, maxChars) + "..."
-            : fullText;
+          const label = fullText.length > maxChars ? fullText.slice(0, maxChars) + "..." : fullText;
           return (
-            <text x={x1 + 6} y={barY + barHeight / 2 + 4}
-                  fontSize={10} fill="#333"
-                  style={{ pointerEvents: "none" }}>
+            <text
+              x={x1 + 6}
+              y={barY + barHeight / 2 + 4}
+              fontSize={10}
+              fill="#333"
+              style={{ pointerEvents: "none" }}
+            >
               {label}
               {assigneeText && (
-                <tspan fontSize={9} fill="#888">{" "}{assigneeText}</tspan>
+                <tspan fontSize={9} fill="#888">
+                  {" "}
+                  {assigneeText}
+                </tspan>
               )}
             </text>
           );
         }
 
         const maxOutsideChars = 30;
-        const outsideLabel = fullText.length > maxOutsideChars
-          ? fullText.slice(0, maxOutsideChars) + "..."
-          : fullText;
+        const outsideLabel =
+          fullText.length > maxOutsideChars ? fullText.slice(0, maxOutsideChars) + "..." : fullText;
         return (
-          <text x={x1 + width + 4} y={barY + barHeight / 2 + 4}
-                fontSize={10} fill="#666"
-                style={{ pointerEvents: "none" }}>
+          <text
+            x={x1 + width + 4}
+            y={barY + barHeight / 2 + 4}
+            fontSize={10}
+            fill="#666"
+            style={{ pointerEvents: "none" }}
+          >
             {outsideLabel}
             {assigneeText && (
-              <tspan fontSize={9} fill="#888">{" "}{assigneeText}</tspan>
+              <tspan fontSize={9} fill="#888">
+                {" "}
+                {assigneeText}
+              </tspan>
             )}
           </text>
         );

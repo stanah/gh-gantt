@@ -21,10 +21,7 @@ export function detectChangedFields(current: SyncFields, previous: SyncFields): 
   return changed;
 }
 
-export function computeLocalDiff(
-  tasks: Task[],
-  syncState: SyncState,
-): TaskDiff[] {
+export function computeLocalDiff(tasks: Task[], syncState: SyncState): TaskDiff[] {
   const diffs: TaskDiff[] = [];
 
   for (const task of tasks) {
@@ -58,7 +55,10 @@ export function computeLocalDiff(
   return diffs;
 }
 
-export function estimateApiCalls(diffs: TaskDiff[], options?: { autoCreateIssues?: boolean }): number {
+export function estimateApiCalls(
+  diffs: TaskDiff[],
+  options?: { autoCreateIssues?: boolean },
+): number {
   const autoCreate = options?.autoCreateIssues ?? true;
   let calls = 0;
   for (const diff of diffs) {
@@ -93,7 +93,10 @@ export interface DiffPreview {
   changes: DiffPreviewChange[];
 }
 
-export function formatDiffPreview(diffs: TaskDiff[], options?: { autoCreateIssues?: boolean }): DiffPreview {
+export function formatDiffPreview(
+  diffs: TaskDiff[],
+  options?: { autoCreateIssues?: boolean },
+): DiffPreview {
   const pushable = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
   const autoCreate = options?.autoCreateIssues ?? true;
 

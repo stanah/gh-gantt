@@ -26,7 +26,7 @@
  */
 import { describe, it, expect, beforeAll } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync, rmSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 const CLI = join(__dirname, "../../dist/index.js");
@@ -91,7 +91,15 @@ function findTask(tasks: any[], issueNumber: number): any {
 function waitForProjectItemCount(expectedCount: number, maxRetries = 10): void {
   for (let i = 0; i < maxRetries; i++) {
     execFileSync("sleep", ["3"]);
-    const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+    const json = gh([
+      "project",
+      "item-list",
+      PROJECT_NUMBER,
+      "--owner",
+      "stanah",
+      "--format",
+      "json",
+    ]);
     const count = JSON.parse(json).items.length;
     if (count === expectedCount) {
       // Extra wait for GraphQL API propagation (REST and GraphQL may not be in sync)
@@ -103,11 +111,27 @@ function waitForProjectItemCount(expectedCount: number, maxRetries = 10): void {
 
 /** Ensure issue is in the project and visible to pull (GraphQL propagation) */
 function ensureInProject(issueNumber: number): void {
-  const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+  const json = gh([
+    "project",
+    "item-list",
+    PROJECT_NUMBER,
+    "--owner",
+    "stanah",
+    "--format",
+    "json",
+  ]);
   const items = JSON.parse(json).items;
   const found = items.find((i: any) => i.content?.number === issueNumber);
   if (!found) {
-    gh(["project", "item-add", PROJECT_NUMBER, "--owner", "stanah", "--url", `https://github.com/${REPO}/issues/${issueNumber}`]);
+    gh([
+      "project",
+      "item-add",
+      PROJECT_NUMBER,
+      "--owner",
+      "stanah",
+      "--url",
+      `https://github.com/${REPO}/issues/${issueNumber}`,
+    ]);
     waitForProjectItemCount(items.length + 1);
   }
   // Verify via pull --dry-run that GraphQL sees the item
@@ -124,7 +148,15 @@ function ensureInProject(issueNumber: number): void {
 
 /** Remove issue from project if present */
 function removeFromProject(issueNumber: number): void {
-  const json = gh(["project", "item-list", PROJECT_NUMBER, "--owner", "stanah", "--format", "json"]);
+  const json = gh([
+    "project",
+    "item-list",
+    PROJECT_NUMBER,
+    "--owner",
+    "stanah",
+    "--format",
+    "json",
+  ]);
   const items = JSON.parse(json).items;
   const found = items.find((i: any) => i.content?.number === issueNumber);
   if (found) {
@@ -135,10 +167,16 @@ function removeFromProject(issueNumber: number): void {
 
 describe("E2E sync engine", () => {
   beforeAll(() => {
-    if (existsSync(GANTT_DIR)) {
-      rmSync(GANTT_DIR, { recursive: true });
-    }
-    const output = ghGantt(["init", "--owner", "stanah", "--repo", "gh-gantt-e2e-test", "--project", PROJECT_NUMBER]);
+    rmSync(GANTT_DIR, { recursive: true, force: true });
+    const output = ghGantt([
+      "init",
+      "--owner",
+      "stanah",
+      "--repo",
+      "gh-gantt-e2e-test",
+      "--project",
+      PROJECT_NUMBER,
+    ]);
     expect(output).toContain("Initialized gh-gantt");
   }, 30000);
 
@@ -176,7 +214,17 @@ describe("E2E sync engine", () => {
     const output = ghGantt(["push", "--yes"]);
     expect(output).toContain("Push complete:");
 
-    const issueState = gh(["issue", "view", "1", "--repo", REPO, "--json", "state", "-q", ".state"]);
+    const issueState = gh([
+      "issue",
+      "view",
+      "1",
+      "--repo",
+      REPO,
+      "--json",
+      "state",
+      "-q",
+      ".state",
+    ]);
     expect(issueState).toBe("CLOSED");
   }, 30000);
 
@@ -275,9 +323,14 @@ describe("E2E sync engine", () => {
     let remoteUpdated = false;
     for (let i = 0; i < 15; i++) {
       execFileSync("sleep", ["2"]);
-      const remoteAt = gh(["api", "graphql",
-        "-f", `query=query { repository(owner: "stanah", name: "gh-gantt-e2e-test") { issue(number: 1) { updatedAt } } }`,
-        "-q", ".data.repository.issue.updatedAt"]);
+      const remoteAt = gh([
+        "api",
+        "graphql",
+        "-f",
+        `query=query { repository(owner: "stanah", name: "gh-gantt-e2e-test") { issue(number: 1) { updatedAt } } }`,
+        "-q",
+        ".data.repository.issue.updatedAt",
+      ]);
       if (remoteAt !== snapUpdatedAt) {
         remoteUpdated = true;
         break;
@@ -294,7 +347,12 @@ describe("E2E sync engine", () => {
   // #4: push --force bypasses remote change check
   it("#4: push --force bypasses remote change check", () => {
     // Same state as #3 — local and remote have diverged
-    const { stdout: forceOut, stderr: forceErr } = runWithStderr("node", [CLI, "push", "--force", "--yes"]);
+    const { stdout: forceOut, stderr: forceErr } = runWithStderr("node", [
+      CLI,
+      "push",
+      "--force",
+      "--yes",
+    ]);
     const output = forceOut + "\n" + forceErr;
     expect(output).not.toContain("リモートが更新されています");
     expect(output).toContain("Push complete:");
@@ -313,8 +371,16 @@ describe("E2E sync engine", () => {
     // Re-init until GraphQL sees 3 tasks
     let found = false;
     for (let i = 0; i < 20; i++) {
-      rmSync(GANTT_DIR, { recursive: true });
-      const initOut = ghGantt(["init", "--owner", "stanah", "--repo", "gh-gantt-e2e-test", "--project", PROJECT_NUMBER]);
+      rmSync(GANTT_DIR, { recursive: true, force: true });
+      const initOut = ghGantt([
+        "init",
+        "--owner",
+        "stanah",
+        "--repo",
+        "gh-gantt-e2e-test",
+        "--project",
+        PROJECT_NUMBER,
+      ]);
       if (initOut.includes("with 3 tasks")) {
         ghGantt(["pull"]); // Create snapshots
         found = true;
@@ -344,8 +410,16 @@ describe("E2E sync engine", () => {
     ensureInProject(3);
     let initSuccess = false;
     for (let attempt = 0; attempt < 20; attempt++) {
-      rmSync(GANTT_DIR, { recursive: true });
-      const initOutput = ghGantt(["init", "--owner", "stanah", "--repo", "gh-gantt-e2e-test", "--project", PROJECT_NUMBER]);
+      rmSync(GANTT_DIR, { recursive: true, force: true });
+      const initOutput = ghGantt([
+        "init",
+        "--owner",
+        "stanah",
+        "--repo",
+        "gh-gantt-e2e-test",
+        "--project",
+        PROJECT_NUMBER,
+      ]);
       if (initOutput.includes("with 3 tasks")) {
         ghGantt(["pull"]); // Creates snapshots
         initSuccess = true;

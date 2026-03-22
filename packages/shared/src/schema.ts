@@ -1,7 +1,22 @@
 import { z } from "zod";
+import type {
+  Config,
+  Dependency,
+  SprintConfig,
+  Statuses,
+  SyncFields,
+  SyncState,
+  Task,
+  TasksFile,
+} from "./types.js";
 
 const TaskDisplaySchema = z.enum(["bar", "summary", "milestone"]);
-const DependencyTypeSchema = z.enum(["finish-to-start", "finish-to-finish", "start-to-start", "start-to-finish"]);
+const DependencyTypeSchema = z.enum([
+  "finish-to-start",
+  "finish-to-finish",
+  "start-to-start",
+  "start-to-finish",
+]);
 const ViewScaleSchema = z.enum(["day", "week", "month", "quarter"]);
 
 const TaskTypeSchema = z.object({
@@ -19,18 +34,18 @@ const StatusValueSchema = z.object({
   starts_work: z.boolean().optional(),
 });
 
-const StatusesSchema = z.object({
+export const StatusesSchema: z.ZodType<Statuses> = z.object({
   field_name: z.string(),
   values: z.record(StatusValueSchema),
 });
 
-const DependencySchema = z.object({
+export const DependencySchema: z.ZodType<Dependency> = z.object({
   task: z.string(),
   type: DependencyTypeSchema,
   lag: z.number(),
 });
 
-const TaskSchema = z.object({
+const TaskSchemaObject = z.object({
   id: z.string(),
   type: z.string(),
   github_issue: z.number().nullable(),
@@ -55,14 +70,16 @@ const TaskSchema = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
-export const SprintSchema = z.object({
+export const TaskSchema: z.ZodType<Task> = TaskSchemaObject;
+
+export const SprintSchema: z.ZodType<SprintConfig> = z.object({
   name: z.string(),
   start_date: z.string(),
   end_date: z.string(),
   color: z.string(),
 });
 
-export const ConfigSchema = z.object({
+export const ConfigSchema: z.ZodType<Config> = z.object({
   version: z.string(),
   project: z.object({
     name: z.string(),
@@ -72,16 +89,18 @@ export const ConfigSchema = z.object({
       project_number: z.number(),
     }),
   }),
-  sync: z.object({
-    auto_create_issues: z.boolean(),
-    field_mapping: z.object({
-      start_date: z.string(),
-      end_date: z.string(),
-      status: z.string(),
-      type: z.string().nullable().optional(),
-      priority: z.string().optional(),
-    }),
-  }).passthrough(),
+  sync: z
+    .object({
+      auto_create_issues: z.boolean(),
+      field_mapping: z.object({
+        start_date: z.string(),
+        end_date: z.string(),
+        status: z.string(),
+        type: z.string().nullable().optional(),
+        priority: z.string().optional(),
+      }),
+    })
+    .passthrough(),
   task_types: z.record(TaskTypeSchema),
   type_hierarchy: z.record(z.array(z.string())),
   statuses: StatusesSchema,
@@ -98,33 +117,41 @@ export const ConfigSchema = z.object({
   sprints: z.array(SprintSchema).optional(),
 });
 
-export const TasksFileSchema = z.object({
+export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
   tasks: z.array(TaskSchema),
   cache: z.object({
-    comments: z.record(z.array(z.object({
-      author: z.string(),
-      body: z.string(),
-      created_at: z.string(),
-    }))),
+    comments: z.record(
+      z.array(
+        z.object({
+          author: z.string(),
+          body: z.string(),
+          created_at: z.string(),
+        }),
+      ),
+    ),
     reactions: z.record(z.record(z.number())),
   }),
   has_conflicts: z.boolean().optional(),
 });
 
-export const TasksFileWithConflictsSchema = z.object({
-  tasks: z.array(TaskSchema.passthrough()),
+export const TasksFileWithConflictsSchema: z.ZodType<TasksFile> = z.object({
+  tasks: z.array(TaskSchemaObject.passthrough()),
   cache: z.object({
-    comments: z.record(z.array(z.object({
-      author: z.string(),
-      body: z.string(),
-      created_at: z.string(),
-    }))),
+    comments: z.record(
+      z.array(
+        z.object({
+          author: z.string(),
+          body: z.string(),
+          created_at: z.string(),
+        }),
+      ),
+    ),
     reactions: z.record(z.record(z.number())),
   }),
   has_conflicts: z.boolean().optional(),
 });
 
-export const SyncFieldsSchema = z.object({
+export const SyncFieldsSchema: z.ZodType<SyncFields> = z.object({
   title: z.string(),
   body: z.string().nullable(),
   state: z.enum(["open", "closed"]),
@@ -141,23 +168,25 @@ export const SyncFieldsSchema = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
-export const SyncStateSchema = z.object({
+export const SyncStateSchema: z.ZodType<SyncState> = z.object({
   last_synced_at: z.string(),
   project_node_id: z.string(),
-  id_map: z.record(z.object({
-    issue_number: z.number(),
-    issue_node_id: z.string(),
-    project_item_id: z.string(),
-  })),
+  id_map: z.record(
+    z.object({
+      issue_number: z.number(),
+      issue_node_id: z.string(),
+      project_item_id: z.string(),
+    }),
+  ),
   field_ids: z.record(z.string()),
-  snapshots: z.record(z.object({
-    hash: z.string(),
-    synced_at: z.string(),
-    updated_at: z.string().optional(),
-    syncFields: SyncFieldsSchema.optional(),
-    remoteHash: z.string().optional(),
-  })),
+  snapshots: z.record(
+    z.object({
+      hash: z.string(),
+      synced_at: z.string(),
+      updated_at: z.string().optional(),
+      syncFields: SyncFieldsSchema.optional(),
+      remoteHash: z.string().optional(),
+    }),
+  ),
   option_ids: z.record(z.record(z.string())).optional(),
 });
-
-export { TaskSchema, DependencySchema, StatusesSchema };

@@ -54,7 +54,11 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
 
   return (
     <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen((prev) => !prev)} style={btnStyle} title={formatLabel(selectedValues)}>
+      <button
+        onClick={() => setOpen((prev) => !prev)}
+        style={btnStyle}
+        title={formatLabel(selectedValues)}
+      >
         {formatLabel(selectedValues)}
       </button>
       {open && (
@@ -75,7 +79,16 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
             Clear (All assignees)
           </button>
 
-          <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 6, cursor: "pointer" }}>
+          <label
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              fontSize: 11,
+              marginBottom: 6,
+              cursor: "pointer",
+            }}
+          >
             <input
               type="checkbox"
               checked={selectedSet.has(UNASSIGNED)}
@@ -87,7 +100,17 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
           <div style={{ borderTop: "1px solid #f0f0f0", margin: "6px 0", paddingTop: 6 }} />
 
           {assignees.map((assignee) => (
-            <label key={assignee} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, marginBottom: 6, cursor: "pointer" }}>
+            <label
+              key={assignee}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                fontSize: 11,
+                marginBottom: 6,
+                cursor: "pointer",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={selectedSet.has(assignee)}

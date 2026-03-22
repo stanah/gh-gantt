@@ -7,17 +7,23 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
-    "lint": "pnpm -r lint",
+    "lint": "vp check",
     "test": "pnpm -r test",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
     "typecheck": "pnpm -r typecheck"
   },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "vite-plus": "^0.1.13"
+  },
   "engines": {
     "node": ">=20"
   },
-  "devDependencies": {
-    "@playwright/test": "^1.58.2"
+  "pnpm": {
+    "overrides": {
+      "vite": "^8.0.0"
+    }
   }
 }

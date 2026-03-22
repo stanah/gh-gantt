@@ -55,20 +55,26 @@ describe("resolveShortcutAction", () => {
   });
 
   it("disables shortcuts while typing in editable elements", () => {
-    expect(resolveShortcutAction({
-      key: "j",
-      target: asTarget({ tagName: "INPUT" }),
-    })).toBeNull();
-    expect(resolveShortcutAction({
-      key: "k",
-      ctrlKey: true,
-      target: asTarget({ isContentEditable: true }),
-    })).toBeNull();
-    expect(resolveShortcutAction({
-      key: "z",
-      metaKey: true,
-      target: asTarget({ tagName: "TEXTAREA" }),
-    })).toBeNull();
+    expect(
+      resolveShortcutAction({
+        key: "j",
+        target: asTarget({ tagName: "INPUT" }),
+      }),
+    ).toBeNull();
+    expect(
+      resolveShortcutAction({
+        key: "k",
+        ctrlKey: true,
+        target: asTarget({ isContentEditable: true }),
+      }),
+    ).toBeNull();
+    expect(
+      resolveShortcutAction({
+        key: "z",
+        metaKey: true,
+        target: asTarget({ tagName: "TEXTAREA" }),
+      }),
+    ).toBeNull();
   });
 });
 

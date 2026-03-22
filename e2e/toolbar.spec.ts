@@ -7,15 +7,11 @@ test.beforeEach(async ({ page }) => {
   await page.locator("[data-task-id='epic-1']").waitFor();
 });
 
-test("type filter buttons are rendered for each task type", async ({
-  page,
-}) => {
+test("type filter buttons are rendered for each task type", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Epic" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Feature" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Task", exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("button", { name: "Milestone" }),
-  ).toBeVisible();
+  await expect(page.getByRole("button", { name: "Milestone" })).toBeVisible();
 });
 
 test("clicking a type filter hides tasks of that type", async ({ page }) => {
@@ -84,15 +80,11 @@ test("display toggle #ID button works", async ({ page }) => {
   const idButton = page.getByRole("button", { name: "#ID" });
 
   // Check initial state, then toggle
-  const initialBg = await idButton.evaluate(
-    (el) => getComputedStyle(el).backgroundColor,
-  );
+  const initialBg = await idButton.evaluate((el) => getComputedStyle(el).backgroundColor);
 
   await idButton.click();
 
   // Background should change after toggle
-  const newBg = await idButton.evaluate(
-    (el) => getComputedStyle(el).backgroundColor,
-  );
+  const newBg = await idButton.evaluate((el) => getComputedStyle(el).backgroundColor);
   expect(newBg).not.toBe(initialBg);
 });

@@ -16,46 +16,47 @@
 
 ### 新規作成
 
-| File | Responsibility |
-|------|---------------|
-| `packages/cli/src/sync/three-way-merge.ts` | フィールド単位 3-way merge ロジック |
-| `packages/cli/src/sync/conflict-marker.ts` | JSON コンフリクトマーカーの読み書き・検出・解決 |
-| `packages/cli/src/commands/conflicts.ts` | `gh-gantt conflicts` コマンド |
-| `packages/cli/src/commands/resolve.ts` | `gh-gantt resolve` コマンド |
-| `packages/cli/src/__tests__/three-way-merge.test.ts` | 3-way merge 単体テスト |
-| `packages/cli/src/__tests__/conflict-marker.test.ts` | マーカー操作 単体テスト |
-| `packages/cli/src/__tests__/conflicts-command.test.ts` | conflicts コマンド テスト |
-| `packages/cli/src/__tests__/resolve-command.test.ts` | resolve コマンド テスト |
-| `packages/cli/src/__tests__/pull-guards.test.ts` | pull ガード統合テスト |
-| `.claude/skills/conflict-resolution/SKILL.md` | AI コンフリクト解決スキル |
+| File                                                   | Responsibility                                  |
+| ------------------------------------------------------ | ----------------------------------------------- |
+| `packages/cli/src/sync/three-way-merge.ts`             | フィールド単位 3-way merge ロジック             |
+| `packages/cli/src/sync/conflict-marker.ts`             | JSON コンフリクトマーカーの読み書き・検出・解決 |
+| `packages/cli/src/commands/conflicts.ts`               | `gh-gantt conflicts` コマンド                   |
+| `packages/cli/src/commands/resolve.ts`                 | `gh-gantt resolve` コマンド                     |
+| `packages/cli/src/__tests__/three-way-merge.test.ts`   | 3-way merge 単体テスト                          |
+| `packages/cli/src/__tests__/conflict-marker.test.ts`   | マーカー操作 単体テスト                         |
+| `packages/cli/src/__tests__/conflicts-command.test.ts` | conflicts コマンド テスト                       |
+| `packages/cli/src/__tests__/resolve-command.test.ts`   | resolve コマンド テスト                         |
+| `packages/cli/src/__tests__/pull-guards.test.ts`       | pull ガード統合テスト                           |
+| `.claude/skills/conflict-resolution/SKILL.md`          | AI コンフリクト解決スキル                       |
 
 ### 改修
 
-| File | Change |
-|------|--------|
-| `packages/shared/src/types.ts` | `ConflictStrategy` 削除、`TasksFile` に `has_conflicts` 追加 |
-| `packages/shared/src/schema.ts` | `TasksFileWithConflictsSchema` 追加、`ConflictStrategySchema` 削除、`ConfigSchema` から `conflict_strategy` 削除 |
-| `packages/cli/src/store/tasks.ts` | `WithConflicts` スキーマ対応 |
-| `packages/cli/src/sync/mapper.ts` | `mergeRemoteIntoLocal` 削除 |
-| `packages/cli/src/commands/pull.ts` | 未push変更ガード、3-way merge 統合 |
-| `packages/cli/src/commands/push.ts` | マーカーチェック、`--force` オプション追加 |
-| `packages/cli/src/sync/push-executor.ts` | リモート変更チェックロジック |
-| `packages/cli/src/commands/init.ts:143` | `conflict_strategy` をデフォルト config から削除 |
-| `packages/cli/src/index.ts` | conflicts / resolve コマンド登録 |
+| File                                     | Change                                                                                                           |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `packages/shared/src/types.ts`           | `ConflictStrategy` 削除、`TasksFile` に `has_conflicts` 追加                                                     |
+| `packages/shared/src/schema.ts`          | `TasksFileWithConflictsSchema` 追加、`ConflictStrategySchema` 削除、`ConfigSchema` から `conflict_strategy` 削除 |
+| `packages/cli/src/store/tasks.ts`        | `WithConflicts` スキーマ対応                                                                                     |
+| `packages/cli/src/sync/mapper.ts`        | `mergeRemoteIntoLocal` 削除                                                                                      |
+| `packages/cli/src/commands/pull.ts`      | 未push変更ガード、3-way merge 統合                                                                               |
+| `packages/cli/src/commands/push.ts`      | マーカーチェック、`--force` オプション追加                                                                       |
+| `packages/cli/src/sync/push-executor.ts` | リモート変更チェックロジック                                                                                     |
+| `packages/cli/src/commands/init.ts:143`  | `conflict_strategy` をデフォルト config から削除                                                                 |
+| `packages/cli/src/index.ts`              | conflicts / resolve コマンド登録                                                                                 |
 
 ### 削除
 
-| File | Reason |
-|------|--------|
-| `packages/cli/src/sync/conflict.ts` | `three-way-merge.ts` + `conflict-marker.ts` に置き換え |
-| `packages/cli/src/__tests__/conflict.test.ts` | 対応する新テストに置き換え |
-| `packages/cli/src/__tests__/pull-conflicts.test.ts` | pull 統合テストに置き換え |
+| File                                                | Reason                                                 |
+| --------------------------------------------------- | ------------------------------------------------------ |
+| `packages/cli/src/sync/conflict.ts`                 | `three-way-merge.ts` + `conflict-marker.ts` に置き換え |
+| `packages/cli/src/__tests__/conflict.test.ts`       | 対応する新テストに置き換え                             |
+| `packages/cli/src/__tests__/pull-conflicts.test.ts` | pull 統合テストに置き換え                              |
 
 ---
 
 ## Task 1: shared 型とスキーマの更新
 
 **Files:**
+
 - Modify: `packages/shared/src/types.ts:3,60-66,74-83`
 - Modify: `packages/shared/src/schema.ts:5,66-100,102-112,150`
 - Test: `packages/shared/src/__tests__/schema.test.ts`
@@ -72,14 +73,34 @@
 describe("TasksFileWithConflictsSchema", () => {
   it("should accept tasks with conflict marker keys", () => {
     const data = {
-      tasks: [{
-        id: "owner/repo#1", type: "task", github_issue: 1, github_repo: "owner/repo",
-        parent: null, sub_tasks: [], title: "Test", body: null, state: "open",
-        state_reason: null, assignees: [], labels: [], milestone: null, linked_prs: [],
-        created_at: "", updated_at: "", closed_at: null, custom_fields: {},
-        start_date: null, end_date: null, date: null, blocked_by: [],
-        state_current: "open", state_incoming: "closed",
-      }],
+      tasks: [
+        {
+          id: "owner/repo#1",
+          type: "task",
+          github_issue: 1,
+          github_repo: "owner/repo",
+          parent: null,
+          sub_tasks: [],
+          title: "Test",
+          body: null,
+          state: "open",
+          state_reason: null,
+          assignees: [],
+          labels: [],
+          milestone: null,
+          linked_prs: [],
+          created_at: "",
+          updated_at: "",
+          closed_at: null,
+          custom_fields: {},
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+          state_current: "open",
+          state_incoming: "closed",
+        },
+      ],
       cache: { comments: {}, reactions: {} },
       has_conflicts: true,
     };
@@ -88,14 +109,34 @@ describe("TasksFileWithConflictsSchema", () => {
 
   it("should reject conflict markers in strict TasksFileSchema", () => {
     const data = {
-      tasks: [{
-        id: "owner/repo#1", type: "task", github_issue: 1, github_repo: "owner/repo",
-        parent: null, sub_tasks: [], title: "Test", body: null, state: "open",
-        state_reason: null, assignees: [], labels: [], milestone: null, linked_prs: [],
-        created_at: "", updated_at: "", closed_at: null, custom_fields: {},
-        start_date: null, end_date: null, date: null, blocked_by: [],
-        state_current: "open", state_incoming: "closed",
-      }],
+      tasks: [
+        {
+          id: "owner/repo#1",
+          type: "task",
+          github_issue: 1,
+          github_repo: "owner/repo",
+          parent: null,
+          sub_tasks: [],
+          title: "Test",
+          body: null,
+          state: "open",
+          state_reason: null,
+          assignees: [],
+          labels: [],
+          milestone: null,
+          linked_prs: [],
+          created_at: "",
+          updated_at: "",
+          closed_at: null,
+          custom_fields: {},
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+          state_current: "open",
+          state_incoming: "closed",
+        },
+      ],
       cache: { comments: {}, reactions: {} },
     };
     expect(() => TasksFileSchema.parse(data)).toThrow();
@@ -152,15 +193,17 @@ export interface SyncConfig {
 // ConfigSchema.sync から conflict_strategy を削除、.passthrough() を追加
 export const ConfigSchema = z.object({
   // ... (既存フィールドそのまま)
-  sync: z.object({
-    auto_create_issues: z.boolean(),
-    field_mapping: z.object({
-      start_date: z.string(),
-      end_date: z.string(),
-      status: z.string(),
-      type: z.string().nullable().optional(),
-    }),
-  }).passthrough(),  // 既存 config の conflict_strategy を許容
+  sync: z
+    .object({
+      auto_create_issues: z.boolean(),
+      field_mapping: z.object({
+        start_date: z.string(),
+        end_date: z.string(),
+        status: z.string(),
+        type: z.string().nullable().optional(),
+      }),
+    })
+    .passthrough(), // 既存 config の conflict_strategy を許容
   // ...
 });
 
@@ -168,11 +211,15 @@ export const ConfigSchema = z.object({
 export const TasksFileSchema = z.object({
   tasks: z.array(TaskSchema),
   cache: z.object({
-    comments: z.record(z.array(z.object({
-      author: z.string(),
-      body: z.string(),
-      created_at: z.string(),
-    }))),
+    comments: z.record(
+      z.array(
+        z.object({
+          author: z.string(),
+          body: z.string(),
+          created_at: z.string(),
+        }),
+      ),
+    ),
     reactions: z.record(z.record(z.number())),
   }),
   has_conflicts: z.boolean().optional(),
@@ -182,11 +229,15 @@ export const TasksFileSchema = z.object({
 export const TasksFileWithConflictsSchema = z.object({
   tasks: z.array(TaskSchema.passthrough()),
   cache: z.object({
-    comments: z.record(z.array(z.object({
-      author: z.string(),
-      body: z.string(),
-      created_at: z.string(),
-    }))),
+    comments: z.record(
+      z.array(
+        z.object({
+          author: z.string(),
+          body: z.string(),
+          created_at: z.string(),
+        }),
+      ),
+    ),
     reactions: z.record(z.record(z.number())),
   }),
   has_conflicts: z.boolean().optional(),
@@ -225,6 +276,7 @@ git commit -m "refactor: remove ConflictStrategy, add has_conflicts and WithConf
 ## Task 2: three-way-merge.ts の実装
 
 **Files:**
+
 - Create: `packages/cli/src/sync/three-way-merge.ts`
 - Test: `packages/cli/src/__tests__/three-way-merge.test.ts`
 
@@ -239,10 +291,20 @@ import type { SyncFields } from "@gh-gantt/shared";
 
 function makeSyncFields(overrides: Partial<SyncFields> = {}): SyncFields {
   return {
-    title: "Test", body: null, state: "open", type: "task",
-    assignees: [], labels: [], milestone: null, custom_fields: {},
-    parent: null, sub_tasks: [], start_date: null, end_date: null,
-    date: null, blocked_by: [],
+    title: "Test",
+    body: null,
+    state: "open",
+    type: "task",
+    assignees: [],
+    labels: [],
+    milestone: null,
+    custom_fields: {},
+    parent: null,
+    sub_tasks: [],
+    start_date: null,
+    end_date: null,
+    date: null,
+    blocked_by: [],
     ...overrides,
   };
 }
@@ -298,12 +360,16 @@ describe("threeWayMerge", () => {
 
   it("multiple fields: some auto-merge, some conflict", () => {
     const base = makeSyncFields({ state: "open", milestone: null, start_date: "2026-01-01" });
-    const current = makeSyncFields({ state: "closed", milestone: "v1.0", start_date: "2026-01-01" });
+    const current = makeSyncFields({
+      state: "closed",
+      milestone: "v1.0",
+      start_date: "2026-01-01",
+    });
     const incoming = makeSyncFields({ state: "open", milestone: "v2.0", start_date: "2026-02-01" });
     const result = threeWayMerge(base, current, incoming);
-    expect(result.merged.state).toBe("closed");       // local-only
+    expect(result.merged.state).toBe("closed"); // local-only
     expect(result.merged.start_date).toBe("2026-02-01"); // remote-only
-    expect(result.conflicts).toHaveLength(1);           // milestone conflicts
+    expect(result.conflicts).toHaveLength(1); // milestone conflicts
     expect(result.conflicts[0].field).toBe("milestone");
   });
 
@@ -363,10 +429,20 @@ export interface MergeResult {
 
 // Re-export from shared constant to avoid duplication with conflict-marker.ts
 export const SYNC_FIELD_KEYS: (keyof SyncFields)[] = [
-  "title", "body", "state", "type",
-  "assignees", "labels", "milestone", "custom_fields",
-  "parent", "sub_tasks", "start_date", "end_date",
-  "date", "blocked_by",
+  "title",
+  "body",
+  "state",
+  "type",
+  "assignees",
+  "labels",
+  "milestone",
+  "custom_fields",
+  "parent",
+  "sub_tasks",
+  "start_date",
+  "end_date",
+  "date",
+  "blocked_by",
 ];
 
 function normalize(value: unknown): string {
@@ -380,9 +456,7 @@ function normalize(value: unknown): string {
     return JSON.stringify(sorted);
   }
   if (typeof value === "object" && value !== null) {
-    const sorted = Object.fromEntries(
-      Object.entries(value).sort(([a], [b]) => a.localeCompare(b)),
-    );
+    const sorted = Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b)));
     return JSON.stringify(sorted);
   }
   return JSON.stringify(value);
@@ -450,6 +524,7 @@ git commit -m "feat: add field-level three-way merge for sync engine"
 ## Task 3: conflict-marker.ts の実装
 
 **Files:**
+
 - Create: `packages/cli/src/sync/conflict-marker.ts`
 - Test: `packages/cli/src/__tests__/conflict-marker.test.ts`
 
@@ -470,11 +545,28 @@ import type { FieldConflict } from "../sync/three-way-merge.js";
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
-    id: "owner/repo#1", type: "task", github_issue: 1, github_repo: "owner/repo",
-    parent: null, sub_tasks: [], title: "Test", body: null, state: "open",
-    state_reason: null, assignees: [], labels: [], milestone: null, linked_prs: [],
-    created_at: "", updated_at: "", closed_at: null, custom_fields: {},
-    start_date: null, end_date: null, date: null, blocked_by: [],
+    id: "owner/repo#1",
+    type: "task",
+    github_issue: 1,
+    github_repo: "owner/repo",
+    parent: null,
+    sub_tasks: [],
+    title: "Test",
+    body: null,
+    state: "open",
+    state_reason: null,
+    assignees: [],
+    labels: [],
+    milestone: null,
+    linked_prs: [],
+    created_at: "",
+    updated_at: "",
+    closed_at: null,
+    custom_fields: {},
+    start_date: null,
+    end_date: null,
+    date: null,
+    blocked_by: [],
     ...overrides,
   };
 }
@@ -500,7 +592,9 @@ describe("applyConflictMarkers", () => {
 describe("detectMarkers", () => {
   it("detects conflict markers from task data", () => {
     const data: Record<string, unknown> = {
-      state: "open", state_current: "open", state_incoming: "closed",
+      state: "open",
+      state_current: "open",
+      state_incoming: "closed",
       title: "Test",
     };
     const markers = detectMarkers(data);
@@ -512,7 +606,8 @@ describe("detectMarkers", () => {
 
   it("ignores orphaned markers (only _current without _incoming)", () => {
     const data: Record<string, unknown> = {
-      state: "open", state_current: "open",
+      state: "open",
+      state_current: "open",
     };
     const markers = detectMarkers(data);
     expect(markers).toHaveLength(0);
@@ -520,7 +615,8 @@ describe("detectMarkers", () => {
 
   it("ignores markers for non-SyncFields keys", () => {
     const data: Record<string, unknown> = {
-      foo_current: "a", foo_incoming: "b",
+      foo_current: "a",
+      foo_incoming: "b",
     };
     const markers = detectMarkers(data);
     expect(markers).toHaveLength(0);
@@ -530,7 +626,9 @@ describe("detectMarkers", () => {
 describe("resolveMarker", () => {
   it("ours: keeps current value, removes markers", () => {
     const data: Record<string, unknown> = {
-      state: "open", state_current: "open", state_incoming: "closed",
+      state: "open",
+      state_current: "open",
+      state_incoming: "closed",
     };
     resolveMarker(data, "state", "ours");
     expect(data.state).toBe("open");
@@ -540,7 +638,9 @@ describe("resolveMarker", () => {
 
   it("theirs: adopts incoming value, removes markers", () => {
     const data: Record<string, unknown> = {
-      state: "open", state_current: "open", state_incoming: "closed",
+      state: "open",
+      state_current: "open",
+      state_incoming: "closed",
     };
     resolveMarker(data, "state", "theirs");
     expect(data.state).toBe("closed");
@@ -591,9 +691,7 @@ export function applyConflictMarkers(
   return result;
 }
 
-export function detectMarkers(
-  task: Record<string, unknown>,
-): FieldConflict[] {
+export function detectMarkers(task: Record<string, unknown>): FieldConflict[] {
   const conflicts: FieldConflict[] = [];
   const seen = new Set<string>();
 
@@ -635,9 +733,7 @@ export function resolveMarker(
   delete task[incomingKey];
 }
 
-export function hasUnresolvedMarkers(
-  task: Record<string, unknown>,
-): boolean {
+export function hasUnresolvedMarkers(task: Record<string, unknown>): boolean {
   for (const key of Object.keys(task)) {
     if (!key.endsWith("_current")) continue;
     const field = key.slice(0, -"_current".length);
@@ -665,6 +761,7 @@ git commit -m "feat: add conflict marker read/write/resolve for JSON tasks"
 ## Task 4: TasksStore のコンフリクト対応
 
 **Files:**
+
 - Modify: `packages/cli/src/store/tasks.ts`
 
 - [ ] **Step 1: tasks.ts を更新**
@@ -697,6 +794,7 @@ git commit -m "refactor: use WithConflicts schema for tasks.json reads"
 ## Task 5: conflicts コマンドの実装
 
 **Files:**
+
 - Create: `packages/cli/src/commands/conflicts.ts`
 - Modify: `packages/cli/src/index.ts:10-21`
 - Test: `packages/cli/src/__tests__/conflicts-command.test.ts`
@@ -839,6 +937,7 @@ git commit -m "feat: add gh-gantt conflicts command"
 ## Task 6: resolve コマンドの実装
 
 **Files:**
+
 - Create: `packages/cli/src/commands/resolve.ts`
 - Modify: `packages/cli/src/index.ts`
 - Test: `packages/cli/src/__tests__/resolve-command.test.ts`
@@ -855,9 +954,13 @@ describe("resolveAll", () => {
   it("resolves all markers with --ours", () => {
     const tasks: Record<string, unknown>[] = [
       {
-        id: "owner/repo#8", state: "open",
-        state_current: "open", state_incoming: "closed",
-        milestone: "v1.0", milestone_current: "v1.0", milestone_incoming: "v2.0",
+        id: "owner/repo#8",
+        state: "open",
+        state_current: "open",
+        state_incoming: "closed",
+        milestone: "v1.0",
+        milestone_current: "v1.0",
+        milestone_incoming: "v2.0",
       },
     ];
     resolveAll(tasks, "ours");
@@ -870,8 +973,10 @@ describe("resolveAll", () => {
   it("resolves all markers with --theirs", () => {
     const tasks: Record<string, unknown>[] = [
       {
-        id: "owner/repo#8", state: "open",
-        state_current: "open", state_incoming: "closed",
+        id: "owner/repo#8",
+        state: "open",
+        state_current: "open",
+        state_incoming: "closed",
       },
     ];
     resolveAll(tasks, "theirs");
@@ -881,20 +986,37 @@ describe("resolveAll", () => {
 
   it("resolves specific task only", () => {
     const tasks: Record<string, unknown>[] = [
-      { id: "owner/repo#8", github_issue: 8, state_current: "open", state_incoming: "closed", state: "open" },
-      { id: "owner/repo#11", github_issue: 11, milestone_current: "v1", milestone_incoming: "v2", milestone: "v1" },
+      {
+        id: "owner/repo#8",
+        github_issue: 8,
+        state_current: "open",
+        state_incoming: "closed",
+        state: "open",
+      },
+      {
+        id: "owner/repo#11",
+        github_issue: 11,
+        milestone_current: "v1",
+        milestone_incoming: "v2",
+        milestone: "v1",
+      },
     ];
     resolveAll(tasks, "ours", 8);
     expect(tasks[0].state_current).toBeUndefined(); // resolved
-    expect(tasks[1].milestone_current).toBe("v1");  // untouched
+    expect(tasks[1].milestone_current).toBe("v1"); // untouched
   });
 
   it("resolves specific field only", () => {
     const tasks: Record<string, unknown>[] = [
       {
-        id: "owner/repo#8", github_issue: 8, state: "open",
-        state_current: "open", state_incoming: "closed",
-        milestone: "v1.0", milestone_current: "v1.0", milestone_incoming: "v2.0",
+        id: "owner/repo#8",
+        github_issue: 8,
+        state: "open",
+        state_current: "open",
+        state_incoming: "closed",
+        milestone: "v1.0",
+        milestone_current: "v1.0",
+        milestone_incoming: "v2.0",
       },
     ];
     resolveAll(tasks, "theirs", 8, "state");
@@ -947,76 +1069,89 @@ export const resolveCommand = new Command("resolve")
   .option("--ours", "Resolve all conflicts with local values")
   .option("--theirs", "Resolve all conflicts with remote values")
   .option("--field <field>", "Resolve only specific field")
-  .action(async (issue: number | undefined, opts: { ours?: boolean; theirs?: boolean; field?: string }) => {
-    const cwd = process.cwd();
-    const tasksStore = new TasksStore(cwd);
-    const stateStore = new SyncStateStore(cwd);
-    const tasksFile = await tasksStore.read();
-    const syncState = await stateStore.read();
-    const rawTasks = (tasksFile as any).tasks as Record<string, unknown>[];
+  .action(
+    async (
+      issue: number | undefined,
+      opts: { ours?: boolean; theirs?: boolean; field?: string },
+    ) => {
+      const cwd = process.cwd();
+      const tasksStore = new TasksStore(cwd);
+      const stateStore = new SyncStateStore(cwd);
+      const tasksFile = await tasksStore.read();
+      const syncState = await stateStore.read();
+      const rawTasks = (tasksFile as any).tasks as Record<string, unknown>[];
 
-    if (opts.ours || opts.theirs) {
-      const choice = opts.ours ? "ours" : "theirs";
-      resolveAll(rawTasks, choice, issue, opts.field);
-    } else {
-      // Interactive mode
-      const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+      if (opts.ours || opts.theirs) {
+        const choice = opts.ours ? "ours" : "theirs";
+        resolveAll(rawTasks, choice, issue, opts.field);
+      } else {
+        // Interactive mode
+        const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+        for (const task of rawTasks) {
+          if (issue !== undefined && (task.github_issue as number) !== issue) continue;
+          const markers = detectMarkers(task);
+          for (const marker of markers) {
+            if (opts.field && marker.field !== opts.field) continue;
+            const snapshot = syncState.snapshots[task.id as string];
+            const base = (snapshot?.syncFields as Record<string, unknown>)?.[marker.field];
+            console.log(`\n#${task.github_issue}: ${marker.field}`);
+            console.log(`  current (local):  ${String(marker.current ?? "null")}`);
+            console.log(`  incoming (remote): ${String(marker.incoming ?? "null")}`);
+            console.log(`  base (snapshot):   ${String(base ?? "null")}`);
+            const answer = await rl.question("  ? ours or theirs: ");
+            if (answer === "ours" || answer === "theirs") {
+              resolveMarker(task, marker.field, answer);
+            } else {
+              console.log("  Skipped (invalid input)");
+            }
+          }
+        }
+        rl.close();
+      }
+
+      // Update has_conflicts flag
+      const stillHasConflicts = rawTasks.some((t) => hasUnresolvedMarkers(t));
+      (tasksFile as any).has_conflicts = stillHasConflicts;
+
+      // Update snapshots for resolved tasks
       for (const task of rawTasks) {
-        if (issue !== undefined && (task.github_issue as number) !== issue) continue;
-        const markers = detectMarkers(task);
-        for (const marker of markers) {
-          if (opts.field && marker.field !== opts.field) continue;
-          const snapshot = syncState.snapshots[task.id as string];
-          const base = (snapshot?.syncFields as Record<string, unknown>)?.[marker.field];
-          console.log(`\n#${task.github_issue}: ${marker.field}`);
-          console.log(`  current (local):  ${String(marker.current ?? "null")}`);
-          console.log(`  incoming (remote): ${String(marker.incoming ?? "null")}`);
-          console.log(`  base (snapshot):   ${String(base ?? "null")}`);
-          const answer = await rl.question("  ? ours or theirs: ");
-          if (answer === "ours" || answer === "theirs") {
-            resolveMarker(task, marker.field, answer);
-          } else {
-            console.log("  Skipped (invalid input)");
+        if (!hasUnresolvedMarkers(task)) {
+          const taskId = task.id as string;
+          const snap = syncState.snapshots[taskId];
+          if (snap) {
+            const t = task as unknown as Task;
+            snap.hash = hashTask(t);
+            snap.syncFields = {
+              title: t.title,
+              body: t.body,
+              state: t.state,
+              type: t.type,
+              assignees: [...t.assignees].sort(),
+              labels: [...t.labels].sort(),
+              milestone: t.milestone,
+              custom_fields: t.custom_fields,
+              parent: t.parent,
+              sub_tasks: [...t.sub_tasks].sort(),
+              start_date: t.start_date,
+              end_date: t.end_date,
+              date: t.date,
+              blocked_by: [...t.blocked_by].sort((a, b) => a.task.localeCompare(b.task)),
+            };
           }
         }
       }
-      rl.close();
-    }
 
-    // Update has_conflicts flag
-    const stillHasConflicts = rawTasks.some((t) => hasUnresolvedMarkers(t));
-    (tasksFile as any).has_conflicts = stillHasConflicts;
+      await tasksStore.write(tasksFile);
+      await stateStore.write(syncState);
 
-    // Update snapshots for resolved tasks
-    for (const task of rawTasks) {
-      if (!hasUnresolvedMarkers(task)) {
-        const taskId = task.id as string;
-        const snap = syncState.snapshots[taskId];
-        if (snap) {
-          const t = task as unknown as Task;
-          snap.hash = hashTask(t);
-          snap.syncFields = {
-            title: t.title, body: t.body, state: t.state, type: t.type,
-            assignees: [...t.assignees].sort(), labels: [...t.labels].sort(),
-            milestone: t.milestone, custom_fields: t.custom_fields,
-            parent: t.parent, sub_tasks: [...t.sub_tasks].sort(),
-            start_date: t.start_date, end_date: t.end_date, date: t.date,
-            blocked_by: [...t.blocked_by].sort((a, b) => a.task.localeCompare(b.task)),
-          };
-        }
+      if (stillHasConflicts) {
+        console.log("\nSome conflicts remain:");
+        console.log(formatConflictList(rawTasks, syncState.snapshots));
+      } else {
+        console.log("\nAll conflicts resolved. Run `gh-gantt push` to sync changes.");
       }
-    }
-
-    await tasksStore.write(tasksFile);
-    await stateStore.write(syncState);
-
-    if (stillHasConflicts) {
-      console.log("\nSome conflicts remain:");
-      console.log(formatConflictList(rawTasks, syncState.snapshots));
-    } else {
-      console.log("\nAll conflicts resolved. Run `gh-gantt push` to sync changes.");
-    }
-  });
+    },
+  );
 ```
 
 - [ ] **Step 4: index.ts にコマンド登録**
@@ -1044,6 +1179,7 @@ git commit -m "feat: add gh-gantt resolve command with ours/theirs/interactive m
 ## Task 7: pull コマンドの改修 (ガード + 3-way merge 統合)
 
 **Files:**
+
 - Modify: `packages/cli/src/commands/pull.ts`
 - Modify: `packages/cli/src/sync/mapper.ts:52-71` (mergeRemoteIntoLocal 削除)
 - Delete: `packages/cli/src/sync/conflict.ts`
@@ -1157,7 +1293,9 @@ for (const localTask of tasksFile.tasks) {
   const localHash = hashTask(localTask);
   if (localHash !== snapshot.hash) {
     // Local modified + remote deleted → keep with warning
-    console.warn(`Warning: #${localTask.github_issue} was deleted remotely but has local changes. Keeping local copy.`);
+    console.warn(
+      `Warning: #${localTask.github_issue} was deleted remotely but has local changes. Keeping local copy.`,
+    );
     mergedTasks.push(localTask);
   }
   // else: local unchanged + remote deleted → remove (don't add to mergedTasks)
@@ -1187,6 +1325,7 @@ git commit -m "refactor: replace remote-wins merge with 3-way merge in pull comm
 ## Task 7b: pull ガードの統合テスト
 
 **Files:**
+
 - Create: `packages/cli/src/__tests__/pull-guards.test.ts`
 
 - [ ] **Step 1: テストを書く**
@@ -1244,12 +1383,14 @@ git commit -m "test: add pull guard integration tests"
 ## Task 8: push コマンドの改修 (ガード追加)
 
 **Files:**
+
 - Modify: `packages/cli/src/commands/push.ts`
 - Modify: `packages/cli/src/sync/push-executor.ts`
 
 - [ ] **Step 1: push.ts にマーカーチェックと `--force` オプション追加**
 
 `packages/cli/src/commands/push.ts`:
+
 - `.option("--force", "Skip remote change check")` を追加
 - push アクション内、diff 計算前にマーカーチェック:
 
@@ -1268,6 +1409,7 @@ if (tasksFile.has_conflicts) {
 `executePush` のシグネチャに `opts?: { force?: boolean }` を追加。
 
 リモート変更チェックは初期実装では以下の方針:
+
 - push 対象タスクの `updated_at` を snapshot の `updated_at` と比較
 - 不一致があれば「リモートが更新されています。先に pull してください」と警告して中断
 - `--force` でスキップ可能
@@ -1313,6 +1455,7 @@ git commit -m "feat: add conflict and remote-change guards to push command"
 ## Task 9: mapper.test.ts の更新
 
 **Files:**
+
 - Modify: `packages/cli/src/__tests__/mapper.test.ts`
 
 - [ ] **Step 1: mergeRemoteIntoLocal のテストを削除**
@@ -1372,13 +1515,14 @@ Expected: ヒットなし (テストファイルの import 等が残っていな
 ## Task 11: コンフリクト解決スキルの作成
 
 **Files:**
+
 - Create: `.claude/skills/conflict-resolution/SKILL.md`
 
 - [ ] **Step 1: スキルファイルを作成**
 
 `.claude/skills/conflict-resolution/SKILL.md`:
 
-```markdown
+````markdown
 ---
 name: conflict-resolution
 description: gh-gantt の同期コンフリクトを CLI で自動解決する。pull 後にコンフリクトが発生した場合、または「コンフリクトを解決して」と指示された場合にトリガー。
@@ -1394,10 +1538,12 @@ gh-gantt pull 後に発生した同期コンフリクトを CLI コマンドで�
    ```bash
    gh-gantt conflicts
    ```
+````
 
 2. 各コンフリクトについて current / incoming / base を確認し、適切な値を判断
 
 3. CLI で解決:
+
    ```bash
    # 特定フィールドを解決
    gh-gantt resolve <issue-number> --field <field> --ours
@@ -1409,6 +1555,7 @@ gh-gantt pull 後に発生した同期コンフリクトを CLI コマンドで�
    ```
 
 4. 全解決を確認:
+
    ```bash
    gh-gantt conflicts
    # → "No conflicts."
@@ -1421,27 +1568,28 @@ gh-gantt pull 後に発生した同期コンフリクトを CLI コマンドで�
 
 ## Decision Guidelines
 
-| Field | Guideline |
-|-------|-----------|
-| `state` | ローカルで closed にしたなら実装完了の意図 → `--ours`。PR 未マージなら `--theirs` |
-| `start_date` / `end_date` | リモートがスケジュール調整なら `--theirs`。ローカルが作業実績なら `--ours` |
-| `milestone` | プロジェクト管理者の意図を尊重 → `--theirs` 優先 |
-| `assignees` / `labels` | リモートを尊重 → `--theirs` 優先 |
-| 判断がつかない場合 | ユーザーに確認する |
+| Field                     | Guideline                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `state`                   | ローカルで closed にしたなら実装完了の意図 → `--ours`。PR 未マージなら `--theirs` |
+| `start_date` / `end_date` | リモートがスケジュール調整なら `--theirs`。ローカルが作業実績なら `--ours`        |
+| `milestone`               | プロジェクト管理者の意図を尊重 → `--theirs` 優先                                  |
+| `assignees` / `labels`    | リモートを尊重 → `--theirs` 優先                                                  |
+| 判断がつかない場合        | ユーザーに確認する                                                                |
 
 ## Important
 
 - `tasks.json` を直接編集しない。必ず `gh-gantt resolve` コマンドを使う
 - 解決後は `gh-gantt conflicts` で残りがないことを確認する
 - コンフリクトが残っている状態では `push` も `pull` もできない
-```
+
+````
 
 - [ ] **Step 2: コミット**
 
 ```bash
 git add .claude/skills/conflict-resolution/SKILL.md
 git commit -m "feat: add conflict resolution skill for AI agents"
-```
+````
 
 ---
 

@@ -3,9 +3,7 @@ import configJson from "./fixtures/config.json";
 import tasksJson from "./fixtures/tasks.json";
 
 export async function mockApi(page: Page) {
-  await page.route("**/api/config", (route) =>
-    route.fulfill({ json: configJson }),
-  );
+  await page.route("**/api/config", (route) => route.fulfill({ json: configJson }));
 
   await page.route("**/api/tasks", (route) => {
     if (route.request().method() === "GET") {

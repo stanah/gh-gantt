@@ -87,7 +87,10 @@ describe("milestone push: ID replacement after creation", () => {
     const tasks = [
       makeTask({ id: newId, type: "milestone", title: "v2.0" }),
       makeTask({ id: "owner/repo#2", milestone: "v2.0", parent: oldId }),
-      makeTask({ id: "owner/repo#3", blocked_by: [{ task: oldId, type: "finish-to-start", lag: 0 }] }),
+      makeTask({
+        id: "owner/repo#3",
+        blocked_by: [{ task: oldId, type: "finish-to-start", lag: 0 }],
+      }),
     ];
 
     replaceTaskIdReferences(tasks, oldId, newId);

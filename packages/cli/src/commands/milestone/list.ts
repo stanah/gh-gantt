@@ -32,7 +32,8 @@ function collectMilestones(tasks: Task[]): MilestoneInfo[] {
   for (const t of tasks) {
     if (t.milestone) {
       // Skip self-referencing milestone tasks
-      if ((t.type === "milestone" || t.type === "milestone_type") && t.milestone === t.title) continue;
+      if ((t.type === "milestone" || t.type === "milestone_type") && t.milestone === t.title)
+        continue;
       const existing = milestoneMap.get(t.milestone);
       if (existing) {
         existing.taskCount++;
@@ -78,10 +79,21 @@ export const milestoneListCommand = new Command("list")
       head: ["Name", "Due Date", "State", "Tasks"],
       style: { head: [], border: [], compact: true },
       chars: {
-        top: "", "top-mid": "", "top-left": "", "top-right": "",
-        bottom: "", "bottom-mid": "", "bottom-left": "", "bottom-right": "",
-        left: "", "left-mid": "", mid: "", "mid-mid": "",
-        right: "", "right-mid": "", middle: "  ",
+        top: "",
+        "top-mid": "",
+        "top-left": "",
+        "top-right": "",
+        bottom: "",
+        "bottom-mid": "",
+        "bottom-left": "",
+        "bottom-right": "",
+        left: "",
+        "left-mid": "",
+        mid: "",
+        "mid-mid": "",
+        right: "",
+        "right-mid": "",
+        middle: "  ",
       },
     });
 

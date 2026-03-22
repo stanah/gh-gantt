@@ -22,7 +22,7 @@ const CommentSchema = z.object({
   updated_at: z.string(),
 });
 
-export const CommentsFileSchema = z.object({
+export const CommentsFileSchema: z.ZodType<CommentsFile> = z.object({
   version: z.literal("1"),
   fetched_at: z.record(z.string()),
   comments: z.record(z.array(CommentSchema)),

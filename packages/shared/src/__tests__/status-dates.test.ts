@@ -3,11 +3,11 @@ import { computeStatusDateUpdates } from "../status-dates.js";
 import type { StatusValue } from "../types.js";
 
 const statusValues: Record<string, StatusValue> = {
-  "Todo": { color: "#ccc", done: false },
+  Todo: { color: "#ccc", done: false },
   "In Progress": { color: "#36f", done: false, starts_work: true },
   "In Review": { color: "#f90", done: false, starts_work: true },
-  "Done": { color: "#0c0", done: true },
-  "Blocked": { color: "#c00", done: false },
+  Done: { color: "#0c0", done: true },
+  Blocked: { color: "#c00", done: false },
 };
 
 describe("computeStatusDateUpdates", () => {

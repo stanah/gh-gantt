@@ -101,7 +101,10 @@ describe("createApiRouter", () => {
     await configStore.write({
       version: "1",
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
-      sync: { auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E", status: "Status" } },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      },
       task_types: {
         epic: { label: "Epic", display: "summary", color: "#111111", github_label: null },
         feature: { label: "Feature", display: "bar", color: "#222222", github_label: null },
@@ -109,7 +112,11 @@ describe("createApiRouter", () => {
       },
       type_hierarchy: { epic: ["feature"], feature: ["task"], task: [] },
       statuses: { field_name: "Status", values: { Done: { color: "#0f0", done: true } } },
-      gantt: { default_view: "month", working_days: [1, 2, 3, 4, 5], colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" } },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
     });
     await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
     await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
@@ -121,13 +128,14 @@ describe("createApiRouter", () => {
       constructor(entries?: readonly (readonly [K, V])[] | null) {
         super(entries);
         if (Array.isArray(entries) && entries.length === tasks.length) {
-          const looksLikeTaskMap = entries.every(([key, value]) => (
-            typeof key === "string"
-            && tasks.some((task) => task.id === key)
-            && typeof value === "object"
-            && value !== null
-            && "id" in (value as object)
-          ));
+          const looksLikeTaskMap = entries.every(
+            ([key, value]) =>
+              typeof key === "string" &&
+              tasks.some((task) => task.id === key) &&
+              typeof value === "object" &&
+              value !== null &&
+              "id" in (value as object),
+          );
           if (looksLikeTaskMap) taskMapBuilds++;
         }
       }
@@ -137,7 +145,9 @@ describe("createApiRouter", () => {
 
     const router = createApiRouter(dir);
     const routeLayer = router.stack.find((layer: any) => layer.route?.path === "/api/tasks");
-    const handler = routeLayer?.route?.stack?.[0]?.handle as ((req: unknown, res: unknown) => Promise<void>) | undefined;
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
     if (!handler) throw new Error("GET /api/tasks handler not found");
 
     try {

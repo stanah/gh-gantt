@@ -23,15 +23,11 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
   let result = tasks;
 
   if (opts.backlog) {
-    result = result.filter(
-      (t) => t.start_date === null && t.end_date === null && t.date === null,
-    );
+    result = result.filter((t) => t.start_date === null && t.end_date === null && t.date === null);
   }
 
   if (opts.scheduled) {
-    result = result.filter(
-      (t) => t.start_date !== null || t.end_date !== null || t.date !== null,
-    );
+    result = result.filter((t) => t.start_date !== null || t.end_date !== null || t.date !== null);
   }
 
   if (opts.type) {
@@ -64,9 +60,7 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
 
   if (opts.status && opts.statusFieldName) {
     const fieldName = opts.statusFieldName;
-    result = result.filter(
-      (t) => t.custom_fields[fieldName] === opts.status,
-    );
+    result = result.filter((t) => t.custom_fields[fieldName] === opts.status);
   }
 
   if (opts.label) {
@@ -89,7 +83,10 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
 export function sortTasks(tasks: Task[], sortFields: string, config: Config): Task[] {
   if (!sortFields) return [...tasks];
 
-  const fields = sortFields.split(",").map((f) => f.trim()).filter(Boolean);
+  const fields = sortFields
+    .split(",")
+    .map((f) => f.trim())
+    .filter(Boolean);
   if (fields.length === 0) return [...tasks];
 
   const typeOrder = Object.keys(config.task_types);
@@ -153,18 +150,30 @@ function formatTable(tasks: Task[]): string {
   const hasMilestones = tasks.some((t) => t.type === "milestone");
   const hasNonMilestones = tasks.some((t) => t.type !== "milestone");
 
-  const head = hasMilestones && !hasNonMilestones
-    ? ["ID", "Type", "Title", "State", "Due"]
-    : ["ID", "Type", "Title", "State", "Start", "End"];
+  const head =
+    hasMilestones && !hasNonMilestones
+      ? ["ID", "Type", "Title", "State", "Due"]
+      : ["ID", "Type", "Title", "State", "Start", "End"];
 
   const table = new Table({
     head,
     style: { head: [], border: [], compact: true },
     chars: {
-      top: "", "top-mid": "", "top-left": "", "top-right": "",
-      bottom: "", "bottom-mid": "", "bottom-left": "", "bottom-right": "",
-      left: "", "left-mid": "", mid: "", "mid-mid": "",
-      right: "", "right-mid": "", middle: "  ",
+      top: "",
+      "top-mid": "",
+      "top-left": "",
+      "top-right": "",
+      bottom: "",
+      "bottom-mid": "",
+      "bottom-left": "",
+      "bottom-right": "",
+      left: "",
+      "left-mid": "",
+      mid: "",
+      "mid-mid": "",
+      right: "",
+      "right-mid": "",
+      middle: "  ",
     },
   });
 
@@ -173,9 +182,8 @@ function formatTable(tasks: Task[]): string {
     if (hasMilestones && !hasNonMilestones) {
       table.push([shortId, t.type, t.title, t.state, t.date ?? "-"]);
     } else {
-      const dates = t.type === "milestone"
-        ? [t.date ?? "-", "-"]
-        : [t.start_date ?? "-", t.end_date ?? "-"];
+      const dates =
+        t.type === "milestone" ? [t.date ?? "-", "-"] : [t.start_date ?? "-", t.end_date ?? "-"];
       table.push([shortId, t.type, t.title, t.state, ...dates]);
     }
   }
@@ -195,7 +203,10 @@ export const taskListCommand = new Command("list")
   .option("--status <status>", "Filter by Status custom field value")
   .option("--label <label>", "Filter by label")
   .option("--search <query>", "Search in title and body")
-  .option("--sort <fields>", "Sort by fields (comma-separated: priority,end_date,start_date,type,title)")
+  .option(
+    "--sort <fields>",
+    "Sort by fields (comma-separated: priority,end_date,start_date,type,title)",
+  )
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const projectRoot = process.cwd();
@@ -207,9 +218,7 @@ export const taskListCommand = new Command("list")
 
     if (opts.type && !config.task_types[opts.type]) {
       const typeKeys = Object.keys(config.task_types);
-      console.error(
-        `Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`,
-      );
+      console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
       return;
     }
 

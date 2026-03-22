@@ -6,7 +6,9 @@ import { MarkdownRenderer } from "../components/MarkdownRenderer.js";
 describe("MarkdownRenderer", () => {
   it("renders headings, paragraphs, inline code, and links", () => {
     const html = renderToStaticMarkup(
-      <MarkdownRenderer markdown={"# Title\n\nParagraph with `inline` and [link](https://example.com)."} />,
+      <MarkdownRenderer
+        markdown={"# Title\n\nParagraph with `inline` and [link](https://example.com)."}
+      />,
     );
 
     expect(html).toContain("<h1");
@@ -18,9 +20,7 @@ describe("MarkdownRenderer", () => {
   });
 
   it("renders fenced code blocks with language class", () => {
-    const html = renderToStaticMarkup(
-      <MarkdownRenderer markdown={"```ts\nconst x = 1;\n```"} />,
-    );
+    const html = renderToStaticMarkup(<MarkdownRenderer markdown={"```ts\nconst x = 1;\n```"} />);
 
     expect(html).toContain("<pre");
     expect(html).toContain('<code class="language-ts">');

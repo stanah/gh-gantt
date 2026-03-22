@@ -67,10 +67,19 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
           }}
         >
           <div>
-            <div style={{ fontSize: 11, letterSpacing: "0.08em", color: "#8a6b43", textTransform: "uppercase" }}>
+            <div
+              style={{
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                color: "#8a6b43",
+                textTransform: "uppercase",
+              }}
+            >
               Keyboard
             </div>
-            <h2 style={{ margin: "4px 0 0", fontSize: 18, color: "#2d2418" }}>ショートカット一覧</h2>
+            <h2 style={{ margin: "4px 0 0", fontSize: 18, color: "#2d2418" }}>
+              ショートカット一覧
+            </h2>
           </div>
           <button
             type="button"

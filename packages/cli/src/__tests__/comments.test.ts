@@ -32,7 +32,13 @@ describe("CommentsStore", () => {
       fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
       comments: {
         "o/r#1": [
-          { id: "C_1", author: "alice", body: "hello", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+          {
+            id: "C_1",
+            author: "alice",
+            body: "hello",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
         ],
       },
     };
@@ -43,10 +49,16 @@ describe("CommentsStore", () => {
 });
 
 describe("fetchAllComments", () => {
-  beforeEach(() => { vi.useFakeTimers({ shouldAdvanceTime: true }); });
-  afterEach(() => { vi.useRealTimers(); });
+  beforeEach(() => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
 
-  function makeGql(commentsByNumber: Record<number, Array<{ id: string; author: string; body: string }>>) {
+  function makeGql(
+    commentsByNumber: Record<number, Array<{ id: string; author: string; body: string }>>,
+  ) {
     return async (_query: string, vars: any) => ({
       repository: {
         issue: {
@@ -72,15 +84,27 @@ describe("fetchAllComments", () => {
   ];
 
   it("skips already-fetched tasks (resumability)", async () => {
-    const gql = vi.fn(makeGql({
-      2: [{ id: "C_2", author: "bob", body: "world" }],
-      3: [{ id: "C_3", author: "carol", body: "!" }],
-    }));
+    const gql = vi.fn(
+      makeGql({
+        2: [{ id: "C_2", author: "bob", body: "world" }],
+        3: [{ id: "C_3", author: "carol", body: "!" }],
+      }),
+    );
 
     const existing: CommentsFile = {
       version: "1",
       fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
-      comments: { "o/r#1": [{ id: "C_1", author: "alice", body: "hello", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }] },
+      comments: {
+        "o/r#1": [
+          {
+            id: "C_1",
+            author: "alice",
+            body: "hello",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
     };
 
     const saveProgress = vi.fn(async () => {});
@@ -122,7 +146,15 @@ describe("fetchAllComments", () => {
           issue: {
             comments: {
               pageInfo: { hasNextPage: false, endCursor: null },
-              nodes: [{ id: `C_${vars.number}`, author: { login: "a" }, body: "ok", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" }],
+              nodes: [
+                {
+                  id: `C_${vars.number}`,
+                  author: { login: "a" },
+                  body: "ok",
+                  createdAt: "2026-01-01T00:00:00Z",
+                  updatedAt: "2026-01-01T00:00:00Z",
+                },
+              ],
             },
           },
         },
@@ -141,20 +173,34 @@ describe("fetchAllComments", () => {
   });
 
   it("re-fetches all when force is true", async () => {
-    const gql = vi.fn(makeGql({
-      1: [{ id: "C_1_new", author: "alice", body: "updated" }],
-      2: [{ id: "C_2", author: "bob", body: "world" }],
-      3: [{ id: "C_3", author: "carol", body: "!" }],
-    }));
+    const gql = vi.fn(
+      makeGql({
+        1: [{ id: "C_1_new", author: "alice", body: "updated" }],
+        2: [{ id: "C_2", author: "bob", body: "world" }],
+        3: [{ id: "C_3", author: "carol", body: "!" }],
+      }),
+    );
 
     const existing: CommentsFile = {
       version: "1",
       fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
-      comments: { "o/r#1": [{ id: "C_1", author: "alice", body: "hello", created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }] },
+      comments: {
+        "o/r#1": [
+          {
+            id: "C_1",
+            author: "alice",
+            body: "hello",
+            created_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        ],
+      },
     };
 
     const saveProgress = vi.fn(async () => {});
-    const result = await fetchAllComments(gql as any, items, existing, saveProgress, { force: true });
+    const result = await fetchAllComments(gql as any, items, existing, saveProgress, {
+      force: true,
+    });
 
     // All 3 should be fetched
     expect(gql).toHaveBeenCalledTimes(3);
@@ -174,7 +220,13 @@ describe("fetchIssueComments", () => {
               comments: {
                 pageInfo: { hasNextPage: true, endCursor: "cursor1" },
                 nodes: [
-                  { id: "C_1", author: { login: "alice" }, body: "page1", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z" },
+                  {
+                    id: "C_1",
+                    author: { login: "alice" },
+                    body: "page1",
+                    createdAt: "2026-01-01T00:00:00Z",
+                    updatedAt: "2026-01-01T00:00:00Z",
+                  },
                 ],
               },
             },
@@ -187,7 +239,13 @@ describe("fetchIssueComments", () => {
             comments: {
               pageInfo: { hasNextPage: false, endCursor: null },
               nodes: [
-                { id: "C_2", author: { login: "bob" }, body: "page2", createdAt: "2026-01-02T00:00:00Z", updatedAt: "2026-01-02T00:00:00Z" },
+                {
+                  id: "C_2",
+                  author: { login: "bob" },
+                  body: "page2",
+                  createdAt: "2026-01-02T00:00:00Z",
+                  updatedAt: "2026-01-02T00:00:00Z",
+                },
               ],
             },
           },

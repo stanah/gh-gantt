@@ -6,7 +6,11 @@ interface BacklogSectionHeaderProps {
   onToggle: () => void;
 }
 
-export function BacklogSectionHeader({ isCollapsed, totalCount, onToggle }: BacklogSectionHeaderProps) {
+export function BacklogSectionHeader({
+  isCollapsed,
+  totalCount,
+  onToggle,
+}: BacklogSectionHeaderProps) {
   return (
     <button
       type="button"

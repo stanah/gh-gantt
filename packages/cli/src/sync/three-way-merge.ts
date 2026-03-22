@@ -44,7 +44,7 @@ function normalizeForCompare(field: keyof SyncFields, value: unknown): string {
       // blocked_by: sort by .task property
       if (typeof a === "object" && a !== null && "task" in a) {
         return String((a as { task: string }).task).localeCompare(
-          String((b as { task: string }).task)
+          String((b as { task: string }).task),
         );
       }
       // string arrays (assignees, labels, sub_tasks): sort by string value
@@ -80,7 +80,7 @@ function normalizeForCompare(field: keyof SyncFields, value: unknown): string {
 export function threeWayMerge(
   base: SyncFields,
   current: SyncFields,
-  incoming: SyncFields
+  incoming: SyncFields,
 ): MergeResult {
   const merged = { ...current };
   const conflicts: FieldConflict[] = [];

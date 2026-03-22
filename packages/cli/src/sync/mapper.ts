@@ -3,20 +3,12 @@ import type { RawProjectItem } from "../github/projects.js";
 import { resolveTaskType } from "./type-resolver.js";
 import { buildTaskId } from "../github/issues.js";
 
-export function mapRemoteItemToTask(
-  item: RawProjectItem,
-  config: Config,
-): Task | null {
+export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task | null {
   if (!item.content) return null;
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
   const fm = config.sync.field_mapping;
-  const taskType = resolveTaskType(
-    c.labels,
-    item.fieldValues,
-    config.task_types,
-    fm.type,
-  );
+  const taskType = resolveTaskType(c.labels, item.fieldValues, config.task_types, fm.type);
 
   const customFields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item.fieldValues)) {

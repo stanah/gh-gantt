@@ -2,7 +2,13 @@ import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, extractSyncFields } from "./hash.js";
-import { isDraftTask, isMilestoneSyntheticTask, isMilestoneDraftTask, buildTaskId, buildMilestoneSyntheticId } from "../github/issues.js";
+import {
+  isDraftTask,
+  isMilestoneSyntheticTask,
+  isMilestoneDraftTask,
+  buildTaskId,
+  buildMilestoneSyntheticId,
+} from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
 import { getToken } from "../github/auth.js";
 import {
@@ -24,11 +30,7 @@ export interface PushResult {
   skipped: number;
 }
 
-export function replaceTaskIdReferences(
-  tasks: Task[],
-  oldId: string,
-  newId: string,
-): void {
+export function replaceTaskIdReferences(tasks: Task[], oldId: string, newId: string): void {
   for (const task of tasks) {
     if (task.parent === oldId) {
       task.parent = newId;
@@ -47,7 +49,10 @@ export async function executePush(
   config: Config,
   tasksFile: TasksFile,
   syncState: SyncState,
-  opts?: { force?: boolean; saveProgress?: (tasksFile: TasksFile, syncState: SyncState) => Promise<void> },
+  opts?: {
+    force?: boolean;
+    saveProgress?: (tasksFile: TasksFile, syncState: SyncState) => Promise<void>;
+  },
 ): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
   const diffs = computeLocalDiff(tasksFile.tasks, syncState);
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
@@ -58,7 +63,9 @@ export async function executePush(
 
   // Check if remote has changed since last pull (like git push rejecting non-fast-forward)
   if (!opts?.force) {
-    const modifiedDiffs = diffs.filter((d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id));
+    const modifiedDiffs = diffs.filter(
+      (d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id),
+    );
     if (modifiedDiffs.length > 0) {
       // Fetch current updated_at from GitHub for modified issues
       const hasIssueNumbers = modifiedDiffs.some((d) => d.task.github_issue !== null);
@@ -82,7 +89,9 @@ export async function executePush(
               staleTaskIds.push(diff.id);
             }
           } catch (err) {
-            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${err instanceof Error ? err.message : String(err)}`);
+            console.warn(
+              `⚠ リモート状態の確認に失敗しました (${diff.id}): ${err instanceof Error ? err.message : String(err)}`,
+            );
             staleTaskIds.push(diff.id);
           }
         }
@@ -111,8 +120,12 @@ export async function executePush(
   const existingDiffs = nonSyntheticDiffs.filter((d) => !isDraftTask(d.id));
 
   // Further separate milestone drafts from regular issue drafts
-  const draftMilestones = allDraftDiffs.filter((d) => d.type !== "deleted" && isMilestoneDraftTask(d.task));
-  const draftDiffs = allDraftDiffs.filter((d) => d.type === "deleted" || !isMilestoneDraftTask(d.task));
+  const draftMilestones = allDraftDiffs.filter(
+    (d) => d.type !== "deleted" && isMilestoneDraftTask(d.task),
+  );
+  const draftDiffs = allDraftDiffs.filter(
+    (d) => d.type === "deleted" || !isMilestoneDraftTask(d.task),
+  );
 
   // Process milestone drafts first (must precede Issue creation for milestoneMap)
   if (draftMilestones.length > 0) {
@@ -121,16 +134,11 @@ export async function executePush(
       const task = diff.task;
       const oldId = task.id;
 
-      const { number: milestoneNumber } = await createGithubMilestone(
-        token,
-        owner,
-        repo,
-        {
-          title: task.title,
-          description: task.body ?? undefined,
-          dueOn: task.date ?? undefined,
-        },
-      );
+      const { number: milestoneNumber } = await createGithubMilestone(token, owner, repo, {
+        title: task.title,
+        description: task.body ?? undefined,
+        dueOn: task.date ?? undefined,
+      });
 
       // Convert to synthetic milestone ID
       const newId = buildMilestoneSyntheticId(`${owner}/${repo}`, milestoneNumber);
@@ -205,11 +213,7 @@ export async function executePush(
       });
 
       // Add to project
-      const projectItemId = await addProjectItem(
-        gql,
-        syncState.project_node_id,
-        issueId,
-      );
+      const projectItemId = await addProjectItem(gql, syncState.project_node_id, issueId);
 
       // Update project fields (dates)
       if (task.start_date && syncState.field_ids[fm.start_date]) {
@@ -233,7 +237,12 @@ export async function executePush(
 
       // Set Type custom field
       if (fm.type && syncState.field_ids[fm.type]) {
-        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        const typeOptionId = resolveTypeOptionId(
+          task.type,
+          config.task_types,
+          fm.type,
+          syncState.option_ids,
+        );
         if (typeOptionId) {
           await updateProjectItemField(
             gql,
@@ -364,7 +373,12 @@ export async function executePush(
 
       // Update Type custom field if configured
       if (fm.type && syncState.field_ids[fm.type]) {
-        const typeOptionId = resolveTypeOptionId(task.type, config.task_types, fm.type, syncState.option_ids);
+        const typeOptionId = resolveTypeOptionId(
+          task.type,
+          config.task_types,
+          fm.type,
+          syncState.option_ids,
+        );
         if (typeOptionId) {
           await updateProjectItemField(
             gql,
@@ -387,16 +401,22 @@ export async function executePush(
           if (oldParent) {
             const oldParentEntry = syncState.id_map[oldParent];
             if (oldParentEntry?.issue_node_id) {
-              try { await removeSubIssue(gql, oldParentEntry.issue_node_id, idEntry.issue_node_id); }
-              catch { /* may not exist on remote */ }
+              try {
+                await removeSubIssue(gql, oldParentEntry.issue_node_id, idEntry.issue_node_id);
+              } catch {
+                /* may not exist on remote */
+              }
             }
           }
           // Add new parent relationship
           if (newParent) {
             const newParentEntry = syncState.id_map[newParent];
             if (newParentEntry?.issue_node_id) {
-              try { await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id); }
-              catch { /* sub-issues API may not be available */ }
+              try {
+                await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id);
+              } catch {
+                /* sub-issues API may not be available */
+              }
             }
           }
         }
@@ -410,8 +430,11 @@ export async function executePush(
           if (!oldBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try { await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id); }
-              catch { /* blocker may not be a pushable issue */ }
+              try {
+                await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
+              } catch {
+                /* blocker may not be a pushable issue */
+              }
             }
           }
         }
@@ -421,8 +444,11 @@ export async function executePush(
           if (!newBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try { await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id); }
-              catch { /* may not exist on remote */ }
+              try {
+                await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
+              } catch {
+                /* may not exist on remote */
+              }
             }
           }
         }

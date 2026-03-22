@@ -41,7 +41,10 @@ function valuesEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function buildTaskHistoryPatches(before: Task, after: Task): { undoPatch: Partial<Task>; redoPatch: Partial<Task> } {
+function buildTaskHistoryPatches(
+  before: Task,
+  after: Task,
+): { undoPatch: Partial<Task>; redoPatch: Partial<Task> } {
   const undoPatch: Partial<Task> = {};
   const redoPatch: Partial<Task> = {};
   const undoRecord = undoPatch as Record<string, unknown>;
@@ -66,7 +69,10 @@ export function App() {
   const ganttRef = useRef<GanttChartHandle>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [toast, setToast] = useState<{ message: string; type: "success" | "error" | "info" } | null>(null);
+  const [toast, setToast] = useState<{
+    message: string;
+    type: "success" | "error" | "info";
+  } | null>(null);
   const [syncing, setSyncing] = useState<"pull" | "push" | null>(null);
   const {
     canUndo,
@@ -129,7 +135,14 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName: priorityFieldName ?? undefined, searchQuery });
+  } = useTaskTree(tasks, enabled, {
+    hideClosed,
+    selectedAssignee,
+    selectedAssignees,
+    selectedPriorities,
+    priorityFieldName: priorityFieldName ?? undefined,
+    searchQuery,
+  });
 
   const visibleTaskIds = useMemo(
     () => [
@@ -140,51 +153,64 @@ export function App() {
   );
 
   const visibleTaskMap = useMemo(
-    () => new Map(
-      [...flatList, ...(!backlogCollapsed ? backlogFlatList : [])].map((node) => [node.task.id, node]),
-    ),
+    () =>
+      new Map(
+        [...flatList, ...(!backlogCollapsed ? backlogFlatList : [])].map((node) => [
+          node.task.id,
+          node,
+        ]),
+      ),
     [backlogCollapsed, backlogFlatList, flatList],
   );
 
-  const toggleSelectedCollapse = useCallback((taskId: string) => {
-    const node = visibleTaskMap.get(taskId);
-    if (node && node.children.length > 0) {
-      toggleCollapse(taskId);
-    }
-  }, [toggleCollapse, visibleTaskMap]);
+  const toggleSelectedCollapse = useCallback(
+    (taskId: string) => {
+      const node = visibleTaskMap.get(taskId);
+      if (node && node.children.length > 0) {
+        toggleCollapse(taskId);
+      }
+    },
+    [toggleCollapse, visibleTaskMap],
+  );
 
-  const applyTrackedTaskUpdate = useCallback(async (taskId: string, updates: Partial<Task>) => {
-    const beforeTask = tasks.find((task) => task.id === taskId);
-    if (!beforeTask) {
-      throw new Error("Task not found");
-    }
+  const applyTrackedTaskUpdate = useCallback(
+    async (taskId: string, updates: Partial<Task>) => {
+      const beforeTask = tasks.find((task) => task.id === taskId);
+      if (!beforeTask) {
+        throw new Error("Task not found");
+      }
 
-    const updatedTask = await updateTask(taskId, updates);
-    const { undoPatch, redoPatch } = buildTaskHistoryPatches(beforeTask, updatedTask);
+      const updatedTask = await updateTask(taskId, updates);
+      const { undoPatch, redoPatch } = buildTaskHistoryPatches(beforeTask, updatedTask);
 
-    if (Object.keys(redoPatch).length > 0) {
-      pushHistory({
-        label: beforeTask.title,
-        undo: async () => {
-          await updateTask(taskId, undoPatch);
-        },
-        redo: async () => {
-          await updateTask(taskId, redoPatch);
-        },
-      });
-    }
+      if (Object.keys(redoPatch).length > 0) {
+        pushHistory({
+          label: beforeTask.title,
+          undo: async () => {
+            await updateTask(taskId, undoPatch);
+          },
+          redo: async () => {
+            await updateTask(taskId, redoPatch);
+          },
+        });
+      }
 
-    return updatedTask;
-  }, [pushHistory, tasks, updateTask]);
+      return updatedTask;
+    },
+    [pushHistory, tasks, updateTask],
+  );
 
-  const handleTaskUpdate = useCallback(async (taskId: string, updates: Partial<Task>) => {
-    if (undoRedoBusy) return;
-    try {
-      await applyTrackedTaskUpdate(taskId, updates);
-    } catch (err) {
-      showToast(`Update failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-  }, [applyTrackedTaskUpdate, showToast, undoRedoBusy]);
+  const handleTaskUpdate = useCallback(
+    async (taskId: string, updates: Partial<Task>) => {
+      if (undoRedoBusy) return;
+      try {
+        await applyTrackedTaskUpdate(taskId, updates);
+      } catch (err) {
+        showToast(`Update failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    },
+    [applyTrackedTaskUpdate, showToast, undoRedoBusy],
+  );
 
   const handleUndo = useCallback(async () => {
     try {
@@ -208,8 +234,12 @@ export function App() {
     onSelectTask: activateTask,
     onToggleCollapse: toggleSelectedCollapse,
     onFocusSearch: () => searchInputRef.current?.focus(),
-    onUndo: () => { void handleUndo(); },
-    onRedo: () => { void handleRedo(); },
+    onUndo: () => {
+      void handleUndo();
+    },
+    onRedo: () => {
+      void handleRedo();
+    },
   });
 
   const { getRelated } = useRelatedTasks(tasks);
@@ -218,49 +248,61 @@ export function App() {
     [getRelated, hoveredTaskId],
   );
 
-  const handleReparent = useCallback(async (taskId: string, newParentId: string | null) => {
-    if (undoRedoBusy) return;
-    const task = tasks.find((entry) => entry.id === taskId);
-    if (!task) {
-      showToast("Task not found", "error");
-      return;
-    }
-    const previousParentId = task.parent ?? null;
-    if (previousParentId === newParentId) return;
+  const handleReparent = useCallback(
+    async (taskId: string, newParentId: string | null) => {
+      if (undoRedoBusy) return;
+      const task = tasks.find((entry) => entry.id === taskId);
+      if (!task) {
+        showToast("Task not found", "error");
+        return;
+      }
+      const previousParentId = task.parent ?? null;
+      if (previousParentId === newParentId) return;
 
-    try {
-      await reparentTask(taskId, newParentId);
-      pushHistory({
-        label: `Reparent ${task.title}`,
-        undo: async () => {
-          await reparentTask(taskId, previousParentId);
-        },
-        redo: async () => {
-          await reparentTask(taskId, newParentId);
-        },
-      });
-    } catch (err) {
-      showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-  }, [pushHistory, reparentTask, showToast, tasks, undoRedoBusy]);
+      try {
+        await reparentTask(taskId, newParentId);
+        pushHistory({
+          label: `Reparent ${task.title}`,
+          undo: async () => {
+            await reparentTask(taskId, previousParentId);
+          },
+          redo: async () => {
+            await reparentTask(taskId, newParentId);
+          },
+        });
+      } catch (err) {
+        showToast(`Reparent failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    },
+    [pushHistory, reparentTask, showToast, tasks, undoRedoBusy],
+  );
 
-  const handleAddDependency = useCallback(async (taskId: string, blockedByTaskId: string) => {
-    if (undoRedoBusy) return;
-    const task = tasks.find((entry) => entry.id === taskId);
-    if (!task) {
-      showToast("Task not found", "error");
-      return;
-    }
-    if (task.blocked_by.some((d) => d.task === blockedByTaskId)) return;
+  const handleAddDependency = useCallback(
+    async (taskId: string, blockedByTaskId: string) => {
+      if (undoRedoBusy) return;
+      const task = tasks.find((entry) => entry.id === taskId);
+      if (!task) {
+        showToast("Task not found", "error");
+        return;
+      }
+      if (task.blocked_by.some((d) => d.task === blockedByTaskId)) return;
 
-    const newBlockedBy = [...task.blocked_by, { task: blockedByTaskId, type: "finish-to-start" as const, lag: 0 }];
-    try {
-      await applyTrackedTaskUpdate(taskId, { blocked_by: newBlockedBy });
-      showToast(`依存関係を追加: ${blockedByTaskId}`, "success");
-    } catch (err) {
-      showToast(`依存関係の追加に失敗: ${err instanceof Error ? err.message : String(err)}`, "error");
-    }
-  }, [applyTrackedTaskUpdate, showToast, tasks, undoRedoBusy]);
+      const newBlockedBy = [
+        ...task.blocked_by,
+        { task: blockedByTaskId, type: "finish-to-start" as const, lag: 0 },
+      ];
+      try {
+        await applyTrackedTaskUpdate(taskId, { blocked_by: newBlockedBy });
+        showToast(`依存関係を追加: ${blockedByTaskId}`, "success");
+      } catch (err) {
+        showToast(
+          `依存関係の追加に失敗: ${err instanceof Error ? err.message : String(err)}`,
+          "error",
+        );
+      }
+    },
+    [applyTrackedTaskUpdate, showToast, tasks, undoRedoBusy],
+  );
 
   const dragState = useTreeDragDrop({
     tasks,
@@ -271,7 +313,9 @@ export function App() {
 
   useEffect(() => {
     if (!selectedTaskId) return;
-    const selectedRow = document.querySelector<HTMLElement>(`[data-task-id="${CSS.escape(selectedTaskId)}"]`);
+    const selectedRow = document.querySelector<HTMLElement>(
+      `[data-task-id="${CSS.escape(selectedTaskId)}"]`,
+    );
     selectedRow?.scrollIntoView({ block: "nearest" });
   }, [selectedTaskId, visibleTaskIds]);
 
@@ -287,9 +331,11 @@ export function App() {
         const data = await res.json();
         const confirmed = window.confirm(
           `${data.conflicts.length} task(s) have conflicting changes.\n\n` +
-          data.conflicts.map((c: { taskId: string; title: string }) => `  - ${c.taskId}: ${c.title}`).join("\n") +
-          "\n\nLocal changes to title, dates, state, etc. will be overwritten by remote.\n" +
-          "Proceed with remote-wins merge?"
+            data.conflicts
+              .map((c: { taskId: string; title: string }) => `  - ${c.taskId}: ${c.title}`)
+              .join("\n") +
+            "\n\nLocal changes to title, dates, state, etc. will be overwritten by remote.\n" +
+            "Proceed with remote-wins merge?",
         );
         if (!confirmed) return;
         res = await fetch("/api/sync/pull", {
@@ -309,7 +355,10 @@ export function App() {
         showToast("Pull complete: Already up to date.", "info");
       } else {
         clearHistory();
-        showToast(`Pull complete: ${added} added, ${updated} updated, ${removed} removed`, "success");
+        showToast(
+          `Pull complete: ${added} added, ${updated} updated, ${removed} removed`,
+          "success",
+        );
       }
     } catch (err) {
       showToast(`Pull failed: ${err instanceof Error ? err.message : String(err)}`, "error");
@@ -334,7 +383,11 @@ export function App() {
       }
       const preview = await previewRes.json();
 
-      if (preview.summary.create === 0 && preview.summary.update === 0 && (preview.summary.skip ?? 0) === 0) {
+      if (
+        preview.summary.create === 0 &&
+        preview.summary.update === 0 &&
+        (preview.summary.skip ?? 0) === 0
+      ) {
         showToast("No local changes to push.", "info");
         return;
       }
@@ -344,7 +397,8 @@ export function App() {
         (c: { type: string; title: string; changedFields?: string[] }) =>
           `  ${c.type === "added" ? "+" : c.type === "deleted" ? "-" : "~"} ${c.title}${c.changedFields ? ` [${c.changedFields.join(", ")}]` : ""}`,
       );
-      const totalCount = preview.summary.create + preview.summary.update + (preview.summary.skip ?? 0);
+      const totalCount =
+        preview.summary.create + preview.summary.update + (preview.summary.skip ?? 0);
       const msg =
         `Push ${totalCount} task(s) to GitHub?\n\n` +
         `  Create: ${preview.summary.create}\n` +
@@ -375,7 +429,10 @@ export function App() {
         showToast(data.message, "info");
       } else {
         clearHistory();
-        showToast(`Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`, "success");
+        showToast(
+          `Push complete: ${data.created} created, ${data.updated} updated, ${data.skipped} skipped`,
+          "success",
+        );
       }
       await refresh();
     } catch (err) {
@@ -387,7 +444,15 @@ export function App() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#888" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          color: "#888",
+        }}
+      >
         Loading...
       </div>
     );
@@ -395,7 +460,15 @@ export function App() {
 
   if (error) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#e74c3c" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          color: "#e74c3c",
+        }}
+      >
         Error: {error}
       </div>
     );
@@ -406,35 +479,68 @@ export function App() {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
       {syncing && (
-        <div style={{
-          position: "fixed", inset: 0, zIndex: 9998,
-          background: "rgba(255,255,255,0.5)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-        }}>
-          <span style={{ fontSize: 13, color: "#555", background: "#fff", padding: "8px 16px", borderRadius: 6, boxShadow: "0 2px 8px rgba(0,0,0,0.1)" }}>
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 9998,
+            background: "rgba(255,255,255,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <span
+            style={{
+              fontSize: 13,
+              color: "#555",
+              background: "#fff",
+              padding: "8px 16px",
+              borderRadius: 6,
+              boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+            }}
+          >
             {syncing === "pull" ? "Pulling…" : "Pushing…"}
           </span>
         </div>
       )}
       {toast && (
-        <div style={{
-          position: "fixed", top: 12, right: 12, zIndex: 9999,
-          padding: "10px 16px", borderRadius: 6, fontSize: 13,
-          color: "#fff", boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-          background: toast.type === "success" ? "#27AE60"
-            : toast.type === "error" ? "#e74c3c"
-            : "#3498DB",
-        }}>
+        <div
+          style={{
+            position: "fixed",
+            top: 12,
+            right: 12,
+            zIndex: 9999,
+            padding: "10px 16px",
+            borderRadius: 6,
+            fontSize: 13,
+            color: "#fff",
+            boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+            background:
+              toast.type === "success" ? "#27AE60" : toast.type === "error" ? "#e74c3c" : "#3498DB",
+          }}
+        >
           {toast.message}
         </div>
       )}
-      <header style={{ padding: "8px 16px", borderBottom: "1px solid #e0e0e0", background: "#fff", display: "flex", alignItems: "center", gap: 12 }}>
+      <header
+        style={{
+          padding: "8px 16px",
+          borderBottom: "1px solid #e0e0e0",
+          background: "#fff",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
         <strong>{config.project.name}</strong>
         <span style={{ color: "#888", fontSize: 12 }}>{tasks.length} tasks</span>
       </header>
       <Toolbar
         viewScale={viewScale}
-        onSetViewScale={(s) => { ganttRef.current?.setViewScale(s); }}
+        onSetViewScale={(s) => {
+          ganttRef.current?.setViewScale(s);
+        }}
         onZoomIn={() => ganttRef.current?.zoomIn()}
         onZoomOut={() => ganttRef.current?.zoomOut()}
         onScrollToToday={() => ganttRef.current?.scrollToToday()}
@@ -458,8 +564,12 @@ export function App() {
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}
         onOpenShortcuts={toggleHelp}
-        onUndo={() => { void handleUndo(); }}
-        onRedo={() => { void handleRedo(); }}
+        onUndo={() => {
+          void handleUndo();
+        }}
+        onRedo={() => {
+          void handleRedo();
+        }}
         canUndo={canUndo}
         canRedo={canRedo}
         undoCount={undoCount}
@@ -471,11 +581,7 @@ export function App() {
           <Layout
             scrollContainerRef={scrollContainerRef}
             leftHeader={
-              <TaskTreeHeader
-                config={config}
-                enabledTypes={enabled}
-                onToggleType={toggleType}
-              />
+              <TaskTreeHeader config={config} enabledTypes={enabled} onToggleType={toggleType} />
             }
             leftBody={
               <TaskTreeBody
@@ -507,7 +613,9 @@ export function App() {
                 config={config}
                 selectedTaskId={selectedTaskId}
                 onSelectTask={handleSelectTask}
-                onUpdateTask={(taskId, updates) => { void handleTaskUpdate(taskId, updates); }}
+                onUpdateTask={(taskId, updates) => {
+                  void handleTaskUpdate(taskId, updates);
+                }}
                 onViewScaleChange={handleViewScaleChange}
                 scrollContainerRef={scrollContainerRef}
                 header={handleGanttHeader}
@@ -522,20 +630,23 @@ export function App() {
             }
           />
         </div>
-        {selectedTaskId && (() => {
-          const detailTask = tasks.find((t) => t.id === selectedTaskId);
-          if (!detailTask) return null;
-          return (
-            <TaskDetailPanel
-              key={selectedTaskId}
-              task={detailTask}
-              config={config}
-              comments={cache.comments[selectedTaskId] ?? []}
-              onUpdate={(updates) => { void handleTaskUpdate(selectedTaskId, updates); }}
-              onClose={() => setSelectedTaskId(null)}
-            />
-          );
-        })()}
+        {selectedTaskId &&
+          (() => {
+            const detailTask = tasks.find((t) => t.id === selectedTaskId);
+            if (!detailTask) return null;
+            return (
+              <TaskDetailPanel
+                key={selectedTaskId}
+                task={detailTask}
+                config={config}
+                comments={cache.comments[selectedTaskId] ?? []}
+                onUpdate={(updates) => {
+                  void handleTaskUpdate(selectedTaskId, updates);
+                }}
+                onClose={() => setSelectedTaskId(null)}
+              />
+            );
+          })()}
       </div>
       <ShortcutHelpPanel open={isHelpOpen} onClose={closeHelp} />
     </div>

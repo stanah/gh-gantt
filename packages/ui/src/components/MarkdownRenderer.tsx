@@ -31,7 +31,14 @@ function isSafeHref(rawHref: string): boolean {
   const href = rawHref.trim().toLowerCase();
   // Relative URLs and fragment-only URLs are safe (but reject protocol-relative "//")
   if (href.startsWith("//")) return false;
-  if (href.startsWith("/") || href.startsWith("#") || href.startsWith("?") || href.startsWith("./") || href.startsWith("../")) return true;
+  if (
+    href.startsWith("/") ||
+    href.startsWith("#") ||
+    href.startsWith("?") ||
+    href.startsWith("./") ||
+    href.startsWith("../")
+  )
+    return true;
   // Allow bare relative paths (no scheme)
   if (!href.includes(":")) return true;
   // Allow only known-safe schemes
@@ -41,7 +48,8 @@ function isSafeHref(rawHref: string): boolean {
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const result: React.ReactNode[] = [];
   // Order matters: code first (no nested parsing), then links, then bold, italic, strikethrough
-  const tokenRe = /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)|\*\*(.+?)\*\*|(?<!\w)__(.+?)__(?!\w)|\*(.+?)\*|(?<!\w)_(.+?)_(?!\w)|~~(.+?)~~/g;
+  const tokenRe =
+    /`([^`]+)`|\[([^\]]+)\]\(([^()]*(?:\([^()]*\)[^()]*)*)\)|\*\*(.+?)\*\*|(?<!\w)__(.+?)__(?!\w)|\*(.+?)\*|(?<!\w)_(.+?)_(?!\w)|~~(.+?)~~/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null = tokenRe.exec(text);
   let tokenIndex = 0;
@@ -123,7 +131,10 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   return result;
 }
 
-function parseList(lines: string[], startIndex: number): {
+function parseList(
+  lines: string[],
+  startIndex: number,
+): {
   nextIndex: number;
   ordered: boolean;
   items: ListItem[];
@@ -156,7 +167,8 @@ function parseList(lines: string[], startIndex: number): {
       const nextLine = lines[i];
       if (!nextLine.trim()) break;
       if (listItemRe.test(nextLine)) break;
-      if (nextLine.startsWith(">") || /^#{1,6}\s/.test(nextLine) || nextLine.startsWith("```")) break;
+      if (nextLine.startsWith(">") || /^#{1,6}\s/.test(nextLine) || nextLine.startsWith("```"))
+        break;
       text += ` ${nextLine.trim()}`;
       i += 1;
     }
@@ -168,7 +180,10 @@ function parseList(lines: string[], startIndex: number): {
   return { nextIndex: i, ordered, items };
 }
 
-function parseTable(lines: string[], startIndex: number): { nextIndex: number; table: TableBlock | null } {
+function parseTable(
+  lines: string[],
+  startIndex: number,
+): { nextIndex: number; table: TableBlock | null } {
   const headerLine = lines[startIndex];
   const separatorLine = lines[startIndex + 1];
   if (!headerLine || !separatorLine) return { nextIndex: startIndex + 1, table: null };
@@ -231,7 +246,9 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
             overflowX: "auto",
           }}
         >
-          <code className={language ? `language-${language}` : undefined}>{content.join("\n")}</code>
+          <code className={language ? `language-${language}` : undefined}>
+            {content.join("\n")}
+          </code>
         </pre>,
       );
       blockKey += 1;
@@ -249,7 +266,12 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
                 {headers.map((header, idx) => (
                   <th
                     key={`h-${idx}`}
-                    style={{ textAlign: "left", border: "1px solid #e2e8f0", background: "#f8fafc", padding: "6px 8px" }}
+                    style={{
+                      textAlign: "left",
+                      border: "1px solid #e2e8f0",
+                      background: "#f8fafc",
+                      padding: "6px 8px",
+                    }}
                   >
                     {renderInline(header, `th-${blockKey}-${idx}`)}
                   </th>
@@ -260,7 +282,10 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
               {rows.map((row, rowIdx) => (
                 <tr key={`r-${rowIdx}`}>
                   {row.map((cell, colIdx) => (
-                    <td key={`c-${rowIdx}-${colIdx}`} style={{ border: "1px solid #e2e8f0", padding: "6px 8px" }}>
+                    <td
+                      key={`c-${rowIdx}-${colIdx}`}
+                      style={{ border: "1px solid #e2e8f0", padding: "6px 8px" }}
+                    >
                       {renderInline(cell, `td-${blockKey}-${rowIdx}-${colIdx}`)}
                     </td>
                   ))}
@@ -298,7 +323,13 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
       nodes.push(
         <blockquote
           key={`block-${blockKey}`}
-          style={{ margin: "8px 0", padding: "6px 12px", borderLeft: "3px solid #94a3b8", color: "#334155", background: "#f8fafc" }}
+          style={{
+            margin: "8px 0",
+            padding: "6px 12px",
+            borderLeft: "3px solid #94a3b8",
+            color: "#334155",
+            background: "#f8fafc",
+          }}
         >
           {quoteLines.map((qLine, qIdx) => (
             <React.Fragment key={qIdx}>

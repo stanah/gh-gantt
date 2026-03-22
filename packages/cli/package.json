@@ -2,14 +2,15 @@
   "name": "@gh-gantt/cli",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "bin": {
     "gh-gantt": "./dist/index.js"
   },
+  "type": "module",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
-    "dev": "tsup src/index.ts --format esm --watch --onSuccess 'cd ../.. && node packages/cli/dist/index.js serve --api-only'",
-    "test": "vitest run",
+    "build": "vp pack",
+    "dev": "vp pack --watch",
+    "test": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts'",
+    "test:e2e-sync": "vp test run src/__tests__/e2e-sync.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,8 +23,7 @@
   },
   "devDependencies": {
     "@types/express": "^4.17.0",
-    "tsup": "^8.0.0",
     "typescript": "^5.5.0",
-    "vitest": "^2.0.0"
+    "vite-plus": "^0.1.13"
   }
 }
