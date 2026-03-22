@@ -19,11 +19,10 @@ Evidence: コマンド出力をそのまま提示する。
 
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
-3. タスク確認 — `gh-gantt task list --state open --unblocked` で着手可能タスクを表示。
+3. タスク確認 — `gh-gantt task list --state open --unblocked` を実行する。
    ソートが必要なら `--sort priority,end_date` を追加。
-   出力をそのまま提示し、ユーザーに選択を促す。
-   エージェントが出力からタスクを取捨選択してはならない。
-   件数が多い場合は `--type`, `--assignee` 等のフィルタとの併用をユーザーに提案する。
+   **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
+   ユーザーに選択を促す。件数が多い場合はフィルタの併用を提案する。
 4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt task update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
 5. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
 6. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
@@ -44,6 +43,7 @@ Evidence: コマンド出力をそのまま提示する。
 | 「さっき pull したばかり」 | status の出力を確認すること。記憶は evidence ではない |
 | 「小さい変更だからタスク不要」 | 追跡されない変更はプロジェクトの盲点になる |
 | 「後で push する」 | 後では来ない。コミットと push はセットで行う |
+| 「見やすくまとめた」 | CLI 出力の加工は情報の欠落。そのまま出すこと |
 
 ## リファレンス
 
