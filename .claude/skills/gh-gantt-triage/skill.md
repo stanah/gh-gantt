@@ -1,0 +1,31 @@
+---
+name: gh-gantt-triage
+description: 既存タスクの衛生管理。親なし・日程なし・body 空・閉じ忘れ等の問題を検出して修正する。「タスクを整理して」「バックログを整理」で使用。
+---
+
+# gh-gantt Triage
+
+既存タスクの健康状態を検査し、問題を修正する。
+
+## 検査項目
+
+| 検査 | 検出方法 | 対処 |
+|------|---------|------|
+| 親なしタスク | `parent: null` かつ type が task/feature | 適切なエピック/フィーチャーの下に配置 |
+| 日程なしタスク | `start_date` と `end_date` が両方 null | 日程を設定、または意図的なバックログか確認 |
+| body 空のエピック/フィーチャー | `body: null` | 要件の記述を促す |
+| 型が不適切 | task に子タスクがある等 | 型の変更を提案 |
+| 閉じ忘れ | 実装済みだが open のまま | closed への更新を提案 |
+
+## プロセス
+
+1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke して最新データを取得
+2. `gh-gantt task list` で全タスク取得
+3. 上記の検査を実行
+4. 問題を優先度順（親なし > 閉じ忘れ > body 空 > 日程なし > 型不適切）に一覧で提示
+5. 5 件以下: 個別にユーザー確認。6 件以上: カテゴリごとにまとめて方針を確認
+6. **OPTIONAL:** 親なしタスクが見つかった場合、`gh-gantt-dependencies` で依存関係も確認
+
+## リファレンス
+
+- コマンド詳細: [commands.md](../gh-gantt-workflow/references/commands.md)
