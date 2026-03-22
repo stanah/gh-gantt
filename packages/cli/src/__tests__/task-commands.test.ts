@@ -534,7 +534,12 @@ describe("applyTaskUpdate", () => {
     const configWithPriority = makeConfig({
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "Start", end_date: "End", status: "Status", priority: "Priority" },
+        field_mapping: {
+          start_date: "Start",
+          end_date: "End",
+          status: "Status",
+          priority: "Priority",
+        },
       },
     });
 

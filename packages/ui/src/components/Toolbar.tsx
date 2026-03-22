@@ -153,10 +153,7 @@ export function Toolbar({
           onChange={(values) => onSelectAssignee(values.length > 0 ? values.join(",") : null)}
         />
         {selectedPriorities && onSelectPriorities && (
-          <PriorityFilter
-            selectedValues={selectedPriorities}
-            onChange={onSelectPriorities}
-          />
+          <PriorityFilter selectedValues={selectedPriorities} onChange={onSelectPriorities} />
         )}
       </div>
 

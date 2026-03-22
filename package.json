@@ -15,7 +15,8 @@
     "typecheck": "pnpm -r typecheck"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2"
+    "@playwright/test": "^1.58.2",
+    "vite-plus": "^0.1.13"
   },
   "engines": {
     "node": ">=20"

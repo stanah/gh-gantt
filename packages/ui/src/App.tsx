@@ -135,7 +135,14 @@ export function App() {
     backlogCollapsed,
     backlogTotalCount,
     toggleBacklog,
-  } = useTaskTree(tasks, enabled, { hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName: priorityFieldName ?? undefined, searchQuery });
+  } = useTaskTree(tasks, enabled, {
+    hideClosed,
+    selectedAssignee,
+    selectedAssignees,
+    selectedPriorities,
+    priorityFieldName: priorityFieldName ?? undefined,
+    searchQuery,
+  });
 
   const visibleTaskIds = useMemo(
     () => [

@@ -200,7 +200,16 @@ export function useTaskTree(
       scheduledTree: buildTree(scheduledTasks),
       backlogTree: buildTree(backlogTasks),
     };
-  }, [tasks, enabledTypes, hideClosed, selectedAssignee, selectedAssignees, selectedPriorities, priorityFieldName, searchQuery]);
+  }, [
+    tasks,
+    enabledTypes,
+    hideClosed,
+    selectedAssignee,
+    selectedAssignees,
+    selectedPriorities,
+    priorityFieldName,
+    searchQuery,
+  ]);
 
   const flatList = useMemo(() => {
     const result: TreeNode[] = [];

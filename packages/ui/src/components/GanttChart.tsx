@@ -251,9 +251,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         {flatList.map((node, i) => {
           const rawTask = node.task;
           // Apply drag preview to override dates during drag
-          const task = dragPreview?.taskId === rawTask.id
-            ? { ...rawTask, start_date: dragPreview.start_date, end_date: dragPreview.end_date }
-            : rawTask;
+          const task =
+            dragPreview?.taskId === rawTask.id
+              ? { ...rawTask, start_date: dragPreview.start_date, end_date: dragPreview.end_date }
+              : rawTask;
           const y = i * ROW_HEIGHT;
           const taskType = config.task_types[task.type];
           const display = taskType?.display ?? "bar";

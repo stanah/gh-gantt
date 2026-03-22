@@ -80,7 +80,9 @@ export function GanttBar({
         ? "#8957e5"
         : color;
 
-  const priority = priorityFieldName ? task.custom_fields[priorityFieldName] as string | undefined : undefined;
+  const priority = priorityFieldName
+    ? (task.custom_fields[priorityFieldName] as string | undefined)
+    : undefined;
   const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
