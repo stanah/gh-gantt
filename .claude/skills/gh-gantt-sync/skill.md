@@ -24,7 +24,7 @@ Evidence: `gh-gantt conflicts` の出力が "No conflicts." であること。
 
 ## プロセス（push）
 
-1. タスク状態の更新漏れがないか確認（作業対象タスクの status が `done: true` になっていない、または state が open のままではないか）。完了なら `gh-gantt task update <number> --status <完了ステータス> --state closed` で更新（config の `statuses.values` から `done: true` のステータスを使用）
+1. タスク状態の更新漏れがないか確認（作業対象タスクの state が open のままではないか）。完了なら `gh-gantt task update <number> --state closed` で更新。config に `statuses` が定義されていれば `--status <完了ステータス>`（`done: true`）も付与
 2. Issue body/title が実装内容と乖離していないか確認（大きな仕様変更があれば更新を促す）
 3. `gh-gantt push` 実行
 4. `gh-gantt status` で未 push 変更がないことを検証 — evidence として出力を提示
