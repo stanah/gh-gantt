@@ -70,7 +70,16 @@ git push -u origin <branch-name>
 gh pr create --title "<title>" --body "Closes #<number>"
 ```
 
-### 6. マージ後の同期
+### 6. タスク完了
+
+コミット後、対応するタスクの状態を更新する。PR なしで main に直接コミットした場合も同様。
+
+```bash
+gh-gantt task update <number> --state closed
+gh-gantt push                    # GitHub に反映
+```
+
+### 7. マージ後の同期
 
 ```bash
 gh-gantt pull
