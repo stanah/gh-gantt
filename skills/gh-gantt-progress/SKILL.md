@@ -1,15 +1,13 @@
 ---
 name: gh-gantt-progress
-description: Use when updating task states, finding tasks to close, checking implementation status, or asking about project progress. Triggers on progress checks, task updates, overdue tasks, forgotten-to-close, or what to work on next.
+description: Use when updating task states, finding tasks to close, checking implementation status, or asking about project progress. Triggers on progress checks, task updates, overdue tasks, forgotten-to-close, task hygiene, or what to work on next.
 ---
 
 # gh-gantt Progress
 
-git log の変更内容とオープンタスクを突合し、タスク状態を更新する。
+プロジェクトの進捗確認とタスク状態の管理を行う。
 
-**原則:** タスク状態の判定は git log の証拠に基づく。end_date では実装状況は分からない。
-
-## プロセス
+## 共通ステップ
 
 ### Step 1: 同期
 
@@ -23,76 +21,26 @@ gh-gantt task list --state open
 
 結果をそのまま表示する。
 
-### Step 3: コミット範囲の確認
+### Step 3: ユーザーの意図に応じた分岐
 
-ユーザーにコミット範囲を確認する。選択肢は ABC 形式で提示し、ユーザーが回答しやすいようにする。
+ユーザーの指示に応じて適切なフローに進む。不明確な場合は ABC 形式で選択肢を提示する。
 ユーザーに質問するためのツール（AskUserQuestion 等）が利用可能な場合はそれを使う。
 
-> どの範囲のコミットを確認しますか？
-> A) 直近 N 件（例: 30 件）
-> B) 直近 N 日間（例: 2 週間）
-> C) コミット範囲（例: v0.1.0..HEAD）
-> D) 全履歴
+| 指示の例 | フロー |
+|----------|--------|
+| 「タスクを更新して」「閉じ忘れはある？」「実装状態を把握して」 | → [task-state-update.md](references/task-state-update.md) を読んで実行 |
+| 「次に何をすべき？」「次のタスクは？」 | → [next-task.md](references/next-task.md) を読んで実行 |
+| 「タスクを整理して」「バックログを整理」 | → [task-hygiene.md](references/task-hygiene.md) を読んで実行 |
+| 「エピック進捗は？」 | → エピック進捗（後述） |
+| 「リスクは？」「遅れてるタスクは？」 | → リスク評価（後述） |
 
-**ユーザーの回答を待つ。回答なしに先へ進まない。**
+## エピック進捗
 
-### Step 4: git log の実行
+`gh-gantt task list --state open --type epic` でエピック一覧を表示し、各エピックについて `gh-gantt task show <id>` で子タスクの完了率を確認する。
 
-```bash
-git log --oneline -30                      # 例: 直近30件
-git log --oneline --since="2 weeks ago"    # 例: 直近2週間
-git log --oneline v0.1.0..HEAD             # 例: コミット範囲
-```
+## リスク評価
 
-### Step 5: コミットとオープンタスクの突合
-
-全コミットの内容を読み、オープンタスクとの関連を特定する。Issue 番号がコミットメッセージに含まれているとは限らない。
-
-1. 各コミットのメッセージを読み、何が変更されたか把握する
-2. 内容が不明確なコミットは `git show --stat <hash>` や `git show <hash>` で確認する
-3. 変更内容と Step 2 のオープンタスクのタイトルを照合し、関連するタスクを特定する
-   - 必要に応じて `gh-gantt task list --search <キーワード>` で検索する
-   - Grep / Glob / Read / LSP でコードベースを補足調査する
-4. 関連が見つかったオープンタスクについて `gh-gantt task show <id>` で body を読む
-
-### Step 6: タスクごとの判定
-
-候補タスクについて body の完了条件と実装を突合する。
-
-**通常タスク:**
-1. body の完了条件を一つずつリストアップする
-2. 各条件をコード（Grep, Glob, Read, LSP, git diff）で検証する
-3. 判定:
-   - 全条件達成 → **クローズ可**
-   - 一部達成 → **進捗更新が必要**（未達成の条件を明記）
-   - 日程が実態と乖離 → **日程調整が必要**
-4. body が空の場合はタイトルから判断し、「body が空のためタイトルで判断」と明記する
-
-**エピック:**
-1. 子タスクの状態を確認する（全 closed かどうか）
-2. エピック自体の body も確認し、子タスクでカバーされていない要件がないか確認する
-
-### Step 7: 結果提示
-
-分析結果を一覧で提示し、タスクごとの具体的なアクションを提案する。
-
-## Red Flags — STOP
-
-以下に気づいたら止まる:
-- git log を実行せずに end_date だけでタスク状態を判断しようとしている
-- 「クローズすべきタスクはない」と git log の証拠なしに結論しようとしている
-- Step 3 のコミット範囲確認を飛ばしている
-
-**STOP。Step 3 に戻る。**
-
-## よくある合理化
-
-| 言い訳 | 現実 |
-|--------|------|
-| 「end_date が過去のタスクがないから閉じ忘れはない」 | end_date は予定であり証拠ではない。git log を確認する |
-| 「タスク一覧を見れば分かる」 | 一覧には日付と状態しかない。実装状況は分からない |
-| 「全タスクの git log を確認するのは時間がかかる」 | だから Step 3 でコミット範囲を聞く |
-| 「全分析を実行する」 | 広く浅くより、git log 突合を確実にやる |
+Step 2 の一覧から期限が近いタスクを特定し、`gh-gantt task show <id>` でブロッカーや進捗を確認する。
 
 ## リファレンス
 
