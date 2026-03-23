@@ -31,15 +31,15 @@ pnpm --filter @gh-gantt/cli exec pnpm link --global
 
 - Node.js >= 20
 - pnpm >= 10
-- GitHub Personal Access Token (set as `GITHUB_TOKEN` environment variable)
+- GitHub CLI (`gh`) installed and authenticated via `gh auth login`
 
 ## Usage
 
 ### Initialize
 
 ```bash
-# Initialize from a GitHub Project
-gh-gantt init --project-url https://github.com/users/<user>/projects/<number>
+# Initialize from a GitHub Project (V2)
+gh-gantt init --owner <owner> --repo <repo> --project <project_number>
 ```
 
 ### Sync

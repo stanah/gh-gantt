@@ -182,7 +182,7 @@ gh-gantt task list [options]
 
 ## task show
 
-タスクの詳細を表示する。body、parent、blocked_by、sub_tasks 等の情報はこのコマンドでのみ確認できる。
+タスクの詳細を表示する。body、parent、blocked_by、sub_tasks 等の情報は `task list` のデフォルト表示には含まれないが、このコマンドや `task list --json` で確認できる。
 
 ```bash
 gh-gantt task show <id> [--json]
