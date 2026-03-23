@@ -27,6 +27,13 @@ jobs:
           cache: true
 
       - run: vp install
+      - name: Debug vp check
+        run: |
+          vp --version
+          cp package.json package.json.bak
+          vp check --fix package.json || true
+          diff package.json.bak package.json || true
+          mv package.json.bak package.json
       - run: vp check
       - run: pnpm test
       - run: pnpm build
