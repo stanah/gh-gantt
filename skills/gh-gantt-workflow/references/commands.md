@@ -160,7 +160,7 @@ gh-gantt serve [-p <port>] [--api-only]
 タスク一覧を表示する。
 
 ```bash
-gh-gantt task list [--backlog] [--scheduled] [--type <type>] [--state <state>] [--json]
+gh-gantt task list [options]
 ```
 
 **オプション:**
@@ -169,13 +169,20 @@ gh-gantt task list [--backlog] [--scheduled] [--type <type>] [--state <state>] [
 - `--scheduled` — スケジュール済みタスクのみ（日付あり）
 - `--type <type>` — タスクタイプで絞り込み
 - `--state <state>` — 状態で絞り込み（open/closed）
+- `--unblocked` — ブロッカーが解消済みのタスクのみ
+- `--assignee <login>` — 担当者で絞り込み
+- `--unassigned` — 未アサインタスクのみ
+- `--status <status>` — Status カスタムフィールド値で絞り込み
+- `--label <label>` — ラベルで絞り込み
+- `--search <query>` — タイトルと body で検索
+- `--sort <fields>` — ソート（カンマ区切り: priority, end_date, start_date, type, title）
 - `--json` — JSON 出力
 
 ---
 
 ## task show
 
-タスクの詳細を表示する。
+タスクの詳細を表示する。body、parent、blocked_by、sub_tasks 等の情報はこのコマンドでのみ確認できる。
 
 ```bash
 gh-gantt task show <id> [--json]
