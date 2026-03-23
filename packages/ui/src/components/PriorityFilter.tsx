@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { PRIORITY_LEVELS } from "./PriorityBadge.js";
 import { NO_PRIORITY } from "../hooks/useTaskFilter.js";
 
@@ -21,13 +21,25 @@ function formatLabel(values: string[]): string {
 export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps) {
   const [open, setOpen] = useState(false);
   const selectedSet = useMemo(() => new Set(selectedValues), [selectedValues]);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
 
   const btnStyle: React.CSSProperties = {
     padding: "3px 8px",
     border: "1px solid #ccc",
     borderRadius: 3,
-    background: selectedValues.length > 0 ? "#333" : "#fff",
-    color: selectedValues.length > 0 ? "#fff" : "#333",
+    background: selectedValues.length > 0 ? "#e8f0fe" : "#fff",
+    color: selectedValues.length > 0 ? "#1a73e8" : "#333",
     cursor: "pointer",
     fontSize: 11,
     minWidth: 120,
@@ -53,7 +65,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
   };
 
   return (
-    <div style={{ position: "relative" }}>
+    <div ref={wrapperRef} style={{ position: "relative" }}>
       <button
         type="button"
         onClick={() => setOpen((prev) => !prev)}

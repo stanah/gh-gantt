@@ -254,6 +254,9 @@ export async function executePush(
         }
       }
 
+      // Set Priority custom field
+      await syncPriorityField(gql, syncState, fm, projectItemId, task);
+
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
       task.id = newId;
@@ -390,6 +393,9 @@ export async function executePush(
         }
       }
 
+      // Update Priority custom field if configured
+      await syncPriorityField(gql, syncState, fm, idEntry.project_item_id, task);
+
       // Detect parent changes from snapshot and sync sub-issue relationships
       const snapshot = syncState.snapshots[task.id];
       if (snapshot?.syncFields && idEntry.issue_node_id) {
@@ -501,4 +507,43 @@ function resolveTypeOptionId(
   const typeDef = taskTypes[typeName];
   if (!typeDef?.github_field_value) return undefined;
   return optionIds?.[typeFieldName]?.[typeDef.github_field_value];
+}
+
+function resolvePriorityOptionId(
+  priorityValue: string,
+  fieldName: string,
+  optionIds?: Record<string, Record<string, string>>,
+): string | undefined {
+  const fieldOptions = optionIds?.[fieldName];
+  if (!fieldOptions) return undefined;
+  // Exact match first, then case-insensitive fallback
+  if (fieldOptions[priorityValue]) return fieldOptions[priorityValue];
+  const lowerValue = priorityValue.toLowerCase();
+  for (const [key, id] of Object.entries(fieldOptions)) {
+    if (key.toLowerCase() === lowerValue) return id;
+  }
+  return undefined;
+}
+
+async function syncPriorityField(
+  gql: typeof graphql,
+  syncState: SyncState,
+  fm: Config["sync"]["field_mapping"],
+  projectItemId: string,
+  task: Task,
+): Promise<void> {
+  if (!fm.priority || !syncState.field_ids[fm.priority]) return;
+  const priorityValue = task.custom_fields[fm.priority] as string | undefined;
+  if (!priorityValue) return;
+  const optionId = resolvePriorityOptionId(priorityValue, fm.priority, syncState.option_ids);
+  if (!optionId) return;
+  await updateProjectItemField(
+    gql,
+    syncState.project_node_id,
+    projectItemId,
+    syncState.field_ids[fm.priority],
+    {
+      singleSelectOptionId: optionId,
+    },
+  );
 }

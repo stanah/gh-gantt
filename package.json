@@ -6,7 +6,7 @@
   "license": "MIT",
   "scripts": {
     "build": "pnpm -r build",
-    "dev": "pnpm -r --parallel dev",
+    "dev": "pnpm -r --parallel dev & gh-gantt serve --api-only & wait",
     "lint": "vp check",
     "test": "pnpm -r test",
     "test:e2e": "playwright test",

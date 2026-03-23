@@ -280,9 +280,13 @@ export const pullCommand = new Command("pull")
       delete newSnapshots[id];
     }
 
-    // Update option_ids from latest project data
+    // Update field_ids and option_ids from latest project data
+    const fieldIds: Record<string, string> = {};
     const optionIds: Record<string, Record<string, string>> = {};
     for (const field of projectData.fields) {
+      if (field.id && field.name) {
+        fieldIds[field.name] = field.id;
+      }
       if (field.options && field.options.length > 0) {
         const optMap: Record<string, string> = {};
         for (const opt of field.options) {
@@ -301,6 +305,7 @@ export const pullCommand = new Command("pull")
       ...syncState,
       last_synced_at: new Date().toISOString(),
       snapshots: newSnapshots,
+      field_ids: fieldIds,
       option_ids: optionIds,
     });
 

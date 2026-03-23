@@ -1,10 +1,10 @@
 import { useState, useCallback } from "react";
 
-export type DisplayOption = "issueId" | "assignees";
+export type DisplayOption = "issueId" | "assignees" | "priority";
 
 export function useDisplayOptions() {
   const [enabled, setEnabled] = useState<Set<DisplayOption>>(
-    () => new Set<DisplayOption>(["issueId"]),
+    () => new Set<DisplayOption>(["issueId", "priority"]),
   );
 
   const toggle = useCallback((opt: DisplayOption) => {

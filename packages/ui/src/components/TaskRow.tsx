@@ -23,6 +23,7 @@ interface TaskRowProps {
   taskType: TaskType | undefined;
   showIssueId?: boolean;
   showAssignees?: boolean;
+  showPriority?: boolean;
   priorityFieldName?: string;
   highlightType?: RelationType | null;
   isDimmed?: boolean;
@@ -91,6 +92,7 @@ export function TaskRow({
   taskType,
   showIssueId,
   showAssignees,
+  showPriority,
   priorityFieldName,
   highlightType,
   isDimmed,
@@ -277,7 +279,7 @@ export function TaskRow({
         </span>
       )}
 
-      {!isMilestone && priorityFieldName && (
+      {!isMilestone && showPriority && priorityFieldName && (
         <PriorityBadge priority={task.custom_fields[priorityFieldName] as string | undefined} />
       )}
       {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}

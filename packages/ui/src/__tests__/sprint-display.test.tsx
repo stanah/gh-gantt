@@ -132,9 +132,7 @@ describe("Sprint display integration", () => {
   });
 
   it("reserves extra task tree header height when sprint bands are enabled", () => {
-    const html = renderToStaticMarkup(
-      <TaskTreeHeader config={config} enabledTypes={new Set(["task"])} onToggleType={() => {}} />,
-    );
+    const html = renderToStaticMarkup(<TaskTreeHeader config={config} />);
 
     expect(html).toContain("height:52px");
     expect(html).toContain("padding-top:20px");

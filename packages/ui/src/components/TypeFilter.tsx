@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Tags } from "lucide-react";
 import type { TaskType } from "../types/index.js";
 
 interface TypeFilterProps {
@@ -7,27 +8,167 @@ interface TypeFilterProps {
   onToggle: (typeName: string) => void;
 }
 
+function formatLabel(
+  enabled: Set<string>,
+  total: number,
+  taskTypes: Record<string, TaskType>,
+): string {
+  if (enabled.size === total || enabled.size === 0) return "All types";
+  if (enabled.size === 1) {
+    const [name] = enabled;
+    return taskTypes[name]?.label ?? name;
+  }
+  return `${enabled.size} types`;
+}
+
 export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
+  const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const entries = useMemo(() => Object.entries(taskTypes), [taskTypes]);
+  const allCount = entries.length;
+  const isFiltered = enabled.size < allCount && enabled.size > 0;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const btnStyle: React.CSSProperties = {
+    padding: "4px 8px",
+    border: `1px solid ${isFiltered ? "#c5d7f7" : "#ddd"}`,
+    borderRadius: 3,
+    background: isFiltered ? "#e8f0fe" : "#fff",
+    color: isFiltered ? "#1a73e8" : "#555",
+    cursor: "pointer",
+    fontSize: 11,
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 4,
+    lineHeight: 1,
+  };
+
+  const menuStyle: React.CSSProperties = {
+    position: "absolute",
+    top: "calc(100% + 4px)",
+    left: 0,
+    zIndex: 20,
+    minWidth: 180,
+    maxHeight: 260,
+    overflow: "auto",
+    background: "#fff",
+    border: "1px solid #ddd",
+    borderRadius: 4,
+    boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
+    padding: 8,
+  };
+
+  const badgeStyle: React.CSSProperties = {
+    background: "#1a73e8",
+    color: "#fff",
+    borderRadius: 8,
+    padding: "0 5px",
+    fontSize: 9,
+    minWidth: 16,
+    textAlign: "center",
+    lineHeight: "16px",
+  };
+
   return (
-    <div style={{ display: "flex", gap: 4, flexWrap: "wrap", padding: "4px 0" }}>
-      {Object.entries(taskTypes).map(([name, def]) => (
-        <button
-          key={name}
-          onClick={() => onToggle(name)}
-          style={{
-            padding: "2px 8px",
-            fontSize: 11,
-            borderRadius: 3,
-            border: `1px solid ${def.color}`,
-            background: enabled.has(name) ? def.color + "22" : "transparent",
-            color: enabled.has(name) ? def.color : "#999",
-            cursor: "pointer",
-            opacity: enabled.has(name) ? 1 : 0.5,
-          }}
-        >
-          {def.label}
-        </button>
-      ))}
+    <div ref={wrapperRef} style={{ position: "relative" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        style={btnStyle}
+        title={formatLabel(enabled, allCount, taskTypes)}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+      >
+        <Tags size={12} />
+        {formatLabel(enabled, allCount, taskTypes)}
+        {isFiltered && <span style={badgeStyle}>{enabled.size}</span>}
+      </button>
+      {open && (
+        <div role="dialog" aria-label="Filter by type" style={menuStyle}>
+          <button
+            type="button"
+            onClick={() => {
+              for (const [name] of entries) {
+                if (!enabled.has(name)) onToggle(name);
+              }
+            }}
+            style={{
+              width: "100%",
+              padding: "4px 6px",
+              border: "1px solid #ddd",
+              borderRadius: 3,
+              background: enabled.size === allCount ? "#f0f4ff" : "#fff",
+              cursor: "pointer",
+              fontSize: 11,
+              marginBottom: 8,
+            }}
+          >
+            Enable All
+          </button>
+
+          {entries.map(([name, def]) => {
+            const isLast = enabled.size === 1 && enabled.has(name);
+            return (
+              <label
+                key={name}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  fontSize: 11,
+                  marginBottom: 6,
+                  cursor: isLast ? "not-allowed" : "pointer",
+                  opacity: isLast ? 0.5 : 1,
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={enabled.has(name)}
+                  disabled={isLast}
+                  onChange={() => onToggle(name)}
+                />
+                <span
+                  style={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: "50%",
+                    background: def.color,
+                    flexShrink: 0,
+                  }}
+                />
+                {def.label}
+              </label>
+            );
+          })}
+
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              style={{
+                padding: "3px 10px",
+                border: "1px solid #ccc",
+                borderRadius: 3,
+                background: "#fff",
+                cursor: "pointer",
+                fontSize: 11,
+              }}
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
