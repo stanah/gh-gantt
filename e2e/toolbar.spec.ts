@@ -7,19 +7,28 @@ test.beforeEach(async ({ page }) => {
   await page.locator("[data-task-id='epic-1']").waitFor();
 });
 
-test("type filter buttons are rendered for each task type", async ({ page }) => {
-  await expect(page.getByRole("button", { name: "Epic" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Feature" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Task", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Milestone" })).toBeVisible();
+async function openTypeFilter(page: import("@playwright/test").Page) {
+  await page.getByRole("button", { name: "All types" }).click();
+  await expect(page.getByRole("dialog", { name: "Filter by type" })).toBeVisible();
+}
+
+test("type filter menu lists each task type", async ({ page }) => {
+  await openTypeFilter(page);
+
+  await expect(page.getByRole("checkbox", { name: "Epic" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Feature" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Task" })).toBeChecked();
+  await expect(page.getByRole("checkbox", { name: "Milestone" })).toBeChecked();
 });
 
 test("clicking a type filter hides tasks of that type", async ({ page }) => {
   // task-2 (type "task") is visible
   await expect(page.locator("[data-task-id='task-2']")).toBeVisible();
 
-  // Click "Task" type filter to disable it
-  await page.getByRole("button", { name: "Task", exact: true }).click();
+  await openTypeFilter(page);
+
+  // Disable the "Task" type filter from the dropdown
+  await page.getByRole("checkbox", { name: "Task" }).uncheck();
 
   // Task-type items should be hidden
   await expect(page.locator("[data-task-id='task-2']")).not.toBeVisible();
@@ -31,12 +40,13 @@ test("clicking a type filter hides tasks of that type", async ({ page }) => {
 });
 
 test("re-enabling type filter shows tasks again", async ({ page }) => {
-  const taskButton = page.getByRole("button", { name: "Task", exact: true });
+  await openTypeFilter(page);
+  const taskCheckbox = page.getByRole("checkbox", { name: "Task" });
 
-  await taskButton.click();
+  await taskCheckbox.uncheck();
   await expect(page.locator("[data-task-id='task-2']")).not.toBeVisible();
 
-  await taskButton.click();
+  await taskCheckbox.check();
   await expect(page.locator("[data-task-id='task-2']")).toBeVisible();
 });
 
@@ -64,27 +74,20 @@ test("search input filters tasks by title", async ({ page }) => {
   await expect(page.locator("[data-task-id='task-3']")).not.toBeVisible();
 });
 
-test("view scale buttons switch between views", async ({ page }) => {
-  // Default is "month" per config
-  const monthButton = page.getByRole("button", { name: "month" });
-  await expect(monthButton).toHaveCSS("background-color", "rgb(51, 51, 51)");
-
-  const weekButton = page.getByRole("button", { name: "week" });
-  await weekButton.click();
-
-  await expect(weekButton).toHaveCSS("background-color", "rgb(51, 51, 51)");
-  await expect(monthButton).toHaveCSS("background-color", "rgb(255, 255, 255)");
+test("zoom controls are rendered", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "Zoom In" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Zoom Out" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Scroll to Today" })).toBeVisible();
 });
 
-test("display toggle #ID button works", async ({ page }) => {
-  const idButton = page.getByRole("button", { name: "#ID" });
+test("display toggle issue ID button works", async ({ page }) => {
+  const idButton = page.getByRole("button", { name: "Show Issue ID" });
 
-  // Check initial state, then toggle
-  const initialBg = await idButton.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await expect(idButton).toHaveAttribute("aria-pressed", "true");
 
   await idButton.click();
+  await expect(idButton).toHaveAttribute("aria-pressed", "false");
 
-  // Background should change after toggle
-  const newBg = await idButton.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(newBg).not.toBe(initialBg);
+  await idButton.click();
+  await expect(idButton).toHaveAttribute("aria-pressed", "true");
 });
