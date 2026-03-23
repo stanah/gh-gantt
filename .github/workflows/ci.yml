@@ -23,6 +23,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: "22"
+          version: "0.1.13"
           cache: true
 
       - run: vp install
@@ -41,6 +42,7 @@ jobs:
       - uses: voidzero-dev/setup-vp@v1
         with:
           node-version: "22"
+          version: "0.1.13"
           cache: true
 
       - run: vp install
