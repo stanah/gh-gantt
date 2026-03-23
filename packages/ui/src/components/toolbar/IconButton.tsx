@@ -53,18 +53,22 @@ export function IconButton({
   icon,
   title,
   onClick,
-  active = false,
+  active,
   disabled = false,
   badge,
   children,
 }: IconButtonProps) {
+  const isActive = !!active;
+
   return (
     <button
       type="button"
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       title={title}
-      style={{ ...baseStyle, ...(active ? activeStyle : {}), ...(disabled ? disabledStyle : {}) }}
+      aria-label={title}
+      aria-pressed={active === undefined ? undefined : active}
+      style={{ ...baseStyle, ...(isActive ? activeStyle : {}), ...(disabled ? disabledStyle : {}) }}
     >
       {icon}
       {children}

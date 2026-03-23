@@ -8,11 +8,15 @@ interface TypeFilterProps {
   onToggle: (typeName: string) => void;
 }
 
-function formatLabel(enabled: Set<string>, total: number): string {
+function formatLabel(
+  enabled: Set<string>,
+  total: number,
+  taskTypes: Record<string, TaskType>,
+): string {
   if (enabled.size === total || enabled.size === 0) return "All types";
   if (enabled.size === 1) {
     const [name] = enabled;
-    return name;
+    return taskTypes[name]?.label ?? name;
   }
   return `${enabled.size} types`;
 }
@@ -81,12 +85,12 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
         type="button"
         onClick={() => setOpen((prev) => !prev)}
         style={btnStyle}
-        title={formatLabel(enabled, allCount)}
+        title={formatLabel(enabled, allCount, taskTypes)}
         aria-haspopup="dialog"
         aria-expanded={open}
       >
         <Tags size={12} />
-        {formatLabel(enabled, allCount)}
+        {formatLabel(enabled, allCount, taskTypes)}
         {isFiltered && <span style={badgeStyle}>{enabled.size}</span>}
       </button>
       {open && (

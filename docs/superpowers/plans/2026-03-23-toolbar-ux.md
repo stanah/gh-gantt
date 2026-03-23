@@ -27,7 +27,7 @@ cd packages/ui && pnpm add lucide-react
 - [ ] **Step 2: Verify import works**
 
 ```bash
-cd /Users/stanah/work/github.com/stanah/gh-gantt && pnpm build
+pnpm build
 ```
 
 - [ ] **Step 3: Commit**

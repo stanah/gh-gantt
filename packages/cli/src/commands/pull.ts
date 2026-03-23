@@ -281,7 +281,7 @@ export const pullCommand = new Command("pull")
     }
 
     // Update field_ids and option_ids from latest project data
-    const fieldIds: Record<string, string> = { ...syncState.field_ids };
+    const fieldIds: Record<string, string> = {};
     const optionIds: Record<string, Record<string, string>> = {};
     for (const field of projectData.fields) {
       if (field.id && field.name) {
