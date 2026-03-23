@@ -79,11 +79,11 @@ gh-gantt serve --api-only             # API server only
 
 A pnpm workspaces monorepo with 3 packages:
 
-| Package | Role |
-|---|---|
-| `@gh-gantt/shared` | Type definitions & Zod schemas |
-| `@gh-gantt/cli` | CLI (Commander) + REST API (Express) + sync engine + GitHub GraphQL client |
-| `@gh-gantt/ui` | React SPA (Vite + D3) for Gantt chart visualization |
+| Package            | Role                                                                       |
+| ------------------ | -------------------------------------------------------------------------- |
+| `@gh-gantt/shared` | Type definitions & Zod schemas                                             |
+| `@gh-gantt/cli`    | CLI (Commander) + REST API (Express) + sync engine + GitHub GraphQL client |
+| `@gh-gantt/ui`     | React SPA (Vite + D3) for Gantt chart visualization                        |
 
 ### Design Principles
 
