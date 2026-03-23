@@ -28,8 +28,8 @@ jobs:
 
       - run: vp install
       - run: vp check
-      - run: vp run test
       - run: vp run build
+      - run: vp run test
 
   e2e:
     runs-on: ubuntu-latest
