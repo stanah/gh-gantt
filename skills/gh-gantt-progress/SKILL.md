@@ -1,26 +1,46 @@
 ---
 name: gh-gantt-progress
-description: プロジェクトの進捗を評価しアクションを提案する。エピック進捗、遅延検出、リスク評価、次タスクの提案。「進捗は？」「プロジェクトの状態は？」「遅れてるタスクは？」「次に何をすべき？」で使用。
+description: Use when updating task states, finding tasks to close, checking implementation status, or asking about project progress. Triggers on progress checks, task updates, overdue tasks, forgotten-to-close, task hygiene, or what to work on next.
 ---
 
 # gh-gantt Progress
 
-プロジェクト全体の進捗を評価し、アクションを提案する。
+プロジェクトの進捗確認とタスク状態の管理を行う。
 
-## 分析項目
+## 共通ステップ
 
-- **エピック進捗率** — 子タスクの完了数 / 全体数
-- **遅延タスク** — `end_date` が過去なのに open
-- **リスク評価** — 期限が近いが未着手のタスク
-- **ブロッカー停滞** — `blocked_by` が open のまま放置されているタスク
-- **次タスク提案** — 期限・依存関係・優先度を考慮して着手すべきタスクを提案
+### Step 1: 同期
 
-## プロセス
+`gh-gantt-sync`（pull）を invoke する。
 
-1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke して最新データを取得
-2. `gh-gantt task list --json` + `gh-gantt status` で全体像把握（`blocked_by`, `priority` 等のフィールドはデフォルト出力に含まれないため `--json` を使用）
-3. 分析・レポート
-4. アクションの提案（タスク着手、日程調整、ブロッカー解消等）
+### Step 2: オープンタスク一覧の表示
+
+```bash
+gh-gantt task list --state open
+```
+
+結果をそのまま表示する。
+
+### Step 3: ユーザーの意図に応じた分岐
+
+ユーザーの指示に応じて適切なフローに進む。不明確な場合は ABC 形式で選択肢を提示する。
+ユーザーに質問するためのツール（AskUserQuestion 等）が利用可能な場合はそれを使う。
+
+| 指示の例                                                       | フロー                                                                 |
+| -------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| 「タスクを更新して」「閉じ忘れはある？」「実装状態を把握して」 | → [task-state-update.md](references/task-state-update.md) を読んで実行 |
+| 「次に何をすべき？」「次のタスクは？」                         | → [next-task.md](references/next-task.md) を読んで実行                 |
+| 「タスクを整理して」「バックログを整理」                       | → [task-hygiene.md](references/task-hygiene.md) を読んで実行           |
+| 「エピック進捗は？」                                           | → エピック進捗（後述）                                                 |
+| 「リスクは？」「遅れてるタスクは？」                           | → リスク評価（後述）                                                   |
+
+## エピック進捗
+
+`gh-gantt task list --state open --type epic` でエピック一覧を表示し、各エピックについて `gh-gantt task show <id>` で子タスクの完了率を確認する。
+
+## リスク評価
+
+Step 2 の一覧から期限が近いタスクを特定し、`gh-gantt task show <id>` でブロッカーや進捗を確認する。
 
 ## リファレンス
 

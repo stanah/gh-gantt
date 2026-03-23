@@ -23,9 +23,9 @@ Evidence: コマンド出力をそのまま提示する。
 ## デフォルトフロー
 
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
-2. **OPTIONAL:** `gh-gantt-triage` でタスクの衛生状態を確認
+2. **OPTIONAL:** `gh-gantt-progress` でタスクの状態を確認
 3. タスク確認 — `gh-gantt task list --state open` を実行する。
-   件数が多い場合は CLI でサポートされているフィルタ（例: `--backlog`, `--scheduled`, `--type`, `--json`）の併用を提案する。
+   件数が多い場合は CLI でサポートされているフィルタ（例: `--backlog`, `--scheduled`, `--type`, `--sort`）の併用を提案する。
    注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用し、利用できない場合はフォールバックとして `gh-gantt task list --state open` を使用する。
    **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
    ユーザーに選択を促す。
