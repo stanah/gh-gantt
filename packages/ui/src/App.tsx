@@ -537,10 +537,6 @@ export function App() {
         <span style={{ color: "#888", fontSize: 12 }}>{tasks.length} tasks</span>
       </header>
       <Toolbar
-        viewScale={viewScale}
-        onSetViewScale={(s) => {
-          ganttRef.current?.setViewScale(s);
-        }}
         onZoomIn={() => ganttRef.current?.zoomIn()}
         onZoomOut={() => ganttRef.current?.zoomOut()}
         onScrollToToday={() => ganttRef.current?.scrollToToday()}

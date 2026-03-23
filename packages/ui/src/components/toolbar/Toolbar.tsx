@@ -1,10 +1,8 @@
 // packages/ui/src/components/toolbar/Toolbar.tsx
 import React from "react";
 import { Keyboard } from "lucide-react";
-import type { ViewScale } from "../../hooks/useGanttScale.js";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
 import type { TaskType } from "../../types/index.js";
-import { ViewScaleGroup } from "./ViewScaleGroup.js";
 import { ZoomGroup } from "./ZoomGroup.js";
 import { DisplayGroup } from "./DisplayGroup.js";
 import { FilterGroup } from "./FilterGroup.js";
@@ -14,8 +12,6 @@ import { UndoRedoGroup } from "./UndoRedoGroup.js";
 import { SyncGroup } from "./SyncGroup.js";
 
 interface ToolbarProps {
-  viewScale: ViewScale;
-  onSetViewScale: (scale: ViewScale) => void;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onScrollToToday: () => void;
@@ -61,7 +57,6 @@ export function Toolbar(props: ToolbarProps) {
         fontSize: 11,
       }}
     >
-      <ViewScaleGroup viewScale={props.viewScale} onSetViewScale={props.onSetViewScale} />
       <ZoomGroup
         onZoomIn={props.onZoomIn}
         onZoomOut={props.onZoomOut}

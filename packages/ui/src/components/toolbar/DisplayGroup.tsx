@@ -1,5 +1,5 @@
 import React from "react";
-import { Hash, User } from "lucide-react";
+import { Hash, Signal, User } from "lucide-react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
 import { ToolbarGroup } from "./ToolbarGroup.js";
 import { IconButton } from "./IconButton.js";
@@ -23,6 +23,12 @@ export function DisplayGroup({ displayOptions, onToggleDisplayOption }: DisplayG
         title="Show Assignees"
         onClick={() => onToggleDisplayOption("assignees")}
         active={displayOptions.has("assignees")}
+      />
+      <IconButton
+        icon={<Signal size={14} />}
+        title="Show Priority"
+        onClick={() => onToggleDisplayOption("priority")}
+        active={displayOptions.has("priority")}
       />
     </ToolbarGroup>
   );

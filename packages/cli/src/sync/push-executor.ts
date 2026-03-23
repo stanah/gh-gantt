@@ -390,6 +390,23 @@ export async function executePush(
         }
       }
 
+      // Update Priority custom field if configured
+      if (fm.priority && syncState.field_ids[fm.priority]) {
+        const priorityValue = task.custom_fields[fm.priority] as string | undefined;
+        if (priorityValue) {
+          const optionId = syncState.option_ids?.[fm.priority]?.[priorityValue];
+          if (optionId) {
+            await updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.priority],
+              { singleSelectOptionId: optionId },
+            );
+          }
+        }
+      }
+
       // Detect parent changes from snapshot and sync sub-issue relationships
       const snapshot = syncState.snapshots[task.id];
       if (snapshot?.syncFields && idEntry.issue_node_id) {

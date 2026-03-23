@@ -20,8 +20,11 @@ const baseStyle: React.CSSProperties = {
   fontSize: 11,
   display: "inline-flex",
   alignItems: "center",
+  justifyContent: "center",
   gap: 4,
   lineHeight: 1,
+  minHeight: 24,
+  boxSizing: "border-box",
 };
 
 const activeStyle: React.CSSProperties = {
