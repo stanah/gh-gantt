@@ -10,7 +10,10 @@ interface SearchBoxProps {
 export function SearchBox({ searchQuery, onSearchChange, searchInputRef }: SearchBoxProps) {
   return (
     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
-      <Search size={12} style={{ position: "absolute", left: 6, color: "#999", pointerEvents: "none" }} />
+      <Search
+        size={12}
+        style={{ position: "absolute", left: 6, color: "#999", pointerEvents: "none" }}
+      />
       <input
         ref={searchInputRef}
         type="text"

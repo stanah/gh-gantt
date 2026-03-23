@@ -13,8 +13,13 @@ interface UndoRedoGroupProps {
 }
 
 export function UndoRedoGroup({
-  onUndo, onRedo, canUndo = false, canRedo = false,
-  undoCount = 0, redoCount = 0, undoRedoBusy = false,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
+  undoCount = 0,
+  redoCount = 0,
+  undoRedoBusy = false,
 }: UndoRedoGroupProps) {
   return (
     <div style={{ display: "flex", gap: 2, alignItems: "center" }}>

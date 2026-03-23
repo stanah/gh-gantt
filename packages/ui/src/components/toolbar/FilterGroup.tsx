@@ -23,14 +23,23 @@ interface FilterGroupProps {
 
 export function FilterGroup(props: FilterGroupProps) {
   const {
-    hideClosed, onToggleHideClosed,
-    taskTypes, enabledTypes, onToggleType,
-    selectedAssignee, allAssignees, onSelectAssignee,
-    selectedPriorities, onSelectPriorities,
+    hideClosed,
+    onToggleHideClosed,
+    taskTypes,
+    enabledTypes,
+    onToggleType,
+    selectedAssignee,
+    allAssignees,
+    onSelectAssignee,
+    selectedPriorities,
+    onSelectPriorities,
   } = props;
 
   const selectedAssignees = selectedAssignee
-    ? selectedAssignee.split(",").map((v) => v.trim()).filter((v) => v.length > 0)
+    ? selectedAssignee
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0)
     : [];
 
   const allTypesCount = Object.keys(taskTypes).length;

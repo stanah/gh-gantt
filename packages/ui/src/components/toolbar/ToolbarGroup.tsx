@@ -10,7 +10,16 @@ export function ToolbarGroup({ label, children, gap = 2 }: ToolbarGroupProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1 }}>
       {label && (
-        <span style={{ fontSize: 9, color: "#999", textTransform: "uppercase", letterSpacing: 0.5, lineHeight: 1, userSelect: "none" }}>
+        <span
+          style={{
+            fontSize: 9,
+            color: "#999",
+            textTransform: "uppercase",
+            letterSpacing: 0.5,
+            lineHeight: 1,
+            userSelect: "none",
+          }}
+        >
           {label}
         </span>
       )}

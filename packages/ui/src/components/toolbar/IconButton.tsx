@@ -46,7 +46,15 @@ const badgeStyle: React.CSSProperties = {
   lineHeight: "16px",
 };
 
-export function IconButton({ icon, title, onClick, active = false, disabled = false, badge, children }: IconButtonProps) {
+export function IconButton({
+  icon,
+  title,
+  onClick,
+  active = false,
+  disabled = false,
+  badge,
+  children,
+}: IconButtonProps) {
   return (
     <button
       type="button"

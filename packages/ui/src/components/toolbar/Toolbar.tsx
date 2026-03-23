@@ -61,10 +61,7 @@ export function Toolbar(props: ToolbarProps) {
         fontSize: 11,
       }}
     >
-      <ViewScaleGroup
-        viewScale={props.viewScale}
-        onSetViewScale={props.onSetViewScale}
-      />
+      <ViewScaleGroup viewScale={props.viewScale} onSetViewScale={props.onSetViewScale} />
       <ZoomGroup
         onZoomIn={props.onZoomIn}
         onZoomOut={props.onZoomOut}

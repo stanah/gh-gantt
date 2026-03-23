@@ -583,9 +583,7 @@ export function App() {
         <div style={{ flex: 1, overflow: "hidden" }}>
           <Layout
             scrollContainerRef={scrollContainerRef}
-            leftHeader={
-              <TaskTreeHeader config={config} />
-            }
+            leftHeader={<TaskTreeHeader config={config} />}
             leftBody={
               <TaskTreeBody
                 config={config}
