@@ -13,7 +13,7 @@
 - [list](#list)
 - [show](#show)
 - [update](#update)
-- [link](#link)
+- [link（依存関係/親子関係）](#link)
 
 ---
 

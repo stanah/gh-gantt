@@ -275,7 +275,12 @@ export function createApiRouter(projectRoot: string): Router {
           return;
         }
 
-        tasksFile.tasks = setParent(tasksFile.tasks, taskId, newParentId);
+        const parentResult = setParent(tasksFile.tasks, taskId, newParentId);
+        if (parentResult.error) {
+          res.status(400).json({ error: parentResult.error });
+          return;
+        }
+        tasksFile.tasks = parentResult.tasks!;
       } else {
         tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
       }
