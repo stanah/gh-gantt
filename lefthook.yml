@@ -1,0 +1,11 @@
+no_tty: true
+
+pre-commit:
+  jobs:
+    - name: lint
+      run: vp check < /dev/null
+
+pre-push:
+  jobs:
+    - name: test
+      run: vp run test < /dev/null
