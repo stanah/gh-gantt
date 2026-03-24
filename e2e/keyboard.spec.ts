@@ -7,8 +7,10 @@ test.beforeEach(async ({ page }) => {
   await page.locator("[data-task-id='epic-1']").waitFor();
 });
 
+const shortcutsButtonName = "Keyboard Shortcuts (?)";
+
 test("? button in toolbar opens help panel", async ({ page }) => {
-  await page.getByLabel("Show keyboard shortcuts").click();
+  await page.getByRole("button", { name: shortcutsButtonName }).click();
 
   const dialog = page.locator("[role='dialog']");
   await expect(dialog).toBeVisible();
@@ -16,7 +18,7 @@ test("? button in toolbar opens help panel", async ({ page }) => {
 });
 
 test("Escape closes the help panel", async ({ page }) => {
-  await page.getByLabel("Show keyboard shortcuts").click();
+  await page.getByRole("button", { name: shortcutsButtonName }).click();
   await expect(page.locator("[role='dialog']")).toBeVisible();
 
   await page.keyboard.press("Escape");
