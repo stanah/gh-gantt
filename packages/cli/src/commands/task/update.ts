@@ -181,137 +181,141 @@ export function filterTasksForUpdate(tasks: Task[], filters: BulkFilterOptions):
   return result;
 }
 
-export const taskUpdateCommand = new Command("update")
-  .description("Update a task (single or bulk)")
-  .argument("[id]", "Task ID (e.g. 6, #6, owner/repo#6). Omit for bulk update with filters.")
-  .option("--title <title>", "Set title")
-  .option("--body <body>", "Set body/description")
-  .option("--type <type>", "Set task type")
-  .option("--state <state>", "Set state (open/closed)")
-  .option("--start-date <date>", "Set start date (YYYY-MM-DD or 'none' to clear)")
-  .option("--end-date <date>", "Set end date (YYYY-MM-DD or 'none' to clear)")
-  .option("--assignee <login>", "Add assignee")
-  .option("--remove-assignee <login>", "Remove assignee")
-  .option("--milestone <name>", "Set milestone ('none' to clear)")
-  .option("--label <name>", "Add label")
-  .option("--status <status>", "Set status (auto-updates dates based on transition)")
-  .option("--priority <priority>", "Set priority (critical, high, medium, low)")
-  .option("--remove-label <name>", "Remove label")
-  .option("--filter-state <state>", "Bulk filter: match tasks by state")
-  .option("--filter-type <type>", "Bulk filter: match tasks by type")
-  .option("--filter-milestone <name>", "Bulk filter: match tasks by milestone ('none' for unset)")
-  .option("--filter-label <name>", "Bulk filter: match tasks by label")
-  .option("--json", "Output updated task(s) as JSON")
-  .action(async (id: string | undefined, opts) => {
-    try {
-      const projectRoot = process.cwd();
-      const configStore = new ConfigStore(projectRoot);
-      const tasksStore = new TasksStore(projectRoot);
+export function createTaskUpdateCommand(): Command {
+  return new Command("update")
+    .description("Update a task (single or bulk)")
+    .argument("[id]", "Task ID (e.g. 6, #6, owner/repo#6). Omit for bulk update with filters.")
+    .option("--title <title>", "Set title")
+    .option("--body <body>", "Set body/description")
+    .option("--type <type>", "Set task type")
+    .option("--state <state>", "Set state (open/closed)")
+    .option("--start-date <date>", "Set start date (YYYY-MM-DD or 'none' to clear)")
+    .option("--end-date <date>", "Set end date (YYYY-MM-DD or 'none' to clear)")
+    .option("--assignee <login>", "Add assignee")
+    .option("--remove-assignee <login>", "Remove assignee")
+    .option("--milestone <name>", "Set milestone ('none' to clear)")
+    .option("--label <name>", "Add label")
+    .option("--status <status>", "Set status (auto-updates dates based on transition)")
+    .option("--priority <priority>", "Set priority (critical, high, medium, low)")
+    .option("--remove-label <name>", "Remove label")
+    .option("--filter-state <state>", "Bulk filter: match tasks by state")
+    .option("--filter-type <type>", "Bulk filter: match tasks by type")
+    .option("--filter-milestone <name>", "Bulk filter: match tasks by milestone ('none' for unset)")
+    .option("--filter-label <name>", "Bulk filter: match tasks by label")
+    .option("--json", "Output updated task(s) as JSON")
+    .action(async (id: string | undefined, opts) => {
+      try {
+        const projectRoot = process.cwd();
+        const configStore = new ConfigStore(projectRoot);
+        const tasksStore = new TasksStore(projectRoot);
 
-      const config = await configStore.read();
-      const tasksFile = await tasksStore.read();
+        const config = await configStore.read();
+        const tasksFile = await tasksStore.read();
 
-      const updateOpts: TaskUpdateOptions = {
-        title: opts.title,
-        body: opts.body,
-        type: opts.type,
-        state: opts.state,
-        status: opts.status,
-        priority: opts.priority,
-        startDate: opts.startDate,
-        endDate: opts.endDate,
-        assignee: opts.assignee,
-        removeAssignee: opts.removeAssignee,
-        milestone: opts.milestone,
-        label: opts.label,
-        removeLabel: opts.removeLabel,
-      };
-
-      if (id) {
-        // Single task update
-        const resolvedId = resolveTaskId(id, config);
-        const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
-
-        if (taskIndex === -1) {
-          console.error(`Task not found: ${resolvedId}`);
-          process.exitCode = 1;
-          return;
-        }
-
-        const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
-
-        if (result.error) {
-          console.error(result.error);
-          process.exitCode = 1;
-          return;
-        }
-
-        tasksFile.tasks[taskIndex] = result.task;
-        await tasksStore.write(tasksFile);
-
-        if (opts.json) {
-          console.log(JSON.stringify(result.task, null, 2));
-        } else {
-          console.log(`Updated task: ${resolvedId}`);
-        }
-      } else {
-        // Bulk update
-        const filters: BulkFilterOptions = {
-          filterState: opts.filterState,
-          filterType: opts.filterType,
-          filterMilestone: opts.filterMilestone,
-          filterLabel: opts.filterLabel,
+        const updateOpts: TaskUpdateOptions = {
+          title: opts.title,
+          body: opts.body,
+          type: opts.type,
+          state: opts.state,
+          status: opts.status,
+          priority: opts.priority,
+          startDate: opts.startDate,
+          endDate: opts.endDate,
+          assignee: opts.assignee,
+          removeAssignee: opts.removeAssignee,
+          milestone: opts.milestone,
+          label: opts.label,
+          removeLabel: opts.removeLabel,
         };
 
-        const hasFilter =
-          filters.filterState ||
-          filters.filterType ||
-          filters.filterMilestone ||
-          filters.filterLabel;
-        if (!hasFilter) {
-          console.error("Bulk update requires at least one --filter-* option.");
-          process.exitCode = 1;
-          return;
-        }
+        if (id) {
+          // Single task update
+          const resolvedId = resolveTaskId(id, config);
+          const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
 
-        const matched = filterTasksForUpdate(tasksFile.tasks, filters);
-        if (matched.length === 0) {
-          console.log("No tasks matched the filters.");
-          return;
-        }
+          if (taskIndex === -1) {
+            console.error(`Task not found: ${resolvedId}`);
+            process.exitCode = 1;
+            return;
+          }
 
-        const updatedTasks: Task[] = [];
-        for (const task of matched) {
-          const idx = tasksFile.tasks.findIndex((t) => t.id === task.id);
-          const result = applyTaskUpdate(tasksFile.tasks[idx], updateOpts, config);
+          const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
+
           if (result.error) {
-            console.error(`Error updating ${task.id}: ${result.error}`);
-            continue;
+            console.error(result.error);
+            process.exitCode = 1;
+            return;
           }
-          tasksFile.tasks[idx] = result.task;
-          updatedTasks.push(result.task);
-        }
 
-        if (updatedTasks.length === 0) {
-          console.error("All matched tasks failed to update.");
-          process.exitCode = 1;
-          return;
-        }
+          tasksFile.tasks[taskIndex] = result.task;
+          await tasksStore.write(tasksFile);
 
-        await tasksStore.write(tasksFile);
-
-        if (opts.json) {
-          console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
+          if (opts.json) {
+            console.log(JSON.stringify(result.task, null, 2));
+          } else {
+            console.log(`Updated task: ${resolvedId}`);
+          }
         } else {
-          console.log(`Updated ${updatedTasks.length} task(s).`);
-          for (const t of updatedTasks) {
-            const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
-            console.log(`  ${shortId}: ${t.title}`);
+          // Bulk update
+          const filters: BulkFilterOptions = {
+            filterState: opts.filterState,
+            filterType: opts.filterType,
+            filterMilestone: opts.filterMilestone,
+            filterLabel: opts.filterLabel,
+          };
+
+          const hasFilter =
+            filters.filterState ||
+            filters.filterType ||
+            filters.filterMilestone ||
+            filters.filterLabel;
+          if (!hasFilter) {
+            console.error("Bulk update requires at least one --filter-* option.");
+            process.exitCode = 1;
+            return;
+          }
+
+          const matched = filterTasksForUpdate(tasksFile.tasks, filters);
+          if (matched.length === 0) {
+            console.log("No tasks matched the filters.");
+            return;
+          }
+
+          const updatedTasks: Task[] = [];
+          for (const task of matched) {
+            const idx = tasksFile.tasks.findIndex((t) => t.id === task.id);
+            const result = applyTaskUpdate(tasksFile.tasks[idx], updateOpts, config);
+            if (result.error) {
+              console.error(`Error updating ${task.id}: ${result.error}`);
+              continue;
+            }
+            tasksFile.tasks[idx] = result.task;
+            updatedTasks.push(result.task);
+          }
+
+          if (updatedTasks.length === 0) {
+            console.error("All matched tasks failed to update.");
+            process.exitCode = 1;
+            return;
+          }
+
+          await tasksStore.write(tasksFile);
+
+          if (opts.json) {
+            console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
+          } else {
+            console.log(`Updated ${updatedTasks.length} task(s).`);
+            for (const t of updatedTasks) {
+              const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
+              console.log(`  ${shortId}: ${t.title}`);
+            }
           }
         }
+      } catch (err) {
+        console.error("Failed to update task:", err instanceof Error ? err.message : String(err));
+        process.exitCode = 1;
       }
-    } catch (err) {
-      console.error("Failed to update task:", err instanceof Error ? err.message : String(err));
-      process.exitCode = 1;
-    }
-  });
+    });
+}
+
+export const taskUpdateCommand = createTaskUpdateCommand();

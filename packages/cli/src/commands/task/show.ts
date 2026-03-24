@@ -46,30 +46,34 @@ function formatMilestone(task: Task): string {
   return lines.join("\n");
 }
 
-export const taskShowCommand = new Command("show")
-  .description("Show task details")
-  .argument("<id>", "Task ID (e.g. 6, #6, owner/repo#6)")
-  .option("--json", "Output as JSON")
-  .action(async (id: string, opts) => {
-    const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
+export function createTaskShowCommand(): Command {
+  return new Command("show")
+    .description("Show task details")
+    .argument("<id>", "Task ID (e.g. 6, #6, owner/repo#6)")
+    .option("--json", "Output as JSON")
+    .action(async (id: string, opts) => {
+      const projectRoot = process.cwd();
+      const configStore = new ConfigStore(projectRoot);
+      const tasksStore = new TasksStore(projectRoot);
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
 
-    const resolvedId = resolveTaskId(id, config);
-    const task = tasksFile.tasks.find((t) => t.id === resolvedId);
+      const resolvedId = resolveTaskId(id, config);
+      const task = tasksFile.tasks.find((t) => t.id === resolvedId);
 
-    if (!task) {
-      console.error(`Task not found: ${resolvedId}`);
-      process.exitCode = 1;
-      return;
-    }
+      if (!task) {
+        console.error(`Task not found: ${resolvedId}`);
+        process.exitCode = 1;
+        return;
+      }
 
-    if (opts.json) {
-      console.log(JSON.stringify(task, null, 2));
-    } else {
-      console.log(formatTask(task));
-    }
-  });
+      if (opts.json) {
+        console.log(JSON.stringify(task, null, 2));
+      } else {
+        console.log(formatTask(task));
+      }
+    });
+}
+
+export const taskShowCommand = createTaskShowCommand();

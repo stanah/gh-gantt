@@ -191,62 +191,66 @@ function formatTable(tasks: Task[]): string {
   return table.toString();
 }
 
-export const taskListCommand = new Command("list")
-  .description("List tasks")
-  .option("--backlog", "Show only backlog tasks (no dates)")
-  .option("--scheduled", "Show only scheduled tasks (have dates)")
-  .option("--type <type>", "Filter by task type")
-  .option("--state <state>", "Filter by state (open/closed)")
-  .option("--unblocked", "Show only unblocked tasks (dependencies resolved)")
-  .option("--assignee <login>", "Filter by assignee")
-  .option("--unassigned", "Show only unassigned tasks")
-  .option("--status <status>", "Filter by Status custom field value")
-  .option("--label <label>", "Filter by label")
-  .option("--search <query>", "Search in title and body")
-  .option(
-    "--sort <fields>",
-    "Sort by fields (comma-separated: priority,end_date,start_date,type,title)",
-  )
-  .option("--json", "Output as JSON")
-  .action(async (opts) => {
-    const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
+export function createTaskListCommand(): Command {
+  return new Command("list")
+    .description("List tasks")
+    .option("--backlog", "Show only backlog tasks (no dates)")
+    .option("--scheduled", "Show only scheduled tasks (have dates)")
+    .option("--type <type>", "Filter by task type")
+    .option("--state <state>", "Filter by state (open/closed)")
+    .option("--unblocked", "Show only unblocked tasks (dependencies resolved)")
+    .option("--assignee <login>", "Filter by assignee")
+    .option("--unassigned", "Show only unassigned tasks")
+    .option("--status <status>", "Filter by Status custom field value")
+    .option("--label <label>", "Filter by label")
+    .option("--search <query>", "Search in title and body")
+    .option(
+      "--sort <fields>",
+      "Sort by fields (comma-separated: priority,end_date,start_date,type,title)",
+    )
+    .option("--json", "Output as JSON")
+    .action(async (opts) => {
+      const projectRoot = process.cwd();
+      const configStore = new ConfigStore(projectRoot);
+      const tasksStore = new TasksStore(projectRoot);
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
 
-    if (opts.type && !config.task_types[opts.type]) {
-      const typeKeys = Object.keys(config.task_types);
-      console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
-      return;
-    }
-
-    let filtered = filterTasks(tasksFile.tasks, {
-      backlog: opts.backlog,
-      scheduled: opts.scheduled,
-      type: opts.type,
-      state: opts.state,
-      unblocked: opts.unblocked,
-      assignee: opts.assignee,
-      unassigned: opts.unassigned,
-      status: opts.status,
-      statusFieldName: config.statuses.field_name,
-      label: opts.label,
-      search: opts.search,
-    });
-
-    if (opts.sort) {
-      filtered = sortTasks(filtered, opts.sort, config);
-    }
-
-    if (opts.json) {
-      console.log(JSON.stringify({ tasks: filtered }, null, 2));
-    } else {
-      if (filtered.length === 0) {
-        console.log("No tasks found.");
-      } else {
-        console.log(formatTable(filtered));
+      if (opts.type && !config.task_types[opts.type]) {
+        const typeKeys = Object.keys(config.task_types);
+        console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
+        return;
       }
-    }
-  });
+
+      let filtered = filterTasks(tasksFile.tasks, {
+        backlog: opts.backlog,
+        scheduled: opts.scheduled,
+        type: opts.type,
+        state: opts.state,
+        unblocked: opts.unblocked,
+        assignee: opts.assignee,
+        unassigned: opts.unassigned,
+        status: opts.status,
+        statusFieldName: config.statuses.field_name,
+        label: opts.label,
+        search: opts.search,
+      });
+
+      if (opts.sort) {
+        filtered = sortTasks(filtered, opts.sort, config);
+      }
+
+      if (opts.json) {
+        console.log(JSON.stringify({ tasks: filtered }, null, 2));
+      } else {
+        if (filtered.length === 0) {
+          console.log("No tasks found.");
+        } else {
+          console.log(formatTable(filtered));
+        }
+      }
+    });
+}
+
+export const taskListCommand = createTaskListCommand();

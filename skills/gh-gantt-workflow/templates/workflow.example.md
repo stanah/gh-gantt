@@ -4,7 +4,7 @@
 
 1. メインブランチを最新化する: `git checkout main && git pull origin main`
 2. `gh-gantt pull` で最新のタスクデータを取得する
-3. `gh-gantt task list --state open` で今日着手するタスクを確認・選択する
+3. `gh-gantt list --state open` で今日着手するタスクを確認・選択する
 4. ブランチを切る: `git checkout -b feat/issue-<number>-short-title main`
 
 ## タスク化

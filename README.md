@@ -53,10 +53,10 @@ gh-gantt status   # Show sync status
 ### Task Management
 
 ```bash
-gh-gantt task list                    # List tasks
-gh-gantt task show <id>               # Show task details
-gh-gantt task update <id>             # Update a task
-gh-gantt task link <id>               # Manage dependencies and parent relationships
+gh-gantt list                         # List tasks
+gh-gantt show <id>                    # Show task details
+gh-gantt update <id>                  # Update a task
+gh-gantt link <id>                    # Manage dependencies and parent relationships
 gh-gantt create                       # Create a new draft task locally
 ```
 

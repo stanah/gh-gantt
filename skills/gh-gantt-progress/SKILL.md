@@ -16,7 +16,7 @@ description: Use when updating task states, finding tasks to close, checking imp
 ### Step 2: オープンタスク一覧の表示
 
 ```bash
-gh-gantt task list --state open
+gh-gantt list --state open
 ```
 
 結果をそのまま表示する。
@@ -36,11 +36,11 @@ gh-gantt task list --state open
 
 ## エピック進捗
 
-`gh-gantt task list --state open --type epic` でエピック一覧を表示し、各エピックについて `gh-gantt task show <id>` で子タスクの完了率を確認する。
+`gh-gantt list --state open --type epic` でエピック一覧を表示し、各エピックについて `gh-gantt show <id>` で子タスクの完了率を確認する。
 
 ## リスク評価
 
-Step 2 の一覧から期限が近いタスクを特定し、`gh-gantt task show <id>` でブロッカーや進捗を確認する。
+Step 2 の一覧から期限が近いタスクを特定し、`gh-gantt show <id>` でブロッカーや進捗を確認する。
 
 ## リファレンス
 
