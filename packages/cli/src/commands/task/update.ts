@@ -28,6 +28,11 @@ export function applyTaskUpdate(
   opts: TaskUpdateOptions,
   config: Config,
 ): { task: Task; error?: string } {
+  const hasUpdateField = Object.values(opts).some((v) => v !== undefined);
+  if (!hasUpdateField) {
+    return { task, error: "Specify at least one update option." };
+  }
+
   if (opts.type && !config.task_types[opts.type]) {
     const typeKeys = Object.keys(config.task_types);
     return {

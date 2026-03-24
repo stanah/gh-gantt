@@ -193,7 +193,7 @@ gh-gantt show <id> [--json]
 タスクのフィールドを更新する。
 
 ```bash
-gh-gantt update <id> [options]
+gh-gantt update [id] [options]
 ```
 
 **オプション:**

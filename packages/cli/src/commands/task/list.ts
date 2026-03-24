@@ -220,6 +220,7 @@ export function createTaskListCommand(): Command {
       if (opts.type && !config.task_types[opts.type]) {
         const typeKeys = Object.keys(config.task_types);
         console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
+        process.exitCode = 1;
         return;
       }
 

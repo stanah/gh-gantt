@@ -4,40 +4,62 @@ import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Config, Task, TasksFile } from "@gh-gantt/shared";
 
-export function addDependency(task: Task, blockerTaskId: string): Task {
+export function addDependency(task: Task, blockerTaskId: string): { task: Task; error?: string } {
+  if (blockerTaskId === task.id) {
+    return { task, error: "A task cannot be blocked by itself." };
+  }
   if (task.blocked_by.some((d) => d.task === blockerTaskId)) {
-    return task;
+    return { task };
   }
   return {
-    ...task,
-    blocked_by: [...task.blocked_by, { task: blockerTaskId, type: "finish-to-start", lag: 0 }],
-    updated_at: new Date().toISOString(),
+    task: {
+      ...task,
+      blocked_by: [...task.blocked_by, { task: blockerTaskId, type: "finish-to-start", lag: 0 }],
+      updated_at: new Date().toISOString(),
+    },
   };
 }
 
-export function removeDependency(task: Task, blockerTaskId: string): Task {
+export function removeDependency(
+  task: Task,
+  blockerTaskId: string,
+): { task: Task; error?: string } {
   return {
-    ...task,
-    blocked_by: task.blocked_by.filter((d) => d.task !== blockerTaskId),
-    updated_at: new Date().toISOString(),
+    task: {
+      ...task,
+      blocked_by: task.blocked_by.filter((d) => d.task !== blockerTaskId),
+      updated_at: new Date().toISOString(),
+    },
   };
 }
 
-export function setParent(tasks: Task[], taskId: string, newParentId: string): Task[] {
-  return tasks.map((t) => {
-    if (t.id === taskId) {
-      return { ...t, parent: newParentId, updated_at: new Date().toISOString() };
-    }
-    // Remove from old parent's sub_tasks
-    if (t.sub_tasks.includes(taskId) && t.id !== newParentId) {
-      return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId) };
-    }
-    // Add to new parent's sub_tasks
-    if (t.id === newParentId && !t.sub_tasks.includes(taskId)) {
-      return { ...t, sub_tasks: [...t.sub_tasks, taskId] };
-    }
-    return t;
-  });
+export function setParent(
+  tasks: Task[],
+  taskId: string,
+  newParentId: string,
+): { tasks?: Task[]; error?: string } {
+  if (taskId === newParentId) {
+    return { error: "A task cannot be its own parent." };
+  }
+  if (!tasks.some((t) => t.id === newParentId)) {
+    return { error: `Parent task not found: ${newParentId}` };
+  }
+  return {
+    tasks: tasks.map((t) => {
+      if (t.id === taskId) {
+        return { ...t, parent: newParentId, updated_at: new Date().toISOString() };
+      }
+      // Remove from old parent's sub_tasks
+      if (t.sub_tasks.includes(taskId) && t.id !== newParentId) {
+        return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId) };
+      }
+      // Add to new parent's sub_tasks
+      if (t.id === newParentId && !t.sub_tasks.includes(taskId)) {
+        return { ...t, sub_tasks: [...t.sub_tasks, taskId] };
+      }
+      return t;
+    }),
+  };
 }
 
 export function removeParent(tasks: Task[], taskId: string): Task[] {
@@ -87,25 +109,32 @@ export function createTaskLinkCommand(): Command {
 
       if (opts.blockedBy) {
         const blockerId = resolveTaskId(opts.blockedBy, config);
-        tasksFile.tasks[taskIndex] = addDependency(tasksFile.tasks[taskIndex], blockerId);
+        const depResult = addDependency(tasksFile.tasks[taskIndex], blockerId);
+        if (depResult.error) {
+          console.error(depResult.error);
+          process.exitCode = 1;
+          return;
+        }
+        tasksFile.tasks[taskIndex] = depResult.task;
         console.log(`Added dependency: ${resolvedId} blocked by ${blockerId}`);
       }
 
       if (opts.unblock) {
         const blockerId = resolveTaskId(opts.unblock, config);
-        tasksFile.tasks[taskIndex] = removeDependency(tasksFile.tasks[taskIndex], blockerId);
+        const unblockResult = removeDependency(tasksFile.tasks[taskIndex], blockerId);
+        tasksFile.tasks[taskIndex] = unblockResult.task;
         console.log(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
       }
 
       if (opts.setParent) {
         const parentId = resolveTaskId(opts.setParent, config);
-        const parentExists = tasksFile.tasks.some((t) => t.id === parentId);
-        if (!parentExists) {
-          console.error(`Parent task not found: ${parentId}`);
+        const parentResult = setParent(tasksFile.tasks, resolvedId, parentId);
+        if (parentResult.error) {
+          console.error(parentResult.error);
           process.exitCode = 1;
           return;
         }
-        tasksFile.tasks = setParent(tasksFile.tasks, resolvedId, parentId);
+        tasksFile.tasks = parentResult.tasks!;
         console.log(`Set parent: ${resolvedId} → ${parentId}`);
       }
 
