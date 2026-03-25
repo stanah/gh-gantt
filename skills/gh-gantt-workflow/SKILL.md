@@ -26,7 +26,7 @@ Evidence: コマンド出力をそのまま提示する。
 2. **OPTIONAL:** `gh-gantt-progress` でタスクの状態を確認
 3. タスク確認 — `gh-gantt list --state open` を実行する。
    件数が多い場合は CLI でサポートされているフィルタ（例: `--backlog`, `--scheduled`, `--type`, `--sort`）の併用を提案する。
-   注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用し、利用できない場合はフォールバックとして `gh-gantt list --state open` を使用する。
+   注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用し、利用できない場合（コマンドがエラーになる場合）はこれらのオプションを外した `gh-gantt list --state open` にフォールバックする。
    **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
    ユーザーに選択を促す。
 4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ

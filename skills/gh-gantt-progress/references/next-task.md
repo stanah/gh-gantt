@@ -12,6 +12,8 @@ gh-gantt list --state open --unblocked --sort end_date
 
 ブロッカーが解消済みで期限が近い順にタスクを表示する。
 
+注: `--unblocked` や `--sort` がエラーになる場合は、これらのオプションを外した `gh-gantt list --state open` にフォールバックする。
+
 ### 2. 候補タスクの詳細確認
 
 上位の候補について `gh-gantt show <id>` で body・blocked_by・priority を確認する。
