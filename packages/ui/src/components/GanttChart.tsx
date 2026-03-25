@@ -218,6 +218,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         hoveredTaskId={hoveredTaskId ?? null}
       />
       <svg
+        role="img"
+        aria-label={`Gantt chart with ${flatList.length} tasks`}
         width={totalWidth}
         height={scheduledHeight}
         style={{ position: "absolute", top: 0, left: 0 }}

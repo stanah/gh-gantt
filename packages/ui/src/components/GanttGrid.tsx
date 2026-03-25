@@ -65,6 +65,7 @@ export function GanttGrid({
       width={totalWidth}
       height={totalHeight}
       style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+      aria-hidden="true"
     >
       {/* Sprint band highlight */}
       {sprintBands.map((sprint) => {

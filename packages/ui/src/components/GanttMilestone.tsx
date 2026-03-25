@@ -41,7 +41,11 @@ export function GanttMilestone({
     : color;
 
   return (
-    <g opacity={isDimmed ? 0.3 : 1}>
+    <g
+      role="graphics-symbol"
+      aria-label={`Milestone: ${task.title}, ${dateStr}, ${task.state}`}
+      opacity={isDimmed ? 0.3 : 1}
+    >
       <polygon
         points={`${x},${cy - size} ${x + size},${cy} ${x},${cy + size} ${x - size},${cy}`}
         fill={task.state === "closed" ? color : color + "66"}
