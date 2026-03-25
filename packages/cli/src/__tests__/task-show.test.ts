@@ -1,24 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createTaskShowCommand } from "../commands/task/show.js";
 
-describe("show command error handling", () => {
-  const originalCwd = process.cwd;
-  const originalExitCode = process.exitCode;
+vi.mock("../store/config.js", () => ({
+  ConfigStore: vi.fn().mockImplementation(() => ({
+    read: vi.fn().mockRejectedValue(new Error("config not found")),
+  })),
+}));
 
+describe("show command error handling", () => {
   beforeEach(() => {
     process.exitCode = undefined;
   });
 
   afterEach(() => {
-    process.cwd = originalCwd;
-    process.exitCode = originalExitCode;
+    process.exitCode = undefined;
     vi.restoreAllMocks();
   });
 
   it("catches I/O errors and sets exitCode=1", async () => {
-    // Point to a non-existent directory to trigger I/O failure
-    process.cwd = () => "/non-existent-path";
-
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
     const cmd = createTaskShowCommand();
