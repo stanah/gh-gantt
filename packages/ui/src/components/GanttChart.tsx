@@ -237,9 +237,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               height={ROW_HEIGHT}
               fill={
                 isSelected
-                  ? "var(--color-selected-bg)"
+                  ? "rgba(66, 133, 244, 0.12)"
                   : isHovered
-                    ? "var(--color-hover-bg)"
+                    ? "rgba(66, 133, 244, 0.06)"
                     : "transparent"
               }
               style={{ cursor: "pointer" }}
