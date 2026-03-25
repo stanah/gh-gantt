@@ -10,6 +10,7 @@ import {
 } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { getPriorityColor } from "./PriorityBadge.js";
+import { contrastTextColor } from "../lib/color-utils.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 
@@ -168,17 +169,20 @@ export function GanttBar({
         if (fitsInside) {
           const maxChars = Math.floor((width - padding) / charWidth);
           const label = fullText.length > maxChars ? fullText.slice(0, maxChars) + "..." : fullText;
+          const insideFill =
+            progress >= 50 ? contrastTextColor(progressFill) : contrastTextColor(color);
+          const insideSubFill = insideFill === "#fff" ? "rgba(255,255,255,0.7)" : "#888";
           return (
             <text
               x={x1 + 6}
               y={barY + barHeight / 2 + 4}
               fontSize={10}
-              fill="#333"
+              fill={insideFill}
               style={{ pointerEvents: "none" }}
             >
               {label}
               {assigneeText && (
-                <tspan fontSize={9} fill="var(--color-text-muted)">
+                <tspan fontSize={9} fill={insideSubFill}>
                   {" "}
                   {assigneeText}
                 </tspan>
@@ -195,12 +199,12 @@ export function GanttBar({
             x={x1 + width + 4}
             y={barY + barHeight / 2 + 4}
             fontSize={10}
-            fill="var(--color-text-secondary)"
+            fill="#555"
             style={{ pointerEvents: "none" }}
           >
             {outsideLabel}
             {assigneeText && (
-              <tspan fontSize={9} fill="var(--color-text-muted)">
+              <tspan fontSize={9} fill="#777">
                 {" "}
                 {assigneeText}
               </tspan>
