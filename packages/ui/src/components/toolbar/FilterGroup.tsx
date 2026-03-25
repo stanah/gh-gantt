@@ -7,6 +7,7 @@ import { IconButton } from "./IconButton.js";
 import { TypeFilter } from "../TypeFilter.js";
 import { AssigneeFilter } from "../AssigneeFilter.js";
 import { PriorityFilter } from "../PriorityFilter.js";
+import { LabelFilter } from "../LabelFilter.js";
 
 interface FilterGroupProps {
   hideClosed: boolean;
@@ -19,6 +20,9 @@ interface FilterGroupProps {
   onSelectAssignee: (assignee: string | null) => void;
   selectedPriorities?: string[];
   onSelectPriorities?: (values: string[]) => void;
+  allLabels?: string[];
+  selectedLabels?: string[];
+  onSelectLabels?: (values: string[]) => void;
 }
 
 export function FilterGroup(props: FilterGroupProps) {
@@ -33,6 +37,9 @@ export function FilterGroup(props: FilterGroupProps) {
     onSelectAssignee,
     selectedPriorities,
     onSelectPriorities,
+    allLabels,
+    selectedLabels,
+    onSelectLabels,
   } = props;
 
   const selectedAssignees = selectedAssignee
@@ -62,6 +69,9 @@ export function FilterGroup(props: FilterGroupProps) {
       />
       {selectedPriorities && onSelectPriorities && (
         <PriorityFilter selectedValues={selectedPriorities} onChange={onSelectPriorities} />
+      )}
+      {allLabels && selectedLabels && onSelectLabels && (
+        <LabelFilter labels={allLabels} selectedValues={selectedLabels} onChange={onSelectLabels} />
       )}
     </ToolbarGroup>
   );

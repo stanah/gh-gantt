@@ -31,6 +31,9 @@ interface ToolbarProps {
   onSelectAssignee: (assignee: string | null) => void;
   selectedPriorities?: string[];
   onSelectPriorities?: (values: string[]) => void;
+  allLabels?: string[];
+  selectedLabels?: string[];
+  onSelectLabels?: (values: string[]) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   searchInputRef?: React.Ref<HTMLInputElement>;
@@ -77,6 +80,9 @@ export function Toolbar(props: ToolbarProps) {
         onSelectAssignee={props.onSelectAssignee}
         selectedPriorities={props.selectedPriorities}
         onSelectPriorities={props.onSelectPriorities}
+        allLabels={props.allLabels}
+        selectedLabels={props.selectedLabels}
+        onSelectLabels={props.onSelectLabels}
       />
       <SearchBox
         searchQuery={props.searchQuery}

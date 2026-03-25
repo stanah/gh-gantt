@@ -3,8 +3,10 @@ import type { Task } from "../types/index.js";
 
 export const UNASSIGNED = "__unassigned__";
 export const NO_PRIORITY = "__no_priority__";
+export const NO_LABEL = "__no_label__";
 const ASSIGNEES_QUERY_KEY = "assignees";
 const PRIORITIES_QUERY_KEY = "priorities";
+const LABELS_QUERY_KEY = "labels";
 
 export interface TaskFilterState {
   hideClosed: boolean;
@@ -38,6 +40,16 @@ function parsePrioritiesFromQuery(search: string): string[] {
     .filter((v) => v.length > 0);
 }
 
+function parseLabelsFromQuery(search: string): string[] {
+  const params = new URLSearchParams(search);
+  const raw = params.get(LABELS_QUERY_KEY);
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((v) => v.trim())
+    .filter((v) => v.length > 0);
+}
+
 export function useTaskFilter(tasks: Task[]) {
   const [hideClosed, setHideClosed] = useState(true);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>(() => {
@@ -47,6 +59,10 @@ export function useTaskFilter(tasks: Task[]) {
   const [selectedPriorities, setSelectedPriorities] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
     return parsePrioritiesFromQuery(window.location.search);
+  });
+  const [selectedLabels, setSelectedLabels] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    return parseLabelsFromQuery(window.location.search);
   });
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -59,6 +75,16 @@ export function useTaskFilter(tasks: Task[]) {
     for (const t of tasks) {
       for (const a of t.assignees) {
         set.add(a);
+      }
+    }
+    return [...set].sort();
+  }, [tasks]);
+
+  const allLabels = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tasks) {
+      for (const l of t.labels) {
+        set.add(l);
       }
     }
     return [...set].sort();
@@ -92,8 +118,13 @@ export function useTaskFilter(tasks: Task[]) {
     } else {
       url.searchParams.set(PRIORITIES_QUERY_KEY, selectedPriorities.join(","));
     }
+    if (selectedLabels.length === 0) {
+      url.searchParams.delete(LABELS_QUERY_KEY);
+    } else {
+      url.searchParams.set(LABELS_QUERY_KEY, selectedLabels.join(","));
+    }
     window.history.replaceState({}, "", url.toString());
-  }, [selectedAssignees, selectedPriorities]);
+  }, [selectedAssignees, selectedPriorities, selectedLabels]);
 
   return {
     hideClosed,
@@ -105,6 +136,9 @@ export function useTaskFilter(tasks: Task[]) {
     allAssignees,
     selectedPriorities,
     setSelectedPriorities,
+    allLabels,
+    selectedLabels,
+    setSelectedLabels,
     searchQuery,
     setSearchQuery,
   };
