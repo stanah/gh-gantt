@@ -454,7 +454,7 @@ export function App() {
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
-          color: "#888",
+          color: "var(--color-text-muted)",
         }}
       >
         Loading...
@@ -470,7 +470,7 @@ export function App() {
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
-          color: "#e74c3c",
+          color: "var(--color-danger)",
         }}
       >
         Error: {error}
@@ -521,7 +521,11 @@ export function App() {
             color: "#fff",
             boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
             background:
-              toast.type === "success" ? "#27AE60" : toast.type === "error" ? "#e74c3c" : "#3498DB",
+              toast.type === "success"
+                ? "var(--color-success)"
+                : toast.type === "error"
+                  ? "var(--color-danger)"
+                  : "var(--color-info)",
           }}
         >
           {toast.message}
@@ -530,15 +534,15 @@ export function App() {
       <header
         style={{
           padding: "8px 16px",
-          borderBottom: "1px solid #e0e0e0",
-          background: "#fff",
+          borderBottom: "1px solid var(--color-border)",
+          background: "var(--color-surface)",
           display: "flex",
           alignItems: "center",
           gap: 12,
         }}
       >
         <strong>{config.project.name}</strong>
-        <span style={{ color: "#888", fontSize: 12 }}>{tasks.length} tasks</span>
+        <span style={{ color: "var(--color-text-muted)", fontSize: 12 }}>{tasks.length} tasks</span>
       </header>
       <Toolbar
         onZoomIn={() => ganttRef.current?.zoomIn()}

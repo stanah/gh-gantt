@@ -61,10 +61,10 @@ export function GanttBlockLines({
     >
       <defs>
         <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#666" />
+          <polygon points="0 0, 8 3, 0 6" fill="var(--color-text-secondary)" />
         </marker>
         <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-          <polygon points="0 0, 8 3, 0 6" fill="#E74C3C" />
+          <polygon points="0 0, 8 3, 0 6" fill="var(--color-danger)" />
         </marker>
       </defs>
       {visibleEdges.map((edge, i) => {
@@ -78,7 +78,7 @@ export function GanttBlockLines({
             key={i}
             d={coords.path}
             fill="none"
-            stroke={isCycleEdge ? "#E74C3C" : "#666"}
+            stroke={isCycleEdge ? "var(--color-danger)" : "var(--color-text-secondary)"}
             strokeWidth={1.5}
             strokeDasharray={edge.lag > 0 ? "4 2" : undefined}
             markerEnd={isCycleEdge ? "url(#arrowhead-red)" : "url(#arrowhead)"}

@@ -54,12 +54,14 @@ export function Layout({
               position: "sticky",
               left: 0,
               zIndex: 3,
-              background: "#fff",
-              borderRight: "1px solid #e0e0e0",
+              background: "var(--color-surface)",
+              borderRight: "1px solid var(--color-border)",
             }}
           >
             {/* Left header — sticky to top */}
-            <div style={{ position: "sticky", top: 0, zIndex: 4, background: "#fff" }}>
+            <div
+              style={{ position: "sticky", top: 0, zIndex: 4, background: "var(--color-surface)" }}
+            >
               {leftHeader}
             </div>
             {leftBody}
@@ -68,7 +70,9 @@ export function Layout({
           {/* Right column */}
           <div style={{ flexGrow: 1, minWidth: 0 }}>
             {/* Right header — sticky to top */}
-            <div style={{ position: "sticky", top: 0, zIndex: 2, background: "#fff" }}>
+            <div
+              style={{ position: "sticky", top: 0, zIndex: 2, background: "var(--color-surface)" }}
+            >
               {rightHeader}
             </div>
             {rightBody}

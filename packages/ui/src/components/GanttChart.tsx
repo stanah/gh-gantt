@@ -237,9 +237,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               height={ROW_HEIGHT}
               fill={
                 isSelected
-                  ? "rgba(66, 133, 244, 0.12)"
+                  ? "var(--color-selected-bg)"
                   : isHovered
-                    ? "rgba(66, 133, 244, 0.06)"
+                    ? "var(--color-hover-bg)"
                     : "transparent"
               }
               style={{ cursor: "pointer" }}
@@ -340,9 +340,21 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           style={{ position: "absolute", top: scheduledHeight, left: 0 }}
         >
           {/* Backlog header background */}
-          <rect x={0} y={0} width={totalWidth} height={ROW_HEIGHT} fill="#f5f5f5" />
-          <line x1={0} y1={0} x2={totalWidth} y2={0} stroke="#e0e0e0" />
-          <line x1={0} y1={ROW_HEIGHT} x2={totalWidth} y2={ROW_HEIGHT} stroke="#e0e0e0" />
+          <rect
+            x={0}
+            y={0}
+            width={totalWidth}
+            height={ROW_HEIGHT}
+            fill="var(--color-border-light)"
+          />
+          <line x1={0} y1={0} x2={totalWidth} y2={0} stroke="var(--color-border)" />
+          <line
+            x1={0}
+            y1={ROW_HEIGHT}
+            x2={totalWidth}
+            y2={ROW_HEIGHT}
+            stroke="var(--color-border)"
+          />
 
           {/* Backlog task rows */}
           {!backlogCollapsed &&
@@ -380,7 +392,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                   width={Math.max(preview.width, 2)}
                   height={ROW_HEIGHT - 8}
                   fill="rgba(52, 152, 219, 0.3)"
-                  stroke="#3498db"
+                  stroke="var(--color-info)"
                   strokeWidth={1.5}
                   strokeDasharray="4 2"
                   rx={3}

@@ -33,8 +33,9 @@ function highlightStroke(
   type: RelationType | null | undefined,
 ): { stroke: string; strokeWidth: number } | null {
   if (!type) return null;
-  if (type === "parent" || type === "child") return { stroke: "#8957e5", strokeWidth: 2 };
-  return { stroke: "#e74c3c", strokeWidth: 2 };
+  if (type === "parent" || type === "child")
+    return { stroke: "var(--color-complete)", strokeWidth: 2 };
+  return { stroke: "var(--color-danger)", strokeWidth: 2 };
 }
 
 export function GanttBar({
@@ -69,15 +70,22 @@ export function GanttBar({
   const atRisk = !overdue && isAtRisk(task, atRiskThresholdDays);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
-  const scheduleStroke = overdue ? "#e74c3c" : atRisk ? "#f39c12" : color;
-  const backgroundFill = overdue ? "#fdecea" : atRisk ? "#fff4db" : color;
+  const dangerColor = "var(--color-danger)";
+  const warningColor = "var(--color-warning)";
+  const completeColor = "var(--color-complete)";
+  const scheduleStroke = overdue ? dangerColor : atRisk ? warningColor : color;
+  const backgroundFill = overdue
+    ? "var(--color-danger-bg)"
+    : atRisk
+      ? "var(--color-warning-bg)"
+      : color;
   const backgroundOpacity = overdue || atRisk ? 1 : 0.27;
   const progressFill = overdue
-    ? "#e74c3c"
+    ? dangerColor
     : atRisk
-      ? "#f39c12"
+      ? warningColor
       : progress === 100
-        ? "#8957e5"
+        ? completeColor
         : color;
 
   const priority = priorityFieldName
@@ -104,7 +112,7 @@ export function GanttBar({
         rx={3}
         fill={backgroundFill}
         fillOpacity={backgroundOpacity}
-        stroke={isSelected ? "#333" : hl ? hl.stroke : scheduleStroke}
+        stroke={isSelected ? "var(--color-text)" : hl ? hl.stroke : scheduleStroke}
         strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
         strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}
       />
@@ -159,12 +167,12 @@ export function GanttBar({
               x={x1 + 6}
               y={barY + barHeight / 2 + 4}
               fontSize={10}
-              fill="#333"
+              fill="var(--color-text)"
               style={{ pointerEvents: "none" }}
             >
               {label}
               {assigneeText && (
-                <tspan fontSize={9} fill="#888">
+                <tspan fontSize={9} fill="var(--color-text-muted)">
                   {" "}
                   {assigneeText}
                 </tspan>
@@ -181,12 +189,12 @@ export function GanttBar({
             x={x1 + width + 4}
             y={barY + barHeight / 2 + 4}
             fontSize={10}
-            fill="#666"
+            fill="var(--color-text-secondary)"
             style={{ pointerEvents: "none" }}
           >
             {outsideLabel}
             {assigneeText && (
-              <tspan fontSize={9} fill="#888">
+              <tspan fontSize={9} fill="var(--color-text-muted)">
                 {" "}
                 {assigneeText}
               </tspan>

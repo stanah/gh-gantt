@@ -45,7 +45,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
   return (
     <>
       {text.slice(0, idx)}
-      <mark style={{ background: "#fef08a", padding: 0, borderRadius: 2 }}>
+      <mark style={{ background: "var(--color-highlight-search)", padding: 0, borderRadius: 2 }}>
         {text.slice(idx, idx + query.length)}
       </mark>
       {text.slice(idx + query.length)}
@@ -120,11 +120,15 @@ export function TaskRow({
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isParentRelation = highlightType === "parent" || highlightType === "child";
-  const highlightBg = isBlockRelation ? "#fef2f2" : isParentRelation ? "#f5f0ff" : undefined;
-  const highlightBorder = isBlockRelation
-    ? "3px solid #e74c3c"
+  const highlightBg = isBlockRelation
+    ? "var(--color-drop-invalid-bg)"
     : isParentRelation
-      ? "3px solid #8957e5"
+      ? "var(--color-complete-bg)"
+      : undefined;
+  const highlightBorder = isBlockRelation
+    ? "3px solid var(--color-danger)"
+    : isParentRelation
+      ? "3px solid var(--color-complete)"
       : undefined;
 
   const dropActive = dropIndicator?.targetTaskId === task.id;
@@ -133,21 +137,24 @@ export function TaskRow({
   const isDependencyDrop = dropActive && dropIndicator.mode === "dependency";
   const dropBorderLeft = dropValid
     ? isDependencyDrop
-      ? "2px solid #e67e22"
-      : "2px solid #4285f4"
+      ? "2px solid var(--color-drop-dependency-border)"
+      : "2px solid var(--color-drop-reparent-border)"
     : dropInvalid
-      ? "2px dashed #e74c3c"
+      ? "2px dashed var(--color-danger)"
       : highlightBorder;
   const dropBg = dropValid
     ? isDependencyDrop
-      ? "#fef3e2"
-      : "#e8f0fe"
+      ? "var(--color-drop-dependency-bg)"
+      : "var(--color-drop-reparent-bg)"
     : dropInvalid
-      ? "#fef2f2"
+      ? "var(--color-drop-invalid-bg)"
       : undefined;
 
   const bg =
-    dropBg ?? (isSelected ? "#e8f0fe" : (highlightBg ?? (isHovered ? "#f5f8ff" : "transparent")));
+    dropBg ??
+    (isSelected
+      ? "var(--color-selected-bg)"
+      : (highlightBg ?? (isHovered ? "var(--color-hover-bg)" : "transparent")));
 
   return (
     <div
@@ -173,7 +180,7 @@ export function TaskRow({
         paddingLeft: dropBorderLeft ? 5 + indent : 8 + indent,
         cursor: isDraggable ? "grab" : "pointer",
         background: bg,
-        borderBottom: "1px solid #f0f0f0",
+        borderBottom: "1px solid var(--color-border-light)",
         borderLeft: dropBorderLeft,
         height: 28,
         minWidth: 0,
@@ -190,7 +197,7 @@ export function TaskRow({
             width: 16,
             textAlign: "center",
             fontSize: 10,
-            color: "#888",
+            color: "var(--color-text-muted)",
             flexShrink: 0,
             cursor: "pointer",
           }}
@@ -214,7 +221,14 @@ export function TaskRow({
       )}
 
       {showIssueId && (
-        <span style={{ fontSize: 10, color: "#888", flexShrink: 0, fontFamily: "monospace" }}>
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--color-text-muted)",
+            flexShrink: 0,
+            fontFamily: "monospace",
+          }}
+        >
           {formatIssueId(task.id)}
         </span>
       )}
@@ -232,7 +246,14 @@ export function TaskRow({
       </span>
 
       {!isMilestone && showAssignees && task.assignees.length > 0 && (
-        <span style={{ fontSize: 10, color: "#666", flexShrink: 0, whiteSpace: "nowrap" }}>
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--color-text-secondary)",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+          }}
+        >
           {task.assignees.length <= 2
             ? task.assignees.map((a) => `@${a}`).join(" ")
             : `@${task.assignees[0]} @${task.assignees[1]} +${task.assignees.length - 2}`}
@@ -240,7 +261,14 @@ export function TaskRow({
       )}
 
       {isMilestone && task.date && (
-        <span style={{ fontSize: 10, color: "#888", flexShrink: 0, fontFamily: "monospace" }}>
+        <span
+          style={{
+            fontSize: 10,
+            color: "var(--color-text-muted)",
+            flexShrink: 0,
+            fontFamily: "monospace",
+          }}
+        >
           {task.date.slice(0, 10)}
         </span>
       )}
@@ -252,7 +280,7 @@ export function TaskRow({
             fontSize: 10,
             fontWeight: 600,
             color: "#fff",
-            background: "#e74c3c",
+            background: "var(--color-danger)",
             borderRadius: 10,
             padding: "1px 6px",
             flexShrink: 0,
@@ -268,8 +296,8 @@ export function TaskRow({
           style={{
             fontSize: 10,
             fontWeight: 600,
-            color: "#7a4b00",
-            background: "#ffe8bd",
+            color: "var(--color-atrisk-fg)",
+            background: "var(--color-atrisk-bg)",
             borderRadius: 10,
             padding: "1px 6px",
             flexShrink: 0,

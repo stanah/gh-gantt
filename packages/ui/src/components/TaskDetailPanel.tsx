@@ -85,8 +85,8 @@ export function TaskDetailPanel({
         width: 400,
         flexShrink: 0,
         height: "100%",
-        background: "#fff",
-        borderLeft: "1px solid #e0e0e0",
+        background: "var(--color-surface)",
+        borderLeft: "1px solid var(--color-border)",
         overflow: "auto",
       }}
     >
@@ -94,13 +94,13 @@ export function TaskDetailPanel({
       <div
         style={{
           padding: "12px 16px",
-          borderBottom: "1px solid #e0e0e0",
+          borderBottom: "1px solid var(--color-border)",
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: 11, color: "#888" }}>{task.id}</span>
+        <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{task.id}</span>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button
             onClick={copyTaskInfo}
@@ -111,10 +111,10 @@ export function TaskDetailPanel({
               cursor: "pointer",
               color:
                 copyFeedback === "success"
-                  ? "#27AE60"
+                  ? "var(--color-success)"
                   : copyFeedback === "error"
-                    ? "#E74C3C"
-                    : "#888",
+                    ? "var(--color-danger)"
+                    : "var(--color-text-muted)",
               padding: 4,
               display: "flex",
               alignItems: "center",
@@ -171,7 +171,7 @@ export function TaskDetailPanel({
               background: "none",
               fontSize: 18,
               cursor: "pointer",
-              color: "#888",
+              color: "var(--color-text-muted)",
             }}
           >
             x
@@ -202,7 +202,7 @@ export function TaskDetailPanel({
                 padding: 4,
                 fontSize: 16,
                 fontWeight: 600,
-                border: "1px solid #3498DB",
+                border: "1px solid var(--color-info)",
                 borderRadius: 4,
               }}
             />
@@ -223,14 +223,23 @@ export function TaskDetailPanel({
         {!isMilestone && (
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <ProgressBar progress={task._progress ?? 0} color={taskType?.color} />
-            <span style={{ fontSize: 11, color: "#888" }}>{task._progress ?? 0}%</span>
+            <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+              {task._progress ?? 0}%
+            </span>
           </div>
         )}
 
         {/* Status (tasks only) */}
         {!isMilestone && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Status
             </label>
             <select
@@ -243,7 +252,7 @@ export function TaskDetailPanel({
               style={{
                 padding: "4px 8px",
                 fontSize: 12,
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 4,
               }}
             >
@@ -266,7 +275,14 @@ export function TaskDetailPanel({
               typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
             return (
               <div>
-                <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+                <label
+                  style={{
+                    fontSize: 11,
+                    color: "var(--color-text-muted)",
+                    display: "block",
+                    marginBottom: 4,
+                  }}
+                >
                   Priority
                 </label>
                 <select
@@ -282,7 +298,7 @@ export function TaskDetailPanel({
                   style={{
                     padding: "4px 8px",
                     fontSize: 12,
-                    border: "1px solid #ccc",
+                    border: "1px solid var(--color-border)",
                     borderRadius: 4,
                   }}
                 >
@@ -298,7 +314,14 @@ export function TaskDetailPanel({
 
         {/* State */}
         <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+          <label
+            style={{
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
             State
           </label>
           <button
@@ -308,9 +331,10 @@ export function TaskDetailPanel({
               fontSize: 12,
               borderRadius: 4,
               cursor: "pointer",
-              border: `1px solid ${task.state === "open" ? "#27AE60" : "#888"}`,
-              background: task.state === "open" ? "#27AE6022" : "#88888822",
-              color: task.state === "open" ? "#27AE60" : "#888",
+              border: `1px solid ${task.state === "open" ? "var(--color-success)" : "var(--color-text-muted)"}`,
+              background:
+                task.state === "open" ? "var(--color-success-bg)" : "var(--color-border-light)",
+              color: task.state === "open" ? "var(--color-success)" : "var(--color-text-muted)",
             }}
           >
             {task.state === "open" ? "Open" : "Closed"}
@@ -320,7 +344,14 @@ export function TaskDetailPanel({
         {/* Dates */}
         {isMilestone ? (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Due Date
             </label>
             <input
@@ -330,7 +361,7 @@ export function TaskDetailPanel({
               style={{
                 padding: "4px 8px",
                 fontSize: 12,
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 4,
                 width: "100%",
               }}
@@ -339,7 +370,14 @@ export function TaskDetailPanel({
         ) : (
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
                 Start Date
               </label>
               <input
@@ -349,14 +387,21 @@ export function TaskDetailPanel({
                 style={{
                   padding: "4px 8px",
                   fontSize: 12,
-                  border: "1px solid #ccc",
+                  border: "1px solid var(--color-border)",
                   borderRadius: 4,
                   width: "100%",
                 }}
               />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
                 End Date
               </label>
               <input
@@ -366,7 +411,7 @@ export function TaskDetailPanel({
                 style={{
                   padding: "4px 8px",
                   fontSize: 12,
-                  border: "1px solid #ccc",
+                  border: "1px solid var(--color-border)",
                   borderRadius: 4,
                   width: "100%",
                 }}
@@ -378,7 +423,14 @@ export function TaskDetailPanel({
         {/* Type (tasks only) */}
         {!isMilestone && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Type
             </label>
             <select
@@ -387,7 +439,7 @@ export function TaskDetailPanel({
               style={{
                 padding: "4px 8px",
                 fontSize: 12,
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 4,
               }}
             >
@@ -405,7 +457,14 @@ export function TaskDetailPanel({
         {/* Assignees (tasks only) */}
         {!isMilestone && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Assignees
             </label>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -415,7 +474,7 @@ export function TaskDetailPanel({
                   style={{
                     padding: "2px 8px",
                     fontSize: 11,
-                    background: "#e8f0fe",
+                    background: "var(--color-selected-bg)",
                     borderRadius: 12,
                   }}
                 >
@@ -423,7 +482,7 @@ export function TaskDetailPanel({
                 </span>
               ))}
               {task.assignees.length === 0 && (
-                <span style={{ color: "#999", fontSize: 11 }}>None</span>
+                <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>None</span>
               )}
             </div>
           </div>
@@ -432,7 +491,14 @@ export function TaskDetailPanel({
         {/* Labels (tasks only) */}
         {!isMilestone && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Labels
             </label>
             <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
@@ -442,7 +508,7 @@ export function TaskDetailPanel({
                   style={{
                     padding: "2px 8px",
                     fontSize: 11,
-                    background: "#f0f0f0",
+                    background: "var(--color-border-light)",
                     borderRadius: 3,
                   }}
                 >
@@ -450,7 +516,7 @@ export function TaskDetailPanel({
                 </span>
               ))}
               {task.labels.length === 0 && (
-                <span style={{ color: "#999", fontSize: 11 }}>None</span>
+                <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>None</span>
               )}
             </div>
           </div>
@@ -458,7 +524,14 @@ export function TaskDetailPanel({
 
         {/* Body */}
         <div>
-          <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+          <label
+            style={{
+              fontSize: 11,
+              color: "var(--color-text-muted)",
+              display: "block",
+              marginBottom: 4,
+            }}
+          >
             Description
           </label>
           <MarkdownEditor
@@ -471,7 +544,14 @@ export function TaskDetailPanel({
         {/* Sub-tasks */}
         {task.sub_tasks.length > 0 && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Sub-tasks ({task.sub_tasks.length})
             </label>
             {task.sub_tasks.map((id) => (
@@ -485,7 +565,14 @@ export function TaskDetailPanel({
         {/* Blocked by */}
         {task.blocked_by.length > 0 && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Blocked by
             </label>
             {task.blocked_by.map((dep, i) => (
@@ -499,7 +586,14 @@ export function TaskDetailPanel({
         {/* Linked PRs */}
         {task.linked_prs.length > 0 && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Linked PRs
             </label>
             {task.linked_prs.map((pr) => (
@@ -513,15 +607,27 @@ export function TaskDetailPanel({
         {/* Comments */}
         {comments.length > 0 && (
           <div>
-            <label style={{ fontSize: 11, color: "#888", display: "block", marginBottom: 4 }}>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
               Comments ({comments.length})
             </label>
             {comments.map((c, i) => (
               <div
                 key={i}
-                style={{ padding: 8, background: "#fafafa", borderRadius: 4, marginBottom: 4 }}
+                style={{
+                  padding: 8,
+                  background: "var(--color-bg)",
+                  borderRadius: 4,
+                  marginBottom: 4,
+                }}
               >
-                <div style={{ fontSize: 11, color: "#888", marginBottom: 4 }}>
+                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
                   <strong>{c.author}</strong> - {new Date(c.created_at).toLocaleString()}
                 </div>
                 <MarkdownRenderer markdown={c.body} />
@@ -537,7 +643,7 @@ export function TaskDetailPanel({
               href={githubUrl}
               target="_blank"
               rel="noopener noreferrer"
-              style={{ fontSize: 12, color: "#3498DB" }}
+              style={{ fontSize: 12, color: "var(--color-info)" }}
             >
               View on GitHub
             </a>

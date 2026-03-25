@@ -66,8 +66,8 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
           key={`${keyPrefix}-code-${tokenIndex}`}
           style={{
             fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-            background: "#f2f4f8",
-            border: "1px solid #e2e8f0",
+            background: "var(--color-bg)",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
             padding: "0 4px",
             fontSize: "0.92em",
@@ -86,7 +86,7 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
             href={href}
             target="_blank"
             rel="noreferrer noopener"
-            style={{ color: "#2563eb", textDecoration: "underline" }}
+            style={{ color: "var(--color-primary)", textDecoration: "underline" }}
           >
             {match[2]}
           </a>,
@@ -207,7 +207,7 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
   const normalized = markdown.replace(/\r\n/g, "\n").trim();
   if (!normalized) {
     return (
-      <div className={className} style={{ color: "#94a3b8", fontSize: 12 }}>
+      <div className={className} style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
         No description
       </div>
     );
@@ -268,8 +268,8 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
                     key={`h-${idx}`}
                     style={{
                       textAlign: "left",
-                      border: "1px solid #e2e8f0",
-                      background: "#f8fafc",
+                      border: "1px solid var(--color-border)",
+                      background: "var(--color-bg)",
                       padding: "6px 8px",
                     }}
                   >
@@ -284,7 +284,7 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
                   {row.map((cell, colIdx) => (
                     <td
                       key={`c-${rowIdx}-${colIdx}`}
-                      style={{ border: "1px solid #e2e8f0", padding: "6px 8px" }}
+                      style={{ border: "1px solid var(--color-border)", padding: "6px 8px" }}
                     >
                       {renderInline(cell, `td-${blockKey}-${rowIdx}-${colIdx}`)}
                     </td>
@@ -326,9 +326,9 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
           style={{
             margin: "8px 0",
             padding: "6px 12px",
-            borderLeft: "3px solid #94a3b8",
-            color: "#334155",
-            background: "#f8fafc",
+            borderLeft: "3px solid var(--color-text-muted)",
+            color: "var(--color-text-secondary)",
+            background: "var(--color-bg)",
           }}
         >
           {quoteLines.map((qLine, qIdx) => (
@@ -388,7 +388,10 @@ export function MarkdownRenderer({ markdown, className }: MarkdownRendererProps)
   }
 
   return (
-    <div className={className} style={{ fontSize: 12, color: "#0f172a", lineHeight: 1.6 }}>
+    <div
+      className={className}
+      style={{ fontSize: 12, color: "var(--color-text)", lineHeight: 1.6 }}
+    >
       {nodes}
     </div>
   );

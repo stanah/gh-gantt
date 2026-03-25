@@ -6,13 +6,13 @@ interface ProgressBarProps {
 }
 
 export function ProgressBar({ progress, color }: ProgressBarProps) {
-  const fillColor = color ?? (progress === 100 ? "#8957e5" : "#3fb950");
+  const fillColor = color ?? (progress === 100 ? "var(--color-complete)" : "var(--color-success)");
   return (
     <div
       style={{
         width: 60,
         height: 6,
-        background: "#e0e0e0",
+        background: "var(--color-border)",
         borderRadius: 3,
         overflow: "hidden",
         flexShrink: 0,

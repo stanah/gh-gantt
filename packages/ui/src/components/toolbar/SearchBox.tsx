@@ -12,7 +12,12 @@ export function SearchBox({ searchQuery, onSearchChange, searchInputRef }: Searc
     <div style={{ position: "relative", display: "flex", alignItems: "center" }}>
       <Search
         size={12}
-        style={{ position: "absolute", left: 6, color: "#999", pointerEvents: "none" }}
+        style={{
+          position: "absolute",
+          left: 6,
+          color: "var(--color-text-muted)",
+          pointerEvents: "none",
+        }}
       />
       <input
         ref={searchInputRef}
@@ -23,12 +28,12 @@ export function SearchBox({ searchQuery, onSearchChange, searchInputRef }: Searc
         aria-label="Search tasks"
         style={{
           padding: "3px 24px 3px 22px",
-          border: "1px solid #ddd",
+          border: "1px solid var(--color-border)",
           borderRadius: 3,
           fontSize: 11,
           width: 140,
           outline: "none",
-          background: "#f8f8f8",
+          background: "var(--color-bg)",
         }}
       />
       {searchQuery && (
@@ -45,7 +50,7 @@ export function SearchBox({ searchQuery, onSearchChange, searchInputRef }: Searc
             border: "none",
             cursor: "pointer",
             fontSize: 12,
-            color: "#888",
+            color: "var(--color-text-muted)",
             padding: "0 4px",
             lineHeight: 1,
           }}
