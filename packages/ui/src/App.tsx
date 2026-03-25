@@ -123,6 +123,9 @@ export function App() {
     allAssignees,
     selectedPriorities,
     setSelectedPriorities,
+    allLabels,
+    selectedLabels,
+    setSelectedLabels,
     searchQuery,
     setSearchQuery,
   } = useTaskFilter(tasks);
@@ -141,6 +144,7 @@ export function App() {
     selectedAssignees,
     selectedPriorities,
     priorityFieldName: priorityFieldName ?? undefined,
+    selectedLabels,
     searchQuery,
   });
 
@@ -556,6 +560,9 @@ export function App() {
               onSelectPriorities: setSelectedPriorities,
             }
           : {})}
+        allLabels={allLabels}
+        selectedLabels={selectedLabels}
+        onSelectLabels={setSelectedLabels}
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         searchInputRef={searchInputRef}

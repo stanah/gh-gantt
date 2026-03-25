@@ -1,7 +1,6 @@
 import { useState, useMemo, useCallback } from "react";
 import type { Task } from "../types/index.js";
-import { UNASSIGNED } from "./useTaskFilter.js";
-import { NO_PRIORITY } from "./useTaskFilter.js";
+import { UNASSIGNED, NO_PRIORITY, NO_LABEL } from "./useTaskFilter.js";
 
 export interface TreeNode {
   task: Task;
@@ -19,6 +18,7 @@ export interface TaskFilterOptions {
   selectedAssignees?: string[];
   selectedPriorities?: string[];
   priorityFieldName?: string;
+  selectedLabels?: string[];
   searchQuery?: string;
 }
 
@@ -68,6 +68,7 @@ export function useTaskTree(
     selectedAssignees = [],
     selectedPriorities = [],
     priorityFieldName,
+    selectedLabels = [],
     searchQuery = "",
   } = filterOptions;
 
@@ -168,9 +169,46 @@ export function useTaskTree(
       return keep;
     };
 
-    const filtered = hasAssigneeFilter
+    const afterAssignee = hasAssigneeFilter
       ? prefiltered.filter((t) => keepTaskById(t.id, new Set()))
       : prefiltered;
+
+    // --- Label filter ---
+    const hasLabelFilter = selectedLabels.length > 0;
+    const labelSet = new Set(selectedLabels);
+    const includeNoLabel = labelSet.has(NO_LABEL);
+    const selectedLabelNames = new Set([...labelSet].filter((v) => v !== NO_LABEL));
+
+    const matchesLabelOwn = (task: Task): boolean => {
+      if (!hasLabelFilter) return true;
+      if (includeNoLabel && task.labels.length === 0) return true;
+      return task.labels.some((l) => selectedLabelNames.has(l));
+    };
+
+    const afterAssigneeMap = new Map(afterAssignee.map((t) => [t.id, t]));
+    const labelKeepMemo = new Map<string, boolean>();
+    const keepByLabel = (taskId: string, path: Set<string>): boolean => {
+      if (labelKeepMemo.has(taskId)) return labelKeepMemo.get(taskId)!;
+      const task = afterAssigneeMap.get(taskId);
+      if (!task) return false;
+      if (path.has(taskId)) return false;
+      path.add(taskId);
+
+      const childIds = task.sub_tasks.filter((id) => afterAssigneeMap.has(id));
+      const hasMatchedDescendant = childIds.some((id) => keepByLabel(id, path));
+      path.delete(taskId);
+      const isContainer = CONTAINER_TYPES.has(task.type) || childIds.length > 0;
+      const keep = isContainer
+        ? matchesLabelOwn(task) || hasMatchedDescendant
+        : matchesLabelOwn(task);
+
+      labelKeepMemo.set(taskId, keep);
+      return keep;
+    };
+
+    const filtered = hasLabelFilter
+      ? afterAssignee.filter((t) => keepByLabel(t.id, new Set()))
+      : afterAssignee;
 
     const scheduledTasks = filtered.filter((t) => !isBacklog(t));
     const backlogTasks = filtered.filter((t) => isBacklog(t));
@@ -208,6 +246,7 @@ export function useTaskTree(
     selectedAssignees,
     selectedPriorities,
     priorityFieldName,
+    selectedLabels,
     searchQuery,
   ]);
 
