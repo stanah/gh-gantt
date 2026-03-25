@@ -7,14 +7,14 @@
 ### 1. 着手可能なタスクの絞り込み
 
 ```bash
-gh-gantt task list --state open --unblocked --sort end_date
+gh-gantt list --state open --unblocked --sort end_date
 ```
 
 ブロッカーが解消済みで期限が近い順にタスクを表示する。
 
 ### 2. 候補タスクの詳細確認
 
-上位の候補について `gh-gantt task show <id>` で body・blocked_by・priority を確認する。
+上位の候補について `gh-gantt show <id>` で body・blocked_by・priority を確認する。
 
 ### 3. 提案の優先度
 

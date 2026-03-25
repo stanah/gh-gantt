@@ -19,7 +19,7 @@ gh-gantt はこれらを解決する CLI ツール。GitHub Projects (V2) と双
 **gh-gantt 自身も gh-gantt でタスク管理している（セルフホスティング）。**
 gh-gantt CLI は開発対象であると同時に、このプロジェクトの作業ツールでもある。
 
-- **何をすべきか知る** → `gh-gantt task list`, `gh-gantt status`
+- **何をすべきか知る** → `gh-gantt list`, `gh-gantt status`
 - **作業を始める** → `gh-gantt pull` で最新取得、Issue 確認
 - **作業が終わる** → `gh-gantt push` で GitHub に反映
 

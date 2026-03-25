@@ -320,6 +320,12 @@ describe("sortTasks", () => {
 describe("applyTaskUpdate", () => {
   const config = makeConfig();
 
+  it("rejects update with no fields specified", () => {
+    const task = makeTask();
+    const result = applyTaskUpdate(task, {}, config);
+    expect(result.error).toContain("at least one");
+  });
+
   it("updates title", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { title: "New title" }, config);
@@ -702,8 +708,9 @@ describe("addDependency", () => {
   it("adds a blocking dependency", () => {
     const task = makeTask();
     const result = addDependency(task, "owner/repo#2");
-    expect(result.blocked_by).toHaveLength(1);
-    expect(result.blocked_by[0]).toEqual({
+    expect(result.error).toBeUndefined();
+    expect(result.task.blocked_by).toHaveLength(1);
+    expect(result.task.blocked_by[0]).toEqual({
       task: "owner/repo#2",
       type: "finish-to-start",
       lag: 0,
@@ -715,7 +722,14 @@ describe("addDependency", () => {
       blocked_by: [{ task: "owner/repo#2", type: "finish-to-start", lag: 0 }],
     });
     const result = addDependency(task, "owner/repo#2");
-    expect(result.blocked_by).toHaveLength(1);
+    expect(result.task.blocked_by).toHaveLength(1);
+  });
+
+  it("rejects self-reference dependency", () => {
+    const task = makeTask({ id: "owner/repo#1" });
+    const result = addDependency(task, "owner/repo#1");
+    expect(result.error).toContain("cannot be blocked by itself");
+    expect(result.task.blocked_by).toHaveLength(0);
   });
 });
 
@@ -728,26 +742,39 @@ describe("removeDependency", () => {
       ],
     });
     const result = removeDependency(task, "owner/repo#2");
-    expect(result.blocked_by).toHaveLength(1);
-    expect(result.blocked_by[0].task).toBe("owner/repo#3");
+    expect(result.task.blocked_by).toHaveLength(1);
+    expect(result.task.blocked_by[0].task).toBe("owner/repo#3");
   });
 
   it("handles removing non-existent dependency", () => {
     const task = makeTask();
     const result = removeDependency(task, "owner/repo#99");
-    expect(result.blocked_by).toHaveLength(0);
+    expect(result.task.blocked_by).toHaveLength(0);
   });
 });
 
 describe("setParent", () => {
+  it("rejects self-reference parent", () => {
+    const tasks = [makeTask({ id: "owner/repo#1" })];
+    const result = setParent(tasks, "owner/repo#1", "owner/repo#1");
+    expect(result.error).toContain("cannot be its own parent");
+  });
+
+  it("rejects non-existent parent", () => {
+    const tasks = [makeTask({ id: "owner/repo#1" })];
+    const result = setParent(tasks, "owner/repo#1", "owner/repo#99");
+    expect(result.error).toContain("not found");
+  });
+
   it("sets parent and updates sub_tasks", () => {
     const tasks = [
       makeTask({ id: "owner/repo#1" }),
       makeTask({ id: "owner/repo#2", sub_tasks: [] }),
     ];
     const result = setParent(tasks, "owner/repo#1", "owner/repo#2");
-    const child = result.find((t) => t.id === "owner/repo#1")!;
-    const parent = result.find((t) => t.id === "owner/repo#2")!;
+    expect(result.error).toBeUndefined();
+    const child = result.tasks!.find((t) => t.id === "owner/repo#1")!;
+    const parent = result.tasks!.find((t) => t.id === "owner/repo#2")!;
     expect(child.parent).toBe("owner/repo#2");
     expect(parent.sub_tasks).toContain("owner/repo#1");
   });
@@ -759,9 +786,10 @@ describe("setParent", () => {
       makeTask({ id: "owner/repo#3", sub_tasks: [] }),
     ];
     const result = setParent(tasks, "owner/repo#1", "owner/repo#3");
-    const oldParent = result.find((t) => t.id === "owner/repo#2")!;
-    const newParent = result.find((t) => t.id === "owner/repo#3")!;
-    const child = result.find((t) => t.id === "owner/repo#1")!;
+    expect(result.error).toBeUndefined();
+    const oldParent = result.tasks!.find((t) => t.id === "owner/repo#2")!;
+    const newParent = result.tasks!.find((t) => t.id === "owner/repo#3")!;
+    const child = result.tasks!.find((t) => t.id === "owner/repo#1")!;
     expect(oldParent.sub_tasks).not.toContain("owner/repo#1");
     expect(newParent.sub_tasks).toContain("owner/repo#1");
     expect(child.parent).toBe("owner/repo#3");
@@ -787,3 +815,5 @@ describe("removeParent", () => {
     expect(result.find((t) => t.id === "owner/repo#1")!.parent).toBeNull();
   });
 });
+
+// removeParent は返り値変更なし（Task[] のまま）— バリデーション不要のため

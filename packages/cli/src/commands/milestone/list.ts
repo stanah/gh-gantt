@@ -1,10 +1,6 @@
-import { Command } from "commander";
-import Table from "cli-table3";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
 import type { Task } from "@gh-gantt/shared";
 
-interface MilestoneInfo {
+export interface MilestoneInfo {
   name: string;
   taskId: string | null;
   dueDate: string | null;
@@ -12,7 +8,7 @@ interface MilestoneInfo {
   taskCount: number;
 }
 
-function collectMilestones(tasks: Task[]): MilestoneInfo[] {
+export function collectMilestones(tasks: Task[]): MilestoneInfo[] {
   const milestoneMap = new Map<string, MilestoneInfo>();
 
   // Collect milestone-type tasks (synthetic milestones from GitHub)
@@ -51,57 +47,3 @@ function collectMilestones(tasks: Task[]): MilestoneInfo[] {
 
   return Array.from(milestoneMap.values());
 }
-
-export const milestoneListCommand = new Command("list")
-  .description("List milestones")
-  .option("--json", "Output as JSON")
-  .action(async (opts) => {
-    const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-
-    await configStore.read(); // validate config exists
-    const tasksFile = await tasksStore.read();
-
-    const milestones = collectMilestones(tasksFile.tasks);
-
-    if (opts.json) {
-      console.log(JSON.stringify({ milestones }, null, 2));
-      return;
-    }
-
-    if (milestones.length === 0) {
-      console.log("No milestones found.");
-      return;
-    }
-
-    const table = new Table({
-      head: ["Name", "Due Date", "State", "Tasks"],
-      style: { head: [], border: [], compact: true },
-      chars: {
-        top: "",
-        "top-mid": "",
-        "top-left": "",
-        "top-right": "",
-        bottom: "",
-        "bottom-mid": "",
-        "bottom-left": "",
-        "bottom-right": "",
-        left: "",
-        "left-mid": "",
-        mid: "",
-        "mid-mid": "",
-        right: "",
-        "right-mid": "",
-        middle: "  ",
-      },
-    });
-
-    for (const m of milestones) {
-      table.push([m.name, m.dueDate ?? "-", m.state ?? "-", String(m.taskCount)]);
-    }
-
-    console.log(table.toString());
-  });
-
-export { collectMilestones };

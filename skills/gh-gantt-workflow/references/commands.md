@@ -10,12 +10,10 @@
 - [resolve](#resolve)
 - [create](#create)
 - [serve](#serve)
-- [task list](#task-list)
-- [task show](#task-show)
-- [task update](#task-update)
-- [task link](#task-link)
-- [milestone list](#milestone-list)
-- [milestone create](#milestone-create)
+- [list](#list)
+- [show](#show)
+- [update](#update)
+- [link（依存関係/親子関係）](#link)
 
 ---
 
@@ -155,12 +153,12 @@ gh-gantt serve [-p <port>] [--api-only]
 
 ---
 
-## task list
+## list
 
 タスク一覧を表示する。
 
 ```bash
-gh-gantt task list [options]
+gh-gantt list [options]
 ```
 
 **オプション:**
@@ -180,22 +178,22 @@ gh-gantt task list [options]
 
 ---
 
-## task show
+## show
 
-タスクの詳細を表示する。body、parent、blocked_by、sub_tasks 等の情報は `task list` のデフォルト表示には含まれないが、このコマンドや `task list --json` で確認できる。
+タスクの詳細を表示する。body、parent、blocked_by、sub_tasks 等の情報は `list` のデフォルト表示には含まれないが、このコマンドや `list --json` で確認できる。
 
 ```bash
-gh-gantt task show <id> [--json]
+gh-gantt show <id> [--json]
 ```
 
 ---
 
-## task update
+## update
 
 タスクのフィールドを更新する。
 
 ```bash
-gh-gantt task update <id> [options]
+gh-gantt update [id] [options]
 ```
 
 **オプション:**
@@ -215,41 +213,21 @@ gh-gantt task update <id> [options]
 **バルク更新（フィルタ指定で複数タスクを一括更新）:**
 
 ```bash
-gh-gantt task update --filter-state open --milestone v1.0
-gh-gantt task update --filter-type task --filter-label bug --state closed
+gh-gantt update --filter-state open --milestone v1.0
+gh-gantt update --filter-type task --filter-label bug --state closed
 ```
 
 フィルタオプション: `--filter-state`, `--filter-type`, `--filter-milestone`, `--filter-label`
 
 ---
 
-## task link
+## link
 
 タスクの依存関係と親子関係を管理する。
 
 ```bash
-gh-gantt task link <id> [--blocked-by <id>] [--unblock <id>] \
+gh-gantt link <id> [--blocked-by <id>] [--unblock <id>] \
   [--set-parent <id>] [--remove-parent] [--json]
-```
-
----
-
-## milestone list
-
-マイルストーン一覧を表示する。
-
-```bash
-gh-gantt milestone list [--json]
-```
-
----
-
-## milestone create
-
-マイルストーンを作成する。`push` で GitHub Milestone として作成される。
-
-```bash
-gh-gantt milestone create "<name>" [--due-date <YYYY-MM-DD>] [--description "<text>"]
 ```
 
 ---
@@ -294,7 +272,7 @@ gh-gantt はタスクの種類（epic, task, feature 等）を `gantt.config.jso
 
 ### 使用可能なタイプ
 
-`create` や `task update --type` で指定できるタイプは config に定義されたもののみ。
+`create` や `update --type` で指定できるタイプは config に定義されたもののみ。
 新しいタイプが必要な場合は `gantt.config.json` の `task_types` に追加する。
 
 ---

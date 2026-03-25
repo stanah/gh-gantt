@@ -27,7 +27,7 @@
 
 ### 2. 各タスクの詳細確認
 
-オープンタスクについて `gh-gantt task show <id>` で parent, body, sub_tasks を確認する。
+オープンタスクについて `gh-gantt show <id>` で parent, body, sub_tasks を確認する。
 件数が多い場合は `--type` 等で絞り込む。
 
 ### 3. 結果提示
