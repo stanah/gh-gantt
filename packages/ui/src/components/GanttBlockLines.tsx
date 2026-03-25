@@ -58,6 +58,7 @@ export function GanttBlockLines({
       width={totalWidth}
       height={totalHeight}
       style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none" }}
+      aria-hidden="true"
     >
       <defs>
         <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">

@@ -101,7 +101,13 @@ export function GanttBar({
       : null;
 
   return (
-    <g onClick={onClick} style={{ cursor: "pointer" }} opacity={isDimmed ? 0.3 : 1}>
+    <g
+      role="graphics-symbol"
+      aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}, ${progress}%${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}`}
+      onClick={onClick}
+      style={{ cursor: "pointer" }}
+      opacity={isDimmed ? 0.3 : 1}
+    >
       {scheduleTooltip && <title>{scheduleTooltip}</title>}
       {/* Background */}
       <rect

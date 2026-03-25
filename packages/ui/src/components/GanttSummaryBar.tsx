@@ -47,7 +47,11 @@ export function GanttSummaryBar({
   const progress = task._progress ?? 0;
 
   return (
-    <g opacity={isDimmed ? 0.3 : 1}>
+    <g
+      role="graphics-symbol"
+      aria-label={`${taskType?.label ?? task.type}: ${task.title}, from ${dates.start} to ${dates.end}, ${progress}%`}
+      opacity={isDimmed ? 0.3 : 1}
+    >
       {/* Summary bar (thin bracket style) */}
       <rect x={x1} y={barY} width={width} height={6} fill={color} opacity={0.6} rx={1} />
       {/* Progress overlay */}
