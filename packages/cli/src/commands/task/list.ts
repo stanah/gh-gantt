@@ -5,6 +5,12 @@ import { TasksStore } from "../../store/tasks.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Config, Task } from "@gh-gantt/shared";
 
+const RESERVED_TYPES = new Set(["milestone", "milestone_type"]);
+
+function isReservedType(type: string): boolean {
+  return RESERVED_TYPES.has(type);
+}
+
 export interface TaskFilterOptions {
   backlog?: boolean;
   scheduled?: boolean;
@@ -217,7 +223,7 @@ export function createTaskListCommand(): Command {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
 
-      if (opts.type && !config.task_types[opts.type]) {
+      if (opts.type && !config.task_types[opts.type] && !isReservedType(opts.type)) {
         const typeKeys = Object.keys(config.task_types);
         console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
         process.exitCode = 1;
