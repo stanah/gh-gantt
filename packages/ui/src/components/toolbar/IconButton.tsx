@@ -12,10 +12,10 @@ interface IconButtonProps {
 
 const baseStyle: React.CSSProperties = {
   padding: "4px 6px",
-  border: "1px solid #ddd",
+  border: "1px solid var(--color-border)",
   borderRadius: 3,
-  background: "#fff",
-  color: "#555",
+  background: "var(--color-surface)",
+  color: "var(--color-text-secondary)",
   cursor: "pointer",
   fontSize: 11,
   display: "inline-flex",
@@ -28,9 +28,9 @@ const baseStyle: React.CSSProperties = {
 };
 
 const activeStyle: React.CSSProperties = {
-  background: "#e8f0fe",
-  color: "#1a73e8",
-  borderColor: "#c5d7f7",
+  background: "var(--color-selected-bg)",
+  color: "var(--color-selected-fg)",
+  borderColor: "var(--color-selected-border)",
 };
 
 const disabledStyle: React.CSSProperties = {
@@ -39,7 +39,7 @@ const disabledStyle: React.CSSProperties = {
 };
 
 const badgeStyle: React.CSSProperties = {
-  background: "#1a73e8",
+  background: "var(--color-selected-fg)",
   color: "#fff",
   borderRadius: 8,
   padding: "0 5px",

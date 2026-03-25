@@ -97,7 +97,16 @@ export function GanttGrid({
           const nextDay = new Date(day);
           nextDay.setDate(nextDay.getDate() + 1);
           const w = xScale(nextDay) - x;
-          return <rect key={i} x={x} y={0} width={w} height={totalHeight} fill="#f5f5f5" />;
+          return (
+            <rect
+              key={i}
+              x={x}
+              y={0}
+              width={w}
+              height={totalHeight}
+              fill="var(--color-border-light)"
+            />
+          );
         })}
 
       {/* Grid lines for months */}
@@ -105,7 +114,16 @@ export function GanttGrid({
         .filter((d) => d.getDate() === 1)
         .map((day, i) => {
           const x = xScale(day);
-          return <line key={`m${i}`} x1={x} y1={0} x2={x} y2={totalHeight} stroke="#e0e0e0" />;
+          return (
+            <line
+              key={`m${i}`}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={totalHeight}
+              stroke="var(--color-border)"
+            />
+          );
         })}
 
       {/* Sprint boundaries */}
@@ -146,7 +164,7 @@ export function GanttGrid({
           y1={0}
           x2={todayX}
           y2={totalHeight}
-          stroke="#E74C3C"
+          stroke="var(--color-danger)"
           strokeWidth={2}
           strokeDasharray="4 2"
         />

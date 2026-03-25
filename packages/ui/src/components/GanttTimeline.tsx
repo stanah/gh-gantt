@@ -98,9 +98,9 @@ export function GanttTimeline({
     <div
       style={{
         height: totalHeight,
-        borderBottom: "1px solid #e0e0e0",
+        borderBottom: "1px solid var(--color-border)",
         position: "relative",
-        background: "#fafafa",
+        background: "var(--color-bg)",
       }}
     >
       <svg width={totalWidth} height={totalHeight}>
@@ -121,7 +121,7 @@ export function GanttTimeline({
                 height={sprintRowHeight}
                 fill={sprint.color}
                 fillOpacity={isCurrent ? 0.34 : 0.18}
-                stroke={isCurrent ? sprint.color : "#cbd5e1"}
+                stroke={isCurrent ? sprint.color : "var(--color-border)"}
                 strokeWidth={isCurrent ? 1.5 : 1}
               />
               {labelVisible && (
@@ -129,7 +129,7 @@ export function GanttTimeline({
                   x={bandStart + 6}
                   y={13}
                   fontSize={10}
-                  fill={isCurrent ? "#0f172a" : "#334155"}
+                  fill={isCurrent ? "var(--color-text)" : "var(--color-text-secondary)"}
                 >
                   {sprint.name}
                 </text>
@@ -139,15 +139,27 @@ export function GanttTimeline({
         })}
 
         {sprintRowHeight > 0 && (
-          <line x1={0} y1={sprintRowHeight} x2={totalWidth} y2={sprintRowHeight} stroke="#e2e8f0" />
+          <line
+            x1={0}
+            y1={sprintRowHeight}
+            x2={totalWidth}
+            y2={sprintRowHeight}
+            stroke="var(--color-border)"
+          />
         )}
 
         {ticks.map((tick, i) => {
           const x = xScale(tick);
           return (
             <g key={i}>
-              <line x1={x} y1={tickOffsetY + 24} x2={x} y2={tickOffsetY + 32} stroke="#ccc" />
-              <text x={x + 4} y={tickOffsetY + 18} fontSize={10} fill="#666">
+              <line
+                x1={x}
+                y1={tickOffsetY + 24}
+                x2={x}
+                y2={tickOffsetY + 32}
+                stroke="var(--color-border)"
+              />
+              <text x={x + 4} y={tickOffsetY + 18} fontSize={10} fill="var(--color-text-secondary)">
                 {formatTick(tick)}
               </text>
             </g>

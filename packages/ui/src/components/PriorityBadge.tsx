@@ -4,10 +4,22 @@ export const PRIORITY_LEVELS = ["critical", "high", "medium", "low"] as const;
 export type PriorityLevel = (typeof PRIORITY_LEVELS)[number];
 
 const PRIORITY_COLORS: Record<PriorityLevel, { bg: string; fg: string; border: string }> = {
-  critical: { bg: "#fdecea", fg: "#c0392b", border: "#e74c3c44" },
-  high: { bg: "#fff4db", fg: "#d35400", border: "#f39c1244" },
-  medium: { bg: "#e8f4fd", fg: "#2471a3", border: "#3498db44" },
-  low: { bg: "#f0f0f0", fg: "#888", border: "#bbb4" },
+  critical: {
+    bg: "var(--color-danger-bg)",
+    fg: "var(--color-danger-dark)",
+    border: "rgba(231, 76, 60, 0.27)",
+  },
+  high: {
+    bg: "var(--color-warning-bg)",
+    fg: "var(--color-warning-dark)",
+    border: "rgba(243, 156, 18, 0.27)",
+  },
+  medium: { bg: "var(--color-info-bg)", fg: "#2471a3", border: "rgba(52, 152, 219, 0.27)" },
+  low: {
+    bg: "var(--color-priority-low-bg)",
+    fg: "var(--color-priority-low-fg)",
+    border: "var(--color-priority-low-border)",
+  },
 };
 
 interface PriorityBadgeProps {

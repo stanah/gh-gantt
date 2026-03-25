@@ -18,17 +18,18 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
   }, [value]);
 
   const previewNode = useMemo(() => {
-    if (!draft.trim()) return <span style={{ color: "#999" }}>No description</span>;
+    if (!draft.trim())
+      return <span style={{ color: "var(--color-text-muted)" }}>No description</span>;
     if (renderPreview) return renderPreview(draft);
     return <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{draft}</div>;
   }, [draft, renderPreview]);
 
   const tabButtonStyle = (active: boolean): React.CSSProperties => ({
     padding: "4px 10px",
-    border: "1px solid #ccc",
+    border: "1px solid var(--color-border)",
     borderRadius: 4,
-    background: active ? "#333" : "#fff",
-    color: active ? "#fff" : "#333",
+    background: active ? "var(--color-text)" : "var(--color-surface)",
+    color: active ? "var(--color-surface)" : "var(--color-text)",
     cursor: "pointer",
     fontSize: 11,
   });
@@ -64,7 +65,7 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
             padding: 8,
             fontSize: 12,
             fontFamily: "monospace",
-            border: "1px solid #ccc",
+            border: "1px solid var(--color-border)",
             borderRadius: 4,
             resize: "vertical",
           }}
@@ -74,9 +75,9 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
           style={{
             padding: 8,
             fontSize: 12,
-            background: "#fafafa",
+            background: "var(--color-bg)",
             borderRadius: 4,
-            border: "1px solid #eee",
+            border: "1px solid var(--color-border-light)",
             minHeight: 40,
           }}
         >
@@ -94,9 +95,9 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
           style={{
             padding: "4px 12px",
             fontSize: 11,
-            border: "1px solid #27AE60",
+            border: "1px solid var(--color-success)",
             borderRadius: 3,
-            background: dirty ? "#27AE60" : "#a7d9b8",
+            background: dirty ? "var(--color-success)" : "var(--color-success-bg)",
             color: "#fff",
             cursor: dirty ? "pointer" : "default",
           }}
@@ -112,9 +113,9 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
           style={{
             padding: "4px 12px",
             fontSize: 11,
-            border: "1px solid #ccc",
+            border: "1px solid var(--color-border)",
             borderRadius: 3,
-            background: "#fff",
+            background: "var(--color-surface)",
             cursor: dirty ? "pointer" : "default",
             opacity: dirty ? 1 : 0.6,
           }}

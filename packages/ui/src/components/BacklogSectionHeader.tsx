@@ -22,15 +22,15 @@ export function BacklogSectionHeader({
         gap: 8,
         padding: "3px 8px",
         cursor: "pointer",
-        background: "#f5f5f5",
-        borderTop: "1px solid #e0e0e0",
-        borderBottom: "1px solid #e0e0e0",
+        background: "var(--color-border-light)",
+        borderTop: "1px solid var(--color-border)",
+        borderBottom: "1px solid var(--color-border)",
         borderLeft: "none",
         borderRight: "none",
         height: 28,
         fontSize: 12,
         fontWeight: 600,
-        color: "#666",
+        color: "var(--color-text-secondary)",
         userSelect: "none",
         width: "100%",
         textAlign: "left",
@@ -40,7 +40,7 @@ export function BacklogSectionHeader({
         {isCollapsed ? "\u25B6" : "\u25BC"}
       </span>
       <span>Backlog</span>
-      <span style={{ color: "#999", fontWeight: 400 }}>({totalCount})</span>
+      <span style={{ color: "var(--color-text-muted)", fontWeight: 400 }}>({totalCount})</span>
     </button>
   );
 }

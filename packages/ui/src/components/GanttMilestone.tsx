@@ -36,8 +36,8 @@ export function GanttMilestone({
 
   const hlStroke = highlightType
     ? highlightType === "parent" || highlightType === "child"
-      ? "#8957e5"
-      : "#e74c3c"
+      ? "var(--color-complete)"
+      : "var(--color-danger)"
     : color;
 
   return (
@@ -53,7 +53,7 @@ export function GanttMilestone({
           x={x + size + 4}
           y={cy + 4}
           fontSize={9}
-          fill="#888"
+          fill="var(--color-text-muted)"
           style={{ pointerEvents: "none" }}
         >
           {formatIssueId(task.id)}

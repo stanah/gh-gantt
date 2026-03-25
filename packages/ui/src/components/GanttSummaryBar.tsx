@@ -40,8 +40,8 @@ export function GanttSummaryBar({
   const baseColor = taskType?.color ?? "#8E44AD";
   const color = highlightType
     ? highlightType === "parent" || highlightType === "child"
-      ? "#8957e5"
-      : "#e74c3c"
+      ? "var(--color-complete)"
+      : "var(--color-danger)"
     : baseColor;
   const barY = y + height / 2 - 3;
   const progress = task._progress ?? 0;
@@ -57,7 +57,13 @@ export function GanttSummaryBar({
       {/* Right bracket */}
       <rect x={x2 - 3} y={barY - 2} width={3} height={10} fill={color} />
       {showIssueId && (
-        <text x={x2 + 4} y={barY + 9} fontSize={9} fill="#888" style={{ pointerEvents: "none" }}>
+        <text
+          x={x2 + 4}
+          y={barY + 9}
+          fontSize={9}
+          fill="var(--color-text-muted)"
+          style={{ pointerEvents: "none" }}
+        >
           {formatIssueId(task.id)}
         </text>
       )}
