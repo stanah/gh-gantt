@@ -49,7 +49,7 @@ export function GanttSummaryBar({
   return (
     <g
       role="graphics-symbol"
-      aria-label={`${taskType?.label ?? task.type}: ${task.title}, ${dates.start} ~ ${dates.end}, ${progress}%`}
+      aria-label={`${taskType?.label ?? task.type}: ${task.title}, from ${dates.start} to ${dates.end}, ${progress}%`}
       opacity={isDimmed ? 0.3 : 1}
     >
       {/* Summary bar (thin bracket style) */}
