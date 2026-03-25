@@ -77,6 +77,8 @@ gh-gantt serve --api-only             # API server only
 
 ## Architecture
 
+![gh-gantt Architecture](gh-gantt.drawio.png)
+
 A pnpm workspaces monorepo with 3 packages:
 
 | Package            | Role                                                                       |
