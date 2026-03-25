@@ -42,12 +42,7 @@ function parsePrioritiesFromQuery(search: string): string[] {
 
 function parseLabelsFromQuery(search: string): string[] {
   const params = new URLSearchParams(search);
-  const raw = params.get(LABELS_QUERY_KEY);
-  if (!raw) return [];
-  return raw
-    .split(",")
-    .map((v) => v.trim())
-    .filter((v) => v.length > 0);
+  return params.getAll(LABELS_QUERY_KEY).filter((v) => v.length > 0);
 }
 
 export function useTaskFilter(tasks: Task[]) {
@@ -118,10 +113,9 @@ export function useTaskFilter(tasks: Task[]) {
     } else {
       url.searchParams.set(PRIORITIES_QUERY_KEY, selectedPriorities.join(","));
     }
-    if (selectedLabels.length === 0) {
-      url.searchParams.delete(LABELS_QUERY_KEY);
-    } else {
-      url.searchParams.set(LABELS_QUERY_KEY, selectedLabels.join(","));
+    url.searchParams.delete(LABELS_QUERY_KEY);
+    for (const label of selectedLabels) {
+      url.searchParams.append(LABELS_QUERY_KEY, label);
     }
     window.history.replaceState({}, "", url.toString());
   }, [selectedAssignees, selectedPriorities, selectedLabels]);
