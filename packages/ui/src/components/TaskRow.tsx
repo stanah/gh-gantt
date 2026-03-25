@@ -121,14 +121,14 @@ export function TaskRow({
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isParentRelation = highlightType === "parent" || highlightType === "child";
   const highlightBg = isBlockRelation
-    ? "var(--color-drop-invalid-bg)"
+    ? "var(--color-highlight-blocker-bg)"
     : isParentRelation
-      ? "var(--color-complete-bg)"
+      ? "var(--color-highlight-parent-bg)"
       : undefined;
   const highlightBorder = isBlockRelation
-    ? "3px solid var(--color-danger)"
+    ? "3px solid var(--color-highlight-blocker-border)"
     : isParentRelation
-      ? "3px solid var(--color-complete)"
+      ? "3px solid var(--color-highlight-parent-border)"
       : undefined;
 
   const dropActive = dropIndicator?.targetTaskId === task.id;

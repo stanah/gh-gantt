@@ -10,7 +10,7 @@ export function StatusBadge({ status, statusValues }: StatusBadgeProps) {
   if (!status) return null;
   const sv = statusValues[status];
   const isDone = sv?.done ?? false;
-  const color = isDone ? "var(--color-complete)" : "var(--color-success)";
+  const hex = isDone ? "#8957e5" : "#3fb950";
 
   return (
     <span
@@ -20,9 +20,9 @@ export function StatusBadge({ status, statusValues }: StatusBadgeProps) {
         borderRadius: 3,
         fontSize: 11,
         fontWeight: 500,
-        background: color + "22",
-        color: color,
-        border: `1px solid ${color}44`,
+        background: `${hex}22`,
+        color: hex,
+        border: `1px solid ${hex}44`,
       }}
     >
       {status}
