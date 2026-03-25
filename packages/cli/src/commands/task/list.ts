@@ -7,7 +7,7 @@ import type { Config, Task } from "@gh-gantt/shared";
 
 const RESERVED_TYPES = new Set(["milestone", "milestone_type"]);
 
-export function isReservedType(type: string): boolean {
+function isReservedType(type: string): boolean {
   return RESERVED_TYPES.has(type);
 }
 

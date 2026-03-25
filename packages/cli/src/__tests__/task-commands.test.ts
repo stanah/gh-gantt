@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterTasks, sortTasks, isReservedType } from "../commands/task/list.js";
+import { filterTasks, sortTasks } from "../commands/task/list.js";
 import { applyTaskUpdate, filterTasksForUpdate } from "../commands/task/update.js";
 import { collectMilestones } from "../commands/milestone/list.js";
 import { addDependency, removeDependency, setParent, removeParent } from "../commands/task/link.js";
@@ -818,30 +818,10 @@ describe("removeParent", () => {
 
 // removeParent は返り値変更なし（Task[] のまま）— バリデーション不要のため
 
-// --- isReservedType ---
-
-describe("isReservedType", () => {
-  it("recognizes 'milestone' as reserved", () => {
-    expect(isReservedType("milestone")).toBe(true);
-  });
-
-  it("recognizes 'milestone_type' as reserved", () => {
-    expect(isReservedType("milestone_type")).toBe(true);
-  });
-
-  it("does not treat 'task' as reserved", () => {
-    expect(isReservedType("task")).toBe(false);
-  });
-
-  it("does not treat 'epic' as reserved", () => {
-    expect(isReservedType("epic")).toBe(false);
-  });
-});
-
 // --- filterTasks with milestone type ---
 
 describe("filterTasks with milestone type", () => {
-  it("filters by milestone type even when not in config.task_types", () => {
+  it("filters tasks by milestone type", () => {
     const tasks = [
       makeTask({
         id: "milestone:owner/repo#1",
