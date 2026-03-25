@@ -6,14 +6,20 @@ describe("contrastTextColor", () => {
     expect(contrastTextColor("#ffffff")).toBe("#1E293B");
     expect(contrastTextColor("#fdecea")).toBe("#1E293B");
     expect(contrastTextColor("#fff4db")).toBe("#1E293B");
-    expect(contrastTextColor("#f39c12")).toBe("#1E293B"); // orange (lum 0.43)
+    expect(contrastTextColor("#f39c12")).toBe("#1E293B"); // orange
   });
 
-  it("returns white text for dark backgrounds", () => {
+  it("picks the candidate with higher contrast ratio", () => {
+    // #e74c3c (red): dark text wins by tiny margin (3.83 vs 3.82)
+    expect(contrastTextColor("#e74c3c")).toBe("#1E293B");
+    // #27AE60 (green): dark text wins (5.09 vs 2.87)
+    expect(contrastTextColor("#27AE60")).toBe("#1E293B");
+    // #8957e5 (purple): light text wins (4.61 vs 3.18)
+    expect(contrastTextColor("#8957e5")).toBe("#fff");
+  });
+
+  it("returns white text for very dark backgrounds", () => {
     expect(contrastTextColor("#000000")).toBe("#fff");
-    expect(contrastTextColor("#e74c3c")).toBe("#fff"); // red (lum 0.22)
-    expect(contrastTextColor("#8957e5")).toBe("#fff"); // purple (lum 0.18)
-    expect(contrastTextColor("#27AE60")).toBe("#fff"); // green (lum 0.32)
   });
 
   it("handles 3-digit hex", () => {

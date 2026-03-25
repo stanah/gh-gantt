@@ -32,14 +32,29 @@ function relativeLuminance(r: number, g: number, b: number): number {
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }
 
+/** WCAG 2.0 contrast ratio between two relative luminance values. */
+function contrastRatio(l1: number, l2: number): number {
+  const lighter = Math.max(l1, l2);
+  const darker = Math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+const LIGHT_TEXT = "#fff";
+const DARK_TEXT = "#1E293B";
+const LIGHT_LUM = 1.0;
+const DARK_LUM = relativeLuminance(0x1e, 0x29, 0x3b);
+
 /**
  * Determine whether text on a given background color should be light or dark.
- * Uses WCAG relative luminance with a threshold of 0.179.
+ * Computes WCAG contrast ratio against both candidate text colors and returns
+ * the one with the higher ratio.
  * Returns "#fff" for dark backgrounds, "#1E293B" for light backgrounds.
  */
 export function contrastTextColor(bgHex: string): string {
   const rgb = parseHex(bgHex);
-  if (!rgb) return "#1E293B";
-  const lum = relativeLuminance(rgb.r, rgb.g, rgb.b);
-  return lum > 0.36 ? "#1E293B" : "#fff";
+  if (!rgb) return DARK_TEXT;
+  const bgLum = relativeLuminance(rgb.r, rgb.g, rgb.b);
+  const lightRatio = contrastRatio(LIGHT_LUM, bgLum);
+  const darkRatio = contrastRatio(DARK_LUM, bgLum);
+  return lightRatio >= darkRatio ? LIGHT_TEXT : DARK_TEXT;
 }

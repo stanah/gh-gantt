@@ -204,7 +204,7 @@ export function GanttBar({
           >
             {outsideLabel}
             {assigneeText && (
-              <tspan fontSize={9} fill="#777">
+              <tspan fontSize={9} fill="#767676">
                 {" "}
                 {assigneeText}
               </tspan>
