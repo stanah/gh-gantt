@@ -120,18 +120,18 @@ export function TaskTreeBody({
 
   const isEmpty = flatList.length === 0 && backlogTotalCount === 0;
 
-  if (isEmpty && totalTaskCount === 0) {
-    return (
-      <div>
-        <NoTasksGuide />
-      </div>
-    );
-  }
-
   if (isEmpty && hasActiveFilters && onResetFilters) {
     return (
       <div>
         <FilterEmptyState onReset={onResetFilters} />
+      </div>
+    );
+  }
+
+  if (isEmpty && totalTaskCount === 0) {
+    return (
+      <div>
+        <NoTasksGuide />
       </div>
     );
   }

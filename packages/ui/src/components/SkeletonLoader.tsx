@@ -5,7 +5,19 @@ const shimmerKeyframes = `
   0% { background-position: -200px 0; }
   100% { background-position: calc(200px + 100%) 0; }
 }
+@media (prefers-reduced-motion: reduce) {
+  .gh-gantt-shimmer-bar { animation: none !important; }
+}
 `;
+
+let shimmerInjected = false;
+function ensureShimmerStyles() {
+  if (shimmerInjected) return;
+  const style = document.createElement("style");
+  style.textContent = shimmerKeyframes;
+  document.head.appendChild(style);
+  shimmerInjected = true;
+}
 
 function SkeletonBar({
   width,
@@ -18,6 +30,7 @@ function SkeletonBar({
 }) {
   return (
     <div
+      className="gh-gantt-shimmer-bar"
       style={{
         width,
         height,
@@ -79,91 +92,90 @@ export function SkeletonLoader() {
   const rowCount = 12;
   const rows = Array.from({ length: rowCount }, (_, i) => i);
 
+  ensureShimmerStyles();
+
   return (
-    <>
-      <style>{shimmerKeyframes}</style>
-      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        {/* Header skeleton */}
+    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+      {/* Header skeleton */}
+      <div
+        style={{
+          padding: "8px 16px",
+          borderBottom: "1px solid var(--color-border)",
+          background: "var(--color-surface)",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <SkeletonBar width={120} height={14} />
+        <SkeletonBar width={60} height={10} />
+      </div>
+
+      {/* Toolbar skeleton */}
+      <div
+        style={{
+          padding: "6px 12px",
+          borderBottom: "1px solid var(--color-border)",
+          background: "var(--color-surface)",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+        }}
+      >
+        <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
+        <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
+        <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
+        <div style={{ width: 16 }} />
+        <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
+        <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
+        <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
+      </div>
+
+      {/* Main content skeleton */}
+      <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+        {/* Left pane - Task tree */}
         <div
           style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--color-border)",
+            width: 350,
+            flexShrink: 0,
+            borderRight: "1px solid var(--color-border)",
             background: "var(--color-surface)",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
           }}
         >
-          <SkeletonBar width={120} height={14} />
-          <SkeletonBar width={60} height={10} />
-        </div>
-
-        {/* Toolbar skeleton */}
-        <div
-          style={{
-            padding: "6px 12px",
-            borderBottom: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-          }}
-        >
-          <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
-          <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
-          <SkeletonBar width={28} height={24} style={{ borderRadius: 4 }} />
-          <div style={{ width: 16 }} />
-          <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
-          <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
-          <SkeletonBar width={64} height={24} style={{ borderRadius: 4 }} />
-        </div>
-
-        {/* Main content skeleton */}
-        <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-          {/* Left pane - Task tree */}
+          {/* Tree header */}
           <div
             style={{
-              width: 350,
-              flexShrink: 0,
-              borderRight: "1px solid var(--color-border)",
-              background: "var(--color-surface)",
+              height: 32,
+              borderBottom: "1px solid var(--color-border)",
+            }}
+          />
+          {rows.map((i) => (
+            <SkeletonRow key={i} index={i} />
+          ))}
+        </div>
+
+        {/* Right pane - Gantt chart */}
+        <div style={{ flex: 1 }}>
+          {/* Timeline header */}
+          <div
+            style={{
+              height: 32,
+              borderBottom: "1px solid var(--color-border)",
+              display: "flex",
+              alignItems: "center",
+              gap: 40,
+              padding: "0 20px",
             }}
           >
-            {/* Tree header */}
-            <div
-              style={{
-                height: 32,
-                borderBottom: "1px solid var(--color-border)",
-              }}
-            />
-            {rows.map((i) => (
-              <SkeletonRow key={i} index={i} />
+            {Array.from({ length: 8 }, (_, i) => (
+              <SkeletonBar key={i} width={40} height={10} />
             ))}
           </div>
-
-          {/* Right pane - Gantt chart */}
-          <div style={{ flex: 1 }}>
-            {/* Timeline header */}
-            <div
-              style={{
-                height: 32,
-                borderBottom: "1px solid var(--color-border)",
-                display: "flex",
-                alignItems: "center",
-                gap: 40,
-                padding: "0 20px",
-              }}
-            >
-              {Array.from({ length: 8 }, (_, i) => (
-                <SkeletonBar key={i} width={40} height={10} />
-              ))}
-            </div>
-            {rows.map((i) => (
-              <SkeletonGanttRow key={i} index={i} />
-            ))}
-          </div>
+          {rows.map((i) => (
+            <SkeletonGanttRow key={i} index={i} />
+          ))}
         </div>
       </div>
-    </>
+    </div>
   );
 }

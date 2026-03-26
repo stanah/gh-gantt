@@ -13,6 +13,7 @@ export function FilterEmptyState({ onReset }: FilterEmptyStateProps) {
         alignItems: "center",
         justifyContent: "center",
         padding: "48px 24px",
+        minHeight: 240,
         color: "var(--color-text-muted)",
         gap: 12,
       }}
@@ -24,6 +25,8 @@ export function FilterEmptyState({ onReset }: FilterEmptyStateProps) {
         fill="none"
         stroke="currentColor"
         strokeWidth="1.5"
+        aria-hidden="true"
+        focusable="false"
       >
         <circle cx="11" cy="11" r="7" />
         <path d="m21 21-4.35-4.35" />
@@ -59,6 +62,7 @@ export function NoTasksGuide() {
         alignItems: "center",
         justifyContent: "center",
         padding: "48px 24px",
+        minHeight: 240,
         color: "var(--color-text-muted)",
         gap: 12,
       }}
@@ -70,6 +74,8 @@ export function NoTasksGuide() {
         fill="none"
         stroke="currentColor"
         strokeWidth="1.5"
+        aria-hidden="true"
+        focusable="false"
       >
         <rect x="3" y="3" width="18" height="18" rx="2" />
         <path d="M12 8v8" />

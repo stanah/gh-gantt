@@ -458,18 +458,9 @@ export function App() {
       selectedAssignees.length > 0 ||
       selectedPriorities.length > 0 ||
       selectedLabels.length > 0 ||
-      hideClosed ||
-      enabled.size < allTypeCount
+      (enabled.size > 0 && enabled.size < allTypeCount)
     );
-  }, [
-    searchQuery,
-    selectedAssignees,
-    selectedPriorities,
-    selectedLabels,
-    hideClosed,
-    enabled,
-    config,
-  ]);
+  }, [searchQuery, selectedAssignees, selectedPriorities, selectedLabels, enabled, config]);
 
   const resetAllFilters = useCallback(() => {
     setSearchQuery("");
