@@ -16,14 +16,16 @@ export function rebaseSyncFields(syncFields: SyncFields, config: Config): SyncFi
   // Re-resolve type using current config
   const type = resolveTaskType(
     syncFields.labels,
-    syncFields.custom_fields as Record<string, unknown>,
+    syncFields.custom_fields,
     config.task_types,
     fm.type,
   );
 
   // Re-resolve start_date/end_date from custom_fields using current field_mapping
-  const start_date = (syncFields.custom_fields[fm.start_date] as string) ?? syncFields.start_date;
-  const end_date = (syncFields.custom_fields[fm.end_date] as string) ?? syncFields.end_date;
+  const rawStartDate = syncFields.custom_fields[fm.start_date];
+  const rawEndDate = syncFields.custom_fields[fm.end_date];
+  const start_date = typeof rawStartDate === "string" ? rawStartDate : syncFields.start_date;
+  const end_date = typeof rawEndDate === "string" ? rawEndDate : syncFields.end_date;
 
   return {
     ...syncFields,

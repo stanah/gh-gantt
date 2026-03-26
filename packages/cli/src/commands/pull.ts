@@ -149,10 +149,18 @@ export const pullCommand = new Command("pull")
           const localHash = hashTask(localTask);
           if (snapshot && localHash !== snapshot.hash) {
             // Local has unpushed changes but no syncFields to merge.
-            // Keep local to prevent data loss; remote changes will be picked up on next pull after push.
-            mergedTasks.push(localTask);
+            // Keep local to prevent data loss. Update read-only fields from remote.
+            mergedTasks.push({
+              ...localTask,
+              created_at: remoteTask.created_at,
+              updated_at: remoteTask.updated_at,
+              closed_at: remoteTask.closed_at,
+              state_reason: remoteTask.state_reason,
+              linked_prs: remoteTask.linked_prs,
+            });
             console.warn(
-              `  ⚠ ${id}: ${remoteTask.title} (syncFields missing — keeping local changes)`,
+              `  ⚠ ${id}: ${remoteTask.title} (syncFields missing — keeping local changes; ` +
+                `remote changes are not merged and may be overwritten on push)`,
             );
           } else {
             // No local changes or no snapshot → safe to take remote
