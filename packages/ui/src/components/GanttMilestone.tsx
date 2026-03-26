@@ -53,7 +53,8 @@ export function GanttMilestone({
       onMouseLeave={() => onTooltipHide?.()}
       onFocus={(e) => onTooltipShow?.(task, e)}
       onBlur={() => onTooltipHide?.()}
-      style={{ cursor: "default", outline: "none" }}
+      style={{ cursor: "default" }}
+      className="gantt-focusable"
       opacity={isDimmed ? 0.3 : 1}
     >
       <polygon

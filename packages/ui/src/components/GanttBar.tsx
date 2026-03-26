@@ -110,7 +110,8 @@ export function GanttBar({
       onMouseLeave={() => onTooltipHide?.()}
       onFocus={(e) => onTooltipShow?.(task, e)}
       onBlur={() => onTooltipHide?.()}
-      style={{ cursor: "pointer", outline: "none" }}
+      style={{ cursor: "pointer" }}
+      className="gantt-focusable"
       opacity={isDimmed ? 0.3 : 1}
     >
       {/* Background */}

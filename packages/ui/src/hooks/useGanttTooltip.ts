@@ -1,4 +1,5 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
+import type React from "react";
 import type { Task } from "../types/index.js";
 
 export interface TooltipState {
@@ -9,7 +10,13 @@ export interface TooltipState {
 
 export function useGanttTooltip(containerRef: React.RefObject<HTMLDivElement | null>) {
   const [tooltip, setTooltip] = useState<TooltipState | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, []);
 
   const show = useCallback(
     (task: Task, e: React.MouseEvent | React.FocusEvent) => {
@@ -24,7 +31,7 @@ export function useGanttTooltip(containerRef: React.RefObject<HTMLDivElement | n
       if ("clientX" in e) {
         setTooltip({ task, x: e.clientX - rect.left, y: e.clientY - rect.top });
       } else {
-        const target = e.target as Element;
+        const target = e.currentTarget as Element;
         const targetRect = target.getBoundingClientRect();
         setTooltip({
           task,

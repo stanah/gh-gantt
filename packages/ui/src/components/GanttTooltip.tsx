@@ -11,13 +11,15 @@ interface GanttTooltipProps {
   summaryDates?: { start: string; end: string } | null;
 }
 
-function calcDurationDays(startStr: string, endStr: string): number {
+export function calcDurationDays(startStr: string, endStr: string): number {
   const start = parseDate(startStr);
   const end = parseDate(endStr);
-  return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  const startUTC = Date.UTC(start.getFullYear(), start.getMonth(), start.getDate());
+  const endUTC = Date.UTC(end.getFullYear(), end.getMonth(), end.getDate());
+  return Math.round((endUTC - startUTC) / (24 * 60 * 60 * 1000)) + 1;
 }
 
-function formatDateLabel(dateStr: string): string {
+export function formatDateLabel(dateStr: string): string {
   const d = parseDate(dateStr);
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 }

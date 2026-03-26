@@ -63,7 +63,8 @@ export function GanttSummaryBar({
       onMouseLeave={() => onTooltipHide?.()}
       onFocus={(e) => onTooltipShow?.(task, dates, e)}
       onBlur={() => onTooltipHide?.()}
-      style={{ cursor: "default", outline: "none" }}
+      style={{ cursor: "default" }}
+      className="gantt-focusable"
       opacity={isDimmed ? 0.3 : 1}
     >
       {/* Summary bar (thin bracket style) */}
