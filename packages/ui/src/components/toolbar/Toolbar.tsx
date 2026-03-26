@@ -10,6 +10,7 @@ import { SearchBox } from "./SearchBox.js";
 import { IconButton } from "./IconButton.js";
 import { UndoRedoGroup } from "./UndoRedoGroup.js";
 import { SyncGroup } from "./SyncGroup.js";
+import { LegendGroup } from "./LegendGroup.js";
 
 interface ToolbarProps {
   onZoomIn: () => void;
@@ -105,6 +106,7 @@ export function Toolbar(props: ToolbarProps) {
         redoCount={props.redoCount}
         undoRedoBusy={props.undoRedoBusy}
       />
+      <LegendGroup taskTypes={props.taskTypes} />
       <div style={{ flex: 1 }} />
       <SyncGroup
         onPull={props.onPull}
