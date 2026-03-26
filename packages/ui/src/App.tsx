@@ -601,6 +601,7 @@ export function App() {
         redoCount={redoCount}
         undoRedoBusy={undoRedoBusy}
         taskTypes={config?.task_types ?? {}}
+        sprints={config?.sprints}
         enabledTypes={enabled}
         onToggleType={toggleType}
       />

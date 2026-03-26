@@ -2,6 +2,7 @@
 import React from "react";
 import { Keyboard } from "lucide-react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
+import type { SprintConfig } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
 import { ZoomGroup } from "./ZoomGroup.js";
 import { DisplayGroup } from "./DisplayGroup.js";
@@ -10,6 +11,7 @@ import { SearchBox } from "./SearchBox.js";
 import { IconButton } from "./IconButton.js";
 import { UndoRedoGroup } from "./UndoRedoGroup.js";
 import { SyncGroup } from "./SyncGroup.js";
+import { LegendGroup } from "./LegendGroup.js";
 
 interface ToolbarProps {
   onZoomIn: () => void;
@@ -24,6 +26,7 @@ interface ToolbarProps {
   hideClosed: boolean;
   onToggleHideClosed: () => void;
   taskTypes: Record<string, TaskType>;
+  sprints?: SprintConfig[];
   enabledTypes: Set<string>;
   onToggleType: (typeName: string) => void;
   selectedAssignee: string | null;
@@ -105,6 +108,7 @@ export function Toolbar(props: ToolbarProps) {
         redoCount={props.redoCount}
         undoRedoBusy={props.undoRedoBusy}
       />
+      <LegendGroup taskTypes={props.taskTypes} sprints={props.sprints} />
       <div style={{ flex: 1 }} />
       <SyncGroup
         onPull={props.onPull}
