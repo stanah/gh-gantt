@@ -8,6 +8,8 @@ interface IconButtonProps {
   disabled?: boolean;
   badge?: number;
   children?: React.ReactNode;
+  "aria-haspopup"?: "dialog" | "menu" | "listbox" | "tree" | "grid" | boolean;
+  "aria-expanded"?: boolean;
 }
 
 const baseStyle: React.CSSProperties = {
@@ -57,6 +59,8 @@ export function IconButton({
   disabled = false,
   badge,
   children,
+  "aria-haspopup": ariaHasPopup,
+  "aria-expanded": ariaExpanded,
 }: IconButtonProps) {
   const isActive = !!active;
 
@@ -68,6 +72,8 @@ export function IconButton({
       title={title}
       aria-label={title}
       aria-pressed={active === undefined ? undefined : active}
+      aria-haspopup={ariaHasPopup}
+      aria-expanded={ariaExpanded}
       style={{ ...baseStyle, ...(isActive ? activeStyle : {}), ...(disabled ? disabledStyle : {}) }}
     >
       {icon}

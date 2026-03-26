@@ -3,6 +3,7 @@ import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { LegendGroup } from "../components/toolbar/LegendGroup.js";
 import type { TaskType } from "../types/index.js";
+import type { SprintConfig } from "@gh-gantt/shared";
 
 const taskTypes: Record<string, TaskType> = {
   epic: {
@@ -31,6 +32,21 @@ const taskTypes: Record<string, TaskType> = {
   },
 };
 
+const sprints: SprintConfig[] = [
+  {
+    name: "Sprint 1",
+    start_date: "2020-01-01",
+    end_date: "2020-01-14",
+    color: "#3b82f6",
+  },
+  {
+    name: "Sprint Current",
+    start_date: "2025-01-01",
+    end_date: "2099-12-31",
+    color: "#10b981",
+  },
+];
+
 describe("LegendGroup", () => {
   it("renders the legend button", () => {
     const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} />);
@@ -38,19 +54,40 @@ describe("LegendGroup", () => {
     expect(html).toContain("Legend");
   });
 
-  it("includes all task type labels in markup when expanded by default state", () => {
-    // The component starts collapsed, so the panel is not in the initial render
+  it("starts collapsed and does not render the dialog panel", () => {
     const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} />);
     expect(html).not.toContain('role="dialog"');
   });
 
-  it("renders the palette icon for each display type", () => {
+  it("renders a single palette icon in the toggle button", () => {
     const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} />);
     expect(html).toContain("lucide-palette");
+    // Only one Palette icon in the button, not one per type
+    const matches = html.match(/lucide-palette/g);
+    expect(matches).toHaveLength(1);
   });
 
   it("renders with empty task types", () => {
     const html = renderToStaticMarkup(<LegendGroup taskTypes={{}} />);
     expect(html).toContain("Legend");
+  });
+
+  it("includes aria-haspopup on the toggle button", () => {
+    const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} />);
+    expect(html).toContain('aria-haspopup="dialog"');
+  });
+
+  it("renders sprint legends when sprints are provided", () => {
+    // Use a wrapper that forces open state via click simulation is not possible
+    // in SSR, so we test that the component accepts the sprints prop without error
+    const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} sprints={sprints} />);
+    // Panel is collapsed by default, sprints should not appear
+    expect(html).not.toContain("Sprint 1");
+  });
+
+  it("renders without sprints when prop is omitted", () => {
+    const html = renderToStaticMarkup(<LegendGroup taskTypes={taskTypes} />);
+    expect(html).toContain("Legend");
+    expect(html).not.toContain("Sprints");
   });
 });

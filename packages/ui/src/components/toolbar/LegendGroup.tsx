@@ -1,12 +1,14 @@
 // packages/ui/src/components/toolbar/LegendGroup.tsx
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Palette } from "lucide-react";
+import type { SprintConfig } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
 import { ToolbarGroup } from "./ToolbarGroup.js";
 import { IconButton } from "./IconButton.js";
 
 interface LegendGroupProps {
   taskTypes: Record<string, TaskType>;
+  sprints?: SprintConfig[];
 }
 
 function DisplayIcon({ display }: { display: TaskType["display"] }) {
@@ -56,18 +58,39 @@ const itemStyle: React.CSSProperties = {
   color: "var(--color-text-secondary, #555)",
 };
 
-export function LegendGroup({ taskTypes }: LegendGroupProps) {
+function isCurrentSprint(sprint: SprintConfig): boolean {
+  const now = new Date();
+  const start = new Date(sprint.start_date);
+  const end = new Date(sprint.end_date);
+  return now >= start && now <= end;
+}
+
+export function LegendGroup({ taskTypes, sprints }: LegendGroupProps) {
   const [open, setOpen] = useState(false);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const entries = Object.entries(taskTypes);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
 
   return (
     <ToolbarGroup label="Legend">
-      <div style={{ position: "relative" }}>
+      <div ref={wrapperRef} style={{ position: "relative" }}>
         <IconButton
           icon={<Palette size={14} />}
           title="Task Type Legend"
           onClick={() => setOpen((prev) => !prev)}
           active={open}
+          aria-haspopup="dialog"
+          aria-expanded={open}
         />
         {open && (
           <div role="dialog" aria-label="Task type legend" style={panelStyle}>
@@ -87,6 +110,40 @@ export function LegendGroup({ taskTypes }: LegendGroupProps) {
                 <span>{def.label}</span>
               </div>
             ))}
+            {sprints && sprints.length > 0 && (
+              <>
+                <div
+                  style={{
+                    borderTop: "1px solid var(--color-border, #ddd)",
+                    margin: "6px 0",
+                  }}
+                />
+                <div style={{ ...itemStyle, fontWeight: 600, marginBottom: 6 }}>
+                  <span>Sprints</span>
+                </div>
+                {sprints.map((sprint, i) => {
+                  const current = isCurrentSprint(sprint);
+                  return (
+                    <div key={`${sprint.name}-${i}`} style={itemStyle}>
+                      <span
+                        style={{
+                          width: 10,
+                          height: 10,
+                          borderRadius: 2,
+                          background: sprint.color ?? "#3b82f6",
+                          opacity: current ? 1 : 0.3,
+                          flexShrink: 0,
+                        }}
+                      />
+                      <span style={{ opacity: current ? 1 : 0.6 }}>
+                        {sprint.name}
+                        {current ? " (current)" : ""}
+                      </span>
+                    </div>
+                  );
+                })}
+              </>
+            )}
           </div>
         )}
       </div>
