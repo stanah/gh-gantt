@@ -19,6 +19,7 @@ import { threeWayMerge } from "../sync/three-way-merge.js";
 import { applyConflictMarkers } from "../sync/conflict-marker.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
+import { rebaseSyncFields } from "../sync/rebase.js";
 import { formatValue } from "../util/format.js";
 
 export const pullCommand = new Command("pull")
@@ -144,21 +145,38 @@ export const pullCommand = new Command("pull")
           // Remote unchanged since last sync → keep local
           mergedTasks.push(localTask);
         } else if (!snapshot || !snapshot.syncFields) {
-          // No snapshot or no syncFields → fall back to remote
-          if (opts.dryRun) {
-            console.log(`  ~ ${id}: ${remoteTask.title}`);
+          // No snapshot or no syncFields — check if local has changes
+          const localHash = hashTask(localTask);
+          if (snapshot && localHash !== snapshot.hash) {
+            // Local has unpushed changes but no syncFields to merge.
+            // Keep local to prevent data loss. Update read-only fields from remote.
+            mergedTasks.push({
+              ...localTask,
+              created_at: remoteTask.created_at,
+              updated_at: remoteTask.updated_at,
+              closed_at: remoteTask.closed_at,
+              state_reason: remoteTask.state_reason,
+              linked_prs: remoteTask.linked_prs,
+            });
+            console.warn(
+              `  ⚠ ${id}: ${remoteTask.title} (syncFields missing — keeping local changes; ` +
+                `remote changes are not merged and may be overwritten on push)`,
+            );
+          } else {
+            // No local changes or no snapshot → safe to take remote
+            if (opts.dryRun) {
+              console.log(`  ~ ${id}: ${remoteTask.title}`);
+            }
+            mergedTasks.push(remoteTask);
+            updated++;
           }
-          mergedTasks.push(remoteTask);
-          updated++;
         } else {
-          // 3-way merge
+          // 3-way merge — rebase snapshot syncFields with current config
+          // to prevent false diffs from config changes (task_types, field_mapping)
+          const rebasedBase = rebaseSyncFields(snapshot.syncFields, config);
           const localFields = extractSyncFields(localTask);
           const remoteFields = extractSyncFields(remoteTask);
-          const { merged, conflicts } = threeWayMerge(
-            snapshot.syncFields,
-            localFields,
-            remoteFields,
-          );
+          const { merged, conflicts } = threeWayMerge(rebasedBase, localFields, remoteFields);
 
           const mergedTask: import("@gh-gantt/shared").Task = { ...localTask, ...merged };
           // Always update read-only fields from remote
