@@ -28,6 +28,8 @@ interface GanttBarProps {
   priorityFieldName?: string;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
+  onTooltipShow?: (task: Task, e: React.MouseEvent | React.FocusEvent) => void;
+  onTooltipHide?: () => void;
 }
 
 function highlightStroke(
@@ -53,6 +55,8 @@ export function GanttBar({
   priorityFieldName,
   isDimmed,
   highlightType,
+  onTooltipShow,
+  onTooltipHide,
 }: GanttBarProps) {
   if (!task.start_date || !task.end_date) return null;
 
@@ -95,21 +99,20 @@ export function GanttBar({
   const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
-  const scheduleTooltip = overdue
-    ? `Overdue +${overdueDays}d`
-    : atRisk && daysUntilDue != null
-      ? `At risk D-${daysUntilDue}`
-      : null;
 
   return (
     <g
       role="graphics-symbol"
       aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}, ${progress}%${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}`}
+      tabIndex={0}
       onClick={onClick}
-      style={{ cursor: "pointer" }}
+      onMouseEnter={(e) => onTooltipShow?.(task, e)}
+      onMouseLeave={() => onTooltipHide?.()}
+      onFocus={(e) => onTooltipShow?.(task, e)}
+      onBlur={() => onTooltipHide?.()}
+      style={{ cursor: "pointer", outline: "none" }}
       opacity={isDimmed ? 0.3 : 1}
     >
-      {scheduleTooltip && <title>{scheduleTooltip}</title>}
       {/* Background */}
       <rect
         x={x1}

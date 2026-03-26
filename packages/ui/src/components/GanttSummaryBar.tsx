@@ -16,6 +16,12 @@ interface GanttSummaryBarProps {
   showIssueId?: boolean;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
+  onTooltipShow?: (
+    task: Task,
+    dates: { start: string; end: string } | null,
+    e: React.MouseEvent | React.FocusEvent,
+  ) => void;
+  onTooltipHide?: () => void;
 }
 
 export function GanttSummaryBar({
@@ -28,6 +34,8 @@ export function GanttSummaryBar({
   showIssueId,
   isDimmed,
   highlightType,
+  onTooltipShow,
+  onTooltipHide,
 }: GanttSummaryBarProps) {
   const dates = calculateSummaryDates(task, allTasks);
   if (!dates) return null;
@@ -50,6 +58,12 @@ export function GanttSummaryBar({
     <g
       role="graphics-symbol"
       aria-label={`${taskType?.label ?? task.type}: ${task.title}, from ${dates.start} to ${dates.end}, ${progress}%`}
+      tabIndex={0}
+      onMouseEnter={(e) => onTooltipShow?.(task, dates, e)}
+      onMouseLeave={() => onTooltipHide?.()}
+      onFocus={(e) => onTooltipShow?.(task, dates, e)}
+      onBlur={() => onTooltipHide?.()}
+      style={{ cursor: "default", outline: "none" }}
       opacity={isDimmed ? 0.3 : 1}
     >
       {/* Summary bar (thin bracket style) */}
