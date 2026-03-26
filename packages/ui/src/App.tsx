@@ -16,6 +16,7 @@ import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
 import type { Task } from "./types/index.js";
 import { useUndoRedo } from "./hooks/useUndoRedo.js";
+import { SkeletonLoader } from "./components/SkeletonLoader.js";
 
 const TRACKED_TASK_FIELDS = [
   "title",
@@ -112,7 +113,11 @@ export function App() {
     setSelectedTaskId(taskId);
   }, []);
 
-  const { enabled, toggle: toggleType } = useTypeFilter(config?.task_types ?? {});
+  const {
+    enabled,
+    toggle: toggleType,
+    enableAll: enableAllTypes,
+  } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
   const {
     hideClosed,
@@ -446,20 +451,33 @@ export function App() {
     }
   }, [clearHistory, refresh, showToast]);
 
-  if (loading) {
+  const hasActiveFilters = useMemo(() => {
+    const allTypeCount = Object.keys(config?.task_types ?? {}).length;
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          color: "var(--color-text-muted)",
-        }}
-      >
-        Loading...
-      </div>
+      searchQuery.trim() !== "" ||
+      selectedAssignees.length > 0 ||
+      selectedPriorities.length > 0 ||
+      selectedLabels.length > 0 ||
+      (enabled.size > 0 && enabled.size < allTypeCount)
     );
+  }, [searchQuery, selectedAssignees, selectedPriorities, selectedLabels, enabled, config]);
+
+  const resetAllFilters = useCallback(() => {
+    setSearchQuery("");
+    setSelectedAssignee(null);
+    setSelectedPriorities([]);
+    setSelectedLabels([]);
+    enableAllTypes();
+  }, [
+    setSearchQuery,
+    setSelectedAssignee,
+    setSelectedPriorities,
+    setSelectedLabels,
+    enableAllTypes,
+  ]);
+
+  if (loading) {
+    return <SkeletonLoader />;
   }
 
   if (error) {
@@ -610,6 +628,9 @@ export function App() {
                 highlightRelationMap={highlightRelationMap}
                 searchQuery={searchQuery}
                 dragState={dragState}
+                totalTaskCount={tasks.length}
+                hasActiveFilters={hasActiveFilters}
+                onResetFilters={resetAllFilters}
               />
             }
             rightHeader={ganttHeader}

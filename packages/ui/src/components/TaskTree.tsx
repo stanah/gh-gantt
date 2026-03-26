@@ -1,7 +1,8 @@
 import React from "react";
 import { TaskRow } from "./TaskRow.js";
 import { BacklogSectionHeader } from "./BacklogSectionHeader.js";
-import type { Task, Config } from "../types/index.js";
+import { FilterEmptyState, NoTasksGuide } from "./EmptyState.js";
+import type { Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
@@ -51,6 +52,9 @@ interface TaskTreeBodyProps {
   highlightRelationMap?: Map<string, RelationType>;
   searchQuery?: string;
   dragState?: UseTreeDragDropReturn;
+  totalTaskCount?: number;
+  hasActiveFilters?: boolean;
+  onResetFilters?: () => void;
 }
 
 export function TaskTreeBody({
@@ -71,6 +75,9 @@ export function TaskTreeBody({
   highlightRelationMap,
   searchQuery,
   dragState,
+  totalTaskCount = 0,
+  hasActiveFilters = false,
+  onResetFilters,
 }: TaskTreeBodyProps) {
   const renderRow = (node: TreeNode) => (
     <TaskRow
@@ -110,6 +117,24 @@ export function TaskTreeBody({
       onDragEnd={dragState?.handleDragEnd}
     />
   );
+
+  const isEmpty = flatList.length === 0 && backlogTotalCount === 0;
+
+  if (isEmpty && hasActiveFilters && onResetFilters) {
+    return (
+      <div>
+        <FilterEmptyState onReset={onResetFilters} />
+      </div>
+    );
+  }
+
+  if (isEmpty && totalTaskCount === 0) {
+    return (
+      <div>
+        <NoTasksGuide />
+      </div>
+    );
+  }
 
   return (
     <div>
