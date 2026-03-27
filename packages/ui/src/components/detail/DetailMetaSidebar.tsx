@@ -22,6 +22,8 @@ const selectStyle: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: 4,
   width: "100%",
+  background: "var(--color-bg)",
+  color: "var(--color-text)",
 };
 
 const dateInputStyle: React.CSSProperties = {
@@ -30,6 +32,8 @@ const dateInputStyle: React.CSSProperties = {
   border: "1px solid var(--color-border)",
   borderRadius: 4,
   width: "100%",
+  background: "var(--color-bg)",
+  color: "var(--color-text)",
 };
 
 const separatorStyle: React.CSSProperties = {
