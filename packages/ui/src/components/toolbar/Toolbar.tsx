@@ -15,6 +15,8 @@ import { LegendGroup } from "./LegendGroup.js";
 import { ThemeToggle } from "./ThemeToggle.js";
 
 interface ToolbarProps {
+  projectName: string;
+  taskCount: number;
   onZoomIn: () => void;
   onZoomOut: () => void;
   onScrollToToday: () => void;
@@ -64,6 +66,18 @@ export function Toolbar(props: ToolbarProps) {
         fontSize: 11,
       }}
     >
+      <strong style={{ fontSize: 13, whiteSpace: "nowrap" }}>{props.projectName}</strong>
+      <span style={{ color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
+        {props.taskCount} tasks
+      </span>
+      <div
+        style={{
+          width: 1,
+          height: 16,
+          background: "var(--color-border)",
+          flexShrink: 0,
+        }}
+      />
       <ZoomGroup
         onZoomIn={props.onZoomIn}
         onZoomOut={props.onZoomOut}

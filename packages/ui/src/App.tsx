@@ -558,22 +558,9 @@ export function App() {
             {toast.message}
           </div>
         )}
-        <header
-          style={{
-            padding: "8px 16px",
-            borderBottom: "1px solid var(--color-border)",
-            background: "var(--color-surface)",
-            display: "flex",
-            alignItems: "center",
-            gap: 12,
-          }}
-        >
-          <strong>{config.project.name}</strong>
-          <span style={{ color: "var(--color-text-muted)", fontSize: 12 }}>
-            {tasks.length} tasks
-          </span>
-        </header>
         <Toolbar
+          projectName={config.project.name}
+          taskCount={tasks.length}
           onZoomIn={() => ganttRef.current?.zoomIn()}
           onZoomOut={() => ganttRef.current?.zoomOut()}
           onScrollToToday={() => ganttRef.current?.scrollToToday()}
