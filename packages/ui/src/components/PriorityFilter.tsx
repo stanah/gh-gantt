@@ -89,6 +89,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
               background:
                 selectedValues.length === 0 ? "var(--color-hover-bg)" : "var(--color-surface)",
               cursor: "pointer",
+              color: "var(--color-text)",
               fontSize: 11,
               marginBottom: 8,
             }}
@@ -96,52 +97,55 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
             Clear (All priorities)
           </button>
 
-          {PRIORITY_LEVELS.map((level) => (
-            <label
-              key={level}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {PRIORITY_LEVELS.map((level) => (
+              <button
+                type="button"
+                key={level}
+                onClick={() => onChange(toggleValue(selectedValues, level))}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 10px",
+                  fontSize: 11,
+                  border: `1px solid ${selectedSet.has(level) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                  borderRadius: 12,
+                  background: selectedSet.has(level)
+                    ? "var(--color-selected-bg)"
+                    : "var(--color-bg)",
+                  color: selectedSet.has(level) ? "var(--color-selected-fg)" : "var(--color-text)",
+                  cursor: "pointer",
+                }}
+              >
+                {level}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              key="__no_priority__"
+              onClick={() => onChange(toggleValue(selectedValues, NO_PRIORITY))}
               style={{
-                display: "flex",
+                display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 4,
+                padding: "3px 10px",
                 fontSize: 11,
-                marginBottom: 6,
+                border: `1px solid ${selectedSet.has(NO_PRIORITY) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                borderRadius: 12,
+                background: selectedSet.has(NO_PRIORITY)
+                  ? "var(--color-selected-bg)"
+                  : "var(--color-bg)",
+                color: selectedSet.has(NO_PRIORITY)
+                  ? "var(--color-selected-fg)"
+                  : "var(--color-text)",
                 cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={selectedSet.has(level)}
-                onChange={() => onChange(toggleValue(selectedValues, level))}
-              />
-              {level}
-            </label>
-          ))}
-
-          <div
-            style={{
-              borderTop: "1px solid var(--color-border-light)",
-              margin: "6px 0",
-              paddingTop: 6,
-            }}
-          />
-
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11,
-              marginBottom: 6,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSet.has(NO_PRIORITY)}
-              onChange={() => onChange(toggleValue(selectedValues, NO_PRIORITY))}
-            />
-            No priority
-          </label>
+              No priority
+            </button>
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
@@ -152,6 +156,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
                 border: "1px solid var(--color-border)",
                 borderRadius: 3,
                 background: "var(--color-surface)",
+                color: "var(--color-text)",
                 cursor: "pointer",
                 fontSize: 11,
               }}

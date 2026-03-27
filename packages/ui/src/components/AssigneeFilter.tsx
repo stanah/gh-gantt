@@ -85,6 +85,7 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
               background:
                 selectedValues.length === 0 ? "var(--color-hover-bg)" : "var(--color-surface)",
               cursor: "pointer",
+              color: "var(--color-text)",
               fontSize: 11,
               marginBottom: 8,
             }}
@@ -92,52 +93,57 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
             Clear (All assignees)
           </button>
 
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11,
-              marginBottom: 6,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSet.has(UNASSIGNED)}
-              onChange={() => onChange(toggleValue(selectedValues, UNASSIGNED))}
-            />
-            Unassigned
-          </label>
-
-          <div
-            style={{
-              borderTop: "1px solid var(--color-border-light)",
-              margin: "6px 0",
-              paddingTop: 6,
-            }}
-          />
-
-          {assignees.map((assignee) => (
-            <label
-              key={assignee}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            <button
+              type="button"
+              key="__unassigned__"
+              onClick={() => onChange(toggleValue(selectedValues, UNASSIGNED))}
               style={{
-                display: "flex",
+                display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 4,
+                padding: "3px 10px",
                 fontSize: 11,
-                marginBottom: 6,
+                border: `1px solid ${selectedSet.has(UNASSIGNED) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                borderRadius: 12,
+                background: selectedSet.has(UNASSIGNED)
+                  ? "var(--color-selected-bg)"
+                  : "var(--color-bg)",
+                color: selectedSet.has(UNASSIGNED)
+                  ? "var(--color-selected-fg)"
+                  : "var(--color-text)",
                 cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={selectedSet.has(assignee)}
-                onChange={() => onChange(toggleValue(selectedValues, assignee))}
-              />
-              @{assignee}
-            </label>
-          ))}
+              Unassigned
+            </button>
+
+            {assignees.map((assignee) => (
+              <button
+                type="button"
+                key={assignee}
+                onClick={() => onChange(toggleValue(selectedValues, assignee))}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 10px",
+                  fontSize: 11,
+                  border: `1px solid ${selectedSet.has(assignee) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                  borderRadius: 12,
+                  background: selectedSet.has(assignee)
+                    ? "var(--color-selected-bg)"
+                    : "var(--color-bg)",
+                  color: selectedSet.has(assignee)
+                    ? "var(--color-selected-fg)"
+                    : "var(--color-text)",
+                  cursor: "pointer",
+                }}
+              >
+                @{assignee}
+              </button>
+            ))}
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
@@ -147,6 +153,7 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
                 border: "1px solid var(--color-border)",
                 borderRadius: 3,
                 background: "var(--color-surface)",
+                color: "var(--color-text)",
                 cursor: "pointer",
                 fontSize: 11,
               }}
