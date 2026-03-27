@@ -43,7 +43,7 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
     padding: "4px 8px",
     border: `1px solid ${isFiltered ? "var(--color-selected-border)" : "var(--color-border)"}`,
     borderRadius: 3,
-    background: isFiltered ? "var(--color-selected-bg)" : "var(--color-surface)",
+    background: isFiltered ? "var(--color-selected-bg)" : "var(--color-bg)",
     color: isFiltered ? "var(--color-selected-fg)" : "var(--color-text-secondary)",
     cursor: "pointer",
     fontSize: 11,
@@ -158,7 +158,7 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
                 background: "var(--color-surface)",
                 cursor: "pointer",

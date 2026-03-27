@@ -36,9 +36,9 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
 
   const btnStyle: React.CSSProperties = {
     padding: "3px 8px",
-    border: "1px solid #ccc",
+    border: "1px solid var(--color-border)",
     borderRadius: 3,
-    background: selectedValues.length > 0 ? "var(--color-selected-bg)" : "var(--color-surface)",
+    background: selectedValues.length > 0 ? "var(--color-selected-bg)" : "var(--color-bg)",
     color: selectedValues.length > 0 ? "var(--color-selected-fg)" : "var(--color-text)",
     cursor: "pointer",
     fontSize: 11,
@@ -117,7 +117,13 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
             </label>
           ))}
 
-          <div style={{ borderTop: "1px solid #f0f0f0", margin: "6px 0", paddingTop: 6 }} />
+          <div
+            style={{
+              borderTop: "1px solid var(--color-border-light)",
+              margin: "6px 0",
+              paddingTop: 6,
+            }}
+          />
 
           <label
             style={{
@@ -143,7 +149,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
                 background: "var(--color-surface)",
                 cursor: "pointer",
