@@ -65,6 +65,7 @@ export function App() {
   const { config, tasks, cache, loading, error, updateTask, refresh, reparentTask } = useApi();
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
+  const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
@@ -670,10 +671,14 @@ export function App() {
                 task={detailTask}
                 config={config}
                 comments={cache.comments[selectedTaskId] ?? []}
+                allTasks={tasks}
                 onUpdate={(updates) => {
                   void handleTaskUpdate(selectedTaskId, updates);
                 }}
                 onClose={() => setSelectedTaskId(null)}
+                onSelectTask={handleSelectTask}
+                width={detailPanelWidth}
+                onWidthChange={setDetailPanelWidth}
               />
             );
           })()}

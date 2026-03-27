@@ -1,36 +1,64 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import type { Task, Config } from "../types/index.js";
 import { MarkdownEditor } from "./MarkdownEditor.js";
-import { ProgressBar } from "./ProgressBar.js";
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
+import { DetailHeader } from "./detail/DetailHeader.js";
+import { DetailMetaSidebar } from "./detail/DetailMetaSidebar.js";
+import { DetailSubTasks } from "./detail/DetailSubTasks.js";
+import { DetailRelations } from "./detail/DetailRelations.js";
+
+const MIN_PANEL_WIDTH = 320;
+const MAX_PANEL_WIDTH = 800;
+const TWO_COLUMN_THRESHOLD = 560;
 
 interface TaskDetailPanelProps {
   task: Task;
   config: Config;
   comments: Array<{ author: string; body: string; created_at: string }>;
+  allTasks: Task[];
   onUpdate: (updates: Partial<Task>) => void;
   onClose: () => void;
+  onSelectTask: (taskId: string) => void;
   renderMarkdownPreview?: (value: string) => React.ReactNode;
+  width?: number;
+  onWidthChange?: (width: number) => void;
 }
 
 export function TaskDetailPanel({
   task,
   config,
   comments,
+  allTasks,
   onUpdate,
   onClose,
+  onSelectTask,
   renderMarkdownPreview,
+  width = 400,
+  onWidthChange,
 }: TaskDetailPanelProps) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [titleDraft, setTitleDraft] = useState(task.title);
   const [copyFeedback, setCopyFeedback] = useState<"success" | "error" | null>(null);
+
   const statusFieldName = config.statuses.field_name;
   const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
-  const statusOptions = Object.keys(config.statuses.values);
   const taskType = config.task_types[task.type];
   const isMilestone = task.type === "milestone";
+  const isTwoColumn = width >= TWO_COLUMN_THRESHOLD;
   const renderPreview =
     renderMarkdownPreview ?? ((value: string) => <MarkdownRenderer markdown={value} />);
+
+  const parentTask = task.parent
+    ? (() => {
+        const p = allTasks.find((t) => t.id === task.parent);
+        return p ? { id: p.id, title: p.title, github_issue: p.github_issue } : null;
+      })()
+    : null;
+
+  // Sync titleDraft when task changes
+  useEffect(() => {
+    setTitleDraft(task.title);
+  }, [task.title]);
 
   const copyTaskInfo = useCallback(() => {
     const ref = task.github_issue ? `${task.github_repo}#${task.github_issue}` : task.id;
@@ -68,29 +96,72 @@ export function TaskDetailPanel({
       });
   }, [task, currentStatus, isMilestone]);
 
-  const githubUrl = isMilestone
-    ? (() => {
-        if (!task.github_repo) return null;
-        const suffix = task.id.split("#").pop();
-        if (!suffix || !/^\d+$/.test(suffix)) return null;
-        return `https://github.com/${task.github_repo}/milestone/${suffix}`;
-      })()
-    : task.github_issue
-      ? `https://github.com/${task.github_repo}/issues/${task.github_issue}`
+  const onResizeMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!onWidthChange) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const startWidth = width;
+
+      const onMouseMove = (ev: MouseEvent) => {
+        const delta = startX - ev.clientX;
+        const newWidth = Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, startWidth + delta));
+        onWidthChange(newWidth);
+      };
+
+      const onMouseUp = () => {
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+      };
+
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    },
+    [width, onWidthChange],
+  );
+
+  // Priority for inline badges (1-column)
+  const priorityFieldName = config.sync?.field_mapping?.priority;
+  const rawPriority = priorityFieldName ? task.custom_fields[priorityFieldName] : undefined;
+  const currentPriority = typeof rawPriority === "string" ? rawPriority : "";
+
+  const dateRange = isMilestone
+    ? task.date
+      ? task.date.slice(0, 10)
+      : null
+    : task.start_date || task.end_date
+      ? `${(task.start_date ?? "").slice(0, 10)} - ${(task.end_date ?? "").slice(0, 10)}`
       : null;
 
   return (
     <div
       style={{
-        width: 400,
+        width,
         flexShrink: 0,
         height: "100%",
         background: "var(--color-surface)",
         borderLeft: "1px solid var(--color-border)",
         overflow: "auto",
+        position: "relative",
       }}
     >
-      {/* Header */}
+      {/* Resize handle */}
+      {onWidthChange && (
+        <div
+          onMouseDown={onResizeMouseDown}
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            width: 5,
+            height: "100%",
+            cursor: "col-resize",
+            zIndex: 10,
+          }}
+        />
+      )}
+
+      {/* Panel header */}
       <div
         style={{
           padding: "12px 16px",
@@ -100,7 +171,9 @@ export function TaskDetailPanel({
           justifyContent: "space-between",
         }}
       >
-        <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>{task.id}</span>
+        <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
+          {task.github_repo || task.id}
+        </span>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button
             onClick={copyTaskInfo}
@@ -179,101 +252,107 @@ export function TaskDetailPanel({
         </div>
       </div>
 
-      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
-        {/* Title */}
-        {editingTitle ? (
-          <div>
-            <input
-              value={titleDraft}
-              onChange={(e) => setTitleDraft(e.target.value)}
-              onBlur={() => {
-                onUpdate({ title: titleDraft });
-                setEditingTitle(false);
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  onUpdate({ title: titleDraft });
-                  setEditingTitle(false);
-                }
-              }}
-              autoFocus
-              style={{
-                width: "100%",
-                padding: 4,
-                fontSize: 16,
-                fontWeight: 600,
-                border: "1px solid var(--color-info)",
-                borderRadius: 4,
-              }}
-            />
-          </div>
-        ) : (
-          <h2
-            onClick={() => {
-              setTitleDraft(task.title);
-              setEditingTitle(true);
+      {/* Content area */}
+      {isTwoColumn ? (
+        /* Two-column layout */
+        <div style={{ display: "flex", height: "calc(100% - 49px)" }}>
+          {/* Left column */}
+          <div
+            style={{
+              flex: 1,
+              overflow: "auto",
+              padding: 16,
+              display: "flex",
+              flexDirection: "column",
+              gap: 16,
             }}
-            style={{ fontSize: 16, cursor: "pointer", margin: 0 }}
           >
-            {task.title}
-          </h2>
-        )}
+            <DetailHeader
+              task={task}
+              parentTask={parentTask}
+              onSelectTask={onSelectTask}
+              isMilestone={isMilestone}
+              taskTypeColor={taskType?.color}
+            />
 
-        {/* Progress (tasks only) */}
-        {!isMilestone && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ProgressBar progress={task._progress ?? 0} color={taskType?.color} />
-            <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
-              {task._progress ?? 0}%
-            </span>
-          </div>
-        )}
+            {/* Title editing */}
+            {editingTitle ? (
+              <div>
+                <input
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => {
+                    onUpdate({ title: titleDraft });
+                    setEditingTitle(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      onUpdate({ title: titleDraft });
+                      setEditingTitle(false);
+                    }
+                  }}
+                  autoFocus
+                  style={{
+                    width: "100%",
+                    padding: 4,
+                    fontSize: 16,
+                    fontWeight: 600,
+                    border: "1px solid var(--color-info)",
+                    borderRadius: 4,
+                  }}
+                />
+              </div>
+            ) : (
+              <h2
+                onClick={() => {
+                  setTitleDraft(task.title);
+                  setEditingTitle(true);
+                }}
+                style={{ fontSize: 16, cursor: "pointer", margin: 0 }}
+              >
+                {task.title}
+              </h2>
+            )}
 
-        {/* Status (tasks only) */}
-        {!isMilestone && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Status
-            </label>
-            <select
-              value={currentStatus ?? ""}
-              onChange={(e) =>
-                onUpdate({
-                  custom_fields: { ...task.custom_fields, [statusFieldName]: e.target.value },
-                })
-              }
-              style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                border: "1px solid var(--color-border)",
-                borderRadius: 4,
-              }}
-            >
-              {statusOptions.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
+            {/* Description */}
+            <div>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-muted)",
+                  display: "block",
+                  marginBottom: 4,
+                }}
+              >
+                Description
+              </label>
+              <MarkdownEditor
+                value={task.body ?? ""}
+                onChange={(body) => onUpdate({ body })}
+                renderPreview={renderPreview}
+              />
+            </div>
 
-        {/* Priority (tasks only) */}
-        {!isMilestone &&
-          (() => {
-            const priorityFieldName = config.sync?.field_mapping?.priority;
-            if (!priorityFieldName) return null;
-            const rawPriority = task.custom_fields[priorityFieldName];
-            const currentPriority =
-              typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
-            return (
+            {/* Sub-tasks */}
+            {task.sub_tasks.length > 0 && (
+              <DetailSubTasks
+                subTaskIds={task.sub_tasks}
+                allTasks={allTasks}
+                onSelectTask={onSelectTask}
+              />
+            )}
+
+            {/* Relations */}
+            <DetailRelations
+              blockedBy={task.blocked_by}
+              linkedPrs={task.linked_prs}
+              allTasks={allTasks}
+              onSelectTask={onSelectTask}
+              githubRepo={task.github_repo}
+            />
+
+            {/* Comments */}
+            {comments.length > 0 && (
               <div>
                 <label
                   style={{
@@ -283,373 +362,250 @@ export function TaskDetailPanel({
                     marginBottom: 4,
                   }}
                 >
-                  Priority
+                  Comments ({comments.length})
                 </label>
-                <select
-                  value={currentPriority}
-                  onChange={(e) =>
-                    onUpdate({
-                      custom_fields: {
-                        ...task.custom_fields,
-                        [priorityFieldName]: e.target.value || undefined,
-                      },
-                    })
-                  }
-                  style={{
-                    padding: "4px 8px",
-                    fontSize: 12,
-                    border: "1px solid var(--color-border)",
-                    borderRadius: 4,
-                  }}
-                >
-                  <option value="">None</option>
-                  <option value="critical">Critical</option>
-                  <option value="high">High</option>
-                  <option value="medium">Medium</option>
-                  <option value="low">Low</option>
-                </select>
+                {comments.map((c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      padding: 8,
+                      background: "var(--color-bg)",
+                      borderRadius: 4,
+                      marginBottom: 4,
+                    }}
+                  >
+                    <div
+                      style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}
+                    >
+                      <strong>{c.author}</strong> - {new Date(c.created_at).toLocaleString()}
+                    </div>
+                    <MarkdownRenderer markdown={c.body} />
+                  </div>
+                ))}
               </div>
-            );
-          })()}
+            )}
+          </div>
 
-        {/* State */}
-        <div>
-          <label
+          {/* Right column - Meta sidebar */}
+          <div
             style={{
-              fontSize: 11,
-              color: "var(--color-text-muted)",
-              display: "block",
-              marginBottom: 4,
+              width: 200,
+              flexShrink: 0,
+              borderLeft: "1px solid var(--color-border)",
+              overflow: "auto",
+              padding: 12,
             }}
           >
-            State
-          </label>
-          <button
-            onClick={() => onUpdate({ state: task.state === "open" ? "closed" : "open" })}
-            style={{
-              padding: "4px 12px",
-              fontSize: 12,
-              borderRadius: 4,
-              cursor: "pointer",
-              border: `1px solid ${task.state === "open" ? "var(--color-success)" : "var(--color-text-muted)"}`,
-              background:
-                task.state === "open" ? "var(--color-success-bg)" : "var(--color-border-light)",
-              color: task.state === "open" ? "var(--color-success)" : "var(--color-text-muted)",
-            }}
-          >
-            {task.state === "open" ? "Open" : "Closed"}
-          </button>
-        </div>
-
-        {/* Dates */}
-        {isMilestone ? (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Due Date
-            </label>
-            <input
-              type="date"
-              value={(task.date ?? "").slice(0, 10)}
-              onChange={(e) => onUpdate({ date: e.target.value || null })}
-              style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                border: "1px solid var(--color-border)",
-                borderRadius: 4,
-                width: "100%",
-              }}
+            <DetailMetaSidebar
+              task={task}
+              config={config}
+              onUpdate={onUpdate}
+              isMilestone={isMilestone}
             />
           </div>
-        ) : (
-          <div style={{ display: "flex", gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  fontSize: 11,
-                  color: "var(--color-text-muted)",
-                  display: "block",
-                  marginBottom: 4,
-                }}
-              >
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={(task.start_date ?? "").slice(0, 10)}
-                onChange={(e) => onUpdate({ start_date: e.target.value || null })}
-                style={{
-                  padding: "4px 8px",
-                  fontSize: 12,
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 4,
-                  width: "100%",
-                }}
-              />
-            </div>
-            <div style={{ flex: 1 }}>
-              <label
-                style={{
-                  fontSize: 11,
-                  color: "var(--color-text-muted)",
-                  display: "block",
-                  marginBottom: 4,
-                }}
-              >
-                End Date
-              </label>
-              <input
-                type="date"
-                value={(task.end_date ?? "").slice(0, 10)}
-                onChange={(e) => onUpdate({ end_date: e.target.value || null })}
-                style={{
-                  padding: "4px 8px",
-                  fontSize: 12,
-                  border: "1px solid var(--color-border)",
-                  borderRadius: 4,
-                  width: "100%",
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Type (tasks only) */}
-        {!isMilestone && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Type
-            </label>
-            <select
-              value={task.type}
-              onChange={(e) => onUpdate({ type: e.target.value })}
-              style={{
-                padding: "4px 8px",
-                fontSize: 12,
-                border: "1px solid var(--color-border)",
-                borderRadius: 4,
-              }}
-            >
-              {Object.entries(config.task_types)
-                .filter(([name]) => name !== "milestone")
-                .map(([name, def]) => (
-                  <option key={name} value={name}>
-                    {def.label}
-                  </option>
-                ))}
-            </select>
-          </div>
-        )}
-
-        {/* Assignees (tasks only) */}
-        {!isMilestone && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Assignees
-            </label>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {task.assignees.map((a) => (
-                <span
-                  key={a}
-                  style={{
-                    padding: "2px 8px",
-                    fontSize: 11,
-                    background: "var(--color-selected-bg)",
-                    borderRadius: 12,
-                  }}
-                >
-                  {a}
-                </span>
-              ))}
-              {task.assignees.length === 0 && (
-                <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>None</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Labels (tasks only) */}
-        {!isMilestone && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Labels
-            </label>
-            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-              {task.labels.map((l) => (
-                <span
-                  key={l}
-                  style={{
-                    padding: "2px 8px",
-                    fontSize: 11,
-                    background: "var(--color-border-light)",
-                    borderRadius: 3,
-                  }}
-                >
-                  {l}
-                </span>
-              ))}
-              {task.labels.length === 0 && (
-                <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>None</span>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Body */}
-        <div>
-          <label
-            style={{
-              fontSize: 11,
-              color: "var(--color-text-muted)",
-              display: "block",
-              marginBottom: 4,
-            }}
-          >
-            Description
-          </label>
-          <MarkdownEditor
-            value={task.body ?? ""}
-            onChange={(body) => onUpdate({ body })}
-            renderPreview={renderPreview}
-          />
         </div>
+      ) : (
+        /* Single-column layout */
+        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+          <DetailHeader
+            task={task}
+            parentTask={parentTask}
+            onSelectTask={onSelectTask}
+            isMilestone={isMilestone}
+            taskTypeColor={taskType?.color}
+          />
 
-        {/* Sub-tasks */}
-        {task.sub_tasks.length > 0 && (
-          <div>
-            <label
+          {/* Inline badges */}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
+            <span
               style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
+                padding: "2px 8px",
+                fontSize: 10,
+                background:
+                  task.state === "open"
+                    ? "var(--color-success-bg)"
+                    : "var(--color-complete-bg, var(--color-border-light))",
+                color:
+                  task.state === "open"
+                    ? "var(--color-success)"
+                    : "var(--color-complete, var(--color-text-muted))",
+                borderRadius: 12,
               }}
             >
-              Sub-tasks ({task.sub_tasks.length})
-            </label>
-            {task.sub_tasks.map((id) => (
-              <div key={id} style={{ fontSize: 12, padding: "2px 0" }}>
-                {id}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Blocked by */}
-        {task.blocked_by.length > 0 && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Blocked by
-            </label>
-            {task.blocked_by.map((dep, i) => (
-              <div key={i} style={{ fontSize: 12, padding: "2px 0" }}>
-                {dep.task} ({dep.type})
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Linked PRs */}
-        {task.linked_prs.length > 0 && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Linked PRs
-            </label>
-            {task.linked_prs.map((pr) => (
-              <div key={pr} style={{ fontSize: 12, padding: "2px 0" }}>
-                #{pr}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Comments */}
-        {comments.length > 0 && (
-          <div>
-            <label
-              style={{
-                fontSize: 11,
-                color: "var(--color-text-muted)",
-                display: "block",
-                marginBottom: 4,
-              }}
-            >
-              Comments ({comments.length})
-            </label>
-            {comments.map((c, i) => (
-              <div
-                key={i}
+              ● {task.state === "open" ? "Open" : "Closed"}
+            </span>
+            {currentStatus && (
+              <span
                 style={{
-                  padding: 8,
-                  background: "var(--color-bg)",
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  background: "var(--color-border-light)",
+                  borderRadius: 12,
+                }}
+              >
+                {currentStatus}
+              </span>
+            )}
+            {currentPriority && (
+              <span
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  background: "var(--color-border-light)",
+                  borderRadius: 12,
+                }}
+              >
+                {currentPriority}
+              </span>
+            )}
+            {!isMilestone && taskType && (
+              <span
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  background: "var(--color-border-light)",
+                  borderRadius: 12,
+                }}
+              >
+                {taskType.label}
+              </span>
+            )}
+            {dateRange && (
+              <span
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  background: "var(--color-border-light)",
+                  borderRadius: 12,
+                }}
+              >
+                {dateRange}
+              </span>
+            )}
+            {task.assignees.map((a) => (
+              <span
+                key={a}
+                style={{
+                  padding: "2px 8px",
+                  fontSize: 10,
+                  background: "var(--color-selected-bg)",
+                  borderRadius: 12,
+                }}
+              >
+                {a}
+              </span>
+            ))}
+          </div>
+
+          {/* Title editing */}
+          {editingTitle ? (
+            <div>
+              <input
+                value={titleDraft}
+                onChange={(e) => setTitleDraft(e.target.value)}
+                onBlur={() => {
+                  onUpdate({ title: titleDraft });
+                  setEditingTitle(false);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onUpdate({ title: titleDraft });
+                    setEditingTitle(false);
+                  }
+                }}
+                autoFocus
+                style={{
+                  width: "100%",
+                  padding: 4,
+                  fontSize: 16,
+                  fontWeight: 600,
+                  border: "1px solid var(--color-info)",
                   borderRadius: 4,
+                }}
+              />
+            </div>
+          ) : (
+            <h2
+              onClick={() => {
+                setTitleDraft(task.title);
+                setEditingTitle(true);
+              }}
+              style={{ fontSize: 16, cursor: "pointer", margin: 0 }}
+            >
+              {task.title}
+            </h2>
+          )}
+
+          {/* Description */}
+          <div>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--color-text-muted)",
+                display: "block",
+                marginBottom: 4,
+              }}
+            >
+              Description
+            </label>
+            <MarkdownEditor
+              value={task.body ?? ""}
+              onChange={(body) => onUpdate({ body })}
+              renderPreview={renderPreview}
+            />
+          </div>
+
+          {/* Sub-tasks */}
+          {task.sub_tasks.length > 0 && (
+            <DetailSubTasks
+              subTaskIds={task.sub_tasks}
+              allTasks={allTasks}
+              onSelectTask={onSelectTask}
+            />
+          )}
+
+          {/* Relations */}
+          <DetailRelations
+            blockedBy={task.blocked_by}
+            linkedPrs={task.linked_prs}
+            allTasks={allTasks}
+            onSelectTask={onSelectTask}
+            githubRepo={task.github_repo}
+          />
+
+          {/* Comments */}
+          {comments.length > 0 && (
+            <div>
+              <label
+                style={{
+                  fontSize: 11,
+                  color: "var(--color-text-muted)",
+                  display: "block",
                   marginBottom: 4,
                 }}
               >
-                <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
-                  <strong>{c.author}</strong> - {new Date(c.created_at).toLocaleString()}
+                Comments ({comments.length})
+              </label>
+              {comments.map((c, i) => (
+                <div
+                  key={i}
+                  style={{
+                    padding: 8,
+                    background: "var(--color-bg)",
+                    borderRadius: 4,
+                    marginBottom: 4,
+                  }}
+                >
+                  <div style={{ fontSize: 11, color: "var(--color-text-muted)", marginBottom: 4 }}>
+                    <strong>{c.author}</strong> - {new Date(c.created_at).toLocaleString()}
+                  </div>
+                  <MarkdownRenderer markdown={c.body} />
                 </div>
-                <MarkdownRenderer markdown={c.body} />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* GitHub link */}
-        {githubUrl && (
-          <div>
-            <a
-              href={githubUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{ fontSize: 12, color: "var(--color-info)" }}
-            >
-              View on GitHub
-            </a>
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
