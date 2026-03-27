@@ -123,7 +123,7 @@ export function GanttBar({
         rx={3}
         fill={backgroundFill}
         fillOpacity={backgroundOpacity}
-        stroke={isSelected ? "#333" : hl ? hl.stroke : scheduleStroke}
+        stroke={isSelected ? "var(--color-text)" : hl ? hl.stroke : scheduleStroke}
         strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
         strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}
       />
@@ -203,12 +203,12 @@ export function GanttBar({
             x={x1 + width + 4}
             y={barY + barHeight / 2 + 4}
             fontSize={10}
-            fill="#555"
+            fill="var(--color-text-secondary)"
             style={{ pointerEvents: "none" }}
           >
             {outsideLabel}
             {assigneeText && (
-              <tspan fontSize={9} fill="#767676">
+              <tspan fontSize={9} fill="var(--color-text-muted)">
                 {" "}
                 {assigneeText}
               </tspan>

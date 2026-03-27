@@ -60,8 +60,10 @@ const itemStyle: React.CSSProperties = {
 
 function isCurrentSprint(sprint: SprintConfig): boolean {
   const now = new Date();
-  const start = new Date(sprint.start_date);
-  const end = new Date(sprint.end_date);
+  const [sy, sm, sd] = sprint.start_date.split("-").map(Number);
+  const [ey, em, ed] = sprint.end_date.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed, 23, 59, 59);
   return now >= start && now <= end;
 }
 
@@ -82,7 +84,7 @@ export function LegendGroup({ taskTypes, sprints }: LegendGroupProps) {
   }, [open]);
 
   return (
-    <ToolbarGroup label="Legend">
+    <ToolbarGroup>
       <div ref={wrapperRef} style={{ position: "relative" }}>
         <IconButton
           icon={<Palette size={14} />}

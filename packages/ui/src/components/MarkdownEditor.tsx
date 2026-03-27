@@ -52,7 +52,7 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
             Preview
           </button>
         </div>
-        {dirty && <span style={{ fontSize: 10, color: "#b45309" }}>Unsaved</span>}
+        {dirty && <span style={{ fontSize: 10, color: "var(--color-warning-dark)" }}>Unsaved</span>}
       </div>
 
       {mode === "edit" ? (
@@ -68,6 +68,8 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
             border: "1px solid var(--color-border)",
             borderRadius: 4,
             resize: "vertical",
+            background: "var(--color-bg)",
+            color: "var(--color-text)",
           }}
         />
       ) : (
@@ -116,6 +118,7 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
             border: "1px solid var(--color-border)",
             borderRadius: 3,
             background: "var(--color-surface)",
+            color: "var(--color-text)",
             cursor: dirty ? "pointer" : "default",
             opacity: dirty ? 1 : 0.6,
           }}

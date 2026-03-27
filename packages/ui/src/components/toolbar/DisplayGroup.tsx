@@ -11,7 +11,7 @@ interface DisplayGroupProps {
 
 export function DisplayGroup({ displayOptions, onToggleDisplayOption }: DisplayGroupProps) {
   return (
-    <ToolbarGroup label="Display">
+    <ToolbarGroup>
       <IconButton
         icon={<Hash size={14} />}
         title="Show Issue ID"

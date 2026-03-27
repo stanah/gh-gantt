@@ -52,7 +52,7 @@ export function FilterGroup(props: FilterGroupProps) {
   const allTypesCount = Object.keys(taskTypes).length;
 
   return (
-    <ToolbarGroup label="Filter" gap={4}>
+    <ToolbarGroup gap={4}>
       <IconButton
         icon={hideClosed ? <EyeOff size={14} /> : <Eye size={14} />}
         title="Hide Closed Tasks"

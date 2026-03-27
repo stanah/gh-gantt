@@ -36,10 +36,10 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
 
   const btnStyle: React.CSSProperties = {
     padding: "3px 8px",
-    border: "1px solid #ccc",
+    border: "1px solid var(--color-border)",
     borderRadius: 3,
-    background: selectedValues.length > 0 ? "#e8f0fe" : "#fff",
-    color: selectedValues.length > 0 ? "#1a73e8" : "#333",
+    background: selectedValues.length > 0 ? "var(--color-selected-bg)" : "var(--color-bg)",
+    color: selectedValues.length > 0 ? "var(--color-selected-fg)" : "var(--color-text)",
     cursor: "pointer",
     fontSize: 11,
     minWidth: 120,
@@ -57,8 +57,8 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
     minWidth: 180,
     maxHeight: 260,
     overflow: "auto",
-    background: "#fff",
-    border: "1px solid #ddd",
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: 4,
     boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
     padding: 8,
@@ -84,10 +84,12 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
             style={{
               width: "100%",
               padding: "4px 6px",
-              border: "1px solid #ddd",
+              border: "1px solid var(--color-border)",
               borderRadius: 3,
-              background: selectedValues.length === 0 ? "#f0f4ff" : "#fff",
+              background:
+                selectedValues.length === 0 ? "var(--color-hover-bg)" : "var(--color-surface)",
               cursor: "pointer",
+              color: "var(--color-text)",
               fontSize: 11,
               marginBottom: 8,
             }}
@@ -95,46 +97,55 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
             Clear (All labels)
           </button>
 
-          {labels.map((label) => (
-            <label
-              key={label}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {labels.map((label) => (
+              <button
+                type="button"
+                key={label}
+                aria-pressed={selectedSet.has(label)}
+                onClick={() => onChange(toggleValue(selectedValues, label))}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 10px",
+                  fontSize: 11,
+                  border: `1px solid ${selectedSet.has(label) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                  borderRadius: 12,
+                  background: selectedSet.has(label)
+                    ? "var(--color-selected-bg)"
+                    : "var(--color-bg)",
+                  color: selectedSet.has(label) ? "var(--color-selected-fg)" : "var(--color-text)",
+                  cursor: "pointer",
+                }}
+              >
+                {label}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              key="__no_label__"
+              aria-pressed={selectedSet.has(NO_LABEL)}
+              onClick={() => onChange(toggleValue(selectedValues, NO_LABEL))}
               style={{
-                display: "flex",
+                display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 4,
+                padding: "3px 10px",
                 fontSize: 11,
-                marginBottom: 6,
+                border: `1px solid ${selectedSet.has(NO_LABEL) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                borderRadius: 12,
+                background: selectedSet.has(NO_LABEL)
+                  ? "var(--color-selected-bg)"
+                  : "var(--color-bg)",
+                color: selectedSet.has(NO_LABEL) ? "var(--color-selected-fg)" : "var(--color-text)",
                 cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={selectedSet.has(label)}
-                onChange={() => onChange(toggleValue(selectedValues, label))}
-              />
-              {label}
-            </label>
-          ))}
-
-          <div style={{ borderTop: "1px solid #f0f0f0", margin: "6px 0", paddingTop: 6 }} />
-
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11,
-              marginBottom: 6,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSet.has(NO_LABEL)}
-              onChange={() => onChange(toggleValue(selectedValues, NO_LABEL))}
-            />
-            No label
-          </label>
+              No label
+            </button>
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
@@ -142,9 +153,10 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
-                background: "#fff",
+                background: "var(--color-surface)",
+                color: "var(--color-text)",
                 cursor: "pointer",
                 fontSize: 11,
               }}

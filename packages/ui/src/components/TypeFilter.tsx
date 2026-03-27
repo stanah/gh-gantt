@@ -41,10 +41,10 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
 
   const btnStyle: React.CSSProperties = {
     padding: "4px 8px",
-    border: `1px solid ${isFiltered ? "#c5d7f7" : "#ddd"}`,
+    border: `1px solid ${isFiltered ? "var(--color-selected-border)" : "var(--color-border)"}`,
     borderRadius: 3,
-    background: isFiltered ? "#e8f0fe" : "#fff",
-    color: isFiltered ? "#1a73e8" : "#555",
+    background: isFiltered ? "var(--color-selected-bg)" : "var(--color-bg)",
+    color: isFiltered ? "var(--color-selected-fg)" : "var(--color-text-secondary)",
     cursor: "pointer",
     fontSize: 11,
     display: "inline-flex",
@@ -61,15 +61,15 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
     minWidth: 180,
     maxHeight: 260,
     overflow: "auto",
-    background: "#fff",
-    border: "1px solid #ddd",
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: 4,
     boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
     padding: 8,
   };
 
   const badgeStyle: React.CSSProperties = {
-    background: "#1a73e8",
+    background: "var(--color-selected-fg)",
     color: "#fff",
     borderRadius: 8,
     padding: "0 5px",
@@ -105,9 +105,11 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
             style={{
               width: "100%",
               padding: "4px 6px",
-              border: "1px solid #ddd",
+              border: "1px solid var(--color-border)",
               borderRadius: 3,
-              background: enabled.size === allCount ? "#f0f4ff" : "#fff",
+              background:
+                enabled.size === allCount ? "var(--color-hover-bg)" : "var(--color-surface)",
+              color: "var(--color-text)",
               cursor: "pointer",
               fontSize: 11,
               marginBottom: 8,
@@ -116,40 +118,45 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
             Enable All
           </button>
 
-          {entries.map(([name, def]) => {
-            const isLast = enabled.size === 1 && enabled.has(name);
-            return (
-              <label
-                key={name}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 11,
-                  marginBottom: 6,
-                  cursor: isLast ? "not-allowed" : "pointer",
-                  opacity: isLast ? 0.5 : 1,
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={enabled.has(name)}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {entries.map(([name, def]) => {
+              const isActive = enabled.has(name);
+              const isLast = enabled.size === 1 && isActive;
+              return (
+                <button
+                  type="button"
+                  key={name}
+                  aria-pressed={isActive}
                   disabled={isLast}
-                  onChange={() => onToggle(name)}
-                />
-                <span
+                  onClick={() => !isLast && onToggle(name)}
                   style={{
-                    width: 8,
-                    height: 8,
-                    borderRadius: "50%",
-                    background: def.color,
-                    flexShrink: 0,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 4,
+                    padding: "3px 10px",
+                    fontSize: 11,
+                    border: `1px solid ${isActive ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                    borderRadius: 12,
+                    background: isActive ? "var(--color-selected-bg)" : "var(--color-bg)",
+                    color: isActive ? "var(--color-selected-fg)" : "var(--color-text)",
+                    cursor: isLast ? "not-allowed" : "pointer",
+                    opacity: isLast ? 0.5 : 1,
                   }}
-                />
-                {def.label}
-              </label>
-            );
-          })}
+                >
+                  <span
+                    style={{
+                      width: 8,
+                      height: 8,
+                      borderRadius: "50%",
+                      background: def.color,
+                      flexShrink: 0,
+                    }}
+                  />
+                  {def.label}
+                </button>
+              );
+            })}
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
@@ -157,9 +164,10 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
-                background: "#fff",
+                background: "var(--color-surface)",
+                color: "var(--color-text)",
                 cursor: "pointer",
                 fontSize: 11,
               }}

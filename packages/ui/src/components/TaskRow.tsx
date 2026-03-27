@@ -224,7 +224,7 @@ export function TaskRow({
         <span
           style={{
             fontSize: 10,
-            color: "var(--color-text-muted)",
+            color: "var(--color-text-secondary)",
             flexShrink: 0,
             fontFamily: "monospace",
           }}
@@ -324,9 +324,9 @@ export function TaskRow({
             padding: "6px 8px",
             fontSize: 11,
             lineHeight: 1.45,
-            color: "#2c3e50",
-            background: "rgba(255, 255, 255, 0.98)",
-            border: "1px solid #dfe6ee",
+            color: "var(--color-text)",
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
             borderRadius: 6,
             boxShadow: "0 4px 10px rgba(0, 0, 0, 0.12)",
             zIndex: 25,

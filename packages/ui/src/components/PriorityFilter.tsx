@@ -36,10 +36,10 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
 
   const btnStyle: React.CSSProperties = {
     padding: "3px 8px",
-    border: "1px solid #ccc",
+    border: "1px solid var(--color-border)",
     borderRadius: 3,
-    background: selectedValues.length > 0 ? "#e8f0fe" : "#fff",
-    color: selectedValues.length > 0 ? "#1a73e8" : "#333",
+    background: selectedValues.length > 0 ? "var(--color-selected-bg)" : "var(--color-bg)",
+    color: selectedValues.length > 0 ? "var(--color-selected-fg)" : "var(--color-text)",
     cursor: "pointer",
     fontSize: 11,
     minWidth: 120,
@@ -57,8 +57,8 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
     minWidth: 180,
     maxHeight: 260,
     overflow: "auto",
-    background: "#fff",
-    border: "1px solid #ddd",
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: 4,
     boxShadow: "0 4px 12px rgba(0,0,0,0.12)",
     padding: 8,
@@ -84,10 +84,12 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
             style={{
               width: "100%",
               padding: "4px 6px",
-              border: "1px solid #ddd",
+              border: "1px solid var(--color-border)",
               borderRadius: 3,
-              background: selectedValues.length === 0 ? "#f0f4ff" : "#fff",
+              background:
+                selectedValues.length === 0 ? "var(--color-hover-bg)" : "var(--color-surface)",
               cursor: "pointer",
+              color: "var(--color-text)",
               fontSize: 11,
               marginBottom: 8,
             }}
@@ -95,46 +97,57 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
             Clear (All priorities)
           </button>
 
-          {PRIORITY_LEVELS.map((level) => (
-            <label
-              key={level}
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {PRIORITY_LEVELS.map((level) => (
+              <button
+                type="button"
+                key={level}
+                aria-pressed={selectedSet.has(level)}
+                onClick={() => onChange(toggleValue(selectedValues, level))}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "3px 10px",
+                  fontSize: 11,
+                  border: `1px solid ${selectedSet.has(level) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                  borderRadius: 12,
+                  background: selectedSet.has(level)
+                    ? "var(--color-selected-bg)"
+                    : "var(--color-bg)",
+                  color: selectedSet.has(level) ? "var(--color-selected-fg)" : "var(--color-text)",
+                  cursor: "pointer",
+                }}
+              >
+                {level}
+              </button>
+            ))}
+
+            <button
+              type="button"
+              key="__no_priority__"
+              aria-pressed={selectedSet.has(NO_PRIORITY)}
+              onClick={() => onChange(toggleValue(selectedValues, NO_PRIORITY))}
               style={{
-                display: "flex",
+                display: "inline-flex",
                 alignItems: "center",
-                gap: 6,
+                gap: 4,
+                padding: "3px 10px",
                 fontSize: 11,
-                marginBottom: 6,
+                border: `1px solid ${selectedSet.has(NO_PRIORITY) ? "var(--color-selected-border)" : "var(--color-border)"}`,
+                borderRadius: 12,
+                background: selectedSet.has(NO_PRIORITY)
+                  ? "var(--color-selected-bg)"
+                  : "var(--color-bg)",
+                color: selectedSet.has(NO_PRIORITY)
+                  ? "var(--color-selected-fg)"
+                  : "var(--color-text)",
                 cursor: "pointer",
               }}
             >
-              <input
-                type="checkbox"
-                checked={selectedSet.has(level)}
-                onChange={() => onChange(toggleValue(selectedValues, level))}
-              />
-              {level}
-            </label>
-          ))}
-
-          <div style={{ borderTop: "1px solid #f0f0f0", margin: "6px 0", paddingTop: 6 }} />
-
-          <label
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-              fontSize: 11,
-              marginBottom: 6,
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={selectedSet.has(NO_PRIORITY)}
-              onChange={() => onChange(toggleValue(selectedValues, NO_PRIORITY))}
-            />
-            No priority
-          </label>
+              No priority
+            </button>
+          </div>
 
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 6 }}>
             <button
@@ -142,9 +155,10 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
               onClick={() => setOpen(false)}
               style={{
                 padding: "3px 10px",
-                border: "1px solid #ccc",
+                border: "1px solid var(--color-border)",
                 borderRadius: 3,
-                background: "#fff",
+                background: "var(--color-surface)",
+                color: "var(--color-text)",
                 cursor: "pointer",
                 fontSize: 11,
               }}
