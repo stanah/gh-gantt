@@ -56,8 +56,8 @@ export function Toolbar(props: ToolbarProps) {
     <div
       style={{
         padding: "6px 16px",
-        borderBottom: "1px solid #e0e0e0",
-        background: "#fff",
+        borderBottom: "1px solid var(--color-border)",
+        background: "var(--color-surface)",
         display: "flex",
         alignItems: "center",
         gap: 12,
