@@ -52,7 +52,7 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
             Preview
           </button>
         </div>
-        {dirty && <span style={{ fontSize: 10, color: "#b45309" }}>Unsaved</span>}
+        {dirty && <span style={{ fontSize: 10, color: "var(--color-warning-dark)" }}>Unsaved</span>}
       </div>
 
       {mode === "edit" ? (

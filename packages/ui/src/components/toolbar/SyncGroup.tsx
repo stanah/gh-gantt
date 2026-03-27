@@ -29,7 +29,7 @@ export function SyncGroup({ onPull, onPush, syncing, lastSyncedAt }: SyncGroupPr
         {syncing === "push" ? "…" : null}
       </IconButton>
       {lastSyncedAt && (
-        <span style={{ color: "#888", fontSize: 10 }}>
+        <span style={{ color: "var(--color-text-muted)", fontSize: 10 }}>
           {new Date(lastSyncedAt).toLocaleTimeString()}
         </span>
       )}

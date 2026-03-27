@@ -50,8 +50,8 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
         style={{
           width: 420,
           maxWidth: "calc(100vw - 32px)",
-          background: "#fffdf8",
-          border: "1px solid #eadfce",
+          background: "var(--color-surface)",
+          border: "1px solid var(--color-border)",
           borderRadius: 16,
           boxShadow: "0 24px 60px rgba(15, 23, 42, 0.18)",
           overflow: "hidden",
@@ -63,7 +63,7 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
             alignItems: "center",
             justifyContent: "space-between",
             padding: "18px 20px 12px",
-            borderBottom: "1px solid #f0e6d8",
+            borderBottom: "1px solid var(--color-border)",
           }}
         >
           <div>
@@ -71,13 +71,13 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
               style={{
                 fontSize: 11,
                 letterSpacing: "0.08em",
-                color: "#8a6b43",
+                color: "var(--color-text-muted)",
                 textTransform: "uppercase",
               }}
             >
               Keyboard
             </div>
-            <h2 style={{ margin: "4px 0 0", fontSize: 18, color: "#2d2418" }}>
+            <h2 style={{ margin: "4px 0 0", fontSize: 18, color: "var(--color-text)" }}>
               ショートカット一覧
             </h2>
           </div>
@@ -89,7 +89,7 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
               background: "transparent",
               fontSize: 22,
               lineHeight: 1,
-              color: "#7b6f62",
+              color: "var(--color-text-secondary)",
               cursor: "pointer",
             }}
             aria-label="Close shortcuts"
@@ -109,20 +109,22 @@ export function ShortcutHelpPanel({ open, onClose, items = shortcuts }: Shortcut
                 gap: 12,
                 padding: "10px 12px",
                 borderRadius: 12,
-                background: "#fff",
-                border: "1px solid #f2eadf",
+                background: "var(--color-bg)",
+                border: "1px solid var(--color-border-light)",
               }}
             >
-              <span style={{ fontSize: 13, color: "#4a3f33" }}>{shortcut.description}</span>
+              <span style={{ fontSize: 13, color: "var(--color-text)" }}>
+                {shortcut.description}
+              </span>
               <kbd
                 style={{
                   fontSize: 12,
                   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
                   padding: "4px 8px",
                   borderRadius: 8,
-                  background: "#f7efe3",
-                  border: "1px solid #eadfce",
-                  color: "#6e5330",
+                  background: "var(--color-hover-bg)",
+                  border: "1px solid var(--color-border)",
+                  color: "var(--color-text-secondary)",
                   whiteSpace: "nowrap",
                 }}
               >

@@ -13,7 +13,7 @@ export function ToolbarGroup({ label, children, gap = 2 }: ToolbarGroupProps) {
         <span
           style={{
             fontSize: 9,
-            color: "#999",
+            color: "var(--color-text-muted)",
             textTransform: "uppercase",
             letterSpacing: 0.5,
             lineHeight: 1,
