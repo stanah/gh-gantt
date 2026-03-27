@@ -102,6 +102,7 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
               <button
                 type="button"
                 key={label}
+                aria-pressed={selectedSet.has(label)}
                 onClick={() => onChange(toggleValue(selectedValues, label))}
                 style={{
                   display: "inline-flex",
@@ -125,6 +126,7 @@ export function LabelFilter({ labels, selectedValues, onChange }: LabelFilterPro
             <button
               type="button"
               key="__no_label__"
+              aria-pressed={selectedSet.has(NO_LABEL)}
               onClick={() => onChange(toggleValue(selectedValues, NO_LABEL))}
               style={{
                 display: "inline-flex",

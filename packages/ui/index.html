@@ -6,10 +6,12 @@
     <title>gh-gantt</title>
     <script>
       (function () {
-        var t = localStorage.getItem("gh-gantt-theme") || "system";
-        var dark =
-          t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-        if (dark) document.documentElement.dataset.theme = "dark";
+        try {
+          var t = localStorage.getItem("gh-gantt-theme") || "system";
+          var dark =
+            t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+          if (dark) document.documentElement.dataset.theme = "dark";
+        } catch (_) {}
       })();
     </script>
     <style>

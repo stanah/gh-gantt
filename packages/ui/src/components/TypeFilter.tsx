@@ -126,6 +126,8 @@ export function TypeFilter({ taskTypes, enabled, onToggle }: TypeFilterProps) {
                 <button
                   type="button"
                   key={name}
+                  aria-pressed={isActive}
+                  disabled={isLast}
                   onClick={() => !isLast && onToggle(name)}
                   style={{
                     display: "inline-flex",

@@ -326,7 +326,7 @@ export function TaskRow({
             lineHeight: 1.45,
             color: "var(--color-text)",
             background: "var(--color-surface)",
-            border: "1px solid #dfe6ee",
+            border: "1px solid var(--color-border)",
             borderRadius: 6,
             boxShadow: "0 4px 10px rgba(0, 0, 0, 0.12)",
             zIndex: 25,

@@ -478,17 +478,11 @@ export function App() {
     enableAllTypes,
   ]);
 
-  if (loading) {
-    return (
-      <ThemeProvider>
+  return (
+    <ThemeProvider>
+      {loading ? (
         <SkeletonLoader />
-      </ThemeProvider>
-    );
-  }
-
-  if (error) {
-    return (
-      <ThemeProvider>
+      ) : error ? (
         <div
           style={{
             display: "flex",
@@ -500,188 +494,182 @@ export function App() {
         >
           Error: {error}
         </div>
-      </ThemeProvider>
-    );
-  }
-
-  if (!config) return null;
-
-  return (
-    <ThemeProvider>
-      <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-        {syncing && (
-          <div
-            style={{
-              position: "fixed",
-              inset: 0,
-              zIndex: 9998,
-              background: "rgba(128,128,128,0.3)",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <span
+      ) : !config ? null : (
+        <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
+          {syncing && (
+            <div
               style={{
-                fontSize: 13,
-                color: "var(--color-text-secondary)",
-                background: "var(--color-surface)",
-                padding: "8px 16px",
-                borderRadius: 6,
-                boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                position: "fixed",
+                inset: 0,
+                zIndex: 9998,
+                background: "rgba(128,128,128,0.3)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              {syncing === "pull" ? "Pulling…" : "Pushing…"}
-            </span>
-          </div>
-        )}
-        {toast && (
-          <div
-            style={{
-              position: "fixed",
-              top: 12,
-              right: 12,
-              zIndex: 9999,
-              padding: "10px 16px",
-              borderRadius: 6,
-              fontSize: 13,
-              color: "#fff",
-              boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-              background:
-                toast.type === "success"
-                  ? "var(--color-success)"
-                  : toast.type === "error"
-                    ? "var(--color-danger)"
-                    : "var(--color-info)",
+              <span
+                style={{
+                  fontSize: 13,
+                  color: "var(--color-text-secondary)",
+                  background: "var(--color-surface)",
+                  padding: "8px 16px",
+                  borderRadius: 6,
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.1)",
+                }}
+              >
+                {syncing === "pull" ? "Pulling…" : "Pushing…"}
+              </span>
+            </div>
+          )}
+          {toast && (
+            <div
+              style={{
+                position: "fixed",
+                top: 12,
+                right: 12,
+                zIndex: 9999,
+                padding: "10px 16px",
+                borderRadius: 6,
+                fontSize: 13,
+                color: "#fff",
+                boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
+                background:
+                  toast.type === "success"
+                    ? "var(--color-success)"
+                    : toast.type === "error"
+                      ? "var(--color-danger)"
+                      : "var(--color-info)",
+              }}
+            >
+              {toast.message}
+            </div>
+          )}
+          <Toolbar
+            projectName={config.project.name}
+            taskCount={tasks.length}
+            onZoomIn={() => ganttRef.current?.zoomIn()}
+            onZoomOut={() => ganttRef.current?.zoomOut()}
+            onScrollToToday={() => ganttRef.current?.scrollToToday()}
+            onPull={handlePull}
+            onPush={handlePush}
+            syncing={syncing}
+            displayOptions={displayOptions}
+            onToggleDisplayOption={toggleDisplayOption}
+            hideClosed={hideClosed}
+            onToggleHideClosed={toggleHideClosed}
+            selectedAssignee={selectedAssignee}
+            allAssignees={allAssignees}
+            onSelectAssignee={setSelectedAssignee}
+            {...(priorityFieldName
+              ? {
+                  selectedPriorities,
+                  onSelectPriorities: setSelectedPriorities,
+                }
+              : {})}
+            allLabels={allLabels}
+            selectedLabels={selectedLabels}
+            onSelectLabels={setSelectedLabels}
+            searchQuery={searchQuery}
+            onSearchChange={setSearchQuery}
+            searchInputRef={searchInputRef}
+            onOpenShortcuts={toggleHelp}
+            onUndo={() => {
+              void handleUndo();
             }}
-          >
-            {toast.message}
+            onRedo={() => {
+              void handleRedo();
+            }}
+            canUndo={canUndo}
+            canRedo={canRedo}
+            undoCount={undoCount}
+            redoCount={redoCount}
+            undoRedoBusy={undoRedoBusy}
+            taskTypes={config?.task_types ?? {}}
+            sprints={config?.sprints}
+            enabledTypes={enabled}
+            onToggleType={toggleType}
+          />
+          <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
+            <div style={{ flex: 1, overflow: "hidden" }}>
+              <Layout
+                scrollContainerRef={scrollContainerRef}
+                leftHeader={<TaskTreeHeader config={config} />}
+                leftBody={
+                  <TaskTreeBody
+                    config={config}
+                    selectedTaskId={selectedTaskId}
+                    onSelectTask={handleSelectTask}
+                    flatList={flatList}
+                    collapsed={collapsed}
+                    onToggleCollapse={toggleCollapse}
+                    backlogFlatList={backlogFlatList}
+                    backlogCollapsed={backlogCollapsed}
+                    backlogTotalCount={backlogTotalCount}
+                    onToggleBacklog={toggleBacklog}
+                    displayOptions={displayOptions}
+                    hoveredTaskId={hoveredTaskId}
+                    onHoverTask={setHoveredTaskId}
+                    highlightedTaskIds={highlightedTaskIds}
+                    highlightRelationMap={highlightRelationMap}
+                    searchQuery={searchQuery}
+                    dragState={dragState}
+                    totalTaskCount={tasks.length}
+                    hasActiveFilters={hasActiveFilters}
+                    onResetFilters={resetAllFilters}
+                  />
+                }
+                rightHeader={ganttHeader}
+                rightBody={
+                  <GanttChart
+                    ref={ganttRef}
+                    tasks={tasks}
+                    flatList={flatList}
+                    config={config}
+                    selectedTaskId={selectedTaskId}
+                    onSelectTask={handleSelectTask}
+                    onUpdateTask={(taskId, updates) => {
+                      void handleTaskUpdate(taskId, updates);
+                    }}
+                    onViewScaleChange={handleViewScaleChange}
+                    scrollContainerRef={scrollContainerRef}
+                    header={handleGanttHeader}
+                    backlogFlatList={backlogFlatList}
+                    backlogCollapsed={backlogCollapsed}
+                    backlogTotalCount={backlogTotalCount}
+                    displayOptions={displayOptions}
+                    hoveredTaskId={hoveredTaskId}
+                    onHoverTask={setHoveredTaskId}
+                    highlightRelationMap={highlightRelationMap}
+                  />
+                }
+              />
+            </div>
+            {selectedTaskId &&
+              (() => {
+                const detailTask = tasks.find((t) => t.id === selectedTaskId);
+                if (!detailTask) return null;
+                return (
+                  <TaskDetailPanel
+                    key={selectedTaskId}
+                    task={detailTask}
+                    config={config}
+                    comments={cache.comments[selectedTaskId] ?? []}
+                    allTasks={tasks}
+                    onUpdate={(updates) => {
+                      void handleTaskUpdate(selectedTaskId, updates);
+                    }}
+                    onClose={() => setSelectedTaskId(null)}
+                    onSelectTask={handleSelectTask}
+                    width={detailPanelWidth}
+                    onWidthChange={setDetailPanelWidth}
+                  />
+                );
+              })()}
           </div>
-        )}
-        <Toolbar
-          projectName={config.project.name}
-          taskCount={tasks.length}
-          onZoomIn={() => ganttRef.current?.zoomIn()}
-          onZoomOut={() => ganttRef.current?.zoomOut()}
-          onScrollToToday={() => ganttRef.current?.scrollToToday()}
-          onPull={handlePull}
-          onPush={handlePush}
-          syncing={syncing}
-          displayOptions={displayOptions}
-          onToggleDisplayOption={toggleDisplayOption}
-          hideClosed={hideClosed}
-          onToggleHideClosed={toggleHideClosed}
-          selectedAssignee={selectedAssignee}
-          allAssignees={allAssignees}
-          onSelectAssignee={setSelectedAssignee}
-          {...(priorityFieldName
-            ? {
-                selectedPriorities,
-                onSelectPriorities: setSelectedPriorities,
-              }
-            : {})}
-          allLabels={allLabels}
-          selectedLabels={selectedLabels}
-          onSelectLabels={setSelectedLabels}
-          searchQuery={searchQuery}
-          onSearchChange={setSearchQuery}
-          searchInputRef={searchInputRef}
-          onOpenShortcuts={toggleHelp}
-          onUndo={() => {
-            void handleUndo();
-          }}
-          onRedo={() => {
-            void handleRedo();
-          }}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          undoCount={undoCount}
-          redoCount={redoCount}
-          undoRedoBusy={undoRedoBusy}
-          taskTypes={config?.task_types ?? {}}
-          sprints={config?.sprints}
-          enabledTypes={enabled}
-          onToggleType={toggleType}
-        />
-        <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <Layout
-              scrollContainerRef={scrollContainerRef}
-              leftHeader={<TaskTreeHeader config={config} />}
-              leftBody={
-                <TaskTreeBody
-                  config={config}
-                  selectedTaskId={selectedTaskId}
-                  onSelectTask={handleSelectTask}
-                  flatList={flatList}
-                  collapsed={collapsed}
-                  onToggleCollapse={toggleCollapse}
-                  backlogFlatList={backlogFlatList}
-                  backlogCollapsed={backlogCollapsed}
-                  backlogTotalCount={backlogTotalCount}
-                  onToggleBacklog={toggleBacklog}
-                  displayOptions={displayOptions}
-                  hoveredTaskId={hoveredTaskId}
-                  onHoverTask={setHoveredTaskId}
-                  highlightedTaskIds={highlightedTaskIds}
-                  highlightRelationMap={highlightRelationMap}
-                  searchQuery={searchQuery}
-                  dragState={dragState}
-                  totalTaskCount={tasks.length}
-                  hasActiveFilters={hasActiveFilters}
-                  onResetFilters={resetAllFilters}
-                />
-              }
-              rightHeader={ganttHeader}
-              rightBody={
-                <GanttChart
-                  ref={ganttRef}
-                  tasks={tasks}
-                  flatList={flatList}
-                  config={config}
-                  selectedTaskId={selectedTaskId}
-                  onSelectTask={handleSelectTask}
-                  onUpdateTask={(taskId, updates) => {
-                    void handleTaskUpdate(taskId, updates);
-                  }}
-                  onViewScaleChange={handleViewScaleChange}
-                  scrollContainerRef={scrollContainerRef}
-                  header={handleGanttHeader}
-                  backlogFlatList={backlogFlatList}
-                  backlogCollapsed={backlogCollapsed}
-                  backlogTotalCount={backlogTotalCount}
-                  displayOptions={displayOptions}
-                  hoveredTaskId={hoveredTaskId}
-                  onHoverTask={setHoveredTaskId}
-                  highlightRelationMap={highlightRelationMap}
-                />
-              }
-            />
-          </div>
-          {selectedTaskId &&
-            (() => {
-              const detailTask = tasks.find((t) => t.id === selectedTaskId);
-              if (!detailTask) return null;
-              return (
-                <TaskDetailPanel
-                  key={selectedTaskId}
-                  task={detailTask}
-                  config={config}
-                  comments={cache.comments[selectedTaskId] ?? []}
-                  allTasks={tasks}
-                  onUpdate={(updates) => {
-                    void handleTaskUpdate(selectedTaskId, updates);
-                  }}
-                  onClose={() => setSelectedTaskId(null)}
-                  onSelectTask={handleSelectTask}
-                  width={detailPanelWidth}
-                  onWidthChange={setDetailPanelWidth}
-                />
-              );
-            })()}
+          <ShortcutHelpPanel open={isHelpOpen} onClose={closeHelp} />
         </div>
-        <ShortcutHelpPanel open={isHelpOpen} onClose={closeHelp} />
-      </div>
+      )}
     </ThemeProvider>
   );
 }

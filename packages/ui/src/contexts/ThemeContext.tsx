@@ -37,6 +37,9 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     applyTheme(resolvedTheme);
+    return () => {
+      delete document.documentElement.dataset.theme;
+    };
   }, [resolvedTheme]);
 
   useEffect(() => {

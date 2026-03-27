@@ -97,6 +97,7 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
             <button
               type="button"
               key="__unassigned__"
+              aria-pressed={selectedSet.has(UNASSIGNED)}
               onClick={() => onChange(toggleValue(selectedValues, UNASSIGNED))}
               style={{
                 display: "inline-flex",
@@ -122,6 +123,7 @@ export function AssigneeFilter({ assignees, selectedValues, onChange }: Assignee
               <button
                 type="button"
                 key={assignee}
+                aria-pressed={selectedSet.has(assignee)}
                 onClick={() => onChange(toggleValue(selectedValues, assignee))}
                 style={{
                   display: "inline-flex",

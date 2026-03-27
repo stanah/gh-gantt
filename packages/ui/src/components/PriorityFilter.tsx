@@ -102,6 +102,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
               <button
                 type="button"
                 key={level}
+                aria-pressed={selectedSet.has(level)}
                 onClick={() => onChange(toggleValue(selectedValues, level))}
                 style={{
                   display: "inline-flex",
@@ -125,6 +126,7 @@ export function PriorityFilter({ selectedValues, onChange }: PriorityFilterProps
             <button
               type="button"
               key="__no_priority__"
+              aria-pressed={selectedSet.has(NO_PRIORITY)}
               onClick={() => onChange(toggleValue(selectedValues, NO_PRIORITY))}
               style={{
                 display: "inline-flex",

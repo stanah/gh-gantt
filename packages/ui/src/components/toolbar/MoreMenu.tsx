@@ -39,7 +39,11 @@ function DisplayIcon({ display }: { display: TaskType["display"] }) {
 
 function isCurrentSprint(sprint: SprintConfig): boolean {
   const now = new Date();
-  return now >= new Date(sprint.start_date) && now <= new Date(sprint.end_date);
+  const [sy, sm, sd] = sprint.start_date.split("-").map(Number);
+  const [ey, em, ed] = sprint.end_date.split("-").map(Number);
+  const start = new Date(sy, sm - 1, sd);
+  const end = new Date(ey, em - 1, ed, 23, 59, 59);
+  return now >= start && now <= end;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -91,13 +95,20 @@ export function MoreMenu({
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
+    const handleClick = (e: MouseEvent) => {
       if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
         setOpen(false);
       }
     };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", handleClick);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, [open]);
 
   const toggleItems: Array<{ key: DisplayOption; icon: React.ReactNode; label: string }> = [
@@ -113,11 +124,11 @@ export function MoreMenu({
         title="Display & Legend"
         onClick={() => setOpen((prev) => !prev)}
         active={open}
-        aria-haspopup="dialog"
+        aria-haspopup="menu"
         aria-expanded={open}
       />
       {open && (
-        <div role="dialog" aria-label="Display & Legend" style={panelStyle}>
+        <div role="menu" style={panelStyle}>
           {/* Display toggles */}
           <div style={sectionLabel}>Display</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 2 }}>
@@ -127,6 +138,7 @@ export function MoreMenu({
                 <button
                   type="button"
                   key={item.key}
+                  aria-pressed={active}
                   onClick={() => onToggleDisplayOption(item.key)}
                   style={{
                     display: "inline-flex",
