@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react";
 
 type Theme = "system" | "light" | "dark";
@@ -25,7 +26,7 @@ function applyTheme(resolved: ResolvedTheme): void {
   }
 }
 
-export function ThemeProvider({ children }: { children: React.ReactNode }) {
+export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     return stored === "light" || stored === "dark" ? stored : "system";
