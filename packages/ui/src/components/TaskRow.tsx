@@ -224,7 +224,7 @@ export function TaskRow({
         <span
           style={{
             fontSize: 10,
-            color: "var(--color-text-muted)",
+            color: "var(--color-text-secondary)",
             flexShrink: 0,
             fontFamily: "monospace",
           }}
