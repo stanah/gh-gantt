@@ -1,17 +1,14 @@
 // packages/ui/src/components/toolbar/Toolbar.tsx
 import React from "react";
-import { Keyboard } from "lucide-react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
 import type { SprintConfig } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
 import { ZoomGroup } from "./ZoomGroup.js";
-import { DisplayGroup } from "./DisplayGroup.js";
 import { FilterGroup } from "./FilterGroup.js";
 import { SearchBox } from "./SearchBox.js";
-import { IconButton } from "./IconButton.js";
 import { UndoRedoGroup } from "./UndoRedoGroup.js";
 import { SyncGroup } from "./SyncGroup.js";
-import { LegendGroup } from "./LegendGroup.js";
+import { MoreMenu } from "./MoreMenu.js";
 import { ThemeToggle } from "./ThemeToggle.js";
 
 interface ToolbarProps {
@@ -83,10 +80,6 @@ export function Toolbar(props: ToolbarProps) {
         onZoomOut={props.onZoomOut}
         onScrollToToday={props.onScrollToToday}
       />
-      <DisplayGroup
-        displayOptions={props.displayOptions}
-        onToggleDisplayOption={props.onToggleDisplayOption}
-      />
       <FilterGroup
         hideClosed={props.hideClosed}
         onToggleHideClosed={props.onToggleHideClosed}
@@ -107,13 +100,6 @@ export function Toolbar(props: ToolbarProps) {
         onSearchChange={props.onSearchChange}
         searchInputRef={props.searchInputRef}
       />
-      {props.onOpenShortcuts && (
-        <IconButton
-          icon={<Keyboard size={14} />}
-          title="Keyboard Shortcuts (?)"
-          onClick={props.onOpenShortcuts}
-        />
-      )}
       <UndoRedoGroup
         onUndo={props.onUndo}
         onRedo={props.onRedo}
@@ -123,8 +109,14 @@ export function Toolbar(props: ToolbarProps) {
         redoCount={props.redoCount}
         undoRedoBusy={props.undoRedoBusy}
       />
-      <LegendGroup taskTypes={props.taskTypes} sprints={props.sprints} />
       <div style={{ flex: 1 }} />
+      <MoreMenu
+        displayOptions={props.displayOptions}
+        onToggleDisplayOption={props.onToggleDisplayOption}
+        taskTypes={props.taskTypes}
+        sprints={props.sprints}
+        onOpenShortcuts={props.onOpenShortcuts}
+      />
       <ThemeToggle />
       <SyncGroup
         onPull={props.onPull}
