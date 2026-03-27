@@ -4,6 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>gh-gantt</title>
+    <script>
+      (function () {
+        var t = localStorage.getItem("gh-gantt-theme") || "system";
+        var dark =
+          t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
+        if (dark) document.documentElement.dataset.theme = "dark";
+      })();
+    </script>
     <style>
       :root {
         /* ── Brand ── */
@@ -67,6 +75,69 @@
         --color-priority-low-bg: #f0f0f0;
         --color-priority-low-fg: #888;
         --color-priority-low-border: #bbb4;
+      }
+      [data-theme="dark"] {
+        /* ── Brand ── */
+        --color-primary: #58a6ff;
+        --color-primary-light: #79c0ff;
+        --color-accent: #f0883e;
+
+        /* ── Surfaces ── */
+        --color-bg: #0d1117;
+        --color-surface: #161b22;
+        --color-border: #30363d;
+        --color-border-light: #21262d;
+
+        /* ── Text ── */
+        --color-text: #c9d1d9;
+        --color-text-secondary: #8b949e;
+        --color-text-muted: #484f58;
+
+        /* ── Semantic ── */
+        --color-success: #3fb950;
+        --color-danger: #f85149;
+        --color-danger-dark: #da3633;
+        --color-warning: #e3b341;
+        --color-warning-dark: #d29922;
+        --color-info: #58a6ff;
+        --color-complete: #bc8cff;
+        --color-in-progress: #3fb950;
+
+        /* ── Semantic backgrounds ── */
+        --color-danger-bg: rgba(248, 81, 73, 0.1);
+        --color-warning-bg: rgba(227, 179, 65, 0.1);
+        --color-info-bg: rgba(56, 139, 253, 0.1);
+        --color-complete-bg: rgba(137, 87, 229, 0.1);
+        --color-success-bg: rgba(63, 185, 80, 0.1);
+
+        /* ── Interactive states ── */
+        --color-selected-bg: rgba(56, 139, 253, 0.15);
+        --color-selected-fg: #58a6ff;
+        --color-selected-border: #1f6feb;
+        --color-hover-bg: rgba(56, 139, 253, 0.08);
+        --color-highlight-search: rgba(227, 179, 65, 0.3);
+
+        /* ── Relation highlights ── */
+        --color-highlight-parent-bg: rgba(137, 87, 229, 0.15);
+        --color-highlight-parent-border: #bc8cff;
+        --color-highlight-blocker-bg: rgba(248, 81, 73, 0.15);
+        --color-highlight-blocker-border: #f85149;
+
+        /* ── Drop states ── */
+        --color-drop-reparent-bg: rgba(56, 139, 253, 0.15);
+        --color-drop-reparent-border: #58a6ff;
+        --color-drop-dependency-bg: rgba(240, 136, 62, 0.15);
+        --color-drop-dependency-border: #f0883e;
+        --color-drop-invalid-bg: rgba(248, 81, 73, 0.15);
+
+        /* ── At-risk badge ── */
+        --color-atrisk-bg: rgba(227, 179, 65, 0.2);
+        --color-atrisk-fg: #e3b341;
+
+        /* ── Priority ── */
+        --color-priority-low-bg: #21262d;
+        --color-priority-low-fg: #8b949e;
+        --color-priority-low-border: rgba(139, 148, 158, 0.25);
       }
       * {
         margin: 0;
