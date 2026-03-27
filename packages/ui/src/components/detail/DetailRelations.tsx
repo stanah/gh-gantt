@@ -35,13 +35,13 @@ export function DetailRelations({
       {blockedBy.length > 0 && (
         <div>
           <span style={sectionHeaderStyle}>Blocked by</span>
-          {blockedBy.map((dep, i) => {
+          {blockedBy.map((dep) => {
             const resolved = taskMap.get(dep.task);
             const title = resolved ? resolved.title : dep.task;
             const issueNumber = dep.task.match(/#(\d+)$/)?.[1];
             return (
               <div
-                key={i}
+                key={dep.task}
                 style={{
                   display: "flex",
                   alignItems: "center",
@@ -64,7 +64,7 @@ export function DetailRelations({
                     flexShrink: 0,
                   }}
                 >
-                  #{issueNumber ?? dep.task}
+                  {issueNumber ? `#${issueNumber}` : dep.task}
                 </button>
                 <span
                   style={{

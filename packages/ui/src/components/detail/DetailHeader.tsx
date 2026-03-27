@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { ProgressBar } from "../ProgressBar.js";
 
 interface DetailHeaderProps {
@@ -13,6 +13,7 @@ interface DetailHeaderProps {
   };
   parentTask: { id: string; title: string; github_issue: number | null } | null;
   onSelectTask: (taskId: string) => void;
+  onTitleEdit?: (newTitle: string) => void;
   isMilestone?: boolean;
   taskTypeColor?: string;
 }
@@ -34,21 +35,47 @@ export function DetailHeader({
   task,
   parentTask,
   onSelectTask,
+  onTitleEdit,
   isMilestone = false,
   taskTypeColor,
 }: DetailHeaderProps) {
   const githubUrl = buildGithubUrl(task, isMilestone);
   const progress = task._progress ?? 0;
 
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [titleDraft, setTitleDraft] = useState(task.title);
+
+  useEffect(() => {
+    setTitleDraft(task.title);
+  }, [task.title]);
+
   const stateBg = task.state === "open" ? "var(--color-success-bg)" : "var(--color-complete-bg)";
   const stateColor = task.state === "open" ? "var(--color-success)" : "var(--color-complete)";
   const stateLabel = task.state === "open" ? "Open" : "Closed";
+
+  const issueLabel =
+    task.github_issue != null
+      ? `#${task.github_issue}`
+      : isMilestone
+        ? (() => {
+            const suffix = task.id.split("#").pop();
+            return suffix && /^\d+$/.test(suffix) ? `#${suffix}` : null;
+          })()
+        : null;
+
+  const commitTitle = () => {
+    if (onTitleEdit && titleDraft !== task.title) {
+      onTitleEdit(titleDraft);
+    }
+    setEditingTitle(false);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       {/* Breadcrumb: parent row */}
       {parentTask && (
-        <div
+        <button
+          type="button"
           style={{
             fontSize: 12,
             color: "var(--color-text-muted)",
@@ -56,6 +83,10 @@ export function DetailHeader({
             alignItems: "center",
             gap: 4,
             cursor: "pointer",
+            border: "none",
+            background: "none",
+            padding: 0,
+            font: "inherit",
           }}
           onClick={() => onSelectTask(parentTask.id)}
         >
@@ -63,58 +94,98 @@ export function DetailHeader({
           {parentTask.github_issue != null && (
             <span style={{ opacity: 0.7 }}>#{parentTask.github_issue}</span>
           )}
-        </div>
+        </button>
       )}
 
       {/* Current task title row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {githubUrl ? (
-          <a
-            href={githubUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            style={{
-              fontSize: 17,
-              fontWeight: 700,
-              color: "var(--color-info)",
-              textDecoration: "none",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <span>{task.title}</span>
-            {task.github_issue != null && <span>#{task.github_issue}</span>}
-            {/* External link icon */}
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 12 12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+      {editingTitle && onTitleEdit ? (
+        <input
+          value={titleDraft}
+          onChange={(e) => setTitleDraft(e.target.value)}
+          onBlur={commitTitle}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commitTitle();
+          }}
+          autoFocus
+          style={{
+            width: "100%",
+            padding: 4,
+            fontSize: 17,
+            fontWeight: 700,
+            border: "1px solid var(--color-info)",
+            borderRadius: 4,
+          }}
+        />
+      ) : (
+        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+          {githubUrl ? (
+            <a
+              href={githubUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: "var(--color-info)",
+                textDecoration: "none",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
             >
-              <path d="M7 1h4v4M11 1L5.5 6.5M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
-            </svg>
-          </a>
-        ) : (
-          <span
-            style={{
-              fontSize: 17,
-              fontWeight: 700,
-              color: "var(--color-info)",
-              display: "flex",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <span>{task.title}</span>
-            {task.github_issue != null && <span>#{task.github_issue}</span>}
-          </span>
-        )}
-      </div>
+              <span
+                onClick={(e) => {
+                  if (onTitleEdit) {
+                    e.preventDefault();
+                    setTitleDraft(task.title);
+                    setEditingTitle(true);
+                  }
+                }}
+                style={onTitleEdit ? { cursor: "pointer" } : undefined}
+              >
+                {task.title}
+              </span>
+              {issueLabel && <span>{issueLabel}</span>}
+              {/* External link icon */}
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M7 1h4v4M11 1L5.5 6.5M5 2H2a1 1 0 0 0-1 1v7a1 1 0 0 0 1 1h7a1 1 0 0 0 1-1V8" />
+              </svg>
+            </a>
+          ) : (
+            <span
+              style={{
+                fontSize: 17,
+                fontWeight: 700,
+                color: "var(--color-info)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+                cursor: onTitleEdit ? "pointer" : undefined,
+              }}
+              onClick={
+                onTitleEdit
+                  ? () => {
+                      setTitleDraft(task.title);
+                      setEditingTitle(true);
+                    }
+                  : undefined
+              }
+            >
+              <span>{task.title}</span>
+              {issueLabel && <span>{issueLabel}</span>}
+            </span>
+          )}
+        </div>
+      )}
 
       {/* State badge */}
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

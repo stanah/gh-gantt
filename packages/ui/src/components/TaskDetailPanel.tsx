@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import type { Task, Config } from "../types/index.js";
 import { MarkdownEditor } from "./MarkdownEditor.js";
 import { MarkdownRenderer } from "./MarkdownRenderer.js";
@@ -36,9 +36,8 @@ export function TaskDetailPanel({
   width = 400,
   onWidthChange,
 }: TaskDetailPanelProps) {
-  const [editingTitle, setEditingTitle] = useState(false);
-  const [titleDraft, setTitleDraft] = useState(task.title);
   const [copyFeedback, setCopyFeedback] = useState<"success" | "error" | null>(null);
+  const dragging = useRef(false);
 
   const statusFieldName = config.statuses.field_name;
   const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
@@ -54,11 +53,6 @@ export function TaskDetailPanel({
         return p ? { id: p.id, title: p.title, github_issue: p.github_issue } : null;
       })()
     : null;
-
-  // Sync titleDraft when task changes
-  useEffect(() => {
-    setTitleDraft(task.title);
-  }, [task.title]);
 
   const copyTaskInfo = useCallback(() => {
     const ref = task.github_issue ? `${task.github_repo}#${task.github_issue}` : task.id;
@@ -96,12 +90,18 @@ export function TaskDetailPanel({
       });
   }, [task, currentStatus, isMilestone]);
 
+  const resizeListeners = useRef<{
+    onMouseMove: (ev: MouseEvent) => void;
+    onMouseUp: () => void;
+  } | null>(null);
+
   const onResizeMouseDown = useCallback(
     (e: React.MouseEvent) => {
       if (!onWidthChange) return;
       e.preventDefault();
       const startX = e.clientX;
       const startWidth = width;
+      dragging.current = true;
 
       const onMouseMove = (ev: MouseEvent) => {
         const delta = startX - ev.clientX;
@@ -110,15 +110,28 @@ export function TaskDetailPanel({
       };
 
       const onMouseUp = () => {
+        dragging.current = false;
+        resizeListeners.current = null;
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
       };
 
+      resizeListeners.current = { onMouseMove, onMouseUp };
       document.addEventListener("mousemove", onMouseMove);
       document.addEventListener("mouseup", onMouseUp);
     },
     [width, onWidthChange],
   );
+
+  // Cleanup resize listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (dragging.current && resizeListeners.current) {
+        document.removeEventListener("mousemove", resizeListeners.current.onMouseMove);
+        document.removeEventListener("mouseup", resizeListeners.current.onMouseUp);
+      }
+    };
+  }, []);
 
   // Priority for inline badges (1-column)
   const priorityFieldName = config.sync?.field_mapping?.priority;
@@ -129,9 +142,13 @@ export function TaskDetailPanel({
     ? task.date
       ? task.date.slice(0, 10)
       : null
-    : task.start_date || task.end_date
-      ? `${(task.start_date ?? "").slice(0, 10)} - ${(task.end_date ?? "").slice(0, 10)}`
-      : null;
+    : task.start_date && task.end_date
+      ? `${task.start_date.slice(0, 10)} \u2013 ${task.end_date.slice(0, 10)}`
+      : task.start_date
+        ? task.start_date.slice(0, 10)
+        : task.end_date
+          ? task.end_date.slice(0, 10)
+          : null;
 
   return (
     <div
@@ -141,13 +158,17 @@ export function TaskDetailPanel({
         height: "100%",
         background: "var(--color-surface)",
         borderLeft: "1px solid var(--color-border)",
-        overflow: "auto",
         position: "relative",
+        display: "flex",
+        flexDirection: "column",
       }}
     >
       {/* Resize handle */}
       {onWidthChange && (
         <div
+          role="separator"
+          aria-orientation="vertical"
+          tabIndex={0}
           onMouseDown={onResizeMouseDown}
           style={{
             position: "absolute",
@@ -169,6 +190,7 @@ export function TaskDetailPanel({
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
+          flexShrink: 0,
         }}
       >
         <span style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
@@ -255,7 +277,7 @@ export function TaskDetailPanel({
       {/* Content area */}
       {isTwoColumn ? (
         /* Two-column layout */
-        <div style={{ display: "flex", height: "calc(100% - 49px)" }}>
+        <div style={{ display: "flex", flex: 1, minHeight: 0 }}>
           {/* Left column */}
           <div
             style={{
@@ -271,48 +293,10 @@ export function TaskDetailPanel({
               task={task}
               parentTask={parentTask}
               onSelectTask={onSelectTask}
+              onTitleEdit={(title) => onUpdate({ title })}
               isMilestone={isMilestone}
               taskTypeColor={taskType?.color}
             />
-
-            {/* Title editing */}
-            {editingTitle ? (
-              <div>
-                <input
-                  value={titleDraft}
-                  onChange={(e) => setTitleDraft(e.target.value)}
-                  onBlur={() => {
-                    onUpdate({ title: titleDraft });
-                    setEditingTitle(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      onUpdate({ title: titleDraft });
-                      setEditingTitle(false);
-                    }
-                  }}
-                  autoFocus
-                  style={{
-                    width: "100%",
-                    padding: 4,
-                    fontSize: 16,
-                    fontWeight: 600,
-                    border: "1px solid var(--color-info)",
-                    borderRadius: 4,
-                  }}
-                />
-              </div>
-            ) : (
-              <h2
-                onClick={() => {
-                  setTitleDraft(task.title);
-                  setEditingTitle(true);
-                }}
-                style={{ fontSize: 16, cursor: "pointer", margin: 0 }}
-              >
-                {task.title}
-              </h2>
-            )}
 
             {/* Description */}
             <div>
@@ -406,11 +390,22 @@ export function TaskDetailPanel({
         </div>
       ) : (
         /* Single-column layout */
-        <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 16 }}>
+        <div
+          style={{
+            padding: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 16,
+            flex: 1,
+            minHeight: 0,
+            overflow: "auto",
+          }}
+        >
           <DetailHeader
             task={task}
             parentTask={parentTask}
             onSelectTask={onSelectTask}
+            onTitleEdit={(title) => onUpdate({ title })}
             isMilestone={isMilestone}
             taskTypeColor={taskType?.color}
           />
@@ -496,45 +491,6 @@ export function TaskDetailPanel({
               </span>
             ))}
           </div>
-
-          {/* Title editing */}
-          {editingTitle ? (
-            <div>
-              <input
-                value={titleDraft}
-                onChange={(e) => setTitleDraft(e.target.value)}
-                onBlur={() => {
-                  onUpdate({ title: titleDraft });
-                  setEditingTitle(false);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    onUpdate({ title: titleDraft });
-                    setEditingTitle(false);
-                  }
-                }}
-                autoFocus
-                style={{
-                  width: "100%",
-                  padding: 4,
-                  fontSize: 16,
-                  fontWeight: 600,
-                  border: "1px solid var(--color-info)",
-                  borderRadius: 4,
-                }}
-              />
-            </div>
-          ) : (
-            <h2
-              onClick={() => {
-                setTitleDraft(task.title);
-                setEditingTitle(true);
-              }}
-              style={{ fontSize: 16, cursor: "pointer", margin: 0 }}
-            >
-              {task.title}
-            </h2>
-          )}
 
           {/* Description */}
           <div>

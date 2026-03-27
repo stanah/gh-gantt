@@ -22,12 +22,12 @@ function SubTaskNode({ taskId, taskMap, depth, onSelectTask }: SubTaskNodeProps)
     return (
       <div
         style={{
-          paddingLeft: depth * 20,
           display: "flex",
           alignItems: "center",
           gap: 4,
           fontSize: 12,
-          padding: "2px 0",
+          paddingTop: 2,
+          paddingBottom: 2,
           paddingLeft: depth * 20,
         }}
       >
@@ -48,7 +48,8 @@ function SubTaskNode({ taskId, taskMap, depth, onSelectTask }: SubTaskNodeProps)
           alignItems: "center",
           gap: 4,
           fontSize: 12,
-          padding: "2px 0",
+          paddingTop: 2,
+          paddingBottom: 2,
           paddingLeft: depth * 20,
           minWidth: 0,
         }}
@@ -99,17 +100,26 @@ function SubTaskNode({ taskId, taskMap, depth, onSelectTask }: SubTaskNodeProps)
           </button>
         )}
 
-        <span
+        <button
+          onClick={() => onSelectTask(taskId)}
           style={{
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
             flex: 1,
             minWidth: 0,
+            border: "none",
+            background: "none",
+            padding: 0,
+            font: "inherit",
+            fontSize: 12,
+            cursor: "pointer",
+            textAlign: "left",
+            color: "inherit",
           }}
         >
           {task.title}
-        </span>
+        </button>
 
         <span
           style={{
