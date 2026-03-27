@@ -11,7 +11,7 @@ interface ZoomGroupProps {
 
 export function ZoomGroup({ onZoomIn, onZoomOut, onScrollToToday }: ZoomGroupProps) {
   return (
-    <ToolbarGroup label="Zoom">
+    <ToolbarGroup>
       <IconButton icon={<ZoomIn size={14} />} title="Zoom In" onClick={onZoomIn} />
       <IconButton icon={<ZoomOut size={14} />} title="Zoom Out" onClick={onZoomOut} />
       <IconButton

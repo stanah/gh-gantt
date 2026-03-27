@@ -82,7 +82,7 @@ export function LegendGroup({ taskTypes, sprints }: LegendGroupProps) {
   }, [open]);
 
   return (
-    <ToolbarGroup label="Legend">
+    <ToolbarGroup>
       <div ref={wrapperRef} style={{ position: "relative" }}>
         <IconButton
           icon={<Palette size={14} />}
