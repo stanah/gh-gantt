@@ -14,6 +14,8 @@ interface GanttMilestoneProps {
   showIssueId?: boolean;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
+  onTooltipShow?: (task: Task, e: React.MouseEvent | React.FocusEvent) => void;
+  onTooltipHide?: () => void;
 }
 
 export function GanttMilestone({
@@ -25,6 +27,8 @@ export function GanttMilestone({
   showIssueId,
   isDimmed,
   highlightType,
+  onTooltipShow,
+  onTooltipHide,
 }: GanttMilestoneProps) {
   const dateStr = task.date ?? task.start_date ?? task.end_date;
   if (!dateStr) return null;
@@ -44,6 +48,13 @@ export function GanttMilestone({
     <g
       role="graphics-symbol"
       aria-label={`Milestone: ${task.title}, ${dateStr}, ${task.state}`}
+      tabIndex={0}
+      onMouseEnter={(e) => onTooltipShow?.(task, e)}
+      onMouseLeave={() => onTooltipHide?.()}
+      onFocus={(e) => onTooltipShow?.(task, e)}
+      onBlur={() => onTooltipHide?.()}
+      style={{ cursor: "default" }}
+      className="gantt-focusable"
       opacity={isDimmed ? 0.3 : 1}
     >
       <polygon

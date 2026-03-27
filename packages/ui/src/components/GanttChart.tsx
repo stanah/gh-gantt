@@ -13,9 +13,11 @@ import { GanttBar } from "./GanttBar.js";
 import { GanttSummaryBar } from "./GanttSummaryBar.js";
 import { GanttMilestone } from "./GanttMilestone.js";
 import { GanttBlockLines } from "./GanttBlockLines.js";
+import { GanttTooltip } from "./GanttTooltip.js";
 import { useGanttScale, type ViewScale } from "../hooks/useGanttScale.js";
 import { useDragResize } from "../hooks/useDragResize.js";
 import { useDrawBar } from "../hooks/useDrawBar.js";
+import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 import type { Task, Config } from "../types/index.js";
@@ -129,6 +131,29 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
   const { startDraw, preview } = useDrawBar(xScale, handleSchedule);
   const backlogSvgRef = useRef<SVGSVGElement>(null);
+
+  const { tooltip, show: showTooltip, hide: hideTooltip } = useGanttTooltip(bodyRef);
+  const [tooltipSummaryDates, setTooltipSummaryDates] = useState<{
+    start: string;
+    end: string;
+  } | null>(null);
+
+  const handleSummaryTooltipShow = useCallback(
+    (
+      task: Task,
+      dates: { start: string; end: string } | null,
+      e: React.MouseEvent | React.FocusEvent,
+    ) => {
+      setTooltipSummaryDates(dates);
+      showTooltip(task, e);
+    },
+    [showTooltip],
+  );
+
+  const handleSummaryTooltipHide = useCallback(() => {
+    setTooltipSummaryDates(null);
+    hideTooltip();
+  }, [hideTooltip]);
 
   // Wheel zoom with passive: false for proper preventDefault
   useEffect(() => {
@@ -281,6 +306,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 showIssueId={showIssueId}
                 isDimmed={isDimmed}
                 highlightType={highlightType}
+                onTooltipShow={handleSummaryTooltipShow}
+                onTooltipHide={handleSummaryTooltipHide}
               />
             );
           }
@@ -297,6 +324,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                 showIssueId={showIssueId}
                 isDimmed={isDimmed}
                 highlightType={highlightType}
+                onTooltipShow={showTooltip}
+                onTooltipHide={hideTooltip}
               />
             );
           }
@@ -330,6 +359,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               priorityFieldName={priorityFieldName}
               isDimmed={isDimmed}
               highlightType={highlightType}
+              onTooltipShow={showTooltip}
+              onTooltipHide={hideTooltip}
             />
           );
         })}
@@ -402,6 +433,15 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               );
             })()}
         </svg>
+      )}
+      {tooltip && (
+        <GanttTooltip
+          task={tooltip.task}
+          taskType={config.task_types[tooltip.task.type]}
+          x={tooltip.x}
+          y={tooltip.y}
+          summaryDates={tooltipSummaryDates}
+        />
       )}
     </div>
   );

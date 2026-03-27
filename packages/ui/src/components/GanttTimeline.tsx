@@ -104,6 +104,7 @@ export function GanttTimeline({
       }}
     >
       <svg width={totalWidth} height={totalHeight}>
+        <style>{`.gantt-focusable:focus { outline: none; } .gantt-focusable:focus-visible { outline: 2px solid var(--color-focus, #4A90D9); outline-offset: 2px; }`}</style>
         {sprintBands.map((sprint) => {
           const bandStart = xScale(sprint.start);
           const inclusiveEnd = new Date(sprint.end);
