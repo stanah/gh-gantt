@@ -10,7 +10,6 @@ import {
 } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { getPriorityColor } from "./PriorityBadge.js";
-import { contrastTextColor } from "../lib/color-utils.js";
 import type { DragMode } from "../hooks/useDragResize.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 
@@ -66,18 +65,15 @@ export function GanttBar({
   const x2 = xScale(endDate);
   const width = Math.max(x2 - x1, 4);
   const color = taskType?.color ?? "#27AE60";
-  const progress = task._progress ?? 0;
   const barHeight = height - 8;
   const barY = y + 4;
   const handleWidth = 6;
-  const atRiskThresholdDays = 3;
   const overdue = isOverdue(task);
-  const atRisk = !overdue && isAtRisk(task, atRiskThresholdDays);
+  const atRisk = !overdue && isAtRisk(task, 3);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const dangerColor = "var(--color-danger)";
   const warningColor = "var(--color-warning)";
-  const completeColor = "var(--color-complete)";
   const scheduleStroke = overdue ? dangerColor : atRisk ? warningColor : color;
   const backgroundFill = overdue
     ? "var(--color-danger-bg)"
@@ -85,13 +81,6 @@ export function GanttBar({
       ? "var(--color-warning-bg)"
       : color;
   const backgroundOpacity = overdue || atRisk ? 1 : 0.27;
-  const progressFill = overdue
-    ? dangerColor
-    : atRisk
-      ? warningColor
-      : progress === 100
-        ? completeColor
-        : color;
 
   const priority = priorityFieldName
     ? (task.custom_fields[priorityFieldName] as string | undefined)
@@ -99,11 +88,12 @@ export function GanttBar({
   const priorityColor = getPriorityColor(priority);
 
   const hl = highlightStroke(highlightType);
+  const isDone = task.state === "closed";
 
   return (
     <g
       role="graphics-symbol"
-      aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}, ${progress}%${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}`}
+      aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}${isDone ? ", done" : ""}`}
       tabIndex={0}
       onClick={onClick}
       onMouseEnter={(e) => onTooltipShow?.(task, e)}
@@ -112,7 +102,7 @@ export function GanttBar({
       onBlur={() => onTooltipHide?.()}
       style={{ cursor: "pointer" }}
       className="gantt-focusable"
-      opacity={isDimmed ? 0.3 : 1}
+      opacity={isDimmed ? 0.3 : isDone ? 0.5 : 1}
     >
       {/* Background */}
       <rect
@@ -126,16 +116,6 @@ export function GanttBar({
         stroke={isSelected ? "var(--color-text)" : hl ? hl.stroke : scheduleStroke}
         strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
         strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}
-      />
-      {/* Progress fill */}
-      <rect
-        x={x1}
-        y={barY}
-        width={width * (progress / 100)}
-        height={barHeight}
-        rx={3}
-        fill={progressFill}
-        opacity={0.7}
       />
       {/* Priority indicator (left stripe) */}
       {priorityColor && (
@@ -173,20 +153,17 @@ export function GanttBar({
         if (fitsInside) {
           const maxChars = Math.floor((width - padding) / charWidth);
           const label = fullText.length > maxChars ? fullText.slice(0, maxChars) + "..." : fullText;
-          const insideFill =
-            progress >= 50 ? contrastTextColor(progressFill) : contrastTextColor(color);
-          const insideSubFill = insideFill === "#fff" ? "rgba(255,255,255,0.7)" : "#888";
           return (
             <text
               x={x1 + 6}
               y={barY + barHeight / 2 + 4}
               fontSize={10}
-              fill={insideFill}
+              fill="var(--color-text-secondary)"
               style={{ pointerEvents: "none" }}
             >
               {label}
               {assigneeText && (
-                <tspan fontSize={9} fill={insideSubFill}>
+                <tspan fontSize={9} fill="var(--color-text-muted)">
                   {" "}
                   {assigneeText}
                 </tspan>
