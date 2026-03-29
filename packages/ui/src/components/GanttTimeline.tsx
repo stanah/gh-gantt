@@ -1,7 +1,7 @@
 import React, { useMemo } from "react";
 import type { ScaleTime } from "d3-scale";
 import { timeDay, timeWeek, timeMonth } from "d3-time";
-import type { ViewScale } from "../hooks/useGanttScale.js";
+import type { ViewScale } from "@gh-gantt/shared";
 
 interface SprintHeaderItem {
   name: string;
@@ -35,7 +35,7 @@ export function GanttTimeline({
   sprints,
 }: GanttTimelineProps) {
   const ticks = useMemo(() => {
-    const interval = viewScale === "day" ? timeDay : viewScale === "week" ? timeWeek : timeMonth;
+    const interval = viewScale === "week" ? timeWeek : viewScale === "month" ? timeMonth : timeDay;
     return interval.range(dateRange[0], dateRange[1]);
   }, [dateRange, viewScale]);
 
@@ -61,9 +61,6 @@ export function GanttTimeline({
   }, [sprints]);
 
   const formatTick = (date: Date) => {
-    if (viewScale === "day") {
-      return `${date.getMonth() + 1}/${date.getDate()}`;
-    }
     if (viewScale === "week") {
       return `${date.getMonth() + 1}/${date.getDate()}`;
     }
@@ -84,7 +81,10 @@ export function GanttTimeline({
     if (viewScale === "month") {
       return `${months[date.getMonth()]} ${date.getFullYear()}`;
     }
-    return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+    if (viewScale === "quarter") {
+      return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
+    }
+    return `${date.getFullYear()}`;
   };
 
   const sprintRowHeight = sprintBands.length > 0 ? 20 : 0;

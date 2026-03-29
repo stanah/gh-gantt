@@ -11,7 +11,7 @@ import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/toolbar/Toolbar.js";
-import type { ViewScale } from "./hooks/useGanttScale.js";
+import type { ViewScale } from "@gh-gantt/shared";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
 import type { Task } from "./types/index.js";

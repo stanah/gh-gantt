@@ -1,24 +1,22 @@
 import { useState, useMemo, useCallback } from "react";
 import { scaleTime } from "d3-scale";
-import type { Task } from "../types/index.js";
+import type { Task, ViewScale } from "@gh-gantt/shared";
 import { getDateRange } from "../lib/date-utils.js";
-
-export type ViewScale = "day" | "week" | "month" | "quarter";
 
 /** Default pixelsPerDay for each view scale preset */
 const PRESET_PPD: Record<ViewScale, number> = {
-  day: 40,
-  week: 16,
-  month: 5,
-  quarter: 2,
+  week: 40,
+  month: 16,
+  quarter: 5,
+  year: 2,
 };
 
 /** Derive viewScale from current pixelsPerDay */
 function deriveViewScale(ppd: number): ViewScale {
-  if (ppd >= 25) return "day";
-  if (ppd >= 8) return "week";
-  if (ppd >= 3) return "month";
-  return "quarter";
+  if (ppd >= 25) return "week";
+  if (ppd >= 8) return "month";
+  if (ppd >= 3) return "quarter";
+  return "year";
 }
 
 const MIN_PPD = 0.5;

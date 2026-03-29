@@ -53,6 +53,8 @@ export interface SprintConfig {
   color: string;
 }
 
+import type { ViewScale } from "@gh-gantt/shared";
+
 export interface Config {
   version: string;
   project: {
@@ -70,7 +72,7 @@ export interface Config {
     values: Record<string, StatusValue>;
   };
   gantt: {
-    default_view: "day" | "week" | "month" | "quarter";
+    default_view: ViewScale;
     working_days: number[];
     colors: { critical_path: string; on_track: string; at_risk: string; overdue: string };
   };
