@@ -80,8 +80,8 @@ export const SprintSchema: z.ZodType<SprintConfig> = z.object({
 });
 
 const TaskTemplatesSchema = z.object({
-  path: z.string(),
-  mapping: z.record(z.string()).optional(),
+  path: z.string().trim().min(1),
+  mapping: z.record(z.string().trim().min(1)).optional(),
 });
 
 export const ConfigSchema: z.ZodType<Config> = z.object({

@@ -202,6 +202,27 @@ describe("ConfigSchema", () => {
     };
     expect(() => ConfigSchema.parse(config)).toThrow();
   });
+
+  it("rejects task_templates with empty path", () => {
+    const config = {
+      ...validConfig,
+      task_templates: {
+        path: "",
+      },
+    };
+    expect(() => ConfigSchema.parse(config)).toThrow();
+  });
+
+  it("rejects task_templates with empty mapping value", () => {
+    const config = {
+      ...validConfig,
+      task_templates: {
+        path: ".github/ISSUE_TEMPLATE",
+        mapping: { task: "" },
+      },
+    };
+    expect(() => ConfigSchema.parse(config)).toThrow();
+  });
 });
 
 describe("TasksFileSchema", () => {
