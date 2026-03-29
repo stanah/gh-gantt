@@ -7,10 +7,17 @@ test.beforeEach(async ({ page }) => {
   await page.locator("[data-task-id='epic-1']").waitFor();
 });
 
-const shortcutsButtonName = "Keyboard Shortcuts (?)";
+async function openShortcutsViaMenu(page: import("@playwright/test").Page) {
+  // Shortcuts button is inside the MoreMenu dropdown
+  await page.getByRole("button", { name: "Display & Legend" }).click();
+  await page
+    .getByRole("menuitem", { name: "Keyboard Shortcuts" })
+    .or(page.locator("button", { hasText: "Keyboard Shortcuts" }))
+    .click();
+}
 
 test("? button in toolbar opens help panel", async ({ page }) => {
-  await page.getByRole("button", { name: shortcutsButtonName }).click();
+  await openShortcutsViaMenu(page);
 
   const dialog = page.locator("[role='dialog']");
   await expect(dialog).toBeVisible();
@@ -18,7 +25,7 @@ test("? button in toolbar opens help panel", async ({ page }) => {
 });
 
 test("Escape closes the help panel", async ({ page }) => {
-  await page.getByRole("button", { name: shortcutsButtonName }).click();
+  await openShortcutsViaMenu(page);
   await expect(page.locator("[role='dialog']")).toBeVisible();
 
   await page.keyboard.press("Escape");
@@ -27,7 +34,7 @@ test("Escape closes the help panel", async ({ page }) => {
 
 test("? key opens the keyboard shortcuts help panel", async ({ page }) => {
   // Click on the page body first to ensure it has focus, not an input
-  await page.locator("header").click();
+  await page.locator("body").click();
   await page.keyboard.press("Shift+Slash");
 
   const dialog = page.locator("[role='dialog']");
@@ -37,7 +44,7 @@ test("? key opens the keyboard shortcuts help panel", async ({ page }) => {
 
 test("j/k keys navigate between tasks", async ({ page }) => {
   // Ensure body focus (not search input)
-  await page.locator("header").click();
+  await page.locator("body").click();
 
   // Press j to select first task
   await page.keyboard.press("j");
@@ -57,7 +64,7 @@ test("j/k keys navigate between tasks", async ({ page }) => {
 });
 
 test("Space toggles collapse on selected task", async ({ page }) => {
-  await page.locator("header").click();
+  await page.locator("body").click();
 
   // Navigate to epic-1
   await page.keyboard.press("j");
