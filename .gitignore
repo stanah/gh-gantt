@@ -1,6 +1,9 @@
 node_modules/
 dist/
-.gantt-sync/
+.gantt-sync/*
+!.gantt-sync/workflow.md
+!.gantt-sync/gantt.config.json
+!.gantt-sync/.gitkeep
 *.tsbuildinfo
 .DS_Store
 
