@@ -68,8 +68,9 @@ export function GanttBar({
   const barHeight = height - 8;
   const barY = y + 4;
   const handleWidth = 6;
+  const atRiskThresholdDays = 3;
   const overdue = isOverdue(task);
-  const atRisk = !overdue && isAtRisk(task, 3);
+  const atRisk = !overdue && isAtRisk(task, atRiskThresholdDays);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const dangerColor = "var(--color-danger)";
