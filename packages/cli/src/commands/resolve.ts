@@ -4,9 +4,10 @@ import { stdin as input, stdout as output } from "node:process";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
-import { hashTask, extractSyncFields } from "../sync/hash.js";
+import { extractSyncFields } from "../sync/hash.js";
 import { formatConflictList } from "./conflicts.js";
-import type { Task, SyncState } from "@gh-gantt/shared";
+import { formatValue } from "../util/format.js";
+import type { Task } from "@gh-gantt/shared";
 
 /**
  * Extract issue number from task id (e.g. "owner/repo#8" -> 8).
@@ -149,9 +150,3 @@ export const resolveCommand = new Command("resolve")
     const remaining = formatConflictList(tasks, syncState.snapshots, issue);
     console.log(remaining);
   });
-
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "(none)";
-  if (Array.isArray(value)) return JSON.stringify(value);
-  return String(value);
-}

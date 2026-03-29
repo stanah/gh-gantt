@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { detectMarkers } from "../sync/conflict-marker.js";
+import { formatValue } from "../util/format.js";
 import type { SyncState } from "@gh-gantt/shared";
 
 /**
@@ -10,15 +11,6 @@ import type { SyncState } from "@gh-gantt/shared";
 function extractIssueNumber(id: string): number | undefined {
   const match = id.match(/#(\d+)$/);
   return match ? parseInt(match[1], 10) : undefined;
-}
-
-/**
- * Format a value for display.
- */
-function formatValue(value: unknown): string {
-  if (value === null || value === undefined) return "(none)";
-  if (Array.isArray(value)) return JSON.stringify(value);
-  return String(value);
 }
 
 /**

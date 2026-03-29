@@ -40,9 +40,9 @@ describe("formatConflictList", () => {
     const result = formatConflictList(tasks, snapshots);
     expect(result).toContain("#8: Fix login bug");
     expect(result).toContain("state");
-    expect(result).toContain("current=open");
-    expect(result).toContain("incoming=closed");
-    expect(result).toContain("base=open");
+    expect(result).toContain('current="open"');
+    expect(result).toContain('incoming="closed"');
+    expect(result).toContain('base="open"');
     expect(result).toContain("1 task(s), 1 conflict(s)");
   });
 
@@ -125,6 +125,46 @@ describe("formatConflictList", () => {
     expect(result).toContain("#8: Task 8");
     expect(result).not.toContain("#9");
     expect(result).toContain("1 task(s), 1 conflict(s)");
+  });
+
+  it("formats object values without [object Object]", () => {
+    const tasks: Record<string, unknown>[] = [
+      {
+        id: "owner/repo#10",
+        title: "Task with custom fields",
+        custom_fields: { priority: "high" },
+        custom_fields_current: { priority: "high" },
+        custom_fields_incoming: { priority: "low" },
+      },
+    ];
+
+    const snapshots: SyncState["snapshots"] = {
+      "owner/repo#10": {
+        hash: "abc",
+        synced_at: "2026-01-01T00:00:00Z",
+        syncFields: {
+          title: "Task with custom fields",
+          body: "",
+          state: "open",
+          type: "task",
+          assignees: [],
+          labels: [],
+          milestone: null,
+          custom_fields: { priority: "medium" },
+          parent: null,
+          sub_tasks: [],
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+        },
+      },
+    };
+
+    const result = formatConflictList(tasks, snapshots);
+    expect(result).toContain("custom_fields");
+    expect(result).not.toContain("[object Object]");
+    expect(result).toContain('{"priority":"high"}');
   });
 
   it("shows multiple conflicts for the same task", () => {
