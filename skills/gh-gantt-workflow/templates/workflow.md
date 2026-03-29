@@ -3,7 +3,7 @@
 ## 作業開始
 
 1. タスクのステータスを作業中に更新する
-2. フィーチャーブランチを作成する: `git checkout -b feat/issue-<number>-<short-title> main`
+2. フィーチャーブランチを作成する: `git checkout -b feat/issue-<number>-<description> main`
 
 ## タスク化
 
