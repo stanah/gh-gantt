@@ -2,7 +2,6 @@ import React from "react";
 import type { Task, StatusValue, TaskType } from "../types/index.js";
 import { StatusBadge } from "./StatusBadge.js";
 import { PriorityBadge } from "./PriorityBadge.js";
-import { ProgressBar } from "./ProgressBar.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
 import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
@@ -184,9 +183,29 @@ export function TaskRow({
         borderLeft: dropBorderLeft,
         height: 28,
         minWidth: 0,
+        overflow: "hidden",
         opacity: isDragging ? 0.3 : isDimmed ? 0.4 : 1,
       }}
     >
+      {!isMilestone && progress > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: `${progress}%`,
+            background:
+              progress === 100
+                ? "rgba(137, 87, 229, 0.08)"
+                : taskType
+                  ? `${taskType.color}14`
+                  : "rgba(63, 185, 80, 0.08)",
+            pointerEvents: "none",
+          }}
+        />
+      )}
+
       {hasChildren ? (
         <span
           onClick={(e) => {
@@ -311,7 +330,6 @@ export function TaskRow({
         <PriorityBadge priority={task.custom_fields[priorityFieldName] as string | undefined} />
       )}
       {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}
-      {!isMilestone && <ProgressBar progress={progress} color={taskType?.color} />}
 
       {showBodyPreview && (
         <div
