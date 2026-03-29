@@ -153,6 +153,55 @@ describe("ConfigSchema", () => {
 
     expect(() => ConfigSchema.parse(config)).toThrow();
   });
+
+  it("accepts config with task_templates", () => {
+    const config = {
+      ...validConfig,
+      task_templates: {
+        path: ".github/ISSUE_TEMPLATE",
+        mapping: {
+          task: "task.md",
+          bug: "bug_report.yml",
+        },
+      },
+    };
+    const parsed = ConfigSchema.parse(config);
+    expect(parsed.task_templates).toEqual({
+      path: ".github/ISSUE_TEMPLATE",
+      mapping: {
+        task: "task.md",
+        bug: "bug_report.yml",
+      },
+    });
+  });
+
+  it("accepts config with task_templates without mapping", () => {
+    const config = {
+      ...validConfig,
+      task_templates: {
+        path: ".github/ISSUE_TEMPLATE",
+      },
+    };
+    const parsed = ConfigSchema.parse(config);
+    expect(parsed.task_templates).toEqual({
+      path: ".github/ISSUE_TEMPLATE",
+    });
+  });
+
+  it("accepts config without task_templates", () => {
+    const parsed = ConfigSchema.parse(validConfig);
+    expect(parsed.task_templates).toBeUndefined();
+  });
+
+  it("rejects task_templates without path", () => {
+    const config = {
+      ...validConfig,
+      task_templates: {
+        mapping: { task: "task.md" },
+      },
+    };
+    expect(() => ConfigSchema.parse(config)).toThrow();
+  });
 });
 
 describe("TasksFileSchema", () => {

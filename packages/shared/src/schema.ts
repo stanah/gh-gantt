@@ -79,6 +79,11 @@ export const SprintSchema: z.ZodType<SprintConfig> = z.object({
   color: z.string(),
 });
 
+const TaskTemplatesSchema = z.object({
+  path: z.string(),
+  mapping: z.record(z.string()).optional(),
+});
+
 export const ConfigSchema: z.ZodType<Config> = z.object({
   version: z.string(),
   project: z.object({
@@ -115,6 +120,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
     }),
   }),
   sprints: z.array(SprintSchema).optional(),
+  task_templates: TaskTemplatesSchema.optional(),
 });
 
 export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
