@@ -28,10 +28,20 @@ const TaskTypeSchema = z.object({
   default_collapsed: z.boolean().optional(),
 });
 
+const StatusCategorySchema = z.enum([
+  "backlog",
+  "todo",
+  "in_progress",
+  "in_review",
+  "blocked",
+  "done",
+]);
+
 const StatusValueSchema = z.object({
   color: z.string(),
   done: z.boolean(),
   starts_work: z.boolean().optional(),
+  category: StatusCategorySchema.optional(),
 });
 
 export const StatusesSchema: z.ZodType<Statuses> = z.object({

@@ -6,9 +6,12 @@ export interface TaskType {
   default_collapsed?: boolean;
 }
 
+export type StatusCategory = "backlog" | "todo" | "in_progress" | "in_review" | "blocked" | "done";
+
 export interface StatusValue {
   color: string;
   done: boolean;
+  category?: StatusCategory;
 }
 
 export interface Dependency {
