@@ -1,7 +1,7 @@
 // packages/ui/src/components/toolbar/Toolbar.tsx
 import React from "react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
-import type { SprintConfig } from "@gh-gantt/shared";
+import type { SprintConfig, ViewScale } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
 import { ZoomGroup } from "./ZoomGroup.js";
 import { FilterGroup } from "./FilterGroup.js";
@@ -14,8 +14,8 @@ import { ThemeToggle } from "./ThemeToggle.js";
 interface ToolbarProps {
   projectName: string;
   taskCount: number;
-  onZoomIn: () => void;
-  onZoomOut: () => void;
+  activeScale: ViewScale;
+  onScaleChange: (scale: ViewScale) => void;
   onScrollToToday: () => void;
   onPull: () => void;
   onPush: () => void;
@@ -76,8 +76,8 @@ export function Toolbar(props: ToolbarProps) {
         }}
       />
       <ZoomGroup
-        onZoomIn={props.onZoomIn}
-        onZoomOut={props.onZoomOut}
+        activeScale={props.activeScale}
+        onScaleChange={props.onScaleChange}
         onScrollToToday={props.onScrollToToday}
       />
       <FilterGroup

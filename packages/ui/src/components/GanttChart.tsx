@@ -29,8 +29,6 @@ import type { RelationType } from "../hooks/useRelatedTasks.js";
 export interface GanttChartHandle {
   viewScale: ViewScale;
   setViewScale: (s: ViewScale) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
   scrollToToday: () => void;
 }
 
@@ -213,11 +211,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     () => ({
       viewScale,
       setViewScale,
-      zoomIn,
-      zoomOut,
       scrollToToday,
     }),
-    [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday],
+    [viewScale, setViewScale, scrollToToday],
   );
 
   return (

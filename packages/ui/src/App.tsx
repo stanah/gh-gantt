@@ -552,8 +552,8 @@ export function App() {
           <Toolbar
             projectName={config.project.name}
             taskCount={tasks.length}
-            onZoomIn={() => ganttRef.current?.zoomIn()}
-            onZoomOut={() => ganttRef.current?.zoomOut()}
+            activeScale={viewScale}
+            onScaleChange={(scale) => ganttRef.current?.setViewScale(scale)}
             onScrollToToday={() => ganttRef.current?.scrollToToday()}
             onPull={handlePull}
             onPush={handlePush}
