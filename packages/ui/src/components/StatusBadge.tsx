@@ -113,6 +113,7 @@ function inferCategory(status: string, isDone: boolean): StatusCategory {
 }
 
 function resolveCategory(status: string, sv: StatusValue | undefined): StatusCategory {
+  if (sv?.done) return "done";
   if (sv?.category) return sv.category;
   return inferCategory(status, sv?.done ?? false);
 }
