@@ -59,12 +59,12 @@ TaskRow の表示がビジーで、タスクタイトルが他の要素に圧迫
 
 ### 変更対象コンポーネント
 
-| コンポーネント | ファイル | 変更内容 |
-|---|---|---|
-| `TaskRow` | `packages/ui/src/components/TaskRow.tsx` | 背景レイヤー追加、ProgressBar 削除、新アイコン配置 |
-| `ProgressBar` | `packages/ui/src/components/ProgressBar.tsx` | 廃止（TaskRow 内にインライン化） |
-| `PriorityBadge` | `packages/ui/src/components/PriorityBadge.tsx` | アンテナアイコンに書き換え |
-| `StatusBadge` | `packages/ui/src/components/StatusBadge.tsx` | 形状変化アイコンに書き換え |
+| コンポーネント  | ファイル                                       | 変更内容                                           |
+| --------------- | ---------------------------------------------- | -------------------------------------------------- |
+| `TaskRow`       | `packages/ui/src/components/TaskRow.tsx`       | 背景レイヤー追加、ProgressBar 削除、新アイコン配置 |
+| `ProgressBar`   | `packages/ui/src/components/ProgressBar.tsx`   | 廃止（TaskRow 内にインライン化）                   |
+| `PriorityBadge` | `packages/ui/src/components/PriorityBadge.tsx` | アンテナアイコンに書き換え                         |
+| `StatusBadge`   | `packages/ui/src/components/StatusBadge.tsx`   | 形状変化アイコンに書き換え                         |
 
 ### Props 変更
 
@@ -77,17 +77,23 @@ TaskRow の表示がビジーで、タスクタイトルが他の要素に圧迫
 TaskRow のルート div 内に、最初の子要素として absolute 配置の背景 div を追加:
 
 ```tsx
-{/* Progress background layer */}
-{progress > 0 && (
-  <div style={{
-    position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
-    width: `${progress}%`,
-    background: `${progressColor}14`, // 8% opacity hex
-  }} />
-)}
+{
+  /* Progress background layer */
+}
+{
+  progress > 0 && (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: `${progress}%`,
+        background: `${progressColor}14`, // 8% opacity hex
+      }}
+    />
+  );
+}
 ```
 
 他の既存要素には `position: "relative"` を追加して背景の上に重ねる。TaskRow のルート div には `position: "relative"` と `overflow: "hidden"` を追加。
@@ -104,9 +110,9 @@ TaskRow のルート div 内に、最初の子要素として absolute 配置の
 
 ## Total Space Savings
 
-| 要素 | Before | After | 削減 |
-|---|---|---|---|
-| ProgressBar | 60px | 0px（背景） | −60px |
-| PriorityBadge | ~30px | ~14px | −16px |
-| StatusBadge | ~70px | ~14px | −56px |
-| **合計** | | | **~132px** |
+| 要素          | Before | After       | 削減       |
+| ------------- | ------ | ----------- | ---------- |
+| ProgressBar   | 60px   | 0px（背景） | −60px      |
+| PriorityBadge | ~30px  | ~14px       | −16px      |
+| StatusBadge   | ~70px  | ~14px       | −56px      |
+| **合計**      |        |             | **~132px** |

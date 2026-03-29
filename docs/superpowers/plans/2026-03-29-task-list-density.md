@@ -14,19 +14,20 @@
 
 ## File Map
 
-| Action | File | Responsibility |
-|--------|------|---------------|
-| Modify | `packages/ui/src/components/TaskRow.tsx` | ProgressBar import 削除、背景レイヤー追加 |
-| Keep | `packages/ui/src/components/ProgressBar.tsx` | DetailHeader が引き続き使用するため残す |
-| Rewrite | `packages/ui/src/components/PriorityBadge.tsx` | アンテナアイコンに書き換え |
-| Rewrite | `packages/ui/src/components/StatusBadge.tsx` | 形状変化 SVG アイコンに書き換え |
-| Modify | `e2e/task-detail.spec.ts` | StatusBadge のテキスト参照を修正 |
+| Action  | File                                           | Responsibility                            |
+| ------- | ---------------------------------------------- | ----------------------------------------- |
+| Modify  | `packages/ui/src/components/TaskRow.tsx`       | ProgressBar import 削除、背景レイヤー追加 |
+| Keep    | `packages/ui/src/components/ProgressBar.tsx`   | DetailHeader が引き続き使用するため残す   |
+| Rewrite | `packages/ui/src/components/PriorityBadge.tsx` | アンテナアイコンに書き換え                |
+| Rewrite | `packages/ui/src/components/StatusBadge.tsx`   | 形状変化 SVG アイコンに書き換え           |
+| Modify  | `e2e/task-detail.spec.ts`                      | StatusBadge のテキスト参照を修正          |
 
 ---
 
 ### Task 1: ProgressBar の背景統合
 
 **Files:**
+
 - Modify: `packages/ui/src/components/TaskRow.tsx:1-5` (import), `packages/ui/src/components/TaskRow.tsx:108-189` (style), `packages/ui/src/components/TaskRow.tsx:314` (ProgressBar 使用箇所)
 
 - [ ] **Step 1: TaskRow から ProgressBar import を削除**
@@ -67,25 +68,29 @@ style={{
 TaskRow の return 内、ルート div の最初の子要素（`{hasChildren ? (` の前）に背景レイヤーを追加:
 
 ```tsx
-{/* Progress background layer */}
-{!isMilestone && progress > 0 && (
-  <div
-    style={{
-      position: "absolute",
-      left: 0,
-      top: 0,
-      bottom: 0,
-      width: `${progress}%`,
-      background:
-        progress === 100
-          ? "rgba(137, 87, 229, 0.08)"
-          : taskType
-            ? `${taskType.color}14`
-            : "rgba(63, 185, 80, 0.08)",
-      pointerEvents: "none",
-    }}
-  />
-)}
+{
+  /* Progress background layer */
+}
+{
+  !isMilestone && progress > 0 && (
+    <div
+      style={{
+        position: "absolute",
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: `${progress}%`,
+        background:
+          progress === 100
+            ? "rgba(137, 87, 229, 0.08)"
+            : taskType
+              ? `${taskType.color}14`
+              : "rgba(63, 185, 80, 0.08)",
+        pointerEvents: "none",
+      }}
+    />
+  );
+}
 ```
 
 注: `${taskType.color}14` は 6桁 hex + `14` で 8% opacity。taskType.color が RGB hex（例: `#27AE60`）であることを前提とする。taskType が undefined の場合は緑のフォールバック。
@@ -96,7 +101,9 @@ TaskRow の return 内、ルート div の最初の子要素（`{hasChildren ? (
 
 ```tsx
 // 削除:
-{!isMilestone && <ProgressBar progress={progress} color={taskType?.color} />}
+{
+  !isMilestone && <ProgressBar progress={progress} color={taskType?.color} />;
+}
 ```
 
 - [ ] **Step 5: ビルド確認**
@@ -116,6 +123,7 @@ git commit -m "feat(ui): integrate progress bar as row background layer (#103)"
 ### Task 2: PriorityBadge のアンテナアイコン化
 
 **Files:**
+
 - Rewrite: `packages/ui/src/components/PriorityBadge.tsx`
 
 - [ ] **Step 1: PriorityBadge を書き換え**
@@ -207,6 +215,7 @@ git commit -m "feat(ui): replace priority badge with antenna icon (#103)"
 ### Task 3: StatusBadge の形状変化アイコン化
 
 **Files:**
+
 - Rewrite: `packages/ui/src/components/StatusBadge.tsx`
 
 - [ ] **Step 1: StatusBadge を書き換え**
@@ -322,6 +331,7 @@ git commit -m "feat(ui): replace status badge with shape-based icons (#103)"
 ### Task 4: ダークモード視認性確認
 
 **Files:**
+
 - Modify (if needed): `packages/ui/src/components/PriorityBadge.tsx`, `packages/ui/src/components/StatusBadge.tsx`
 
 - [ ] **Step 1: 開発サーバーを起動して目視確認**
@@ -329,6 +339,7 @@ git commit -m "feat(ui): replace status badge with shape-based icons (#103)"
 Run: `pnpm dev`
 
 ブラウザで以下を確認:
+
 1. ライトモード: アンテナバーの色、SVG アイコンの色、背景フラット塗りの視認性
 2. ダークモード切替: テーマ切替ボタンでダークモードにし、同じ要素の視認性確認
 3. アンテナバーの INACTIVE_COLOR がダークモードで見えるか
@@ -344,6 +355,7 @@ const INACTIVE_COLOR = "var(--color-priority-inactive, rgba(200, 200, 200, 0.4))
 ```
 
 `index.html` のダークモード CSS 変数に追加:
+
 ```css
 --color-priority-inactive: rgba(100, 100, 100, 0.4);
 ```
@@ -362,11 +374,13 @@ git commit -m "fix(ui): adjust dark mode colors for density icons (#103)"
 ### Task 5: E2E テスト更新
 
 **Files:**
+
 - Modify: `e2e/task-detail.spec.ts:24`
 
 - [ ] **Step 1: E2E テストの StatusBadge テキスト参照を確認**
 
 `e2e/task-detail.spec.ts` 行 24:
+
 ```ts
 await expect(page.getByText("In Progress").first()).toBeVisible();
 ```
