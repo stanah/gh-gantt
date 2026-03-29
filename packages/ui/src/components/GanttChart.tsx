@@ -270,7 +270,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                     : "transparent"
               }
               style={{ cursor: "pointer" }}
-              onClick={() => onSelectTask(node.task.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectTask(node.task.id);
+              }}
               onMouseEnter={() => onHoverTask?.(node.task.id)}
             />
           );
@@ -340,7 +343,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               xScale={xScale}
               y={y}
               height={ROW_HEIGHT}
-              onClick={() => onSelectTask(task.id)}
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelectTask(task.id);
+              }}
               isSelected={selectedTaskId === task.id}
               onDragStart={
                 task.start_date && task.end_date

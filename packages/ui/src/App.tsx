@@ -111,6 +111,10 @@ export function App() {
     setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
   }, []);
 
+  const handleDeselectTask = useCallback(() => {
+    setSelectedTaskId(null);
+  }, []);
+
   const activateTask = useCallback((taskId: string) => {
     setSelectedTaskId(taskId);
   }, []);
@@ -591,7 +595,7 @@ export function App() {
             onToggleType={toggleType}
           />
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-            <div style={{ flex: 1, overflow: "hidden" }}>
+            <div style={{ flex: 1, overflow: "hidden" }} onClick={handleDeselectTask}>
               <Layout
                 scrollContainerRef={scrollContainerRef}
                 leftHeader={<TaskTreeHeader config={config} />}
@@ -659,7 +663,7 @@ export function App() {
                     onUpdate={(updates) => {
                       void handleTaskUpdate(selectedTaskId, updates);
                     }}
-                    onClose={() => setSelectedTaskId(null)}
+                    onClose={handleDeselectTask}
                     onSelectTask={handleSelectTask}
                     width={detailPanelWidth}
                     onWidthChange={setDetailPanelWidth}
