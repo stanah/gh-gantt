@@ -10,24 +10,26 @@ test.beforeEach(async ({ page }) => {
 test("clicking a task opens the detail panel", async ({ page }) => {
   await page.locator("[data-task-id='feature-1']").click();
 
-  // Detail panel shows a heading with the task title
-  await expect(page.getByRole("heading", { name: "Feature: New Dashboard" })).toBeVisible();
+  // Detail panel shows task title as a link (since it has a GitHub issue)
+  const titleLink = page.locator("a").filter({ hasText: "Feature: New Dashboard" });
+  await expect(titleLink).toBeVisible();
 });
 
 test("detail panel shows task metadata", async ({ page }) => {
   // task-2 is open and visible by default
   await page.locator("[data-task-id='task-2']").click();
 
-  // Should show status in a select (scoped by label)
-  await expect(page.locator("label:text('Status') + select")).toHaveValue("In Progress");
+  // In single-column layout, status is shown as an inline badge
+  // Use .first() since multiple elements may show "In Progress"
+  await expect(page.getByText("In Progress").first()).toBeVisible();
 });
 
 test("detail panel shows dates", async ({ page }) => {
   await page.locator("[data-task-id='task-2']").click();
 
-  await expect(page.locator("label:text('Start Date') + input[type='date']")).toHaveValue(
-    "2026-01-16",
-  );
+  // In single-column layout, dates are shown as a date range badge
+  // task-2: start_date "2026-01-16", end_date "2026-02-28"
+  await expect(page.getByText("2026-01-16")).toBeVisible();
 });
 
 test("clicking same task again closes the detail panel", async ({ page }) => {
@@ -35,18 +37,19 @@ test("clicking same task again closes the detail panel", async ({ page }) => {
 
   // Click to open panel
   await taskRow.click();
-  await expect(page.getByRole("heading", { name: "Feature: New Dashboard" })).toBeVisible();
+  const titleLink = page.locator("a").filter({ hasText: "Feature: New Dashboard" });
+  await expect(titleLink).toBeVisible();
 
   // Click same task to close
   await taskRow.click();
-  await expect(page.getByRole("heading", { name: "Feature: New Dashboard" })).not.toBeVisible();
+  await expect(titleLink).not.toBeVisible();
 });
 
 test("detail panel shows description when available", async ({ page }) => {
   await page.locator("[data-task-id='feature-1']").click();
 
-  // Description appears in a paragraph in the detail panel
-  await expect(page.locator("label:text('Description') ~ * p").first()).toContainText(
-    "Implement the new dashboard layout.",
-  );
+  // Description appears as a paragraph in the detail panel
+  await expect(
+    page.locator("p").filter({ hasText: "Implement the new dashboard layout." }),
+  ).toBeVisible();
 });

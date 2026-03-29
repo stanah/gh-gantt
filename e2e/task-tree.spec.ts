@@ -7,9 +7,10 @@ test.beforeEach(async ({ page }) => {
   await page.locator("[data-task-id='epic-1']").waitFor();
 });
 
-test("displays project name and task count in header", async ({ page }) => {
-  await expect(page.locator("header")).toContainText("Test Project");
-  await expect(page.locator("header")).toContainText("7");
+test("displays project name and task count in toolbar", async ({ page }) => {
+  // Toolbar renders project name in <strong> and task count in <span>
+  await expect(page.locator("strong").filter({ hasText: "Test Project" })).toBeVisible();
+  await expect(page.getByText("7 tasks")).toBeVisible();
 });
 
 test("renders all root-level tasks in the tree", async ({ page }) => {
@@ -58,8 +59,8 @@ test("unhide closed shows closed tasks", async ({ page }) => {
   // Closed tasks hidden by default
   await expect(page.locator("[data-task-id='task-1']")).not.toBeVisible();
 
-  // Click "Hide closed" button to toggle (un-hide)
-  await page.getByRole("button", { name: "Hide closed" }).click();
+  // Click "Hide Closed Tasks" button to toggle (un-hide)
+  await page.getByRole("button", { name: "Hide Closed Tasks" }).click();
 
   // Now closed tasks should appear
   await expect(page.locator("[data-task-id='task-1']")).toBeVisible();

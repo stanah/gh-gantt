@@ -15,10 +15,24 @@ async function openTypeFilter(page: import("@playwright/test").Page) {
 test("type filter menu lists each task type", async ({ page }) => {
   await openTypeFilter(page);
 
-  await expect(page.getByRole("checkbox", { name: "Epic" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Feature" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Task" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Milestone" })).toBeChecked();
+  const dialog = page.getByRole("dialog", { name: "Filter by type" });
+  // Type buttons use aria-pressed toggle buttons, not checkboxes
+  await expect(dialog.getByRole("button", { name: "Epic" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(dialog.getByRole("button", { name: "Feature" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(dialog.getByRole("button", { name: "Task" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(dialog.getByRole("button", { name: "Milestone" })).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 });
 
 test("clicking a type filter hides tasks of that type", async ({ page }) => {
@@ -27,8 +41,9 @@ test("clicking a type filter hides tasks of that type", async ({ page }) => {
 
   await openTypeFilter(page);
 
-  // Disable the "Task" type filter from the dropdown
-  await page.getByRole("checkbox", { name: "Task" }).uncheck();
+  const dialog = page.getByRole("dialog", { name: "Filter by type" });
+  // Disable the "Task" type filter by clicking the toggle button
+  await dialog.getByRole("button", { name: "Task" }).click();
 
   // Task-type items should be hidden
   await expect(page.locator("[data-task-id='task-2']")).not.toBeVisible();
@@ -41,12 +56,13 @@ test("clicking a type filter hides tasks of that type", async ({ page }) => {
 
 test("re-enabling type filter shows tasks again", async ({ page }) => {
   await openTypeFilter(page);
-  const taskCheckbox = page.getByRole("checkbox", { name: "Task" });
+  const dialog = page.getByRole("dialog", { name: "Filter by type" });
+  const taskButton = dialog.getByRole("button", { name: "Task" });
 
-  await taskCheckbox.uncheck();
+  await taskButton.click();
   await expect(page.locator("[data-task-id='task-2']")).not.toBeVisible();
 
-  await taskCheckbox.check();
+  await taskButton.click();
   await expect(page.locator("[data-task-id='task-2']")).toBeVisible();
 });
 
@@ -54,13 +70,13 @@ test("Hide closed button toggles closed task visibility", async ({ page }) => {
   // hideClosed is true by default, so closed tasks are hidden
   await expect(page.locator("[data-task-id='task-1']")).not.toBeVisible();
 
-  // Click Hide closed to show them
-  await page.getByRole("button", { name: "Hide closed" }).click();
+  // Click Hide Closed Tasks to show them
+  await page.getByRole("button", { name: "Hide Closed Tasks" }).click();
   await expect(page.locator("[data-task-id='task-1']")).toBeVisible();
   await expect(page.locator("[data-task-id='task-4']")).toBeVisible();
 
   // Click again to hide
-  await page.getByRole("button", { name: "Hide closed" }).click();
+  await page.getByRole("button", { name: "Hide Closed Tasks" }).click();
   await expect(page.locator("[data-task-id='task-1']")).not.toBeVisible();
 });
 
@@ -81,8 +97,11 @@ test("zoom controls are rendered", async ({ page }) => {
 });
 
 test("display toggle issue ID button works", async ({ page }) => {
-  const idButton = page.getByRole("button", { name: "Show Issue ID" });
+  // Display toggles are inside the MoreMenu dropdown
+  await page.getByRole("button", { name: "Display & Legend" }).click();
 
+  const idButton = page.getByRole("button", { name: "Issue ID" });
+  // Issue ID is enabled by default
   await expect(idButton).toHaveAttribute("aria-pressed", "true");
 
   await idButton.click();
