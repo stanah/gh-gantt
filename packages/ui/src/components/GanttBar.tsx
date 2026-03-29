@@ -19,7 +19,7 @@ interface GanttBarProps {
   xScale: ScaleTime<number, number>;
   y: number;
   height: number;
-  onClick: () => void;
+  onClick: (e: React.MouseEvent) => void;
   isSelected: boolean;
   onDragStart?: (e: React.MouseEvent, mode: DragMode) => void;
   showIssueId?: boolean;

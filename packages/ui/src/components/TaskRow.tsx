@@ -160,7 +160,10 @@ export function TaskRow({
       data-task-id={task.id}
       draggable={isDraggable}
       tabIndex={0}
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       onMouseEnter={() => onHover?.(task.id)}
       onMouseLeave={() => onHover?.(null)}
       onFocus={() => onHover?.(task.id)}
