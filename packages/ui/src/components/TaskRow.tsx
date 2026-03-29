@@ -183,7 +183,6 @@ export function TaskRow({
         borderLeft: dropBorderLeft,
         height: 28,
         minWidth: 0,
-        overflow: "hidden",
         opacity: isDragging ? 0.3 : isDimmed ? 0.4 : 1,
       }}
     >
@@ -194,7 +193,7 @@ export function TaskRow({
             left: 0,
             top: 0,
             bottom: 0,
-            width: `${progress}%`,
+            width: `${Math.min(100, Math.max(0, progress))}%`,
             background:
               progress === 100
                 ? "rgba(137, 87, 229, 0.08)"
