@@ -595,7 +595,14 @@ export function App() {
             onToggleType={toggleType}
           />
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-            <div style={{ flex: 1, overflow: "hidden" }} onClick={handleDeselectTask}>
+            <div
+              style={{ flex: 1, overflow: "hidden" }}
+              onClick={(e) => {
+                const target = e.target as HTMLElement;
+                if (target.closest("button, a, input, select, textarea")) return;
+                handleDeselectTask();
+              }}
+            >
               <Layout
                 scrollContainerRef={scrollContainerRef}
                 leftHeader={<TaskTreeHeader config={config} />}
