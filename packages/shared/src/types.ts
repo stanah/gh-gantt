@@ -106,6 +106,11 @@ export interface SprintConfig {
   color: string;
 }
 
+export interface TaskTemplates {
+  path: string;
+  mapping?: Record<string, string>;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -118,6 +123,7 @@ export interface Config {
   statuses: Statuses;
   gantt: GanttConfig;
   sprints?: SprintConfig[];
+  task_templates?: TaskTemplates;
 }
 
 export interface IdMapping {
