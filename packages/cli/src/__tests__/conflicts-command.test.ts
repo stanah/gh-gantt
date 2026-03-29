@@ -40,9 +40,9 @@ describe("formatConflictList", () => {
     const result = formatConflictList(tasks, snapshots);
     expect(result).toContain("#8: Fix login bug");
     expect(result).toContain("state");
-    expect(result).toContain("current=open");
-    expect(result).toContain("incoming=closed");
-    expect(result).toContain("base=open");
+    expect(result).toContain('current="open"');
+    expect(result).toContain('incoming="closed"');
+    expect(result).toContain('base="open"');
     expect(result).toContain("1 task(s), 1 conflict(s)");
   });
 
