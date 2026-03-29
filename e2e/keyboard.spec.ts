@@ -10,10 +10,8 @@ test.beforeEach(async ({ page }) => {
 async function openShortcutsViaMenu(page: import("@playwright/test").Page) {
   // Shortcuts button is inside the MoreMenu dropdown
   await page.getByRole("button", { name: "Display & Legend" }).click();
-  await page
-    .getByRole("menuitem", { name: "Keyboard Shortcuts" })
-    .or(page.locator("button", { hasText: "Keyboard Shortcuts" }))
-    .click();
+  const menu = page.getByRole("menu");
+  await menu.getByRole("button", { name: "Keyboard Shortcuts" }).click();
 }
 
 test("? button in toolbar opens help panel", async ({ page }) => {

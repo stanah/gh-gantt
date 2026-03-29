@@ -50,6 +50,6 @@ test("detail panel shows description when available", async ({ page }) => {
 
   // Description appears as a paragraph in the detail panel
   await expect(
-    page.getByRole("paragraph").filter({ hasText: "Implement the new dashboard layout." }),
+    page.locator("p").filter({ hasText: "Implement the new dashboard layout." }),
   ).toBeVisible();
 });
