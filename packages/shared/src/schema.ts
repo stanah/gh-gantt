@@ -17,7 +17,7 @@ const DependencyTypeSchema = z.enum([
   "start-to-start",
   "start-to-finish",
 ]);
-const ViewScaleSchema = z.enum(["day", "week", "month", "quarter"]);
+const ViewScaleSchema = z.enum(["week", "month", "quarter", "year"]);
 
 const TaskTypeSchema = z.object({
   label: z.string(),

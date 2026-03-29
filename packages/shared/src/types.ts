@@ -4,7 +4,7 @@ export type DependencyType =
   | "finish-to-finish"
   | "start-to-start"
   | "start-to-finish";
-export type ViewScale = "day" | "week" | "month" | "quarter";
+export type ViewScale = "week" | "month" | "quarter" | "year";
 
 export interface TaskType {
   label: string;
