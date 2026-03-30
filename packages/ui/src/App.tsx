@@ -70,6 +70,7 @@ export function App() {
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
+  const hasScrolledToToday = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{
@@ -101,6 +102,10 @@ export function App() {
 
   const handleViewScaleChange = useCallback((scale: ViewScale) => {
     setViewScale(scale);
+    if (!hasScrolledToToday.current) {
+      hasScrolledToToday.current = true;
+      requestAnimationFrame(() => ganttRef.current?.scrollToToday());
+    }
   }, []);
 
   const handleGanttHeader = useCallback((node: React.ReactNode) => {
