@@ -17,7 +17,6 @@ import { GanttTooltip } from "./GanttTooltip.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
 import type { ViewScale } from "@gh-gantt/shared";
 import { useDragResize } from "../hooks/useDragResize.js";
-import { useDrawBar } from "../hooks/useDrawBar.js";
 import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
@@ -42,9 +41,6 @@ interface GanttChartProps {
   onViewScaleChange?: (scale: ViewScale) => void;
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   header: (node: React.ReactNode) => void;
-  backlogFlatList?: TreeNode[];
-  backlogCollapsed?: boolean;
-  backlogTotalCount?: number;
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
@@ -62,9 +58,6 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     onViewScaleChange,
     scrollContainerRef,
     header,
-    backlogFlatList,
-    backlogCollapsed,
-    backlogTotalCount,
     displayOptions,
     hoveredTaskId,
     onHoverTask,
@@ -107,10 +100,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     );
   }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
 
-  const backlogHeaderH = (backlogTotalCount ?? 0) > 0 ? ROW_HEIGHT : 0;
-  const backlogRowsH = !backlogCollapsed ? (backlogFlatList?.length ?? 0) * ROW_HEIGHT : 0;
-  const scheduledHeight = flatList.length * ROW_HEIGHT;
-  const totalHeight = scheduledHeight + backlogHeaderH + backlogRowsH;
+  const totalHeight = flatList.length * ROW_HEIGHT;
 
   const handleDragCommit = useCallback(
     (taskId: string, updates: { start_date?: string; end_date?: string }) => {
@@ -120,16 +110,6 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   );
 
   const { startDrag, dragPreview } = useDragResize(xScale, handleDragCommit);
-
-  const handleSchedule = useCallback(
-    (taskId: string, updates: { start_date: string; end_date: string }) => {
-      onUpdateTask?.(taskId, updates);
-    },
-    [onUpdateTask],
-  );
-
-  const { startDraw, preview } = useDrawBar(xScale, handleSchedule);
-  const backlogSvgRef = useRef<SVGSVGElement>(null);
 
   const { tooltip, show: showTooltip, hide: hideTooltip } = useGanttTooltip(bodyRef);
   const [tooltipSummaryDates, setTooltipSummaryDates] = useState<{
@@ -243,7 +223,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         role="group"
         aria-label={`Gantt chart with ${flatList.length} tasks`}
         width={totalWidth}
-        height={scheduledHeight}
+        height={totalHeight}
         style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
@@ -368,75 +348,6 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           );
         })}
       </svg>
-      {backlogHeaderH > 0 && (
-        <svg
-          ref={backlogSvgRef}
-          width={totalWidth}
-          height={backlogHeaderH + backlogRowsH}
-          style={{ position: "absolute", top: scheduledHeight, left: 0 }}
-        >
-          {/* Backlog header background */}
-          <rect
-            x={0}
-            y={0}
-            width={totalWidth}
-            height={ROW_HEIGHT}
-            fill="var(--color-border-light)"
-          />
-          <line x1={0} y1={0} x2={totalWidth} y2={0} stroke="var(--color-border)" />
-          <line
-            x1={0}
-            y1={ROW_HEIGHT}
-            x2={totalWidth}
-            y2={ROW_HEIGHT}
-            stroke="var(--color-border)"
-          />
-
-          {/* Backlog task rows */}
-          {!backlogCollapsed &&
-            backlogFlatList?.map((node, i) => {
-              const y = ROW_HEIGHT + i * ROW_HEIGHT;
-              return (
-                <rect
-                  key={node.task.id}
-                  x={0}
-                  y={y}
-                  width={totalWidth}
-                  height={ROW_HEIGHT}
-                  fill="transparent"
-                  style={{ cursor: "crosshair" }}
-                  onMouseDown={(e) => {
-                    if (e.button !== 0 || e.altKey) return;
-                    if (backlogSvgRef.current) {
-                      startDraw(e, node.task.id, backlogSvgRef.current);
-                    }
-                  }}
-                />
-              );
-            })}
-
-          {/* Draw preview */}
-          {preview &&
-            (() => {
-              const idx = backlogFlatList?.findIndex((n) => n.task.id === preview.taskId) ?? -1;
-              if (idx < 0) return null;
-              const y = ROW_HEIGHT + idx * ROW_HEIGHT;
-              return (
-                <rect
-                  x={preview.x}
-                  y={y + 4}
-                  width={Math.max(preview.width, 2)}
-                  height={ROW_HEIGHT - 8}
-                  fill="rgba(52, 152, 219, 0.3)"
-                  stroke="var(--color-info)"
-                  strokeWidth={1.5}
-                  strokeDasharray="4 2"
-                  rx={3}
-                />
-              );
-            })()}
-        </svg>
-      )}
       {tooltip && (
         <GanttTooltip
           task={tooltip.task}

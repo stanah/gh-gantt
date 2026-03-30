@@ -150,10 +150,6 @@ export function App() {
     flatList,
     collapsed,
     toggle: toggleCollapse,
-    backlogFlatList,
-    backlogCollapsed,
-    backlogTotalCount,
-    toggleBacklog,
   } = useTaskTree(tasks, enabled, {
     hideClosed,
     selectedAssignee,
@@ -164,23 +160,11 @@ export function App() {
     searchQuery,
   });
 
-  const visibleTaskIds = useMemo(
-    () => [
-      ...flatList.map((node) => node.task.id),
-      ...(!backlogCollapsed ? backlogFlatList.map((node) => node.task.id) : []),
-    ],
-    [backlogCollapsed, backlogFlatList, flatList],
-  );
+  const visibleTaskIds = useMemo(() => flatList.map((node) => node.task.id), [flatList]);
 
   const visibleTaskMap = useMemo(
-    () =>
-      new Map(
-        [...flatList, ...(!backlogCollapsed ? backlogFlatList : [])].map((node) => [
-          node.task.id,
-          node,
-        ]),
-      ),
-    [backlogCollapsed, backlogFlatList, flatList],
+    () => new Map(flatList.map((node) => [node.task.id, node])),
+    [flatList],
   );
 
   const toggleSelectedCollapse = useCallback(
@@ -619,10 +603,6 @@ export function App() {
                     flatList={flatList}
                     collapsed={collapsed}
                     onToggleCollapse={toggleCollapse}
-                    backlogFlatList={backlogFlatList}
-                    backlogCollapsed={backlogCollapsed}
-                    backlogTotalCount={backlogTotalCount}
-                    onToggleBacklog={toggleBacklog}
                     displayOptions={displayOptions}
                     hoveredTaskId={hoveredTaskId}
                     onHoverTask={setHoveredTaskId}
@@ -650,9 +630,6 @@ export function App() {
                     onViewScaleChange={handleViewScaleChange}
                     scrollContainerRef={scrollContainerRef}
                     header={handleGanttHeader}
-                    backlogFlatList={backlogFlatList}
-                    backlogCollapsed={backlogCollapsed}
-                    backlogTotalCount={backlogTotalCount}
                     displayOptions={displayOptions}
                     hoveredTaskId={hoveredTaskId}
                     onHoverTask={setHoveredTaskId}
