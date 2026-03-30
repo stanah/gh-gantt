@@ -80,8 +80,39 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     return () => observer.disconnect();
   }, []);
 
-  const { xScale, dateRange, totalWidth, viewScale, setViewScale, zoomIn, zoomOut, pixelsPerDay } =
-    useGanttScale(tasks, config.gantt.default_view, containerWidth);
+  const {
+    xScale,
+    dateRange,
+    totalWidth,
+    viewScale,
+    setViewScale: rawSetViewScale,
+    zoomIn,
+    zoomOut,
+    pixelsPerDay,
+  } = useGanttScale(tasks, config.gantt.default_view, containerWidth);
+
+  // Preserve viewport left-edge date across scale changes
+  const pendingScrollDateRef = useRef<Date | null>(null);
+
+  const setViewScale = useCallback(
+    (scale: ViewScale) => {
+      const el = scrollContainerRef?.current;
+      if (el) {
+        pendingScrollDateRef.current = xScale.invert(el.scrollLeft);
+      }
+      rawSetViewScale(scale);
+    },
+    [rawSetViewScale, xScale, scrollContainerRef],
+  );
+
+  useLayoutEffect(() => {
+    const date = pendingScrollDateRef.current;
+    if (!date) return;
+    pendingScrollDateRef.current = null;
+    const el = scrollContainerRef?.current;
+    if (!el) return;
+    el.scrollLeft = Math.max(0, xScale(date));
+  }, [xScale, scrollContainerRef]);
 
   // Notify parent when viewScale changes (e.g. due to zoom)
   useEffect(() => {
