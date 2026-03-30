@@ -146,6 +146,9 @@ function getTickDates(dateRange: [Date, Date], scale: ViewScale): Date[] {
         1,
       );
       const ticks: Date[] = [];
+      if (qStart < dateRange[0]) {
+        ticks.push(new Date(dateRange[0]));
+      }
       const d = new Date(qStart);
       while (d < dateRange[0]) d.setMonth(d.getMonth() + 3);
       while (d < dateRange[1]) {
@@ -306,14 +309,16 @@ export function GanttTimeline({
         {ticks.map((tick, i) => {
           const x = xScale(tick);
           const nextTick = ticks[i + 1];
+          const todayInRange = today >= dateRange[0] && today < dateRange[1];
           const isToday =
-            viewScale === "week" || viewScale === "month"
+            todayInRange &&
+            (viewScale === "week" || viewScale === "month"
               ? tick.getFullYear() === today.getFullYear() &&
                 tick.getMonth() === today.getMonth() &&
                 tick.getDate() === today.getDate()
               : nextTick
                 ? tick <= today && today < nextTick
-                : tick <= today;
+                : tick <= today);
           return (
             <g key={`tick-${i}`}>
               <line
