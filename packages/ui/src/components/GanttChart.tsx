@@ -17,6 +17,7 @@ import { GanttTooltip } from "./GanttTooltip.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
 import type { ViewScale } from "@gh-gantt/shared";
 import { useDragResize } from "../hooks/useDragResize.js";
+import { useDrawBar } from "../hooks/useDrawBar.js";
 import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
@@ -110,6 +111,16 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   );
 
   const { startDrag, dragPreview } = useDragResize(xScale, handleDragCommit);
+
+  const handleSchedule = useCallback(
+    (taskId: string, updates: { start_date: string; end_date: string }) => {
+      onUpdateTask?.(taskId, updates);
+    },
+    [onUpdateTask],
+  );
+
+  const { startDraw, preview: drawPreview } = useDrawBar(xScale, handleSchedule);
+  const mainSvgRef = useRef<SVGSVGElement>(null);
 
   const { tooltip, show: showTooltip, hide: hideTooltip } = useGanttTooltip(bodyRef);
   const [tooltipSummaryDates, setTooltipSummaryDates] = useState<{
@@ -220,6 +231,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         hoveredTaskId={hoveredTaskId ?? null}
       />
       <svg
+        ref={mainSvgRef}
         role="group"
         aria-label={`Gantt chart with ${flatList.length} tasks`}
         width={totalWidth}
@@ -232,6 +244,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           const y = i * ROW_HEIGHT;
           const isHovered = hoveredTaskId === node.task.id;
           const isSelected = selectedTaskId === node.task.id;
+          const isUnscheduled = !node.task.start_date && !node.task.end_date && !node.task.date;
           return (
             <rect
               key={`hover-${node.task.id}`}
@@ -246,12 +259,22 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
                     ? "rgba(66, 133, 244, 0.06)"
                     : "transparent"
               }
-              style={{ cursor: "pointer" }}
+              style={{ cursor: isUnscheduled ? "crosshair" : "pointer" }}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelectTask(node.task.id);
               }}
               onMouseEnter={() => onHoverTask?.(node.task.id)}
+              onMouseDown={
+                isUnscheduled
+                  ? (e) => {
+                      if (e.button !== 0 || e.altKey) return;
+                      if (mainSvgRef.current) {
+                        startDraw(e, node.task.id, mainSvgRef.current);
+                      }
+                    }
+                  : undefined
+              }
             />
           );
         })}
@@ -347,6 +370,26 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
             />
           );
         })}
+        {/* Draw preview for unscheduled tasks */}
+        {drawPreview &&
+          (() => {
+            const idx = flatList.findIndex((n) => n.task.id === drawPreview.taskId);
+            if (idx < 0) return null;
+            const y = idx * ROW_HEIGHT;
+            return (
+              <rect
+                x={drawPreview.x}
+                y={y + 4}
+                width={Math.max(drawPreview.width, 2)}
+                height={ROW_HEIGHT - 8}
+                fill="rgba(52, 152, 219, 0.3)"
+                stroke="var(--color-info)"
+                strokeWidth={1.5}
+                strokeDasharray="4 2"
+                rx={3}
+              />
+            );
+          })()}
       </svg>
       {tooltip && (
         <GanttTooltip
