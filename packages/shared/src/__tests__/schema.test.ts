@@ -223,6 +223,15 @@ describe("ConfigSchema", () => {
     };
     expect(() => ConfigSchema.parse(config)).toThrow();
   });
+
+  it("normalizes legacy default_view 'day' to 'week'", () => {
+    const config = {
+      ...validConfig,
+      gantt: { ...validConfig.gantt, default_view: "day" },
+    };
+    const parsed = ConfigSchema.parse(config);
+    expect(parsed.gantt.default_view).toBe("week");
+  });
 });
 
 describe("TasksFileSchema", () => {

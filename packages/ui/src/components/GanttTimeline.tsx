@@ -96,13 +96,16 @@ function getGroupBoundaries(dateRange: [Date, Date], scale: ViewScale): Date[] {
       return timeMonth.range(monthStart, dateRange[1]);
     }
     case "quarter": {
-      const start = new Date(
+      const qStart = new Date(
         dateRange[0].getFullYear(),
         Math.floor(dateRange[0].getMonth() / 3) * 3,
         1,
       );
       const boundaries: Date[] = [];
-      const d = new Date(start);
+      const d = new Date(qStart < dateRange[0] ? qStart : qStart);
+      if (qStart < dateRange[0]) boundaries.push(dateRange[0]);
+      else boundaries.push(new Date(d));
+      d.setMonth(d.getMonth() + 3);
       while (d < dateRange[1]) {
         boundaries.push(new Date(d));
         d.setMonth(d.getMonth() + 3);
@@ -111,7 +114,11 @@ function getGroupBoundaries(dateRange: [Date, Date], scale: ViewScale): Date[] {
     }
     case "year": {
       const boundaries: Date[] = [];
-      const d = new Date(dateRange[0].getFullYear(), 0, 1);
+      const yearStart = new Date(dateRange[0].getFullYear(), 0, 1);
+      if (yearStart < dateRange[0]) boundaries.push(dateRange[0]);
+      else boundaries.push(new Date(yearStart));
+      const d = new Date(yearStart);
+      d.setFullYear(d.getFullYear() + 1);
       while (d < dateRange[1]) {
         boundaries.push(new Date(d));
         d.setFullYear(d.getFullYear() + 1);
@@ -133,13 +140,14 @@ function getTickDates(dateRange: [Date, Date], scale: ViewScale): Date[] {
     case "quarter":
       return timeMonth.range(dateRange[0], dateRange[1]);
     case "year": {
-      const start = new Date(
+      const qStart = new Date(
         dateRange[0].getFullYear(),
         Math.floor(dateRange[0].getMonth() / 3) * 3,
         1,
       );
       const ticks: Date[] = [];
-      const d = new Date(start);
+      const d = new Date(qStart);
+      while (d < dateRange[0]) d.setMonth(d.getMonth() + 3);
       while (d < dateRange[1]) {
         ticks.push(new Date(d));
         d.setMonth(d.getMonth() + 3);
