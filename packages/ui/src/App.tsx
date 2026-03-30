@@ -101,13 +101,10 @@ export function App() {
   }, [toast]);
 
   const handleViewScaleChange = useCallback((scale: ViewScale) => {
-    const centerDate = ganttRef.current?.getCenterDate();
     setViewScale(scale);
     if (!hasScrolledToToday.current) {
       hasScrolledToToday.current = true;
       requestAnimationFrame(() => ganttRef.current?.scrollToToday());
-    } else if (centerDate) {
-      requestAnimationFrame(() => ganttRef.current?.scrollToDate(centerDate));
     }
   }, []);
 
