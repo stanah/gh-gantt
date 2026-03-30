@@ -91,8 +91,10 @@ function formatTickLabel(date: Date, scale: ViewScale): string {
 function getGroupBoundaries(dateRange: [Date, Date], scale: ViewScale): Date[] {
   switch (scale) {
     case "week":
-    case "month":
-      return timeMonth.range(dateRange[0], dateRange[1]);
+    case "month": {
+      const monthStart = new Date(dateRange[0].getFullYear(), dateRange[0].getMonth(), 1);
+      return timeMonth.range(monthStart, dateRange[1]);
+    }
     case "quarter": {
       const start = new Date(
         dateRange[0].getFullYear(),
@@ -295,10 +297,15 @@ export function GanttTimeline({
         {/* Lower row: tick labels */}
         {ticks.map((tick, i) => {
           const x = xScale(tick);
+          const nextTick = ticks[i + 1];
           const isToday =
-            tick.getFullYear() === today.getFullYear() &&
-            tick.getMonth() === today.getMonth() &&
-            tick.getDate() === today.getDate();
+            viewScale === "week" || viewScale === "month"
+              ? tick.getFullYear() === today.getFullYear() &&
+                tick.getMonth() === today.getMonth() &&
+                tick.getDate() === today.getDate()
+              : nextTick
+                ? tick <= today && today < nextTick
+                : tick <= today;
           return (
             <g key={`tick-${i}`}>
               <line
