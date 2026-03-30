@@ -30,6 +30,8 @@ export interface GanttChartHandle {
   viewScale: ViewScale;
   setViewScale: (s: ViewScale) => void;
   scrollToToday: () => void;
+  scrollToDate: (date: Date) => void;
+  getCenterDate: () => Date | null;
 }
 
 interface GanttChartProps {
@@ -197,14 +199,33 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
   }, [xScale, scrollContainerRef]);
 
+  const scrollToDate = useCallback(
+    (date: Date) => {
+      const el = scrollContainerRef?.current;
+      if (!el) return;
+      const x = xScale(date);
+      el.scrollLeft = Math.max(0, x - el.clientWidth / 2);
+    },
+    [xScale, scrollContainerRef],
+  );
+
+  const getCenterDate = useCallback((): Date | null => {
+    const el = scrollContainerRef?.current;
+    if (!el) return null;
+    const centerX = el.scrollLeft + el.clientWidth / 2;
+    return xScale.invert(centerX);
+  }, [xScale, scrollContainerRef]);
+
   useImperativeHandle(
     ref,
     () => ({
       viewScale,
       setViewScale,
       scrollToToday,
+      scrollToDate,
+      getCenterDate,
     }),
-    [viewScale, setViewScale, scrollToToday],
+    [viewScale, setViewScale, scrollToToday, scrollToDate, getCenterDate],
   );
 
   return (
