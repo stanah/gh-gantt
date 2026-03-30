@@ -91,7 +91,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     pixelsPerDay,
   } = useGanttScale(tasks, config.gantt.default_view, containerWidth);
 
-  // Preserve viewport center date across scale changes
+  // Preserve viewport left-edge date across scale changes
   const pendingScrollDateRef = useRef<Date | null>(null);
 
   const setViewScale = useCallback(
