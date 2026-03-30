@@ -3,7 +3,7 @@ import type { Task, StatusValue, TaskType } from "../types/index.js";
 import { StatusBadge } from "./StatusBadge.js";
 import { PriorityBadge } from "./PriorityBadge.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
-import type { RelationType } from "../hooks/useRelatedTasks.js";
+import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
 import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
 import { isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
 
@@ -118,7 +118,7 @@ export function TaskRow({
   const showBodyPreview = Boolean(bodyPreview);
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
-  const isParentRelation = highlightType === "parent" || highlightType === "child";
+  const isParentRelation = isFriendlyRelation(highlightType);
   const highlightBg = isBlockRelation
     ? "var(--color-highlight-blocker-bg)"
     : isParentRelation

@@ -4,7 +4,7 @@ import type { Task, TaskType } from "../types/index.js";
 import { calculateSummaryDates } from "../lib/summary-calc.js";
 import { parseDate } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
-import type { RelationType } from "../hooks/useRelatedTasks.js";
+import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
 
 interface GanttSummaryBarProps {
   task: Task;
@@ -47,7 +47,7 @@ export function GanttSummaryBar({
   const width = Math.max(x2 - x1, 4);
   const baseColor = taskType?.color ?? "#8E44AD";
   const color = highlightType
-    ? highlightType === "parent" || highlightType === "child"
+    ? isFriendlyRelation(highlightType)
       ? "var(--color-complete)"
       : "var(--color-danger)"
     : baseColor;

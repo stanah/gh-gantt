@@ -1,7 +1,11 @@
 import { useMemo, useCallback } from "react";
-import type { Task } from "../types/index.js";
+import type { Task, TaskType } from "../types/index.js";
 
-export type RelationType = "parent" | "child" | "blocker" | "blocked";
+export type RelationType = "parent" | "child" | "blocker" | "blocked" | "milestone";
+
+export function isFriendlyRelation(type: RelationType | null | undefined): boolean {
+  return type === "parent" || type === "child" || type === "milestone";
+}
 
 interface RelatedResult {
   ids: Set<string>;
@@ -10,7 +14,7 @@ interface RelatedResult {
 
 const EMPTY: RelatedResult = { ids: new Set(), relationMap: new Map() };
 
-export function useRelatedTasks(tasks: Task[]) {
+export function useRelatedTasks(tasks: Task[], taskTypes: Record<string, TaskType>) {
   // Build reverse index: taskId -> set of tasks that this task blocks (i.e. tasks whose blocked_by includes this task)
   const blocksIndex = useMemo(() => {
     const index = new Map<string, Set<string>>();
@@ -31,6 +35,22 @@ export function useRelatedTasks(tasks: Task[]) {
     const map = new Map<string, Task>();
     for (const t of tasks) map.set(t.id, t);
     return map;
+  }, [tasks]);
+
+  // Build milestone index: milestone title -> set of task IDs that belong to it
+  const milestoneIndex = useMemo(() => {
+    const index = new Map<string, Set<string>>();
+    for (const task of tasks) {
+      if (task.milestone) {
+        let set = index.get(task.milestone);
+        if (!set) {
+          set = new Set();
+          index.set(task.milestone, set);
+        }
+        set.add(task.id);
+      }
+    }
+    return index;
   }, [tasks]);
 
   const getRelated = useCallback(
@@ -71,9 +91,23 @@ export function useRelatedTasks(tasks: Task[]) {
         }
       }
 
+      // Milestone: when hovering a milestone task, highlight tasks that belong to it
+      const display = taskTypes[task.type]?.display;
+      if (display === "milestone") {
+        const members = milestoneIndex.get(task.title);
+        if (members) {
+          for (const memberId of members) {
+            if (!relationMap.has(memberId)) {
+              ids.add(memberId);
+              relationMap.set(memberId, "milestone");
+            }
+          }
+        }
+      }
+
       return { ids, relationMap };
     },
-    [taskMap, blocksIndex],
+    [taskMap, blocksIndex, milestoneIndex, taskTypes],
   );
 
   return { getRelated };

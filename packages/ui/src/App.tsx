@@ -19,6 +19,8 @@ import { useUndoRedo } from "./hooks/useUndoRedo.js";
 import { SkeletonLoader } from "./components/SkeletonLoader.js";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
 
+const EMPTY_TASK_TYPES: Record<string, never> = {};
+
 const TRACKED_TASK_FIELDS = [
   "title",
   "body",
@@ -246,7 +248,7 @@ export function App() {
     },
   });
 
-  const { getRelated } = useRelatedTasks(tasks);
+  const { getRelated } = useRelatedTasks(tasks, config?.task_types ?? EMPTY_TASK_TYPES);
   const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
     () => getRelated(hoveredTaskId),
     [getRelated, hoveredTaskId],
