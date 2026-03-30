@@ -1,6 +1,5 @@
 import React from "react";
 import { TaskRow } from "./TaskRow.js";
-import { BacklogSectionHeader } from "./BacklogSectionHeader.js";
 import { FilterEmptyState, NoTasksGuide } from "./EmptyState.js";
 import type { Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
@@ -41,10 +40,6 @@ interface TaskTreeBodyProps {
   flatList: TreeNode[];
   collapsed: Set<string>;
   onToggleCollapse: (taskId: string) => void;
-  backlogFlatList: TreeNode[];
-  backlogCollapsed: boolean;
-  backlogTotalCount: number;
-  onToggleBacklog: () => void;
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
@@ -64,10 +59,6 @@ export function TaskTreeBody({
   flatList,
   collapsed,
   onToggleCollapse,
-  backlogFlatList,
-  backlogCollapsed,
-  backlogTotalCount,
-  onToggleBacklog,
   displayOptions,
   hoveredTaskId,
   onHoverTask,
@@ -118,7 +109,7 @@ export function TaskTreeBody({
     />
   );
 
-  const isEmpty = flatList.length === 0 && backlogTotalCount === 0;
+  const isEmpty = flatList.length === 0;
 
   if (isEmpty && hasActiveFilters && onResetFilters) {
     return (
@@ -139,16 +130,6 @@ export function TaskTreeBody({
   return (
     <div>
       {flatList.map(renderRow)}
-      {backlogTotalCount > 0 && (
-        <>
-          <BacklogSectionHeader
-            isCollapsed={backlogCollapsed}
-            totalCount={backlogTotalCount}
-            onToggle={onToggleBacklog}
-          />
-          {!backlogCollapsed && backlogFlatList.map(renderRow)}
-        </>
-      )}
       {dragState?.draggedTaskId && (
         <div
           onDragOver={dragState.handleRootDragOver}
