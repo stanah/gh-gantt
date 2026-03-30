@@ -14,7 +14,8 @@ import { GanttSummaryBar } from "./GanttSummaryBar.js";
 import { GanttMilestone } from "./GanttMilestone.js";
 import { GanttBlockLines } from "./GanttBlockLines.js";
 import { GanttTooltip } from "./GanttTooltip.js";
-import { useGanttScale, type ViewScale } from "../hooks/useGanttScale.js";
+import { useGanttScale } from "../hooks/useGanttScale.js";
+import type { ViewScale } from "@gh-gantt/shared";
 import { useDragResize } from "../hooks/useDragResize.js";
 import { useDrawBar } from "../hooks/useDrawBar.js";
 import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
@@ -28,8 +29,6 @@ import type { RelationType } from "../hooks/useRelatedTasks.js";
 export interface GanttChartHandle {
   viewScale: ViewScale;
   setViewScale: (s: ViewScale) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
   scrollToToday: () => void;
 }
 
@@ -212,11 +211,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     () => ({
       viewScale,
       setViewScale,
-      zoomIn,
-      zoomOut,
       scrollToToday,
     }),
-    [viewScale, setViewScale, zoomIn, zoomOut, scrollToToday],
+    [viewScale, setViewScale, scrollToToday],
   );
 
   return (

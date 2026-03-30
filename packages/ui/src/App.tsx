@@ -11,7 +11,7 @@ import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/toolbar/Toolbar.js";
-import type { ViewScale } from "./hooks/useGanttScale.js";
+import type { ViewScale } from "@gh-gantt/shared";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
 import type { Task } from "./types/index.js";
@@ -70,6 +70,7 @@ export function App() {
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
+  const hasScrolledToToday = useRef(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const [toast, setToast] = useState<{
@@ -101,6 +102,10 @@ export function App() {
 
   const handleViewScaleChange = useCallback((scale: ViewScale) => {
     setViewScale(scale);
+    if (!hasScrolledToToday.current) {
+      hasScrolledToToday.current = true;
+      requestAnimationFrame(() => ganttRef.current?.scrollToToday());
+    }
   }, []);
 
   const handleGanttHeader = useCallback((node: React.ReactNode) => {
@@ -552,8 +557,8 @@ export function App() {
           <Toolbar
             projectName={config.project.name}
             taskCount={tasks.length}
-            onZoomIn={() => ganttRef.current?.zoomIn()}
-            onZoomOut={() => ganttRef.current?.zoomOut()}
+            activeScale={viewScale}
+            onScaleChange={(scale) => ganttRef.current?.setViewScale(scale)}
             onScrollToToday={() => ganttRef.current?.scrollToToday()}
             onPull={handlePull}
             onPush={handlePush}
