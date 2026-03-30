@@ -67,6 +67,9 @@ importers:
 
   packages/ui:
     dependencies:
+      '@gh-gantt/shared':
+        specifier: workspace:*
+        version: link:../shared
       d3-drag:
         specifier: ^3.0.0
         version: 3.0.0

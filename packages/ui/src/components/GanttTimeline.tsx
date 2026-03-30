@@ -65,6 +65,10 @@ function formatGroupLabel(date: Date, scale: ViewScale): string {
       return `Q${Math.floor(date.getMonth() / 3) + 1} ${date.getFullYear()}`;
     case "year":
       return `${date.getFullYear()}`;
+    default: {
+      const _exhaustive: never = scale;
+      return _exhaustive;
+    }
   }
 }
 
@@ -77,6 +81,10 @@ function formatTickLabel(date: Date, scale: ViewScale): string {
       return MONTHS_SHORT[date.getMonth()];
     case "year":
       return `Q${Math.floor(date.getMonth() / 3) + 1}`;
+    default: {
+      const _exhaustive: never = scale;
+      return _exhaustive;
+    }
   }
 }
 
@@ -108,6 +116,10 @@ function getGroupBoundaries(dateRange: [Date, Date], scale: ViewScale): Date[] {
       }
       return boundaries;
     }
+    default: {
+      const _exhaustive: never = scale;
+      return _exhaustive;
+    }
   }
 }
 
@@ -131,6 +143,10 @@ function getTickDates(dateRange: [Date, Date], scale: ViewScale): Date[] {
         d.setMonth(d.getMonth() + 3);
       }
       return ticks;
+    }
+    default: {
+      const _exhaustive: never = scale;
+      return _exhaustive;
     }
   }
 }
@@ -190,6 +206,7 @@ export function GanttTimeline({
       }}
     >
       <svg width={totalWidth} height={totalHeight}>
+        <style>{`.gantt-focusable:focus { outline: none; } .gantt-focusable:focus-visible { outline: 2px solid var(--color-focus, #4A90D9); outline-offset: 2px; }`}</style>
         {/* Sprint bands */}
         {sprintBands.map((sprint) => {
           const bandStart = xScale(sprint.start);

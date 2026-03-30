@@ -1,3 +1,5 @@
+import type { ViewScale } from "@gh-gantt/shared";
+
 export interface TaskType {
   label: string;
   display: "bar" | "summary" | "milestone";
@@ -52,8 +54,6 @@ export interface SprintConfig {
   end_date: string;
   color: string;
 }
-
-import type { ViewScale } from "@gh-gantt/shared";
 
 export interface Config {
   version: string;

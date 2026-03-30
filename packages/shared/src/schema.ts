@@ -120,7 +120,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
   type_hierarchy: z.record(z.array(z.string())),
   statuses: StatusesSchema,
   gantt: z.object({
-    default_view: ViewScaleSchema,
+    default_view: z.preprocess((v) => (v === "day" ? "week" : v), ViewScaleSchema),
     working_days: z.array(z.number()),
     colors: z.object({
       critical_path: z.string(),

@@ -24,6 +24,8 @@ export function ZoomGroup({ activeScale, onScaleChange, onScrollToToday }: ZoomG
         {SCALES.map((s, i) => (
           <button
             key={s.value}
+            type="button"
+            aria-pressed={activeScale === s.value}
             onClick={() => onScaleChange(s.value)}
             style={{
               padding: "2px 8px",
