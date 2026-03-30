@@ -101,10 +101,10 @@ function getGroupBoundaries(dateRange: [Date, Date], scale: ViewScale): Date[] {
         Math.floor(dateRange[0].getMonth() / 3) * 3,
         1,
       );
-      const boundaries: Date[] = [];
-      const d = new Date(qStart < dateRange[0] ? qStart : qStart);
-      if (qStart < dateRange[0]) boundaries.push(dateRange[0]);
-      else boundaries.push(new Date(d));
+      const boundaries: Date[] = [
+        qStart < dateRange[0] ? new Date(dateRange[0]) : new Date(qStart),
+      ];
+      const d = new Date(qStart);
       d.setMonth(d.getMonth() + 3);
       while (d < dateRange[1]) {
         boundaries.push(new Date(d));
