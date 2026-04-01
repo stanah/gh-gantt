@@ -118,15 +118,15 @@ export function TaskRow({
   const showBodyPreview = Boolean(bodyPreview);
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
-  const isParentRelation = isFriendlyRelation(highlightType);
+  const isFriendlyHighlight = isFriendlyRelation(highlightType);
   const highlightBg = isBlockRelation
     ? "var(--color-highlight-blocker-bg)"
-    : isParentRelation
+    : isFriendlyHighlight
       ? "var(--color-highlight-parent-bg)"
       : undefined;
   const highlightBorder = isBlockRelation
     ? "3px solid var(--color-highlight-blocker-border)"
-    : isParentRelation
+    : isFriendlyHighlight
       ? "3px solid var(--color-highlight-parent-border)"
       : undefined;
 
