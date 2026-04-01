@@ -3,7 +3,7 @@ import type { ScaleTime } from "d3-scale";
 import type { Task, TaskType } from "../types/index.js";
 import { parseDate } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
-import type { RelationType } from "../hooks/useRelatedTasks.js";
+import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
 
 interface GanttMilestoneProps {
   task: Task;
@@ -39,7 +39,7 @@ export function GanttMilestone({
   const color = taskType?.color ?? "#E74C3C";
 
   const hlStroke = highlightType
-    ? highlightType === "parent" || highlightType === "child"
+    ? isFriendlyRelation(highlightType)
       ? "var(--color-complete)"
       : "var(--color-danger)"
     : color;

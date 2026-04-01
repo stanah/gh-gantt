@@ -11,7 +11,7 @@ import {
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { getPriorityColor } from "./PriorityBadge.js";
 import type { DragMode } from "../hooks/useDragResize.js";
-import type { RelationType } from "../hooks/useRelatedTasks.js";
+import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
 
 interface GanttBarProps {
   task: Task;
@@ -35,8 +35,7 @@ function highlightStroke(
   type: RelationType | null | undefined,
 ): { stroke: string; strokeWidth: number } | null {
   if (!type) return null;
-  if (type === "parent" || type === "child")
-    return { stroke: "var(--color-complete)", strokeWidth: 2 };
+  if (isFriendlyRelation(type)) return { stroke: "var(--color-complete)", strokeWidth: 2 };
   return { stroke: "var(--color-danger)", strokeWidth: 2 };
 }
 
