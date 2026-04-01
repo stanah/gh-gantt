@@ -23,6 +23,7 @@ import {
   addBlockedByIssue,
   removeBlockedByIssue,
 } from "../github/mutations.js";
+import { formatError } from "../util/format.js";
 
 export interface PushResult {
   created: number;
@@ -89,9 +90,7 @@ export async function executePush(
               staleTaskIds.push(diff.id);
             }
           } catch (err) {
-            console.warn(
-              `⚠ リモート状態の確認に失敗しました (${diff.id}): ${err instanceof Error ? err.message : String(err)}`,
-            );
+            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${formatError(err)}`);
             staleTaskIds.push(diff.id);
           }
         }
@@ -303,8 +302,8 @@ export async function executePush(
 
       try {
         await addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id);
-      } catch {
-        // Sub-issues API may not be available; skip silently
+      } catch (err) {
+        console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
       }
     }
 
@@ -320,8 +319,10 @@ export async function executePush(
         if (!blockerEntry?.issue_node_id) continue;
         try {
           await addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id);
-        } catch {
-          // Blocker may not be a pushable issue; skip silently
+        } catch (err) {
+          console.warn(
+            `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+          );
         }
       }
     }
@@ -350,56 +351,56 @@ export async function executePush(
           body: task.body ?? undefined,
         });
 
-        if (syncState.snapshots[task.id]) {
-          await setIssueState(gql, idEntry.issue_node_id, task.state);
-        }
+        await setIssueState(gql, idEntry.issue_node_id, task.state);
       }
 
-      if (task.start_date && syncState.field_ids[fm.start_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          idEntry.project_item_id,
-          syncState.field_ids[fm.start_date],
-          { date: task.start_date },
-        );
-      }
-      if (task.end_date && syncState.field_ids[fm.end_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          idEntry.project_item_id,
-          syncState.field_ids[fm.end_date],
-          { date: task.end_date },
-        );
-      }
-
-      // Update Type custom field if configured
-      if (fm.type && syncState.field_ids[fm.type]) {
-        const typeOptionId = resolveTypeOptionId(
-          task.type,
-          config.task_types,
-          fm.type,
-          syncState.option_ids,
-        );
-        if (typeOptionId) {
+      if (idEntry.project_item_id) {
+        if (task.start_date && syncState.field_ids[fm.start_date]) {
           await updateProjectItemField(
             gql,
             syncState.project_node_id,
             idEntry.project_item_id,
-            syncState.field_ids[fm.type],
-            { singleSelectOptionId: typeOptionId },
+            syncState.field_ids[fm.start_date],
+            { date: task.start_date },
           );
         }
-      }
+        if (task.end_date && syncState.field_ids[fm.end_date]) {
+          await updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            idEntry.project_item_id,
+            syncState.field_ids[fm.end_date],
+            { date: task.end_date },
+          );
+        }
 
-      // Update Priority custom field if configured
-      await syncPriorityField(gql, syncState, fm, idEntry.project_item_id, task);
+        // Update Type custom field if configured
+        if (fm.type && syncState.field_ids[fm.type]) {
+          const typeOptionId = resolveTypeOptionId(
+            task.type,
+            config.task_types,
+            fm.type,
+            syncState.option_ids,
+          );
+          if (typeOptionId) {
+            await updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.type],
+              { singleSelectOptionId: typeOptionId },
+            );
+          }
+        }
+
+        // Update Priority custom field if configured
+        await syncPriorityField(gql, syncState, fm, idEntry.project_item_id, task);
+      }
 
       // Detect parent changes from snapshot and sync sub-issue relationships
       const snapshot = syncState.snapshots[task.id];
-      if (snapshot?.syncFields && idEntry.issue_node_id) {
-        const oldParent = snapshot.syncFields.parent;
+      if (idEntry.issue_node_id) {
+        const oldParent = snapshot?.syncFields?.parent ?? null;
         const newParent = task.parent;
 
         if (oldParent !== newParent) {
@@ -409,8 +410,8 @@ export async function executePush(
             if (oldParentEntry?.issue_node_id) {
               try {
                 await removeSubIssue(gql, oldParentEntry.issue_node_id, idEntry.issue_node_id);
-              } catch {
-                /* may not exist on remote */
+              } catch (err) {
+                console.warn(`  ⚠ sub-issue 関係の削除に失敗 (${task.id}): ${formatError(err)}`);
               }
             }
           }
@@ -420,15 +421,15 @@ export async function executePush(
             if (newParentEntry?.issue_node_id) {
               try {
                 await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id);
-              } catch {
-                /* sub-issues API may not be available */
+              } catch (err) {
+                console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
               }
             }
           }
         }
 
         // Detect blocked_by changes from snapshot
-        const oldBlockedBy = new Set((snapshot.syncFields.blocked_by ?? []).map((d) => d.task));
+        const oldBlockedBy = new Set((snapshot?.syncFields?.blocked_by ?? []).map((d) => d.task));
         const newBlockedBy = new Set((task.blocked_by ?? []).map((d) => d.task));
 
         // Added blockers
@@ -438,22 +439,26 @@ export async function executePush(
             if (blockerEntry?.issue_node_id) {
               try {
                 await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch {
-                /* blocker may not be a pushable issue */
+              } catch (err) {
+                console.warn(
+                  `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                );
               }
             }
           }
         }
 
         // Removed blockers
-        for (const dep of snapshot.syncFields.blocked_by ?? []) {
+        for (const dep of snapshot?.syncFields?.blocked_by ?? []) {
           if (!newBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
               try {
                 await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch {
-                /* may not exist on remote */
+              } catch (err) {
+                console.warn(
+                  `  ⚠ blocked-by 関係の削除に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                );
               }
             }
           }
@@ -464,6 +469,8 @@ export async function executePush(
       result.updated++;
     }
   }
+
+  const freshUpdatedAt = await fetchFreshUpdatedAt(gql, owner, repo, tasksFile, pushedTaskIds);
 
   // Update snapshots — only for tasks that were actually pushed
   const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
@@ -483,7 +490,7 @@ export async function executePush(
         hash: newHash,
         synced_at: new Date().toISOString(),
         syncFields: extractSyncFields(task),
-        updated_at: existing?.updated_at,
+        updated_at: freshUpdatedAt.get(id) ?? existing?.updated_at,
         remoteHash: newHash,
       };
     }
@@ -523,6 +530,35 @@ function resolvePriorityOptionId(
     if (key.toLowerCase() === lowerValue) return id;
   }
   return undefined;
+}
+
+async function fetchFreshUpdatedAt(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+  tasksFile: TasksFile,
+  pushedTaskIds: Set<string>,
+): Promise<Map<string, string>> {
+  const result = new Map<string, string>();
+  const ids = [...pushedTaskIds].filter((id) => !isDraftTask(id) && !isMilestoneSyntheticTask(id));
+  for (const id of ids) {
+    const task = tasksFile.tasks.find((t) => t.id === id);
+    if (!task?.github_issue) continue;
+    try {
+      const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
+        `query($owner: String!, $repo: String!, $number: Int!) {
+          repository(owner: $owner, name: $repo) {
+            issue(number: $number) { updatedAt }
+          }
+        }`,
+        { owner, repo, number: task.github_issue },
+      );
+      result.set(id, repository.issue.updatedAt);
+    } catch {
+      // Best-effort: if we can't fetch, preserve existing value
+    }
+  }
+  return result;
 }
 
 async function syncPriorityField(

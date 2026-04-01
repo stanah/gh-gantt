@@ -83,8 +83,14 @@ export const pullCommand = new Command("pull")
       for (const [id, remote] of remoteTasks) {
         const snap = syncState.snapshots[id];
         if (!snap?.updated_at) {
-          changed = true;
-          break;
+          // Fallback: if updated_at is missing, check remoteHash to avoid unnecessary fetch
+          const remoteHash = hashTask(remote);
+          const snapshotRemoteHash = snap?.remoteHash ?? snap?.hash;
+          if (remoteHash !== snapshotRemoteHash) {
+            changed = true;
+            break;
+          }
+          continue;
         }
         if (remote.updated_at !== snap.updated_at) {
           changed = true;

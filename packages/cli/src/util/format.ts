@@ -1,3 +1,7 @@
+export function formatError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
 export function formatValue(val: unknown): string {
   if (val === null || val === undefined) return "-";
   if (typeof val === "string") return `"${val}"`;
