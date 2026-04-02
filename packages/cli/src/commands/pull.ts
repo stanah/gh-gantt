@@ -83,6 +83,9 @@ export const pullCommand = new Command("pull")
       for (const [id, remote] of remoteTasks) {
         const snap = syncState.snapshots[id];
         if (!snap?.updated_at) {
+          // Cannot safely compare hashes here: remote tasks don't have
+          // relation data yet (applied after sub-issues fetch), but snapshot
+          // hashes include relations. Fall through to full fetch.
           changed = true;
           break;
         }
