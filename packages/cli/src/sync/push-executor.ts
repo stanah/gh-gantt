@@ -540,12 +540,15 @@ async function fetchFreshUpdatedAt(
   pushedTaskIds: Set<string>,
 ): Promise<Map<string, string>> {
   const result = new Map<string, string>();
+  const taskById = new Map(tasksFile.tasks.map((t) => [t.id, t]));
   const ids = [...pushedTaskIds].filter((id) => !isDraftTask(id) && !isMilestoneSyntheticTask(id));
   for (const id of ids) {
-    const task = tasksFile.tasks.find((t) => t.id === id);
+    const task = taskById.get(id);
     if (!task?.github_issue) continue;
     try {
-      const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
+      const { repository } = await gql<{
+        repository: { issue: { updatedAt: string } | null };
+      }>(
         `query($owner: String!, $repo: String!, $number: Int!) {
           repository(owner: $owner, name: $repo) {
             issue(number: $number) { updatedAt }
@@ -553,7 +556,9 @@ async function fetchFreshUpdatedAt(
         }`,
         { owner, repo, number: task.github_issue },
       );
-      result.set(id, repository.issue.updatedAt);
+      if (repository.issue?.updatedAt) {
+        result.set(id, repository.issue.updatedAt);
+      }
     } catch {
       // Best-effort: if we can't fetch, preserve existing value
     }
