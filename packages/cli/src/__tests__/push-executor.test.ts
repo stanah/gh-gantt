@@ -748,4 +748,166 @@ describe("executePush", () => {
     const priorityCall = fieldUpdateCalls.find((c: any[]) => c[1]?.fieldId === "FIELD_PRIORITY");
     expect(priorityCall).toBeDefined();
   });
+
+  it("updateIssue and setIssueState run in parallel", async () => {
+    const concurrency: string[] = [];
+    const task = makeTask("o/r#1", { github_issue: 1, title: "Modified", state: "closed" });
+    const tasksFile: TasksFile = {
+      tasks: [task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1, title: "Original" })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      },
+    };
+
+    const mockGql = makeMockGql({
+      updateIssue: async () => {
+        concurrency.push("updateIssue:start");
+        await new Promise((r) => setTimeout(r, 10));
+        concurrency.push("updateIssue:end");
+        return { updateIssue: { issue: { id: "ISSUE_1" } } };
+      },
+      closeIssue: async () => {
+        concurrency.push("closeIssue:start");
+        await new Promise((r) => setTimeout(r, 10));
+        concurrency.push("closeIssue:end");
+        return { closeIssue: { issue: { id: "ISSUE_1" } } };
+      },
+    });
+
+    await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+    // Both should start before either ends (parallel execution)
+    const updateStart = concurrency.indexOf("updateIssue:start");
+    const closeStart = concurrency.indexOf("closeIssue:start");
+    const updateEnd = concurrency.indexOf("updateIssue:end");
+    const closeEnd = concurrency.indexOf("closeIssue:end");
+    expect(updateStart).toBeLessThan(updateEnd);
+    expect(closeStart).toBeLessThan(closeEnd);
+    // Both start before either finishes
+    expect(Math.max(updateStart, closeStart)).toBeLessThan(Math.min(updateEnd, closeEnd));
+  });
+
+  it("field updates run in parallel", async () => {
+    const concurrency: string[] = [];
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      start_date: "2026-04-01",
+      end_date: "2026-04-15",
+    });
+    const tasksFile: TasksFile = {
+      tasks: [task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+      },
+      field_ids: { "Start Date": "FIELD_START", "End Date": "FIELD_END" },
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      },
+    };
+
+    const mockGql = makeMockGql({
+      updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+        const fieldId = vars?.fieldId ?? "unknown";
+        concurrency.push(`field:${fieldId}:start`);
+        await new Promise((r) => setTimeout(r, 10));
+        concurrency.push(`field:${fieldId}:end`);
+        return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+      },
+    });
+
+    await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+    const startIdx = concurrency.indexOf("field:FIELD_START:start");
+    const endStartIdx = concurrency.indexOf("field:FIELD_END:start");
+    const startEndIdx = concurrency.indexOf("field:FIELD_START:end");
+    // Both field updates should start before either finishes
+    expect(Math.max(startIdx, endStartIdx)).toBeLessThan(startEndIdx);
+  });
+
+  it("blocker mutations run in parallel", async () => {
+    const concurrency: string[] = [];
+    const blocker1 = makeTask("o/r#5", { github_issue: 5 });
+    const blocker2 = makeTask("o/r#6", { github_issue: 6 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      blocked_by: [
+        { task: "o/r#5", type: "finish-to-start" as const, lag: 0 },
+        { task: "o/r#6", type: "finish-to-start" as const, lag: 0 },
+      ],
+    });
+    const tasksFile: TasksFile = {
+      tasks: [blocker1, blocker2, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#5": { issue_number: 5, issue_node_id: "ISSUE_5", project_item_id: "ITEM_5" },
+        "o/r#6": { issue_number: 6, issue_node_id: "ISSUE_6", project_item_id: "ITEM_6" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#5": {
+          hash: hashTask(blocker1),
+          synced_at: "",
+          syncFields: extractSyncFields(blocker1),
+        },
+        "o/r#6": {
+          hash: hashTask(blocker2),
+          synced_at: "",
+          syncFields: extractSyncFields(blocker2),
+        },
+      },
+    };
+
+    const mockGql = makeMockGql({
+      addBlockedBy: async (_q: string, vars: any) => {
+        const id = vars?.blockingIssueId ?? "unknown";
+        concurrency.push(`addBlockedBy:${id}:start`);
+        await new Promise((r) => setTimeout(r, 10));
+        concurrency.push(`addBlockedBy:${id}:end`);
+        return { addIssueRelation: { issue: { id: "ISSUE_1" } } };
+      },
+    });
+
+    await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+    const start5 = concurrency.indexOf("addBlockedBy:ISSUE_5:start");
+    const start6 = concurrency.indexOf("addBlockedBy:ISSUE_6:start");
+    const end5 = concurrency.indexOf("addBlockedBy:ISSUE_5:end");
+    // Both should start before either finishes
+    expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5));
+  });
 });

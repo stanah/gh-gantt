@@ -339,36 +339,43 @@ export async function executePush(
     }
 
     if (diff.type === "modified" || diff.type === "added") {
+      // Phase 1: Issue update + state change (independent, parallel)
       if (idEntry.issue_node_id) {
-        await updateIssue(gql, idEntry.issue_node_id, {
-          title: task.title,
-          body: task.body ?? undefined,
-        });
-
-        await setIssueState(gql, idEntry.issue_node_id, task.state);
+        await Promise.all([
+          updateIssue(gql, idEntry.issue_node_id, {
+            title: task.title,
+            body: task.body ?? undefined,
+          }),
+          setIssueState(gql, idEntry.issue_node_id, task.state),
+        ]);
       }
 
+      // Phase 2: Project field updates (all independent, parallel)
       if (idEntry.project_item_id) {
+        const fieldUpdates: Promise<unknown>[] = [];
+
         if (task.start_date && syncState.field_ids[fm.start_date]) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            idEntry.project_item_id,
-            syncState.field_ids[fm.start_date],
-            { date: task.start_date },
+          fieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.start_date],
+              { date: task.start_date },
+            ),
           );
         }
         if (task.end_date && syncState.field_ids[fm.end_date]) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            idEntry.project_item_id,
-            syncState.field_ids[fm.end_date],
-            { date: task.end_date },
+          fieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.end_date],
+              { date: task.end_date },
+            ),
           );
         }
-
-        // Update Type custom field if configured
         if (fm.type && syncState.field_ids[fm.type]) {
           const typeOptionId = resolveTypeOptionId(
             task.type,
@@ -377,28 +384,52 @@ export async function executePush(
             syncState.option_ids,
           );
           if (typeOptionId) {
-            await updateProjectItemField(
-              gql,
-              syncState.project_node_id,
-              idEntry.project_item_id,
-              syncState.field_ids[fm.type],
-              { singleSelectOptionId: typeOptionId },
+            fieldUpdates.push(
+              updateProjectItemField(
+                gql,
+                syncState.project_node_id,
+                idEntry.project_item_id,
+                syncState.field_ids[fm.type],
+                { singleSelectOptionId: typeOptionId },
+              ),
             );
           }
         }
+        if (fm.priority && syncState.field_ids[fm.priority]) {
+          const priorityValue = task.custom_fields[fm.priority] as string | undefined;
+          if (priorityValue) {
+            const optionId = resolvePriorityOptionId(
+              priorityValue,
+              fm.priority,
+              syncState.option_ids,
+            );
+            if (optionId) {
+              fieldUpdates.push(
+                updateProjectItemField(
+                  gql,
+                  syncState.project_node_id,
+                  idEntry.project_item_id,
+                  syncState.field_ids[fm.priority],
+                  { singleSelectOptionId: optionId },
+                ),
+              );
+            }
+          }
+        }
 
-        // Update Priority custom field if configured
-        await syncPriorityField(gql, syncState, fm, idEntry.project_item_id, task);
+        if (fieldUpdates.length > 0) {
+          await Promise.all(fieldUpdates);
+        }
       }
 
-      // Detect parent changes from snapshot and sync sub-issue relationships
+      // Phase 3: Relationship changes
       const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
         const oldParent = snapshot?.syncFields?.parent ?? null;
         const newParent = task.parent;
 
+        // Parent change: remove then add (order matters)
         if (oldParent !== newParent) {
-          // Remove old parent relationship
           if (oldParent) {
             const oldParentEntry = syncState.id_map[oldParent];
             if (oldParentEntry?.issue_node_id) {
@@ -409,7 +440,6 @@ export async function executePush(
               }
             }
           }
-          // Add new parent relationship
           if (newParent) {
             const newParentEntry = syncState.id_map[newParent];
             if (newParentEntry?.issue_node_id) {
@@ -422,40 +452,48 @@ export async function executePush(
           }
         }
 
-        // Detect blocked_by changes from snapshot
+        // Blocked-by changes (all independent, parallel)
         const oldBlockedBy = new Set((snapshot?.syncFields?.blocked_by ?? []).map((d) => d.task));
         const newBlockedBy = new Set((task.blocked_by ?? []).map((d) => d.task));
 
-        // Added blockers
+        const blockerMutations: Promise<void>[] = [];
+
         for (const dep of task.blocked_by ?? []) {
           if (!oldBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try {
-                await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch (err) {
-                console.warn(
-                  `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
-                );
-              }
+              blockerMutations.push(
+                addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
             }
           }
         }
 
-        // Removed blockers
         for (const dep of snapshot?.syncFields?.blocked_by ?? []) {
           if (!newBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try {
-                await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch (err) {
-                console.warn(
-                  `  ⚠ blocked-by 関係の削除に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
-                );
-              }
+              blockerMutations.push(
+                removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の削除に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
             }
           }
+        }
+
+        if (blockerMutations.length > 0) {
+          await Promise.all(blockerMutations);
         }
       }
 
