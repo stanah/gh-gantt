@@ -314,20 +314,19 @@ export function createApiRouter(projectRoot: string): Router {
       );
 
       const gql = await createGraphQLClient();
-      const { owner, project_number } = config.project.github;
-      const projectData = await fetchProject(gql, owner, project_number);
+      const { owner, repo: repoName, project_number } = config.project.github;
+      const repoFullName = `${owner}/${repoName}`;
+
+      const [projectData, repoMetadata] = await Promise.all([
+        fetchProject(gql, owner, project_number),
+        fetchRepositoryMetadata(gql, owner, repoName),
+      ]);
 
       const remoteTasks = new Map<string, Task>();
       for (const item of projectData.items) {
         const task = mapRemoteItemToTask(item, config);
         if (task) remoteTasks.set(task.id, task);
       }
-
-      // Fetch native GitHub Milestones and inject synthetic tasks
-      // (before early-return check so milestone changes are detected)
-      const { owner: repoOwner, repo: repoName } = config.project.github;
-      const repoFullName = `${repoOwner}/${repoName}`;
-      const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
       for (const m of repoMetadata.milestones) {
         if (!m.dueOn) continue;
         const syntheticTask = milestoneToTask(m, repoFullName);
