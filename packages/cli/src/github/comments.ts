@@ -2,11 +2,7 @@ import type { graphql } from "@octokit/graphql";
 import type { Comment, CommentsFile } from "@gh-gantt/shared";
 import { ISSUE_COMMENTS_QUERY } from "./queries.js";
 
-const DELAY_MS = 100;
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+const BATCH_SIZE = 10;
 
 export async function fetchIssueComments(
   gql: typeof graphql,
@@ -66,34 +62,50 @@ export async function fetchAllComments(
   let fetched = 0;
   let skipped = 0;
   let failed = 0;
+  let rateLimited = false;
 
-  for (const item of items) {
+  const toFetch = items.filter((item) => {
     if (!options?.force && data.fetched_at[item.taskId]) {
       skipped++;
-      continue;
+      return false;
     }
+    return true;
+  });
 
-    try {
-      if (fetched > 0) await delay(DELAY_MS);
+  for (let i = 0; i < toFetch.length; i += BATCH_SIZE) {
+    if (rateLimited) break;
 
-      const comments = await fetchIssueComments(gql, item.owner, item.repo, item.issueNumber);
+    const batch = toFetch.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (item) => {
+        try {
+          const comments = await fetchIssueComments(gql, item.owner, item.repo, item.issueNumber);
+          return { item, comments, error: null };
+        } catch (err: any) {
+          return { item, comments: null, error: err };
+        }
+      }),
+    );
 
-      data.comments[item.taskId] = comments;
-      data.fetched_at[item.taskId] = new Date().toISOString();
-      fetched++;
-
-      await saveProgress(data);
-    } catch (err: any) {
-      if (err?.status === 403 || err?.message?.includes("rate limit")) {
-        console.warn(`Rate limited after fetching ${fetched} issues. Re-run to continue.`);
-        await saveProgress(data);
-        break;
+    for (const { item, comments, error } of results) {
+      if (error) {
+        if (error?.status === 403 || error?.message?.includes("rate limit")) {
+          console.warn(`Rate limited after fetching ${fetched} issues. Re-run to continue.`);
+          rateLimited = true;
+          break;
+        }
+        console.warn(
+          `Failed to fetch comments for ${item.taskId}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        failed++;
+      } else if (comments) {
+        data.comments[item.taskId] = comments;
+        data.fetched_at[item.taskId] = new Date().toISOString();
+        fetched++;
       }
-      console.warn(
-        `Failed to fetch comments for ${item.taskId}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      failed++;
     }
+
+    await saveProgress(data);
   }
 
   console.log(

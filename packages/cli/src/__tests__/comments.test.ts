@@ -122,7 +122,7 @@ describe("fetchAllComments", () => {
     expect(result.comments["o/r#1"]).toHaveLength(1);
   });
 
-  it("calls saveProgress after each issue fetch", async () => {
+  it("calls saveProgress after each batch", async () => {
     const gql = makeGql({
       1: [{ id: "C_1", author: "alice", body: "a" }],
       2: [{ id: "C_2", author: "bob", body: "b" }],
@@ -133,7 +133,8 @@ describe("fetchAllComments", () => {
     const saveProgress = vi.fn(async () => {});
     await fetchAllComments(gql as any, items, empty, saveProgress);
 
-    expect(saveProgress).toHaveBeenCalledTimes(3);
+    // 3 items fit in a single batch (BATCH_SIZE=10), so saveProgress is called once
+    expect(saveProgress).toHaveBeenCalledTimes(1);
   });
 
   it("continues on individual issue error", async () => {
@@ -169,7 +170,8 @@ describe("fetchAllComments", () => {
     expect(result.comments["o/r#1"]).toHaveLength(1);
     expect(result.comments["o/r#3"]).toHaveLength(1);
     expect(result.comments["o/r#2"]).toBeUndefined();
-    expect(saveProgress).toHaveBeenCalledTimes(2);
+    // 3 items in 1 batch → 1 saveProgress call
+    expect(saveProgress).toHaveBeenCalledTimes(1);
   });
 
   it("re-fetches all when force is true", async () => {

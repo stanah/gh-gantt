@@ -50,8 +50,14 @@ export const pullCommand = new Command("pull")
     }
 
     const gql = await createGraphQLClient();
-    const { owner, project_number } = config.project.github;
-    const projectData = await fetchProject(gql, owner, project_number);
+    const { owner, repo: repoName, project_number } = config.project.github;
+    const repoFullName = `${owner}/${repoName}`;
+
+    // Fetch project data and repository metadata in parallel
+    const [projectData, repoMetadata] = await Promise.all([
+      fetchProject(gql, owner, project_number),
+      fetchRepositoryMetadata(gql, owner, repoName),
+    ]);
 
     console.log(`Fetched ${projectData.items.length} items from GitHub`);
 
@@ -61,11 +67,6 @@ export const pullCommand = new Command("pull")
       const task = mapRemoteItemToTask(item, config);
       if (task) remoteTasks.set(task.id, task);
     }
-
-    // Fetch native GitHub Milestones and inject synthetic tasks
-    const { owner: repoOwner, repo: repoName } = config.project.github;
-    const repoFullName = `${repoOwner}/${repoName}`;
-    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
     for (const m of repoMetadata.milestones) {
       if (!m.dueOn) continue;
       const syntheticTask = milestoneToTask(m, repoFullName);
