@@ -59,9 +59,39 @@ function makeConfig(overrides: Partial<Config> = {}): Config {
   } as Config;
 }
 
+function makeBatchIssueResponse(
+  issueNumbers: number[],
+  handler?: (query: string, vars?: any) => any,
+): any {
+  if (handler) return handler("batch", undefined);
+  const repo: Record<string, any> = {};
+  issueNumbers.forEach((n, i) => {
+    repo[`i${i}`] = { number: n, updatedAt: "2026-01-01T00:00:00Z" };
+  });
+  return { repository: repo };
+}
+
+function extractBatchIssueNumbers(query: string): number[] {
+  const matches = [...query.matchAll(/issue\(number:\s*(\d+)\)/g)];
+  return matches.map((m) => Number(m[1]));
+}
+
 function makeMockGql(handlers?: Partial<Record<string, (query: string, vars?: any) => any>>) {
   return vi.fn().mockImplementation(async (query: string, vars?: any) => {
     // Route by query content
+    // Batch updatedAt query (alias pattern: i0: issue(number: N) ...)
+    if (
+      query.includes("issue(number:") &&
+      !query.includes("mutation") &&
+      !query.includes("$number")
+    ) {
+      const numbers = extractBatchIssueNumbers(query);
+      if (handlers?.["batchUpdatedAt"]) return handlers["batchUpdatedAt"](query, vars);
+      if (handlers?.["issue(number"])
+        return makeBatchIssueResponse(numbers, handlers["issue(number"]);
+      return makeBatchIssueResponse(numbers);
+    }
+    // Single issue query (parameterized)
     if (query.includes("issue(number") && !query.includes("mutation")) {
       if (handlers?.["issue(number"]) return handlers["issue(number"](query, vars);
       return { repository: { issue: { updatedAt: "2026-01-01T00:00:00Z" } } };
@@ -197,16 +227,16 @@ describe("executePush", () => {
     };
 
     // The stale check query returns matching updated_at, but post-push refresh returns new value
-    let queryCallCount = 0;
+    let batchCallCount = 0;
     const mockGql = makeMockGql({
-      "issue(number": () => {
-        queryCallCount++;
-        if (queryCallCount === 1) {
+      batchUpdatedAt: () => {
+        batchCallCount++;
+        if (batchCallCount === 1) {
           // Stale check — matches snapshot so push proceeds
-          return { repository: { issue: { updatedAt: "2026-01-01T00:00:00Z" } } };
+          return { repository: { i0: { number: 1, updatedAt: "2026-01-01T00:00:00Z" } } };
         }
         // Post-push refresh — new updated_at
-        return { repository: { issue: { updatedAt: "2026-04-01T00:00:00Z" } } };
+        return { repository: { i0: { number: 1, updatedAt: "2026-04-01T00:00:00Z" } } };
       },
     });
 
@@ -404,8 +434,8 @@ describe("executePush", () => {
 
     // Mock GQL returns a different updatedAt than snapshot — would normally fail stale check
     const mockGql = makeMockGql({
-      "issue(number": () => ({
-        repository: { issue: { updatedAt: "2026-03-01T00:00:00Z" } },
+      batchUpdatedAt: () => ({
+        repository: { i0: { number: 1, updatedAt: "2026-03-01T00:00:00Z" } },
       }),
     });
 
@@ -416,13 +446,13 @@ describe("executePush", () => {
 
     expect(result.updated).toBe(1);
 
-    // Verify no stale-check query was made (the only issue(number queries should be post-push refresh)
-    const issueQueries = mockGql.mock.calls.filter(
+    // Verify no stale-check query was made (the only batch query should be post-push refresh)
+    const batchQueries = mockGql.mock.calls.filter(
       (c: any[]) =>
-        (c[0] as string).includes("issue(number") && !(c[0] as string).includes("mutation"),
+        (c[0] as string).includes("issue(number:") && !(c[0] as string).includes("mutation"),
     );
     // Only post-push refresh query, no stale check
-    expect(issueQueries.length).toBe(1);
+    expect(batchQueries.length).toBe(1);
   });
 
   it("multiple field updates work correctly", async () => {
@@ -524,8 +554,8 @@ describe("executePush", () => {
 
     try {
       const mockGql = makeMockGql({
-        "issue(number": () => ({
-          repository: { issue: { updatedAt: "2026-03-01T00:00:00Z" } },
+        batchUpdatedAt: () => ({
+          repository: { i0: { number: 1, updatedAt: "2026-03-01T00:00:00Z" } },
         }),
       });
 

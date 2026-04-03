@@ -10,6 +10,7 @@ import {
   buildMilestoneSyntheticId,
 } from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
+import { buildIssueUpdatedAtQuery } from "../github/queries.js";
 import { getToken } from "../github/auth.js";
 import {
   createIssue,
@@ -67,39 +68,32 @@ export async function executePush(
     const modifiedDiffs = diffs.filter(
       (d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id),
     );
-    if (modifiedDiffs.length > 0) {
-      // Fetch current updated_at from GitHub for modified issues
-      const hasIssueNumbers = modifiedDiffs.some((d) => d.task.github_issue !== null);
-      if (hasIssueNumbers) {
-        const { owner, repo } = config.project.github;
-        const staleTaskIds: string[] = [];
-        for (const diff of modifiedDiffs) {
-          if (!diff.task.github_issue) continue;
-          const snapshot = syncState.snapshots[diff.id];
-          if (!snapshot?.updated_at) continue;
-          try {
-            const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
-              `query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  issue(number: $number) { updatedAt }
-                }
-              }`,
-              { owner, repo, number: diff.task.github_issue },
-            );
-            if (repository.issue.updatedAt !== snapshot.updated_at) {
-              staleTaskIds.push(diff.id);
-            }
-          } catch (err) {
-            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${formatError(err)}`);
-            staleTaskIds.push(diff.id);
-          }
+    const staleCheckTargets = modifiedDiffs.filter(
+      (d) => d.task.github_issue !== null && syncState.snapshots[d.id]?.updated_at,
+    );
+    if (staleCheckTargets.length > 0) {
+      const { owner, repo } = config.project.github;
+      const tasksByNumber = new Map(staleCheckTargets.map((d) => [d.task.github_issue!, d]));
+      const remoteUpdatedAt = await fetchBatchUpdatedAt(gql, owner, repo, [
+        ...tasksByNumber.keys(),
+      ]);
+      const staleTaskIds: string[] = [];
+      for (const [number, diff] of tasksByNumber) {
+        const remoteTs = remoteUpdatedAt.get(number);
+        const snapshotTs = syncState.snapshots[diff.id]?.updated_at;
+        if (remoteTs === undefined) {
+          // Could not fetch — treat as stale to be safe
+          console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id})`);
+          staleTaskIds.push(diff.id);
+        } else if (remoteTs !== snapshotTs) {
+          staleTaskIds.push(diff.id);
         }
-        if (staleTaskIds.length > 0) {
-          console.error("リモートが更新されています。先に pull してください");
-          for (const id of staleTaskIds) console.error("  " + id);
-          console.error("--force で強制 push できます");
-          return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
-        }
+      }
+      if (staleTaskIds.length > 0) {
+        console.error("リモートが更新されています。先に pull してください");
+        for (const id of staleTaskIds) console.error("  " + id);
+        console.error("--force で強制 push できます");
+        return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
       }
     }
   }
@@ -532,6 +526,37 @@ function resolvePriorityOptionId(
   return undefined;
 }
 
+const BATCH_SIZE = 100;
+
+async function fetchBatchUpdatedAt(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+  issueNumbers: number[],
+): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (issueNumbers.length === 0) return result;
+
+  for (let i = 0; i < issueNumbers.length; i += BATCH_SIZE) {
+    const batch = issueNumbers.slice(i, i + BATCH_SIZE);
+    try {
+      const query = buildIssueUpdatedAtQuery(owner, repo, batch);
+      const data = await gql<{
+        repository: Record<string, { number: number; updatedAt: string } | null>;
+      }>(query);
+      for (let j = 0; j < batch.length; j++) {
+        const issue = data.repository[`i${j}`];
+        if (issue?.updatedAt) {
+          result.set(issue.number, issue.updatedAt);
+        }
+      }
+    } catch {
+      // Best-effort: if batch fails, skip this chunk
+    }
+  }
+  return result;
+}
+
 async function fetchFreshUpdatedAt(
   gql: typeof graphql,
   owner: string,
@@ -542,26 +567,16 @@ async function fetchFreshUpdatedAt(
   const result = new Map<string, string>();
   const taskById = new Map(tasksFile.tasks.map((t) => [t.id, t]));
   const ids = [...pushedTaskIds].filter((id) => !isDraftTask(id) && !isMilestoneSyntheticTask(id));
+  const numberToId = new Map<number, string>();
   for (const id of ids) {
     const task = taskById.get(id);
-    if (!task?.github_issue) continue;
-    try {
-      const { repository } = await gql<{
-        repository: { issue: { updatedAt: string } | null };
-      }>(
-        `query($owner: String!, $repo: String!, $number: Int!) {
-          repository(owner: $owner, name: $repo) {
-            issue(number: $number) { updatedAt }
-          }
-        }`,
-        { owner, repo, number: task.github_issue },
-      );
-      if (repository.issue?.updatedAt) {
-        result.set(id, repository.issue.updatedAt);
-      }
-    } catch {
-      // Best-effort: if we can't fetch, preserve existing value
-    }
+    if (task?.github_issue) numberToId.set(task.github_issue, id);
+  }
+
+  const updatedAtByNumber = await fetchBatchUpdatedAt(gql, owner, repo, [...numberToId.keys()]);
+  for (const [number, ts] of updatedAtByNumber) {
+    const id = numberToId.get(number);
+    if (id) result.set(id, ts);
   }
   return result;
 }
