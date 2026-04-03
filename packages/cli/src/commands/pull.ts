@@ -105,7 +105,12 @@ export const pullCommand = new Command("pull")
           console.log("Pull complete.");
           return;
         }
+        // Comments only — skip relationship fetch and merge, go straight to comments
         console.log("No remote changes detected, but fetching comments as requested.");
+        console.log(`Pull summary: +0 ~0 !0 -0`);
+        console.log("Pull complete.");
+        await fetchAndSaveComments(gql, tasksFile.tasks, projectRoot, opts);
+        return;
       }
     }
 
@@ -338,43 +343,51 @@ export const pullCommand = new Command("pull")
 
     console.log("Pull complete.");
 
-    // Fetch comments if requested
-    if (opts.withComments || opts.forceComments) {
-      try {
-        const commentsStore = new CommentsStore(projectRoot);
-        const commentsFile = await commentsStore.read();
+    await fetchAndSaveComments(gql, mergedTasks, projectRoot, opts);
+  });
 
-        const commentItems = mergedTasks
-          .filter(
-            (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
-          )
-          .map((t) => {
-            const [owner, repo] = t.github_repo.split("/");
-            return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
-          });
+async function fetchAndSaveComments(
+  gql: Awaited<ReturnType<typeof createGraphQLClient>>,
+  tasks: import("@gh-gantt/shared").Task[],
+  projectRoot: string,
+  opts: { withComments?: boolean; forceComments?: boolean },
+): Promise<void> {
+  if (!opts.withComments && !opts.forceComments) return;
 
-        const updatedComments = await fetchAllComments(
-          gql,
-          commentItems,
-          commentsFile,
-          (data) => commentsStore.write(data),
-          { force: !!opts.forceComments },
-        );
+  try {
+    const commentsStore = new CommentsStore(projectRoot);
+    const commentsFile = await commentsStore.read();
 
-        // Clean up comments for deleted tasks
-        const taskIds = new Set(mergedTasks.map((t) => t.id));
-        for (const key of Object.keys(updatedComments.fetched_at)) {
-          if (!taskIds.has(key)) {
-            delete updatedComments.fetched_at[key];
-            delete updatedComments.comments[key];
-          }
-        }
+    const commentItems = tasks
+      .filter(
+        (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
+      )
+      .map((t) => {
+        const [owner, repo] = t.github_repo.split("/");
+        return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
+      });
 
-        await commentsStore.write(updatedComments);
-      } catch (err) {
-        console.warn(
-          `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
-        );
+    const updatedComments = await fetchAllComments(
+      gql,
+      commentItems,
+      commentsFile,
+      (data) => commentsStore.write(data),
+      { force: !!opts.forceComments },
+    );
+
+    // Clean up comments for deleted tasks
+    const taskIds = new Set(tasks.map((t) => t.id));
+    for (const key of Object.keys(updatedComments.fetched_at)) {
+      if (!taskIds.has(key)) {
+        delete updatedComments.fetched_at[key];
+        delete updatedComments.comments[key];
       }
     }
-  });
+
+    await commentsStore.write(updatedComments);
+  } catch (err) {
+    console.warn(
+      `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
