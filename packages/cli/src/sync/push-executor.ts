@@ -164,18 +164,19 @@ export async function executePush(
 
   // Process draft tasks (create issues) if auto_create_issues is enabled
   if (config.sync.auto_create_issues && draftDiffs.length > 0) {
-    const repositoryId = await fetchRepositoryId(gql, owner, repo);
-
-    // Resolve labels, milestones, and assignees in bulk
-    // Re-fetch metadata to pick up newly created milestones
-    const metadata = await fetchRepositoryMetadata(gql, owner, repo);
+    // Collect assignees upfront so all three fetches can run in parallel
     const allAssignees = new Set<string>();
     for (const d of draftDiffs) {
       if (d.type !== "deleted") {
         for (const a of d.task.assignees) allAssignees.add(a);
       }
     }
-    const userIdMap = await fetchUserIds(gql, [...allAssignees]);
+
+    const [repositoryId, metadata, userIdMap] = await Promise.all([
+      fetchRepositoryId(gql, owner, repo),
+      fetchRepositoryMetadata(gql, owner, repo),
+      fetchUserIds(gql, [...allAssignees]),
+    ]);
     const createdTaskIds: string[] = [];
 
     for (const diff of draftDiffs) {
@@ -286,39 +287,47 @@ export async function executePush(
       }
     }
 
-    // Set up sub-issue relationships for newly created issues
+    // Set up relationships for newly created issues (parallel)
+    const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
+    const relationMutations: Promise<void>[] = [];
+
     for (const id of createdTaskIds) {
-      const task = tasksFile.tasks.find((t) => t.id === id);
-      if (!task?.parent) continue;
-      const childEntry = syncState.id_map[task.id];
-      const parentEntry = syncState.id_map[task.parent];
-      if (!childEntry?.issue_node_id || !parentEntry?.issue_node_id) continue;
-
-      try {
-        await addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id);
-      } catch (err) {
-        console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
-      }
-    }
-
-    // Set up blocked_by relationships for newly created issues
-    for (const id of createdTaskIds) {
-      const task = tasksFile.tasks.find((t) => t.id === id);
-      if (!task?.blocked_by.length) continue;
-      const taskEntry = syncState.id_map[task.id];
-      if (!taskEntry?.issue_node_id) continue;
-
-      for (const dep of task.blocked_by) {
-        const blockerEntry = syncState.id_map[dep.task];
-        if (!blockerEntry?.issue_node_id) continue;
-        try {
-          await addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id);
-        } catch (err) {
-          console.warn(
-            `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+      const task = taskMap.get(id);
+      if (task?.parent) {
+        const childEntry = syncState.id_map[task.id];
+        const parentEntry = syncState.id_map[task.parent];
+        if (childEntry?.issue_node_id && parentEntry?.issue_node_id) {
+          relationMutations.push(
+            addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id).catch((err) => {
+              console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
+            }),
           );
         }
       }
+
+      if (task?.blocked_by.length) {
+        const taskEntry = syncState.id_map[task.id];
+        if (taskEntry?.issue_node_id) {
+          for (const dep of task.blocked_by) {
+            const blockerEntry = syncState.id_map[dep.task];
+            if (blockerEntry?.issue_node_id) {
+              relationMutations.push(
+                addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+
+    if (relationMutations.length > 0) {
+      await Promise.all(relationMutations);
     }
   } else if (draftDiffs.length > 0) {
     result.skipped += draftDiffs.length;
