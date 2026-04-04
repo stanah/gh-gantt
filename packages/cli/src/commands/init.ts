@@ -35,7 +35,12 @@ function applyTypeSources(
     const defaults = KNOWN_TYPE_DEFAULTS[lower];
     if (defaults) {
       const key = defaults.key;
-      if (skipExisting && taskTypes[key]) continue;
+      if (skipExisting && taskTypes[key]) {
+        if (bindingKey === "github_label" && !taskTypes[key].github_label) {
+          taskTypes[key] = { ...taskTypes[key], github_label: source.name };
+        }
+        continue;
+      }
       if (key === "task" || lower === "task") {
         taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
       } else {
@@ -52,6 +57,7 @@ function applyTypeSources(
       taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
     } else {
       const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+      if (!key) continue;
       if (skipExisting && taskTypes[key]) continue;
       taskTypes[key] = {
         label: source.name,
