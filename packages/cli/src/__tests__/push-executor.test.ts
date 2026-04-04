@@ -910,4 +910,109 @@ describe("executePush", () => {
     const end6 = concurrency.indexOf("addBlockedBy:ISSUE_6:end");
     expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5, end6));
   });
+
+  it("relation failure preserves old syncFields for retry (Fix partial-failure)", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      parent: "o/r#10",
+    });
+    const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: oldSyncFields,
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = makeMockGql({
+        addSubIssue: () => {
+          throw new Error("sub-issue API error");
+        },
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      // Snapshot should preserve old parent (null) instead of new parent ("o/r#10")
+      const snap = newSyncState.snapshots["o/r#1"];
+      expect(snap).toBeDefined();
+      expect(snap!.syncFields?.parent).toBe(oldSyncFields.parent);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("successful relation does not preserve old syncFields", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      parent: "o/r#10",
+    });
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const mockGql = makeMockGql();
+    const { syncState: newSyncState } = await executePush(
+      mockGql as any,
+      makeConfig(),
+      tasksFile,
+      syncState,
+    );
+
+    // Snapshot should reflect new parent
+    const snap = newSyncState.snapshots["o/r#1"];
+    expect(snap).toBeDefined();
+    expect(snap!.syncFields?.parent).toBe("o/r#10");
+  });
 });
