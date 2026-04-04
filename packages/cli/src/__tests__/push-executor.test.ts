@@ -1015,4 +1015,112 @@ describe("executePush", () => {
     expect(snap).toBeDefined();
     expect(snap!.syncFields?.parent).toBe("o/r#10");
   });
+
+  it("blocked_by failure preserves old syncFields.blocked_by for retry", async () => {
+    const blocker = makeTask("o/r#5", { github_issue: 5 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      blocked_by: [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }],
+    });
+    const tasksFile: TasksFile = {
+      tasks: [blocker, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#5": { issue_number: 5, issue_node_id: "ISSUE_5", project_item_id: "ITEM_5" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: oldSyncFields,
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#5": {
+          hash: hashTask(blocker),
+          synced_at: "",
+          syncFields: extractSyncFields(blocker),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = makeMockGql({
+        addBlockedBy: () => {
+          throw new Error("blocked-by API error");
+        },
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      // blocked_by should be preserved as old value (empty array)
+      const snap = newSyncState.snapshots["o/r#1"];
+      expect(snap).toBeDefined();
+      expect(snap!.syncFields?.blocked_by).toEqual(oldSyncFields.blocked_by);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("fetchBatchUpdatedAt logs warning on batch failure", async () => {
+    const task = makeTask("o/r#1", { github_issue: 1, title: "Modified" });
+    const tasksFile: TasksFile = {
+      tasks: [task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1, title: "Original" })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let batchCallCount = 0;
+      const mockGql = makeMockGql({
+        batchUpdatedAt: () => {
+          batchCallCount++;
+          if (batchCallCount === 1) {
+            // Stale check — pass
+            return { repository: { i0: { number: 1, updatedAt: "2026-01-01T00:00:00Z" } } };
+          }
+          // Post-push refresh — fail
+          throw new Error("GraphQL batch error");
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      // Should have logged a warning about the batch failure
+      const batchWarn = warnSpy.mock.calls.find(
+        (c) => (c[0] as string).includes("updatedAt") && (c[0] as string).includes("失敗"),
+      );
+      expect(batchWarn).toBeDefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
