@@ -5,6 +5,7 @@ import {
   OWNER_TYPE_QUERY,
   REPOSITORY_ID_QUERY,
   REPOSITORY_METADATA_QUERY,
+  ORG_ISSUE_TYPES_QUERY,
   buildUserIdsQuery,
 } from "./queries.js";
 
@@ -24,8 +25,15 @@ export interface RawProjectItem {
     createdAt: string;
     updatedAt: string;
     closedAt: string | null;
+    issueType: string | null;
     repository: string;
   } | null;
+}
+
+export interface RawIssueType {
+  id: string;
+  name: string;
+  description: string | null;
 }
 
 export interface RawProjectData {
@@ -47,9 +55,10 @@ export async function fetchProject(
   gql: typeof graphql,
   owner: string,
   projectNumber: number,
+  ownerType?: OwnerType,
 ): Promise<RawProjectData> {
-  const ownerType = await detectOwnerType(gql, owner);
-  const query = buildProjectQuery(ownerType);
+  const resolvedOwnerType = ownerType ?? (await detectOwnerType(gql, owner));
+  const query = buildProjectQuery(resolvedOwnerType);
 
   const items: RawProjectItem[] = [];
   let cursor: string | null = null;
@@ -59,7 +68,7 @@ export async function fetchProject(
 
   do {
     const result: any = await gql(query, { owner, number: projectNumber, cursor });
-    const project = result[ownerType].projectV2;
+    const project = result[resolvedOwnerType].projectV2;
     projectNodeId = project.id;
     projectTitle = project.title;
     fields = project.fields.nodes;
@@ -89,6 +98,7 @@ export async function fetchProject(
           createdAt: content.createdAt,
           updatedAt: content.updatedAt,
           closedAt: content.closedAt,
+          issueType: content.issueType?.name ?? null,
           repository: content.repository.nameWithOwner,
         },
       });
@@ -156,6 +166,28 @@ export async function fetchUserIds(
     if (user) map.set(user.login, user.id);
   }
   return map;
+}
+
+export async function fetchOrgIssueTypes(
+  gql: typeof graphql,
+  org: string,
+): Promise<RawIssueType[]> {
+  try {
+    const result: any = await gql(ORG_ISSUE_TYPES_QUERY, { login: org });
+    const nodes = result.organization?.issueTypes?.nodes ?? [];
+    return nodes
+      .filter((n: any) => n.isEnabled)
+      .map((n: any) => ({
+        id: n.id,
+        name: n.name,
+        description: n.description ?? null,
+      }));
+  } catch (err) {
+    console.warn(
+      `⚠ Organization Issue Types の取得に失敗 (${org}): ${err instanceof Error ? err.message : err}`,
+    );
+    return [];
+  }
 }
 
 export async function fetchRepositoryId(

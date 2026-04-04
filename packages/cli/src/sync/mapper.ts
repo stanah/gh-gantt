@@ -8,7 +8,13 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
   const fm = config.sync.field_mapping;
-  const taskType = resolveTaskType(c.labels, item.fieldValues, config.task_types, fm.type);
+  const taskType = resolveTaskType(
+    c.labels,
+    item.fieldValues,
+    config.task_types,
+    fm.type,
+    c.issueType,
+  );
 
   const customFields: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(item.fieldValues)) {

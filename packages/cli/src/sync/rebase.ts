@@ -13,13 +13,14 @@ import { resolveTaskType } from "./type-resolver.js";
 export function rebaseSyncFields(syncFields: SyncFields, config: Config): SyncFields {
   const fm = config.sync.field_mapping;
 
-  // Re-resolve type using current config
-  const type = resolveTaskType(
-    syncFields.labels,
-    syncFields.custom_fields,
-    config.task_types,
-    fm.type,
-  );
+  // Re-resolve type using current config.
+  // If any task_type uses github_issue_type, skip re-resolution because
+  // issue type info is not available in SyncFields and re-resolving would
+  // incorrectly fall back to "task".
+  const usesIssueTypes = Object.values(config.task_types).some((t) => t.github_issue_type);
+  const type = usesIssueTypes
+    ? syncFields.type
+    : resolveTaskType(syncFields.labels, syncFields.custom_fields, config.task_types, fm.type);
 
   // Re-resolve start_date/end_date from custom_fields using current field_mapping
   const rawStartDate = syncFields.custom_fields[fm.start_date];

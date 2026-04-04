@@ -25,6 +25,7 @@ const TaskTypeSchema = z.object({
   color: z.string(),
   github_label: z.string().nullable(),
   github_field_value: z.string().nullable().optional(),
+  github_issue_type: z.string().nullable().optional(),
   default_collapsed: z.boolean().optional(),
 });
 
