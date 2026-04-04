@@ -316,7 +316,8 @@ export function createApiRouter(projectRoot: string): Router {
       } = await executePull(gql, config, tasksFile, syncState);
 
       if (result.skipped) {
-        res.json({ added: 0, updated: 0, removed: 0 });
+        await stateStore.write(newSyncState);
+        res.json({ added: 0, updated: 0, removed: 0, conflicts: 0 });
         return;
       }
 

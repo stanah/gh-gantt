@@ -40,13 +40,15 @@ export const pullCommand = new Command("pull")
     console.log(`Fetched items from GitHub`);
 
     if (result.skipped) {
+      // Save updated field/option metadata even when no task changes
+      await stateStore.write(newSyncState);
+
       if (!opts.withComments && !opts.forceComments) {
         console.log("No remote changes detected, skipping sub-issues fetch.");
         console.log(`Pull summary: +0 ~0 !0 -0`);
         console.log("Pull complete.");
         return;
       }
-      // Comments only — skip merge, go straight to comments
       console.log("No remote changes detected, but fetching comments as requested.");
       console.log(`Pull summary: +0 ~0 !0 -0`);
       console.log("Pull complete.");

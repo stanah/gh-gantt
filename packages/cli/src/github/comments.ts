@@ -92,7 +92,7 @@ export async function fetchAllComments(
         if (error?.status === 403 || error?.message?.includes("rate limit")) {
           console.warn(`Rate limited after fetching ${fetched} issues. Re-run to continue.`);
           rateLimited = true;
-          break;
+          continue;
         }
         console.warn(
           `Failed to fetch comments for ${item.taskId}: ${error instanceof Error ? error.message : String(error)}`,

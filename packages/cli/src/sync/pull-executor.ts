@@ -117,7 +117,11 @@ export async function executePull(
           skipped: true,
         },
         tasksFile,
-        syncState,
+        syncState: {
+          ...syncState,
+          field_ids: fieldIds,
+          option_ids: optionIds,
+        },
       };
     }
   }
@@ -247,9 +251,19 @@ export async function executePull(
     const isConflicted = conflictedIds.has(task.id);
     const hasLocalChanges = locallyChangedIds.has(task.id);
 
-    if (isConflicted || hasLocalChanges) {
+    if (isConflicted) {
+      // Conflicted: preserve hash so local changes remain pushable
       newSnapshots[task.id] = {
         ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
+        remoteHash,
+      };
+    } else if (hasLocalChanges) {
+      // Unpushed local changes: preserve hash for diff detection,
+      // but advance syncFields/updated_at to prevent false conflicts on next pull
+      newSnapshots[task.id] = {
+        ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
+        updated_at: remoteTask?.updated_at ?? existing?.updated_at,
+        syncFields: extractSyncFields(task),
         remoteHash,
       };
     } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {

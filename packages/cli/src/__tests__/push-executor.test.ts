@@ -844,8 +844,8 @@ describe("executePush", () => {
     const startIdx = concurrency.indexOf("field:FIELD_START:start");
     const endStartIdx = concurrency.indexOf("field:FIELD_END:start");
     const startEndIdx = concurrency.indexOf("field:FIELD_START:end");
-    // Both field updates should start before either finishes
-    expect(Math.max(startIdx, endStartIdx)).toBeLessThan(startEndIdx);
+    const endEndIdx = concurrency.indexOf("field:FIELD_END:end");
+    expect(Math.max(startIdx, endStartIdx)).toBeLessThan(Math.min(startEndIdx, endEndIdx));
   });
 
   it("blocker mutations run in parallel", async () => {
@@ -907,7 +907,7 @@ describe("executePush", () => {
     const start5 = concurrency.indexOf("addBlockedBy:ISSUE_5:start");
     const start6 = concurrency.indexOf("addBlockedBy:ISSUE_6:start");
     const end5 = concurrency.indexOf("addBlockedBy:ISSUE_5:end");
-    // Both should start before either finishes
-    expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5));
+    const end6 = concurrency.indexOf("addBlockedBy:ISSUE_6:end");
+    expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5, end6));
   });
 });
