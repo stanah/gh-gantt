@@ -6,7 +6,7 @@ export async function createGraphQLClient() {
   return graphql.defaults({
     headers: {
       authorization: `token ${token}`,
-      "GraphQL-Features": "sub_issues",
+      "GraphQL-Features": "sub_issues,issue_types",
     },
   });
 }

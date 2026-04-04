@@ -56,6 +56,7 @@ const PROJECT_V2_FRAGMENT = `
                 body
                 state
                 stateReason
+                issueType { id name }
                 assignees(first: 10) { nodes { login } }
                 labels(first: 20) { nodes { name } }
                 milestone { title }
@@ -123,6 +124,16 @@ export function buildIssueUpdatedAtQuery(
     }
   }`;
 }
+
+export const ORG_ISSUE_TYPES_QUERY = `
+  query($login: String!) {
+    organization(login: $login) {
+      issueTypes(first: 50) {
+        nodes { id name description isEnabled }
+      }
+    }
+  }
+`;
 
 export function buildUserIdsQuery(logins: string[]): string {
   const fields = logins

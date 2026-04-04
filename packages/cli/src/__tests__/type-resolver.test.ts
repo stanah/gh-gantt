@@ -77,4 +77,37 @@ describe("resolveTaskType", () => {
     const result = resolveTaskType(["bug"], {}, labelOnlyTypes);
     expect(result).toBe("bug");
   });
+
+  it("resolves type from issueType (highest priority over custom field)", () => {
+    const issueTypeTypes: Record<string, TaskType> = {
+      task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
+      epic: {
+        label: "Epic",
+        display: "summary",
+        color: "#8E44AD",
+        github_label: null,
+        github_issue_type: "Epic",
+      },
+      bug: {
+        label: "Bug",
+        display: "bar",
+        color: "#E74C3C",
+        github_label: "bug",
+        github_field_value: "Bug",
+      },
+    };
+    // issueType "Epic" should win over label "bug" and custom field "Bug"
+    const result = resolveTaskType(["bug"], { Type: "Bug" }, issueTypeTypes, "Type", "Epic");
+    expect(result).toBe("epic");
+  });
+
+  it("falls back to custom field when issueType has no match", () => {
+    const result = resolveTaskType([], { Type: "Epic" }, taskTypes, "Type", "Unknown");
+    expect(result).toBe("epic");
+  });
+
+  it("falls back to custom field when issueType is null", () => {
+    const result = resolveTaskType([], { Type: "Bug" }, taskTypes, "Type", null);
+    expect(result).toBe("bug");
+  });
 });

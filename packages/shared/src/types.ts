@@ -12,6 +12,7 @@ export interface TaskType {
   color: string;
   github_label: string | null;
   github_field_value?: string | null;
+  github_issue_type?: string | null;
   default_collapsed?: boolean;
 }
 
