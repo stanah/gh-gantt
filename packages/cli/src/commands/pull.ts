@@ -1,25 +1,12 @@
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
-import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
-import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
+import { isDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
 import { fetchAllComments } from "../github/comments.js";
-import {
-  applySubIssueLinks,
-  applyBlockedByLinks,
-  isDraftTask,
-  isMilestoneSyntheticTask,
-  milestoneToTask,
-} from "../github/issues.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
-import { hashTask, extractSyncFields } from "../sync/hash.js";
-import { threeWayMerge } from "../sync/three-way-merge.js";
-import { applyConflictMarkers } from "../sync/conflict-marker.js";
-import { computeLocalDiff } from "../sync/diff.js";
-import { mapRemoteItemToTask } from "../sync/mapper.js";
-import { rebaseSyncFields } from "../sync/rebase.js";
+import { executePull } from "../sync/pull-executor.js";
 import { formatValue } from "../util/format.js";
 
 export const pullCommand = new Command("pull")
@@ -37,12 +24,6 @@ export const pullCommand = new Command("pull")
     const tasksFile = await tasksStore.read();
     const syncState = await stateStore.read();
 
-    // Record which tasks have unpushed local changes BEFORE merging
-    const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
-    const locallyChangedIds = new Set(
-      prePullDiffs.filter((d) => d.type === "modified").map((d) => d.id),
-    );
-
     // Guard: Unresolved conflicts must be resolved before next pull
     if (tasksFile.has_conflicts) {
       console.error("未解決のコンフリクトがあります。先に resolve してください");
@@ -50,331 +31,126 @@ export const pullCommand = new Command("pull")
     }
 
     const gql = await createGraphQLClient();
-    const { owner, project_number } = config.project.github;
-    const projectData = await fetchProject(gql, owner, project_number);
+    const {
+      result,
+      tasksFile: newTasksFile,
+      syncState: newSyncState,
+    } = await executePull(gql, config, tasksFile, syncState);
 
-    console.log(`Fetched ${projectData.items.length} items from GitHub`);
+    console.log(`Fetched items from GitHub`);
 
-    // Map remote items to tasks
-    const remoteTasks = new Map<string, import("@gh-gantt/shared").Task>();
-    for (const item of projectData.items) {
-      const task = mapRemoteItemToTask(item, config);
-      if (task) remoteTasks.set(task.id, task);
-    }
+    if (result.skipped) {
+      // Save updated field/option metadata even when no task changes
+      await stateStore.write(newSyncState);
 
-    // Fetch native GitHub Milestones and inject synthetic tasks
-    const { owner: repoOwner, repo: repoName } = config.project.github;
-    const repoFullName = `${repoOwner}/${repoName}`;
-    const repoMetadata = await fetchRepositoryMetadata(gql, repoOwner, repoName);
-    for (const m of repoMetadata.milestones) {
-      if (!m.dueOn) continue;
-      const syntheticTask = milestoneToTask(m, repoFullName);
-      remoteTasks.set(syntheticTask.id, syntheticTask);
-    }
-
-    // Quick check: skip sub-issues fetch if no remote changes
-    const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
-    const localIds = new Set(localNonDraft.map((t) => t.id));
-    const remoteIds = new Set(remoteTasks.keys());
-    const sameIdSets =
-      localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
-    if (sameIdSets) {
-      let changed = false;
-      for (const [id, remote] of remoteTasks) {
-        const snap = syncState.snapshots[id];
-        if (!snap?.updated_at) {
-          // Cannot safely compare hashes here: remote tasks don't have
-          // relation data yet (applied after sub-issues fetch), but snapshot
-          // hashes include relations. Fall through to full fetch.
-          changed = true;
-          break;
-        }
-        if (remote.updated_at !== snap.updated_at) {
-          changed = true;
-          break;
-        }
-        if (isMilestoneSyntheticTask(id) && !snap.hash) {
-          changed = true;
-          break;
-        }
+      if (!opts.withComments && !opts.forceComments) {
+        console.log("No remote changes detected, skipping sub-issues fetch.");
+        console.log(`Pull summary: +0 ~0 !0 -0`);
+        console.log("Pull complete.");
+        return;
       }
-      if (!changed) {
-        if (!opts.withComments && !opts.forceComments) {
-          console.log("No remote changes detected, skipping sub-issues fetch.");
-          console.log(`Pull summary: +0 ~0 !0 -0`);
-          console.log("Pull complete.");
-          return;
-        }
-        console.log("No remote changes detected, but fetching comments as requested.");
-      }
+      console.log("No remote changes detected, but fetching comments as requested.");
+      console.log(`Pull summary: +0 ~0 !0 -0`);
+      console.log("Pull complete.");
+      await fetchAndSaveComments(gql, tasksFile.tasks, projectRoot, opts);
+      return;
     }
 
-    // Fetch and apply sub-issue + blocked_by links
-    const issueItems = projectData.items
-      .filter((i) => i.content)
-      .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-    const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
-    const remoteTaskArray = Array.from(remoteTasks.values());
-    applySubIssueLinks(remoteTaskArray, subIssueLinks);
-    applyBlockedByLinks(remoteTaskArray, blockedByLinks);
-    for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
-
-    const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
-
-    let added = 0;
-    let updated = 0;
-    let removed = 0;
-    let conflictCount = 0;
-    let hasConflictsFlag = false;
-
-    const mergedTasks: import("@gh-gantt/shared").Task[] = [];
-
-    // Process remote tasks — 3-way merge
-    for (const [id, remoteTask] of remoteTasks) {
-      const localTask = localTaskMap.get(id);
-      if (!localTask) {
-        // New task from remote
-        if (opts.dryRun) {
-          console.log(`  + ${id}: ${remoteTask.title}`);
-        }
-        mergedTasks.push(remoteTask);
-        added++;
-      } else {
-        const snapshot = syncState.snapshots[id];
-        const remoteHash = hashTask(remoteTask);
-        const snapshotRemoteHash = snapshot?.remoteHash ?? snapshot?.hash;
-
-        if (remoteHash === snapshotRemoteHash) {
-          // Remote unchanged since last sync → keep local
-          mergedTasks.push(localTask);
-        } else if (!snapshot || !snapshot.syncFields) {
-          // No snapshot or no syncFields — check if local has changes
-          const localHash = hashTask(localTask);
-          if (snapshot && localHash !== snapshot.hash) {
-            // Local has unpushed changes but no syncFields to merge.
-            // Keep local to prevent data loss. Update read-only fields from remote.
-            mergedTasks.push({
-              ...localTask,
-              created_at: remoteTask.created_at,
-              updated_at: remoteTask.updated_at,
-              closed_at: remoteTask.closed_at,
-              state_reason: remoteTask.state_reason,
-              linked_prs: remoteTask.linked_prs,
-            });
+    // Dry-run reporting
+    if (opts.dryRun) {
+      for (const d of result.details) {
+        switch (d.type) {
+          case "added":
+            console.log(`  + ${d.id}: ${d.title}`);
+            break;
+          case "updated":
+            console.log(`  ~ ${d.id}: ${d.title}`);
+            break;
+          case "removed":
+            console.log(`  - ${d.id}: ${d.title}`);
+            break;
+          case "conflict":
+            console.log(`  ! ${d.id}: ${d.title} (${d.conflictFields?.length ?? 0} conflict(s))`);
+            for (const c of d.conflictFields ?? []) {
+              console.log(
+                `      ${c.field}: local=${formatValue(c.local)} remote=${formatValue(c.remote)}`,
+              );
+            }
+            break;
+          case "kept-local":
             console.warn(
-              `  ⚠ ${id}: ${remoteTask.title} (syncFields missing — keeping local changes; ` +
-                `remote changes are not merged and may be overwritten on push)`,
+              `  ⚠ ${d.id}: ${d.title} (locally modified but changed remotely — keeping local)`,
             );
-          } else {
-            // No local changes or no snapshot → safe to take remote
-            if (opts.dryRun) {
-              console.log(`  ~ ${id}: ${remoteTask.title}`);
-            }
-            mergedTasks.push(remoteTask);
-            updated++;
-          }
-        } else {
-          // 3-way merge — rebase snapshot syncFields with current config
-          // to prevent false diffs from config changes (task_types, field_mapping)
-          const rebasedBase = rebaseSyncFields(snapshot.syncFields, config);
-          const localFields = extractSyncFields(localTask);
-          const remoteFields = extractSyncFields(remoteTask);
-          const { merged, conflicts } = threeWayMerge(rebasedBase, localFields, remoteFields);
-
-          const mergedTask: import("@gh-gantt/shared").Task = { ...localTask, ...merged };
-          // Always update read-only fields from remote
-          mergedTask.created_at = remoteTask.created_at;
-          mergedTask.updated_at = remoteTask.updated_at;
-          mergedTask.closed_at = remoteTask.closed_at;
-          mergedTask.state_reason = remoteTask.state_reason;
-          mergedTask.linked_prs = remoteTask.linked_prs;
-
-          if (conflicts.length > 0) {
-            const marked = applyConflictMarkers(mergedTask, conflicts);
-            mergedTasks.push(marked as unknown as import("@gh-gantt/shared").Task);
-            hasConflictsFlag = true;
-            conflictCount++;
-            if (opts.dryRun) {
-              console.log(`  ! ${id}: ${remoteTask.title} (${conflicts.length} conflict(s))`);
-              for (const c of conflicts) {
-                console.log(
-                  `      ${c.field}: local=${formatValue(c.current)} remote=${formatValue(c.incoming)}`,
-                );
-              }
-            }
-          } else {
-            mergedTasks.push(mergedTask);
-            // Only count as updated if something actually changed
-            const localHash = hashTask(localTask);
-            const mergedHash = hashTask(mergedTask);
-            if (localHash !== mergedHash) {
-              if (opts.dryRun) {
-                console.log(`  ~ ${id}: ${remoteTask.title}`);
-              }
-              updated++;
-            }
-          }
+            break;
         }
-        localTaskMap.delete(id);
       }
     }
 
-    // Tasks that exist locally but not remotely
-    for (const [id, localTask] of localTaskMap) {
-      if (isDraftTask(id)) {
-        mergedTasks.push(localTask);
-        continue;
-      }
-      // Check if local task was modified since last sync (delete/modify conflict)
-      const snapshot = syncState.snapshots[id];
-      if (snapshot) {
-        const localHash = hashTask(localTask);
-        if (localHash !== snapshot.hash) {
-          // Local changed but remote deleted → keep with warning
-          console.warn(
-            `  ⚠ ${id}: ${localTask.title} (locally modified but removed from remote — keeping)`,
-          );
-          mergedTasks.push(localTask);
-          localTaskMap.delete(id); // Remove from map so snapshot is preserved
-          continue;
-        }
-      }
-      // Local unchanged → remove
-      if (opts.dryRun) {
-        console.log(`  - ${id}: ${localTask.title}`);
-      }
-      removed++;
-    }
-
-    console.log(`Pull summary: +${added} ~${updated} !${conflictCount} -${removed}`);
+    console.log(
+      `Pull summary: +${result.added} ~${result.updated} !${result.conflicts} -${result.removed}`,
+    );
 
     if (opts.dryRun) {
       console.log("Dry run — no changes applied.");
       return;
     }
 
-    // Update snapshots
-    const newSnapshots = { ...syncState.snapshots };
-    for (const task of mergedTasks) {
-      const remoteTask = remoteTasks.get(task.id);
-      const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
-      const existing = syncState.snapshots[task.id];
+    await tasksStore.write(newTasksFile);
+    await stateStore.write(newSyncState);
 
-      // Check if this task has conflicts (was marked)
-      const isConflicted =
-        hasConflictsFlag &&
-        remoteTask &&
-        existing?.syncFields &&
-        (() => {
-          const localFields = extractSyncFields(task);
-          const remoteFields = extractSyncFields(remoteTask);
-          const { conflicts } = threeWayMerge(existing.syncFields!, localFields, remoteFields);
-          return conflicts.length > 0;
-        })();
-
-      // Check if this task had unpushed local changes BEFORE this pull
-      const hasLocalChanges = locallyChangedIds.has(task.id);
-
-      if (isConflicted || hasLocalChanges) {
-        // Conflicted or has unpushed local changes:
-        // Update remoteHash only, preserve hash so local changes remain pushable
-        newSnapshots[task.id] = {
-          ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
-          remoteHash,
-        };
-      } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
-        // Unchanged remote → preserve existing snapshot
-        newSnapshots[task.id] = { ...existing, remoteHash };
-      } else {
-        // Conflict-free merged with no local changes, or new task → full snapshot update
-        newSnapshots[task.id] = {
-          hash: hashTask(task),
-          synced_at: new Date().toISOString(),
-          updated_at: task.updated_at,
-          syncFields: extractSyncFields(task),
-          remoteHash,
-        };
-      }
-    }
-    // Remove snapshots for deleted tasks
-    for (const id of localTaskMap.keys()) {
-      delete newSnapshots[id];
-    }
-
-    // Update field_ids and option_ids from latest project data
-    const fieldIds: Record<string, string> = {};
-    const optionIds: Record<string, Record<string, string>> = {};
-    for (const field of projectData.fields) {
-      if (field.id && field.name) {
-        fieldIds[field.name] = field.id;
-      }
-      if (field.options && field.options.length > 0) {
-        const optMap: Record<string, string> = {};
-        for (const opt of field.options) {
-          optMap[opt.name] = opt.id;
-        }
-        optionIds[field.name] = optMap;
-      }
-    }
-
-    await tasksStore.write({
-      tasks: mergedTasks,
-      cache: tasksFile.cache,
-      ...(hasConflictsFlag ? { has_conflicts: true } : {}),
-    });
-    await stateStore.write({
-      ...syncState,
-      last_synced_at: new Date().toISOString(),
-      snapshots: newSnapshots,
-      field_ids: fieldIds,
-      option_ids: optionIds,
-    });
-
-    if (hasConflictsFlag) {
+    if (result.hasConflicts) {
       console.warn(
-        `\n${conflictCount} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`,
+        `\n${result.conflicts} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`,
       );
     }
 
     console.log("Pull complete.");
 
-    // Fetch comments if requested
-    if (opts.withComments || opts.forceComments) {
-      try {
-        const commentsStore = new CommentsStore(projectRoot);
-        const commentsFile = await commentsStore.read();
+    await fetchAndSaveComments(gql, newTasksFile.tasks, projectRoot, opts);
+  });
 
-        const commentItems = mergedTasks
-          .filter(
-            (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
-          )
-          .map((t) => {
-            const [owner, repo] = t.github_repo.split("/");
-            return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
-          });
+async function fetchAndSaveComments(
+  gql: Awaited<ReturnType<typeof createGraphQLClient>>,
+  tasks: import("@gh-gantt/shared").Task[],
+  projectRoot: string,
+  opts: { withComments?: boolean; forceComments?: boolean },
+): Promise<void> {
+  if (!opts.withComments && !opts.forceComments) return;
 
-        const updatedComments = await fetchAllComments(
-          gql,
-          commentItems,
-          commentsFile,
-          (data) => commentsStore.write(data),
-          { force: !!opts.forceComments },
-        );
+  try {
+    const commentsStore = new CommentsStore(projectRoot);
+    const commentsFile = await commentsStore.read();
 
-        // Clean up comments for deleted tasks
-        const taskIds = new Set(mergedTasks.map((t) => t.id));
-        for (const key of Object.keys(updatedComments.fetched_at)) {
-          if (!taskIds.has(key)) {
-            delete updatedComments.fetched_at[key];
-            delete updatedComments.comments[key];
-          }
-        }
+    const commentItems = tasks
+      .filter(
+        (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
+      )
+      .map((t) => {
+        const [owner, repo] = t.github_repo.split("/");
+        return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
+      });
 
-        await commentsStore.write(updatedComments);
-      } catch (err) {
-        console.warn(
-          `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
-        );
+    const updatedComments = await fetchAllComments(
+      gql,
+      commentItems,
+      commentsFile,
+      (data) => commentsStore.write(data),
+      { force: !!opts.forceComments },
+    );
+
+    // Clean up comments for deleted tasks
+    const taskIds = new Set(tasks.map((t) => t.id));
+    for (const key of Object.keys(updatedComments.fetched_at)) {
+      if (!taskIds.has(key)) {
+        delete updatedComments.fetched_at[key];
+        delete updatedComments.comments[key];
       }
     }
-  });
+
+    await commentsStore.write(updatedComments);
+  } catch (err) {
+    console.warn(
+      `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}

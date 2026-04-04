@@ -1,0 +1,312 @@
+import type { graphql } from "@octokit/graphql";
+import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
+import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
+import {
+  applySubIssueLinks,
+  applyBlockedByLinks,
+  isDraftTask,
+  isMilestoneSyntheticTask,
+  milestoneToTask,
+} from "../github/issues.js";
+import { hashTask, extractSyncFields } from "./hash.js";
+import { threeWayMerge } from "./three-way-merge.js";
+import { applyConflictMarkers } from "./conflict-marker.js";
+import { computeLocalDiff } from "./diff.js";
+import { mapRemoteItemToTask } from "./mapper.js";
+import { rebaseSyncFields } from "./rebase.js";
+
+export interface PullResult {
+  added: number;
+  updated: number;
+  removed: number;
+  conflicts: number;
+  hasConflicts: boolean;
+  details: PullTaskDetail[];
+  skipped: boolean;
+}
+
+export interface PullTaskDetail {
+  id: string;
+  title: string;
+  type: "added" | "updated" | "removed" | "conflict" | "kept-local";
+  conflictFields?: Array<{ field: string; local: unknown; remote: unknown }>;
+}
+
+export async function executePull(
+  gql: typeof graphql,
+  config: Config,
+  tasksFile: TasksFile,
+  syncState: SyncState,
+): Promise<{ result: PullResult; tasksFile: TasksFile; syncState: SyncState }> {
+  const { owner, repo: repoName, project_number } = config.project.github;
+  const repoFullName = `${owner}/${repoName}`;
+
+  // Record which tasks have unpushed local changes BEFORE merging
+  const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+  const locallyChangedIds = new Set(
+    prePullDiffs.filter((d) => d.type === "modified").map((d) => d.id),
+  );
+
+  // Fetch project data and repository metadata in parallel
+  const [projectData, repoMetadata] = await Promise.all([
+    fetchProject(gql, owner, project_number),
+    fetchRepositoryMetadata(gql, owner, repoName),
+  ]);
+
+  // Map remote items to tasks
+  const remoteTasks = new Map<string, Task>();
+  for (const item of projectData.items) {
+    const task = mapRemoteItemToTask(item, config);
+    if (task) remoteTasks.set(task.id, task);
+  }
+  for (const m of repoMetadata.milestones) {
+    if (!m.dueOn) continue;
+    const syntheticTask = milestoneToTask(m, repoFullName);
+    remoteTasks.set(syntheticTask.id, syntheticTask);
+  }
+
+  // Extract field_ids and option_ids from project data
+  const fieldIds: Record<string, string> = {};
+  const optionIds: Record<string, Record<string, string>> = {};
+  for (const field of projectData.fields) {
+    if (field.id && field.name) {
+      fieldIds[field.name] = field.id;
+    }
+    if (field.options && field.options.length > 0) {
+      const optMap: Record<string, string> = {};
+      for (const opt of field.options) {
+        optMap[opt.name] = opt.id;
+      }
+      optionIds[field.name] = optMap;
+    }
+  }
+
+  // Quick check: skip sub-issues fetch if no remote changes
+  const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
+  const localIds = new Set(localNonDraft.map((t) => t.id));
+  const remoteIds = new Set(remoteTasks.keys());
+  const sameIdSets =
+    localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
+  if (sameIdSets) {
+    let changed = false;
+    for (const [id, remote] of remoteTasks) {
+      const snap = syncState.snapshots[id];
+      if (!snap?.updated_at) {
+        changed = true;
+        break;
+      }
+      if (remote.updated_at !== snap.updated_at) {
+        changed = true;
+        break;
+      }
+      if (isMilestoneSyntheticTask(id) && !snap.hash) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) {
+      return {
+        result: {
+          added: 0,
+          updated: 0,
+          removed: 0,
+          conflicts: 0,
+          hasConflicts: false,
+          details: [],
+          skipped: true,
+        },
+        tasksFile,
+        syncState: {
+          ...syncState,
+          field_ids: fieldIds,
+          option_ids: optionIds,
+        },
+      };
+    }
+  }
+
+  // Fetch and apply sub-issue + blocked_by links
+  const issueItems = projectData.items
+    .filter((i) => i.content)
+    .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
+  const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
+  const remoteTaskArray = Array.from(remoteTasks.values());
+  applySubIssueLinks(remoteTaskArray, subIssueLinks);
+  applyBlockedByLinks(remoteTaskArray, blockedByLinks);
+  for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
+
+  const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
+
+  let added = 0;
+  let updated = 0;
+  let removed = 0;
+  let conflictCount = 0;
+  let hasConflictsFlag = false;
+  const conflictedIds = new Set<string>();
+  const details: PullTaskDetail[] = [];
+  const mergedTasks: Task[] = [];
+
+  // Process remote tasks — 3-way merge
+  for (const [id, remoteTask] of remoteTasks) {
+    const localTask = localTaskMap.get(id);
+    if (!localTask) {
+      mergedTasks.push(remoteTask);
+      added++;
+      details.push({ id, title: remoteTask.title, type: "added" });
+    } else {
+      const snapshot = syncState.snapshots[id];
+      const remoteHash = hashTask(remoteTask);
+      const snapshotRemoteHash = snapshot?.remoteHash ?? snapshot?.hash;
+
+      if (remoteHash === snapshotRemoteHash) {
+        mergedTasks.push(localTask);
+      } else if (!snapshot || !snapshot.syncFields) {
+        const localHash = hashTask(localTask);
+        if (snapshot && localHash !== snapshot.hash) {
+          mergedTasks.push({
+            ...localTask,
+            created_at: remoteTask.created_at,
+            updated_at: remoteTask.updated_at,
+            closed_at: remoteTask.closed_at,
+            state_reason: remoteTask.state_reason,
+            linked_prs: remoteTask.linked_prs,
+          });
+          details.push({ id, title: remoteTask.title, type: "kept-local" });
+        } else {
+          mergedTasks.push(remoteTask);
+          updated++;
+          details.push({ id, title: remoteTask.title, type: "updated" });
+        }
+      } else {
+        const rebasedBase = rebaseSyncFields(snapshot.syncFields, config);
+        const localFields = extractSyncFields(localTask);
+        const remoteFields = extractSyncFields(remoteTask);
+        const { merged, conflicts } = threeWayMerge(rebasedBase, localFields, remoteFields);
+
+        const mergedTask: Task = { ...localTask, ...merged };
+        mergedTask.created_at = remoteTask.created_at;
+        mergedTask.updated_at = remoteTask.updated_at;
+        mergedTask.closed_at = remoteTask.closed_at;
+        mergedTask.state_reason = remoteTask.state_reason;
+        mergedTask.linked_prs = remoteTask.linked_prs;
+
+        if (conflicts.length > 0) {
+          const marked = applyConflictMarkers(mergedTask, conflicts);
+          mergedTasks.push(marked as unknown as Task);
+          hasConflictsFlag = true;
+          conflictCount++;
+          conflictedIds.add(id);
+          details.push({
+            id,
+            title: remoteTask.title,
+            type: "conflict",
+            conflictFields: conflicts.map((c) => ({
+              field: c.field,
+              local: c.current,
+              remote: c.incoming,
+            })),
+          });
+        } else {
+          mergedTasks.push(mergedTask);
+          const localHash = hashTask(localTask);
+          const mergedHash = hashTask(mergedTask);
+          if (localHash !== mergedHash) {
+            updated++;
+            details.push({ id, title: remoteTask.title, type: "updated" });
+          }
+        }
+      }
+      localTaskMap.delete(id);
+    }
+  }
+
+  // Tasks that exist locally but not remotely
+  for (const [id, localTask] of localTaskMap) {
+    if (isDraftTask(id)) {
+      mergedTasks.push(localTask);
+      continue;
+    }
+    const snapshot = syncState.snapshots[id];
+    if (snapshot) {
+      const localHash = hashTask(localTask);
+      if (localHash !== snapshot.hash) {
+        mergedTasks.push(localTask);
+        details.push({ id, title: localTask.title, type: "kept-local" });
+        localTaskMap.delete(id);
+        continue;
+      }
+    }
+    removed++;
+    details.push({ id, title: localTask.title, type: "removed" });
+  }
+
+  // Update snapshots
+  const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
+  for (const task of mergedTasks) {
+    const remoteTask = remoteTasks.get(task.id);
+    const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
+    const existing = syncState.snapshots[task.id];
+
+    const isConflicted = conflictedIds.has(task.id);
+    const hasLocalChanges = locallyChangedIds.has(task.id);
+
+    if (isConflicted) {
+      // Conflicted: preserve hash so local changes remain pushable
+      newSnapshots[task.id] = {
+        ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
+        remoteHash,
+      };
+    } else if (hasLocalChanges) {
+      // Unpushed local changes: preserve hash for diff detection,
+      // but advance syncFields/updated_at to prevent false conflicts on next pull
+      newSnapshots[task.id] = {
+        ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
+        updated_at: remoteTask?.updated_at ?? existing?.updated_at,
+        syncFields: extractSyncFields(task),
+        remoteHash,
+      };
+    } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
+      newSnapshots[task.id] = { ...existing, remoteHash };
+    } else {
+      newSnapshots[task.id] = {
+        hash: hashTask(task),
+        synced_at: new Date().toISOString(),
+        updated_at: task.updated_at,
+        syncFields: extractSyncFields(task),
+        remoteHash,
+      };
+    }
+  }
+  for (const id of localTaskMap.keys()) {
+    delete newSnapshots[id];
+  }
+
+  const newSyncState: SyncState = {
+    ...syncState,
+    last_synced_at: new Date().toISOString(),
+    snapshots: newSnapshots,
+    field_ids: fieldIds,
+    option_ids: optionIds,
+  };
+
+  const newTasksFile: TasksFile = {
+    tasks: mergedTasks,
+    cache: tasksFile.cache,
+    ...(hasConflictsFlag ? { has_conflicts: true } : {}),
+  };
+
+  return {
+    result: {
+      added,
+      updated,
+      removed,
+      conflicts: conflictCount,
+      hasConflicts: hasConflictsFlag,
+      details,
+      skipped: false,
+    },
+    tasksFile: newTasksFile,
+    syncState: newSyncState,
+  };
+}

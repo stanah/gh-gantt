@@ -10,6 +10,7 @@ import {
   buildMilestoneSyntheticId,
 } from "../github/issues.js";
 import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
+import { buildIssueUpdatedAtQuery } from "../github/queries.js";
 import { getToken } from "../github/auth.js";
 import {
   createIssue,
@@ -67,39 +68,32 @@ export async function executePush(
     const modifiedDiffs = diffs.filter(
       (d) => d.type === "modified" && !isDraftTask(d.id) && !isMilestoneSyntheticTask(d.id),
     );
-    if (modifiedDiffs.length > 0) {
-      // Fetch current updated_at from GitHub for modified issues
-      const hasIssueNumbers = modifiedDiffs.some((d) => d.task.github_issue !== null);
-      if (hasIssueNumbers) {
-        const { owner, repo } = config.project.github;
-        const staleTaskIds: string[] = [];
-        for (const diff of modifiedDiffs) {
-          if (!diff.task.github_issue) continue;
-          const snapshot = syncState.snapshots[diff.id];
-          if (!snapshot?.updated_at) continue;
-          try {
-            const { repository } = await gql<{ repository: { issue: { updatedAt: string } } }>(
-              `query($owner: String!, $repo: String!, $number: Int!) {
-                repository(owner: $owner, name: $repo) {
-                  issue(number: $number) { updatedAt }
-                }
-              }`,
-              { owner, repo, number: diff.task.github_issue },
-            );
-            if (repository.issue.updatedAt !== snapshot.updated_at) {
-              staleTaskIds.push(diff.id);
-            }
-          } catch (err) {
-            console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id}): ${formatError(err)}`);
-            staleTaskIds.push(diff.id);
-          }
+    const staleCheckTargets = modifiedDiffs.filter(
+      (d) => d.task.github_issue !== null && syncState.snapshots[d.id]?.updated_at,
+    );
+    if (staleCheckTargets.length > 0) {
+      const { owner, repo } = config.project.github;
+      const tasksByNumber = new Map(staleCheckTargets.map((d) => [d.task.github_issue!, d]));
+      const remoteUpdatedAt = await fetchBatchUpdatedAt(gql, owner, repo, [
+        ...tasksByNumber.keys(),
+      ]);
+      const staleTaskIds: string[] = [];
+      for (const [number, diff] of tasksByNumber) {
+        const remoteTs = remoteUpdatedAt.get(number);
+        const snapshotTs = syncState.snapshots[diff.id]?.updated_at;
+        if (remoteTs === undefined) {
+          // Could not fetch — treat as stale to be safe
+          console.warn(`⚠ リモート状態の確認に失敗しました (${diff.id})`);
+          staleTaskIds.push(diff.id);
+        } else if (remoteTs !== snapshotTs) {
+          staleTaskIds.push(diff.id);
         }
-        if (staleTaskIds.length > 0) {
-          console.error("リモートが更新されています。先に pull してください");
-          for (const id of staleTaskIds) console.error("  " + id);
-          console.error("--force で強制 push できます");
-          return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
-        }
+      }
+      if (staleTaskIds.length > 0) {
+        console.error("リモートが更新されています。先に pull してください");
+        for (const id of staleTaskIds) console.error("  " + id);
+        console.error("--force で強制 push できます");
+        return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
       }
     }
   }
@@ -170,18 +164,19 @@ export async function executePush(
 
   // Process draft tasks (create issues) if auto_create_issues is enabled
   if (config.sync.auto_create_issues && draftDiffs.length > 0) {
-    const repositoryId = await fetchRepositoryId(gql, owner, repo);
-
-    // Resolve labels, milestones, and assignees in bulk
-    // Re-fetch metadata to pick up newly created milestones
-    const metadata = await fetchRepositoryMetadata(gql, owner, repo);
+    // Collect assignees upfront so all three fetches can run in parallel
     const allAssignees = new Set<string>();
     for (const d of draftDiffs) {
       if (d.type !== "deleted") {
         for (const a of d.task.assignees) allAssignees.add(a);
       }
     }
-    const userIdMap = await fetchUserIds(gql, [...allAssignees]);
+
+    const [repositoryId, metadata, userIdMap] = await Promise.all([
+      fetchRepositoryId(gql, owner, repo),
+      fetchRepositoryMetadata(gql, owner, repo),
+      fetchUserIds(gql, [...allAssignees]),
+    ]);
     const createdTaskIds: string[] = [];
 
     for (const diff of draftDiffs) {
@@ -254,7 +249,8 @@ export async function executePush(
       }
 
       // Set Priority custom field
-      await syncPriorityField(gql, syncState, fm, projectItemId, task);
+      const priorityUpdate = buildPriorityFieldUpdate(gql, syncState, fm, projectItemId, task);
+      if (priorityUpdate) await priorityUpdate;
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
@@ -292,39 +288,47 @@ export async function executePush(
       }
     }
 
-    // Set up sub-issue relationships for newly created issues
+    // Set up relationships for newly created issues (parallel)
+    const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
+    const relationMutations: Promise<void>[] = [];
+
     for (const id of createdTaskIds) {
-      const task = tasksFile.tasks.find((t) => t.id === id);
-      if (!task?.parent) continue;
-      const childEntry = syncState.id_map[task.id];
-      const parentEntry = syncState.id_map[task.parent];
-      if (!childEntry?.issue_node_id || !parentEntry?.issue_node_id) continue;
-
-      try {
-        await addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id);
-      } catch (err) {
-        console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
-      }
-    }
-
-    // Set up blocked_by relationships for newly created issues
-    for (const id of createdTaskIds) {
-      const task = tasksFile.tasks.find((t) => t.id === id);
-      if (!task?.blocked_by.length) continue;
-      const taskEntry = syncState.id_map[task.id];
-      if (!taskEntry?.issue_node_id) continue;
-
-      for (const dep of task.blocked_by) {
-        const blockerEntry = syncState.id_map[dep.task];
-        if (!blockerEntry?.issue_node_id) continue;
-        try {
-          await addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id);
-        } catch (err) {
-          console.warn(
-            `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+      const task = taskMap.get(id);
+      if (task?.parent) {
+        const childEntry = syncState.id_map[task.id];
+        const parentEntry = syncState.id_map[task.parent];
+        if (childEntry?.issue_node_id && parentEntry?.issue_node_id) {
+          relationMutations.push(
+            addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id).catch((err) => {
+              console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
+            }),
           );
         }
       }
+
+      if (task?.blocked_by.length) {
+        const taskEntry = syncState.id_map[task.id];
+        if (taskEntry?.issue_node_id) {
+          for (const dep of task.blocked_by) {
+            const blockerEntry = syncState.id_map[dep.task];
+            if (blockerEntry?.issue_node_id) {
+              relationMutations.push(
+                addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+
+    if (relationMutations.length > 0) {
+      await Promise.all(relationMutations);
     }
   } else if (draftDiffs.length > 0) {
     result.skipped += draftDiffs.length;
@@ -346,35 +350,40 @@ export async function executePush(
 
     if (diff.type === "modified" || diff.type === "added") {
       if (idEntry.issue_node_id) {
-        await updateIssue(gql, idEntry.issue_node_id, {
-          title: task.title,
-          body: task.body ?? undefined,
-        });
-
-        await setIssueState(gql, idEntry.issue_node_id, task.state);
+        await Promise.all([
+          updateIssue(gql, idEntry.issue_node_id, {
+            title: task.title,
+            body: task.body ?? undefined,
+          }),
+          setIssueState(gql, idEntry.issue_node_id, task.state),
+        ]);
       }
 
       if (idEntry.project_item_id) {
+        const fieldUpdates: Promise<unknown>[] = [];
+
         if (task.start_date && syncState.field_ids[fm.start_date]) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            idEntry.project_item_id,
-            syncState.field_ids[fm.start_date],
-            { date: task.start_date },
+          fieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.start_date],
+              { date: task.start_date },
+            ),
           );
         }
         if (task.end_date && syncState.field_ids[fm.end_date]) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            idEntry.project_item_id,
-            syncState.field_ids[fm.end_date],
-            { date: task.end_date },
+          fieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              idEntry.project_item_id,
+              syncState.field_ids[fm.end_date],
+              { date: task.end_date },
+            ),
           );
         }
-
-        // Update Type custom field if configured
         if (fm.type && syncState.field_ids[fm.type]) {
           const typeOptionId = resolveTypeOptionId(
             task.type,
@@ -383,28 +392,38 @@ export async function executePush(
             syncState.option_ids,
           );
           if (typeOptionId) {
-            await updateProjectItemField(
-              gql,
-              syncState.project_node_id,
-              idEntry.project_item_id,
-              syncState.field_ids[fm.type],
-              { singleSelectOptionId: typeOptionId },
+            fieldUpdates.push(
+              updateProjectItemField(
+                gql,
+                syncState.project_node_id,
+                idEntry.project_item_id,
+                syncState.field_ids[fm.type],
+                { singleSelectOptionId: typeOptionId },
+              ),
             );
           }
         }
+        const priorityUpdate = buildPriorityFieldUpdate(
+          gql,
+          syncState,
+          fm,
+          idEntry.project_item_id,
+          task,
+        );
+        if (priorityUpdate) fieldUpdates.push(priorityUpdate);
 
-        // Update Priority custom field if configured
-        await syncPriorityField(gql, syncState, fm, idEntry.project_item_id, task);
+        if (fieldUpdates.length > 0) {
+          await Promise.all(fieldUpdates);
+        }
       }
 
-      // Detect parent changes from snapshot and sync sub-issue relationships
       const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
         const oldParent = snapshot?.syncFields?.parent ?? null;
         const newParent = task.parent;
 
+        // Parent change: remove then add (order matters)
         if (oldParent !== newParent) {
-          // Remove old parent relationship
           if (oldParent) {
             const oldParentEntry = syncState.id_map[oldParent];
             if (oldParentEntry?.issue_node_id) {
@@ -415,7 +434,6 @@ export async function executePush(
               }
             }
           }
-          // Add new parent relationship
           if (newParent) {
             const newParentEntry = syncState.id_map[newParent];
             if (newParentEntry?.issue_node_id) {
@@ -428,40 +446,48 @@ export async function executePush(
           }
         }
 
-        // Detect blocked_by changes from snapshot
+        // Blocked-by changes (all independent, parallel)
         const oldBlockedBy = new Set((snapshot?.syncFields?.blocked_by ?? []).map((d) => d.task));
         const newBlockedBy = new Set((task.blocked_by ?? []).map((d) => d.task));
 
-        // Added blockers
+        const blockerMutations: Promise<void>[] = [];
+
         for (const dep of task.blocked_by ?? []) {
           if (!oldBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try {
-                await addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch (err) {
-                console.warn(
-                  `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
-                );
-              }
+              blockerMutations.push(
+                addBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
             }
           }
         }
 
-        // Removed blockers
         for (const dep of snapshot?.syncFields?.blocked_by ?? []) {
           if (!newBlockedBy.has(dep.task)) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              try {
-                await removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id);
-              } catch (err) {
-                console.warn(
-                  `  ⚠ blocked-by 関係の削除に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
-                );
-              }
+              blockerMutations.push(
+                removeBlockedByIssue(gql, idEntry.issue_node_id, blockerEntry.issue_node_id).catch(
+                  (err) => {
+                    console.warn(
+                      `  ⚠ blocked-by 関係の削除に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
+                    );
+                  },
+                ),
+              );
             }
           }
+        }
+
+        if (blockerMutations.length > 0) {
+          await Promise.all(blockerMutations);
         }
       }
 
@@ -532,6 +558,37 @@ function resolvePriorityOptionId(
   return undefined;
 }
 
+const BATCH_SIZE = 100;
+
+async function fetchBatchUpdatedAt(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+  issueNumbers: number[],
+): Promise<Map<number, string>> {
+  const result = new Map<number, string>();
+  if (issueNumbers.length === 0) return result;
+
+  for (let i = 0; i < issueNumbers.length; i += BATCH_SIZE) {
+    const batch = issueNumbers.slice(i, i + BATCH_SIZE);
+    try {
+      const query = buildIssueUpdatedAtQuery(owner, repo, batch);
+      const data = await gql<{
+        repository: Record<string, { number: number; updatedAt: string } | null>;
+      }>(query);
+      for (let j = 0; j < batch.length; j++) {
+        const issue = data.repository[`i${j}`];
+        if (issue?.updatedAt) {
+          result.set(issue.number, issue.updatedAt);
+        }
+      }
+    } catch {
+      // Best-effort: if batch fails, skip this chunk
+    }
+  }
+  return result;
+}
+
 async function fetchFreshUpdatedAt(
   gql: typeof graphql,
   owner: string,
@@ -542,43 +599,33 @@ async function fetchFreshUpdatedAt(
   const result = new Map<string, string>();
   const taskById = new Map(tasksFile.tasks.map((t) => [t.id, t]));
   const ids = [...pushedTaskIds].filter((id) => !isDraftTask(id) && !isMilestoneSyntheticTask(id));
+  const numberToId = new Map<number, string>();
   for (const id of ids) {
     const task = taskById.get(id);
-    if (!task?.github_issue) continue;
-    try {
-      const { repository } = await gql<{
-        repository: { issue: { updatedAt: string } | null };
-      }>(
-        `query($owner: String!, $repo: String!, $number: Int!) {
-          repository(owner: $owner, name: $repo) {
-            issue(number: $number) { updatedAt }
-          }
-        }`,
-        { owner, repo, number: task.github_issue },
-      );
-      if (repository.issue?.updatedAt) {
-        result.set(id, repository.issue.updatedAt);
-      }
-    } catch {
-      // Best-effort: if we can't fetch, preserve existing value
-    }
+    if (task?.github_issue) numberToId.set(task.github_issue, id);
+  }
+
+  const updatedAtByNumber = await fetchBatchUpdatedAt(gql, owner, repo, [...numberToId.keys()]);
+  for (const [number, ts] of updatedAtByNumber) {
+    const id = numberToId.get(number);
+    if (id) result.set(id, ts);
   }
   return result;
 }
 
-async function syncPriorityField(
+function buildPriorityFieldUpdate(
   gql: typeof graphql,
   syncState: SyncState,
   fm: Config["sync"]["field_mapping"],
   projectItemId: string,
   task: Task,
-): Promise<void> {
-  if (!fm.priority || !syncState.field_ids[fm.priority]) return;
+): Promise<unknown> | null {
+  if (!fm.priority || !syncState.field_ids[fm.priority]) return null;
   const priorityValue = task.custom_fields[fm.priority] as string | undefined;
-  if (!priorityValue) return;
+  if (!priorityValue) return null;
   const optionId = resolvePriorityOptionId(priorityValue, fm.priority, syncState.option_ids);
-  if (!optionId) return;
-  await updateProjectItemField(
+  if (!optionId) return null;
+  return updateProjectItemField(
     gql,
     syncState.project_node_id,
     projectItemId,

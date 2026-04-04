@@ -109,6 +109,21 @@ export const REPOSITORY_METADATA_QUERY = `
   }
 `;
 
+export function buildIssueUpdatedAtQuery(
+  owner: string,
+  repo: string,
+  issueNumbers: number[],
+): string {
+  const fields = issueNumbers
+    .map((n, i) => `i${i}: issue(number: ${n}) { number updatedAt }`)
+    .join("\n      ");
+  return `query {
+    repository(owner: "${owner}", name: "${repo}") {
+      ${fields}
+    }
+  }`;
+}
+
 export function buildUserIdsQuery(logins: string[]): string {
   const fields = logins
     .map((login, i) => `u${i}: user(login: "${login}") { id login }`)
