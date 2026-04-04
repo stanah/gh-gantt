@@ -39,9 +39,6 @@ interface ADR {
   related_requirements: string[];
 }
 
-const errors: string[] = [];
-const warnings: string[] = [];
-
 async function collectTestReqIds(): Promise<Set<string>> {
   const ids = new Set<string>();
   const testDirs = [
@@ -73,8 +70,9 @@ async function collectTestReqIds(): Promise<Set<string>> {
 async function main() {
   const reqYaml = await readFile(REQ_PATH, "utf-8");
   const req: Requirements = parse(reqYaml);
+  const errors: string[] = [];
+  const warnings: string[] = [];
 
-  // 全 AC ID と要件 ID を収集
   const allAcIds = new Set<string>();
   const allReqIds = new Set<string>();
   for (const area of req.areas) {
@@ -86,24 +84,20 @@ async function main() {
     }
   }
 
-  // テストコードから要件 ID を収集
   const testReqIds = await collectTestReqIds();
 
-  // 1. Orphaned AC: requirements.yaml にあるがテストから参照されない (warning)
   for (const acId of allAcIds) {
     if (!testReqIds.has(acId)) {
       warnings.push(`Orphaned AC: ${acId} はテストから参照されていません`);
     }
   }
 
-  // 2. Orphaned Tag: テストに ID があるが requirements.yaml に存在しない (error)
   for (const testId of testReqIds) {
     if (!allAcIds.has(testId)) {
       errors.push(`Orphaned Tag: テストの [${testId}] は requirements.yaml に存在しません`);
     }
   }
 
-  // 3. Stale ADR Ref: ADR の related_requirements が存在しない (error)
   try {
     const adrFiles = (await readdir(ADR_DIR)).filter((f) => f.endsWith(".yaml"));
     for (const file of adrFiles) {
@@ -123,7 +117,6 @@ async function main() {
     // ADR ディレクトリが存在しない場合はスキップ
   }
 
-  // 結果出力
   if (warnings.length > 0) {
     console.warn("Warnings:\n");
     for (const w of warnings) {

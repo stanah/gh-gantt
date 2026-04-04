@@ -29,16 +29,15 @@ jobs:
       - run: vp install
       - run: vp check
       - run: vp run build
-      - run: vp run test
+
+      - name: Test with JSON reporter
+        run: |
+          vp --filter @gh-gantt/shared exec vp test run --reporter=default --reporter=json --outputFile=../../test-results-shared.json
+          vp --filter @gh-gantt/cli exec vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=default --reporter=json --outputFile=../../test-results-cli.json
+          vp --filter @gh-gantt/ui exec vp test run --reporter=default --reporter=json --outputFile=../../test-results-ui.json
 
       - name: Generate docs
         run: vp run docs:gen
-
-      - name: Run tests with JSON reporter
-        run: |
-          vp --filter @gh-gantt/shared exec vp test run --reporter=json --outputFile=../../test-results-shared.json
-          vp --filter @gh-gantt/cli exec vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=json --outputFile=../../test-results-cli.json
-          vp --filter @gh-gantt/ui exec vp test run --reporter=json --outputFile=../../test-results-ui.json
 
       - name: Validate requirements traceability
         run: |

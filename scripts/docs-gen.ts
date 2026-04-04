@@ -41,13 +41,7 @@ async function generateTypedoc() {
 
 async function main() {
   await mkdir(GENERATED_DIR, { recursive: true });
-
-  console.log("Generating OpenAPI spec...");
-  await generateOpenApi();
-
-  console.log("Generating TypeDoc...");
-  await generateTypedoc();
-
+  await Promise.all([generateOpenApi(), generateTypedoc()]);
   console.log("Done.");
 }
 
