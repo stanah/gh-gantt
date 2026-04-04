@@ -56,8 +56,8 @@ function applyTypeSources(
     } else if (lower === "task") {
       taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
     } else {
-      const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-      if (!key) continue;
+      const normalized = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
+      const key = normalized || `type_${Buffer.from(source.name).toString("hex").slice(0, 12)}`;
       if (skipExisting && taskTypes[key]) continue;
       taskTypes[key] = {
         label: source.name,
