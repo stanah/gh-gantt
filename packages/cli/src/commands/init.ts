@@ -37,27 +37,28 @@ function applyTypeSources(
       const key = defaults.key;
       if (skipExisting && taskTypes[key]) continue;
       if (key === "task" || lower === "task") {
-        (taskTypes.task as Record<string, unknown>)[bindingKey] = source.name;
+        taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
       } else {
         taskTypes[key] = {
-          ...taskTypes[key],
           label: defaults.label,
           display: defaults.display,
           color: defaults.color,
           github_label: null,
+          ...(taskTypes[key] ?? {}),
           [bindingKey]: source.name,
         };
       }
     } else if (lower === "task") {
-      (taskTypes.task as Record<string, unknown>)[bindingKey] = source.name;
+      taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
     } else {
       const key = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
-      if (taskTypes[key]) continue;
+      if (skipExisting && taskTypes[key]) continue;
       taskTypes[key] = {
         label: source.name,
         display: "bar",
         color: "#95A5A6",
         github_label: null,
+        ...(taskTypes[key] ?? {}),
         [bindingKey]: source.name,
       };
     }
