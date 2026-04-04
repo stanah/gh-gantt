@@ -104,7 +104,7 @@ export const pullCommand = new Command("pull")
 
     console.log("Pull complete.");
 
-    await fetchAndSaveComments(gql, result.mergedTasks!, projectRoot, opts);
+    await fetchAndSaveComments(gql, newTasksFile.tasks, projectRoot, opts);
   });
 
 async function fetchAndSaveComments(

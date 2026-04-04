@@ -22,12 +22,6 @@ export interface PullResult {
   removed: number;
   conflicts: number;
   hasConflicts: boolean;
-  /** null when skipped (no remote changes) */
-  mergedTasks: Task[] | null;
-  newSnapshots: SyncState["snapshots"] | null;
-  fieldIds: Record<string, string>;
-  optionIds: Record<string, Record<string, string>>;
-  /** Per-task details for dry-run reporting */
   details: PullTaskDetail[];
   skipped: boolean;
 }
@@ -119,10 +113,6 @@ export async function executePull(
           removed: 0,
           conflicts: 0,
           hasConflicts: false,
-          mergedTasks: null,
-          newSnapshots: null,
-          fieldIds,
-          optionIds,
           details: [],
           skipped: true,
         },
@@ -149,6 +139,7 @@ export async function executePull(
   let removed = 0;
   let conflictCount = 0;
   let hasConflictsFlag = false;
+  const conflictedIds = new Set<string>();
   const details: PullTaskDetail[] = [];
   const mergedTasks: Task[] = [];
 
@@ -201,6 +192,7 @@ export async function executePull(
           mergedTasks.push(marked as unknown as Task);
           hasConflictsFlag = true;
           conflictCount++;
+          conflictedIds.add(id);
           details.push({
             id,
             title: remoteTask.title,
@@ -252,17 +244,7 @@ export async function executePull(
     const remoteHash = remoteTask ? hashTask(remoteTask) : undefined;
     const existing = syncState.snapshots[task.id];
 
-    const isConflicted =
-      hasConflictsFlag &&
-      remoteTask &&
-      existing?.syncFields &&
-      (() => {
-        const localFields = extractSyncFields(task);
-        const remoteFields = extractSyncFields(remoteTask);
-        const { conflicts } = threeWayMerge(existing.syncFields!, localFields, remoteFields);
-        return conflicts.length > 0;
-      })();
-
+    const isConflicted = conflictedIds.has(task.id);
     const hasLocalChanges = locallyChangedIds.has(task.id);
 
     if (isConflicted || hasLocalChanges) {
@@ -307,10 +289,6 @@ export async function executePull(
       removed,
       conflicts: conflictCount,
       hasConflicts: hasConflictsFlag,
-      mergedTasks,
-      newSnapshots,
-      fieldIds,
-      optionIds,
       details,
       skipped: false,
     },

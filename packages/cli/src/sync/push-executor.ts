@@ -249,7 +249,8 @@ export async function executePush(
       }
 
       // Set Priority custom field
-      await syncPriorityField(gql, syncState, fm, projectItemId, task);
+      const priorityUpdate = buildPriorityFieldUpdate(gql, syncState, fm, projectItemId, task);
+      if (priorityUpdate) await priorityUpdate;
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
@@ -348,7 +349,6 @@ export async function executePush(
     }
 
     if (diff.type === "modified" || diff.type === "added") {
-      // Phase 1: Issue update + state change (independent, parallel)
       if (idEntry.issue_node_id) {
         await Promise.all([
           updateIssue(gql, idEntry.issue_node_id, {
@@ -359,7 +359,6 @@ export async function executePush(
         ]);
       }
 
-      // Phase 2: Project field updates (all independent, parallel)
       if (idEntry.project_item_id) {
         const fieldUpdates: Promise<unknown>[] = [];
 
@@ -404,34 +403,20 @@ export async function executePush(
             );
           }
         }
-        if (fm.priority && syncState.field_ids[fm.priority]) {
-          const priorityValue = task.custom_fields[fm.priority] as string | undefined;
-          if (priorityValue) {
-            const optionId = resolvePriorityOptionId(
-              priorityValue,
-              fm.priority,
-              syncState.option_ids,
-            );
-            if (optionId) {
-              fieldUpdates.push(
-                updateProjectItemField(
-                  gql,
-                  syncState.project_node_id,
-                  idEntry.project_item_id,
-                  syncState.field_ids[fm.priority],
-                  { singleSelectOptionId: optionId },
-                ),
-              );
-            }
-          }
-        }
+        const priorityUpdate = buildPriorityFieldUpdate(
+          gql,
+          syncState,
+          fm,
+          idEntry.project_item_id,
+          task,
+        );
+        if (priorityUpdate) fieldUpdates.push(priorityUpdate);
 
         if (fieldUpdates.length > 0) {
           await Promise.all(fieldUpdates);
         }
       }
 
-      // Phase 3: Relationship changes
       const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
         const oldParent = snapshot?.syncFields?.parent ?? null;
@@ -628,19 +613,19 @@ async function fetchFreshUpdatedAt(
   return result;
 }
 
-async function syncPriorityField(
+function buildPriorityFieldUpdate(
   gql: typeof graphql,
   syncState: SyncState,
   fm: Config["sync"]["field_mapping"],
   projectItemId: string,
   task: Task,
-): Promise<void> {
-  if (!fm.priority || !syncState.field_ids[fm.priority]) return;
+): Promise<unknown> | null {
+  if (!fm.priority || !syncState.field_ids[fm.priority]) return null;
   const priorityValue = task.custom_fields[fm.priority] as string | undefined;
-  if (!priorityValue) return;
+  if (!priorityValue) return null;
   const optionId = resolvePriorityOptionId(priorityValue, fm.priority, syncState.option_ids);
-  if (!optionId) return;
-  await updateProjectItemField(
+  if (!optionId) return null;
+  return updateProjectItemField(
     gql,
     syncState.project_node_id,
     projectItemId,
