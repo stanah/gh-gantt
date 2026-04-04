@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Task } from "../types/index.js";
 import { shouldHandleRootDrop } from "../hooks/useTreeDragDrop.js";
 
-describe("shouldHandleRootDrop", () => {
+describe("[FR-VIS-005-AC1] ツリー上でタスクをドラッグして親子関係を変更できる", () => {
   const tasks: Task[] = [
     {
       id: "root",

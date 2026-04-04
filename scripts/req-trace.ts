@@ -6,7 +6,12 @@ import { parse, stringify } from "yaml";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
 const REQ_PATH = resolve(ROOT, "docs/requirements.yaml");
-const TEST_RESULTS_PATH = resolve(ROOT, "test-results.json");
+const TEST_RESULTS_PATHS = [
+  resolve(ROOT, "test-results.json"),
+  resolve(ROOT, "test-results-shared.json"),
+  resolve(ROOT, "test-results-cli.json"),
+  resolve(ROOT, "test-results-ui.json"),
+];
 
 interface VitestResult {
   testResults: Array<{
@@ -57,14 +62,22 @@ async function main() {
   const reqYaml = await readFile(REQ_PATH, "utf-8");
   const req: Requirements = parse(reqYaml);
 
-  let testResults: VitestResult;
-  try {
-    const json = await readFile(TEST_RESULTS_PATH, "utf-8");
-    testResults = JSON.parse(json);
-  } catch {
-    console.error(`テスト結果ファイルが見つかりません: ${TEST_RESULTS_PATH}`);
+  const testResults: VitestResult = { testResults: [] };
+  let found = false;
+  for (const path of TEST_RESULTS_PATHS) {
+    try {
+      const json = await readFile(path, "utf-8");
+      const data: VitestResult = JSON.parse(json);
+      testResults.testResults.push(...data.testResults);
+      found = true;
+    } catch {
+      // ファイルが存在しない場合はスキップ
+    }
+  }
+  if (!found) {
+    console.error("テスト結果ファイルが見つかりません");
     console.error(
-      "先に pnpm test -- --reporter=json --outputFile=test-results.json を実行してください",
+      "先に各パッケージで --reporter=json --outputFile を指定してテストを実行してください",
     );
     process.exit(1);
   }

@@ -43,7 +43,7 @@ function makeItem(overrides: Record<string, unknown> = {}) {
   } as any;
 }
 
-describe("mapRemoteItemToTask", () => {
+describe("[FR-SYNC-004-AC1] GitHub Project Item をローカル Task 形式に変換できる", () => {
   it("returns null for items without content", () => {
     const item = { id: "item1", content: null, fieldValues: {} };
     const config = makeConfig();

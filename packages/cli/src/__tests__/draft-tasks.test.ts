@@ -31,7 +31,7 @@ function makeTask(overrides: Partial<Task> = {}): Task {
   };
 }
 
-describe("buildDraftTaskId", () => {
+describe("[FR-CLI-004-AC2] ドラフトタスク ID は一意に生成される", () => {
   it("generates correct draft ID format", () => {
     expect(buildDraftTaskId("owner/repo", 1)).toBe("owner/repo#draft-1");
     expect(buildDraftTaskId("owner/repo", 42)).toBe("owner/repo#draft-42");

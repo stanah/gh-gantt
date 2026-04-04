@@ -33,7 +33,7 @@ const baseTask: Task = {
   blocked_by: [],
 };
 
-describe("applyConflictMarkers", () => {
+describe("[FR-SYNC-001-AC2] コンフリクトマーカーを生成しユーザーに解決を促す", () => {
   it("adds _current and _incoming keys for each conflict", () => {
     const conflicts: FieldConflict[] = [
       {

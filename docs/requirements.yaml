@@ -3,7 +3,6 @@ vision: |
   GitHub Projects (V2) と双方向同期し、タスクの時間軸・依存関係・
   階層的進捗をガントチャートで可視化する CLI ツール。
   AI エージェントと人間が同じワークフローでプロジェクトを管理できる。
-
 areas:
   - id: SYNC
     name: Sync Engine
@@ -14,16 +13,19 @@ areas:
         acceptance_criteria:
           - id: FR-SYNC-001-AC1
             description: ローカル・リモート両方が変更した場合にコンフリクトを検出する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/three-way-merge.test.ts
           - id: FR-SYNC-001-AC2
             description: コンフリクトマーカーを生成しユーザーに解決を促す
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/conflict-marker.test.ts
           - id: FR-SYNC-001-AC3
             description: コンフリクトの検出と解決操作を CLI で実行できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/conflicts-command.test.ts
       - id: FR-SYNC-002
         summary: pull による GitHub → ローカル同期
         acceptance_criteria:
@@ -40,12 +42,14 @@ areas:
         acceptance_criteria:
           - id: FR-SYNC-003-AC1
             description: ローカルの変更を GitHub に反映できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-executor.test.ts
           - id: FR-SYNC-003-AC2
             description: dry run で変更内容をプレビューできる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/diff.test.ts
           - id: FR-SYNC-003-AC3
             description: 未解決コンフリクトがある場合は push を拒否する
             status: uncovered
@@ -55,41 +59,46 @@ areas:
         acceptance_criteria:
           - id: FR-SYNC-004-AC1
             description: GitHub Project Item をローカル Task 形式に変換できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/mapper.test.ts
       - id: FR-SYNC-005
         summary: タスクのハッシュによる変更検出
         acceptance_criteria:
           - id: FR-SYNC-005-AC1
             description: タスクの内容からハッシュを算出し変更を検出できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/hash.test.ts
       - id: FR-SYNC-006
         summary: syncFields のリベース
         acceptance_criteria:
           - id: FR-SYNC-006-AC1
             description: pull 時に syncFields を最新のスナップショットにリベースできる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/rebase.test.ts
       - id: NFR-SYNC-001
         summary: push 中の障害耐性
         acceptance_criteria:
           - id: NFR-SYNC-001-AC1
             description: push 中に API エラーが発生しても snapshot が不整合にならない
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-executor.test.ts
           - id: NFR-SYNC-001-AC2
             description: push 途中の進捗を保存し中断からの再開を可能にする
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-progress.test.ts
       - id: NFR-SYNC-002
         summary: 同期エンジンの API アクセス効率
         acceptance_criteria:
           - id: NFR-SYNC-002-AC1
             description: 変更のないタスクに対して不要な API コールを行わない
-            status: uncovered
-            tests: []
-
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/diff.test.ts
   - id: HIER
     name: Task Hierarchy
     description: タスクの親子関係と依存関係の管理
@@ -99,42 +108,48 @@ areas:
         acceptance_criteria:
           - id: FR-HIER-001-AC1
             description: タスクの親子関係を設定・変更・削除できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-commands.test.ts
           - id: FR-HIER-001-AC2
             description: 循環参照を検出し拒否する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/validation.test.ts
           - id: FR-HIER-001-AC3
             description: type_hierarchy に基づき許可されない親子関係を拒否する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/validation.test.ts
       - id: FR-HIER-002
         summary: 階層的な進捗集約
         acceptance_criteria:
           - id: FR-HIER-002-AC1
             description: 親タスクの進捗が子タスクの状態から自動算出される
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/progress.test.ts
       - id: FR-HIER-003
         summary: 依存関係管理
         acceptance_criteria:
           - id: FR-HIER-003-AC1
             description: タスク間の依存関係を追加・削除できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-commands.test.ts
           - id: FR-HIER-003-AC2
             description: 依存関係の循環を検出する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-graph.test.ts
       - id: FR-HIER-004
         summary: タスクタイプの解決
         acceptance_criteria:
           - id: FR-HIER-004-AC1
             description: ラベルや Issue Type からタスクタイプを正しく解決できる
-            status: uncovered
-            tests: []
-
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/type-resolver.test.ts
   - id: CLI
     name: CLI Interface
     description: AI エージェントと人間が同じワークフローで操作できる CLI
@@ -144,12 +159,14 @@ areas:
         acceptance_criteria:
           - id: FR-CLI-001-AC1
             description: タスクを一覧表示しステータス・タイプ・アサインでフィルタできる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-actions.test.ts
           - id: FR-CLI-001-AC2
             description: --type オプションで不正なタイプが指定された場合エラーを返す
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-list-validation.test.ts
       - id: FR-CLI-002
         summary: タスク詳細表示
         acceptance_criteria:
@@ -159,8 +176,9 @@ areas:
             tests: []
           - id: FR-CLI-002-AC2
             description: 存在しないタスク ID でエラーを返す
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-show.test.ts
       - id: FR-CLI-003
         summary: タスク更新
         acceptance_criteria:
@@ -177,30 +195,33 @@ areas:
             tests: []
           - id: FR-CLI-004-AC2
             description: ドラフトタスク ID は一意に生成される
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/draft-tasks.test.ts
       - id: FR-CLI-005
         summary: マイルストーン管理
         acceptance_criteria:
           - id: FR-CLI-005-AC1
             description: マイルストーンをタスクとして同期・表示できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/milestone.test.ts
       - id: FR-CLI-006
         summary: コマンド体系
         acceptance_criteria:
           - id: FR-CLI-006-AC1
             description: init/pull/push/status/create/list/show/update/link/serve/conflicts/resolve コマンドが定義されている
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-structure.test.ts
       - id: FR-CLI-007
         summary: タスク ID の柔軟な解決
         acceptance_criteria:
           - id: FR-CLI-007-AC1
             description: Issue 番号または内部 ID でタスクを一意に特定できる
-            status: uncovered
-            tests: []
-
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-id.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層
@@ -230,7 +251,6 @@ areas:
             description: 自己参照・循環・階層違反を API レベルで拒否する
             status: uncovered
             tests: []
-
   - id: VIS
     name: Visualization
     description: ガントチャートによるプロジェクト可視化
@@ -261,15 +281,17 @@ areas:
         acceptance_criteria:
           - id: FR-VIS-004-AC1
             description: キーボードでタスク選択・展開・操作ができる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/useKeyboardShortcuts.test.ts
       - id: FR-VIS-005
         summary: ドラッグ&ドロップによるタスク移動
         acceptance_criteria:
           - id: FR-VIS-005-AC1
             description: ツリー上でタスクをドラッグして親子関係を変更できる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/useTreeDragDrop.test.ts
       - id: FR-VIS-006
         summary: タスク詳細パネル
         acceptance_criteria:
@@ -282,23 +304,25 @@ areas:
         acceptance_criteria:
           - id: FR-VIS-007-AC1
             description: 営業日計算・日付レンジ・スケジュールステータスを正しく算出する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/date-utils.test.ts
       - id: FR-VIS-008
         summary: サマリーバーの日付算出
         acceptance_criteria:
           - id: FR-VIS-008-AC1
             description: 子タスクの日付範囲からサマリーバーの開始・終了を算出する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/summary-calc.test.ts
       - id: FR-VIS-009
         summary: Undo/Redo
         acceptance_criteria:
           - id: FR-VIS-009-AC1
             description: 操作の取り消しとやり直しができる
-            status: uncovered
-            tests: []
-
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/useUndoRedo.test.ts
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
@@ -308,19 +332,22 @@ areas:
         acceptance_criteria:
           - id: FR-STORE-001-AC1
             description: gantt.config.json を Zod バリデーション付きで読み書きできる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/store.test.ts
       - id: FR-STORE-002
         summary: タスクファイルの読み書き
         acceptance_criteria:
           - id: FR-STORE-002-AC1
             description: tasks.json を Zod バリデーション付きで読み書きできる
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/store.test.ts
       - id: NFR-STORE-001
         summary: スキーマバリデーション
         acceptance_criteria:
           - id: NFR-STORE-001-AC1
             description: 不正な形式のファイルを読み込んだ場合にバリデーションエラーを返す
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts

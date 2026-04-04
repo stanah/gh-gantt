@@ -29,7 +29,7 @@ function makeTask(id: string, parent: string | null = null, subTasks: string[] =
   };
 }
 
-describe("wouldCreateParentCycle", () => {
+describe("[FR-HIER-001-AC2] 循環参照を検出し拒否する", () => {
   it("returns false for unrelated tasks", () => {
     const tasks = [makeTask("A"), makeTask("B"), makeTask("C")];
     expect(wouldCreateParentCycle(tasks, "A", "B")).toBe(false);
@@ -73,7 +73,7 @@ describe("wouldCreateParentCycle", () => {
   });
 });
 
-describe("isTypeHierarchyAllowed", () => {
+describe("[FR-HIER-001-AC3] type_hierarchy に基づき許可されない親子関係を拒否する", () => {
   it("returns true when parent type has no entry (no restriction)", () => {
     const hierarchy = {};
     expect(isTypeHierarchyAllowed(hierarchy, "epic", "task")).toBe(true);

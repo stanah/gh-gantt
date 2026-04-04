@@ -704,7 +704,7 @@ describe("collectMilestones", () => {
 
 // --- link operations ---
 
-describe("addDependency", () => {
+describe("[FR-HIER-003-AC1] タスク間の依存関係を追加・削除できる", () => {
   it("adds a blocking dependency", () => {
     const task = makeTask();
     const result = addDependency(task, "owner/repo#2");
@@ -753,7 +753,7 @@ describe("removeDependency", () => {
   });
 });
 
-describe("setParent", () => {
+describe("[FR-HIER-001-AC1] タスクの親子関係を設定・変更・削除できる", () => {
   it("rejects self-reference parent", () => {
     const tasks = [makeTask({ id: "owner/repo#1" })];
     const result = setParent(tasks, "owner/repo#1", "owner/repo#1");
