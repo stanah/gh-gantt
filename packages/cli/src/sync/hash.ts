@@ -32,7 +32,10 @@ export function extractSyncFields(task: Task): SyncFields {
  * should not trigger a sync diff.
  */
 export function hashTask(task: Task): string {
-  const syncFields = extractSyncFields(task);
-  const json = JSON.stringify(syncFields);
+  return hashSyncFields(extractSyncFields(task));
+}
+
+export function hashSyncFields(fields: SyncFields): string {
+  const json = JSON.stringify(fields);
   return createHash("sha256").update(json).digest("hex");
 }

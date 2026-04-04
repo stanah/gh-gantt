@@ -9,6 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { executePush } from "../sync/push-executor.js";
 import { extractSyncFields, hashTask } from "../sync/hash.js";
+import { computeLocalDiff } from "../sync/diff.js";
 import type { Task, TasksFile, SyncState, Config } from "@gh-gantt/shared";
 
 function makeTask(id: string, overrides: Partial<Task> = {}): Task {
@@ -909,5 +910,388 @@ describe("executePush", () => {
     const end5 = concurrency.indexOf("addBlockedBy:ISSUE_5:end");
     const end6 = concurrency.indexOf("addBlockedBy:ISSUE_6:end");
     expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5, end6));
+  });
+
+  it("relation failure preserves old syncFields and enables retry via computeLocalDiff", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      parent: "o/r#10",
+    });
+    const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: oldSyncFields,
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = makeMockGql({
+        addSubIssue: () => {
+          throw new Error("sub-issue API error");
+        },
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      // Snapshot should preserve old parent (null) instead of new parent ("o/r#10")
+      const snap = newSyncState.snapshots["o/r#1"];
+      expect(snap).toBeDefined();
+      expect(snap!.syncFields?.parent).toBe(oldSyncFields.parent);
+
+      // Hash must differ from hashTask(task) so computeLocalDiff detects the diff for retry
+      expect(snap!.hash).not.toBe(hashTask(task));
+      const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+      expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("successful relation does not preserve old syncFields", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      parent: "o/r#10",
+    });
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const mockGql = makeMockGql();
+    const { syncState: newSyncState } = await executePush(
+      mockGql as any,
+      makeConfig(),
+      tasksFile,
+      syncState,
+    );
+
+    // Snapshot should reflect new parent
+    const snap = newSyncState.snapshots["o/r#1"];
+    expect(snap).toBeDefined();
+    expect(snap!.syncFields?.parent).toBe("o/r#10");
+
+    // No diff should remain — relation was fully synced
+    const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+    expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(false);
+  });
+
+  it("blocked_by failure preserves old syncFields.blocked_by and enables retry", async () => {
+    const blocker = makeTask("o/r#5", { github_issue: 5 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      blocked_by: [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }],
+    });
+    const tasksFile: TasksFile = {
+      tasks: [blocker, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#5": { issue_number: 5, issue_node_id: "ISSUE_5", project_item_id: "ITEM_5" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: oldSyncFields,
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#5": {
+          hash: hashTask(blocker),
+          synced_at: "",
+          syncFields: extractSyncFields(blocker),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = makeMockGql({
+        addBlockedBy: () => {
+          throw new Error("blocked-by API error");
+        },
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      // blocked_by should be preserved as old value (empty array)
+      const snap = newSyncState.snapshots["o/r#1"];
+      expect(snap).toBeDefined();
+      expect(snap!.syncFields?.blocked_by).toEqual(oldSyncFields.blocked_by);
+
+      // Hash must enable retry
+      expect(snap!.hash).not.toBe(hashTask(task));
+      const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+      expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("parent-only failure preserves parent but updates blocked_by (per-field tracking)", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const blocker = makeTask("o/r#5", { github_issue: 5 });
+    const task = makeTask("o/r#1", {
+      github_issue: 1,
+      parent: "o/r#10",
+      blocked_by: [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }],
+    });
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, blocker, task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        "o/r#5": { issue_number: 5, issue_node_id: "ISSUE_5", project_item_id: "ITEM_5" },
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+        "o/r#5": {
+          hash: hashTask(blocker),
+          synced_at: "",
+          syncFields: extractSyncFields(blocker),
+        },
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = makeMockGql({
+        addSubIssue: () => {
+          throw new Error("sub-issue API error");
+        },
+        // addBlockedBy succeeds (default handler)
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      const snap = newSyncState.snapshots["o/r#1"];
+      expect(snap).toBeDefined();
+      // Parent should be rolled back to baseline (null)
+      expect(snap!.syncFields?.parent).toBeNull();
+      // blocked_by should reflect the successfully synced new value
+      expect(snap!.syncFields?.blocked_by).toEqual(task.blocked_by);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("newly created task relation failure uses correct baseline (not saveProgress snapshot)", async () => {
+    const parentTask = makeTask("o/r#10", { github_issue: 10 });
+    const draftTask = makeTask("o/r#draft-1", {
+      github_issue: null,
+      parent: "o/r#10",
+      title: "New task",
+    });
+    const tasksFile: TasksFile = {
+      tasks: [parentTask, draftTask],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#10": { issue_number: 10, issue_node_id: "ISSUE_10", project_item_id: "ITEM_10" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#10": {
+          hash: hashTask(parentTask),
+          synced_at: "",
+          syncFields: extractSyncFields(parentTask),
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const mockGql = vi.fn().mockImplementation(async (query: string, _vars?: any) => {
+        // createIssue (mutation)
+        if (query.includes("createIssue")) {
+          return { createIssue: { issue: { id: "NEW_ISSUE_1", number: 99 } } };
+        }
+        // addProjectItem (mutation)
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "NEW_ITEM_1" } } };
+        }
+        // addSubIssue — fail (mutation)
+        if (query.includes("addSubIssue")) {
+          throw new Error("sub-issue API error");
+        }
+        // updateProjectV2ItemFieldValue (mutation)
+        if (query.includes("updateProjectV2ItemFieldValue")) {
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        }
+        // fetchRepositoryMetadata (labels + milestones) — must check before repositoryId
+        if (query.includes("labels") || query.includes("milestones")) {
+          return { repository: { id: "REPO_1", labels: { nodes: [] }, milestones: { nodes: [] } } };
+        }
+        // fetchRepositoryId
+        if (query.includes("repository(")) {
+          return { repository: { id: "REPO_1" } };
+        }
+        // batch updatedAt
+        if (query.includes("issue(number:")) {
+          const numbers = extractBatchIssueNumbers(query);
+          return makeBatchIssueResponse(numbers);
+        }
+        return {};
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+        {
+          saveProgress: async () => {},
+        },
+      );
+
+      // The new task should have been converted to o/r#99
+      const snap = newSyncState.snapshots["o/r#99"];
+      expect(snap).toBeDefined();
+      // Parent should be rolled back to null (pre-relation baseline for new tasks)
+      expect(snap!.syncFields?.parent).toBeNull();
+
+      // computeLocalDiff should detect the diff for retry
+      const newTask = tasksFile.tasks.find((t) => t.id === "o/r#99");
+      expect(newTask).toBeDefined();
+      const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+      expect(retryDiffs.some((d) => d.id === "o/r#99")).toBe(true);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it("fetchBatchUpdatedAt logs warning on batch failure", async () => {
+    const task = makeTask("o/r#1", { github_issue: 1, title: "Modified" });
+    const tasksFile: TasksFile = {
+      tasks: [task],
+      cache: { comments: {}, reactions: {} },
+    };
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "PVT_1",
+      id_map: {
+        "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+      },
+      field_ids: {},
+      snapshots: {
+        "o/r#1": {
+          hash: "stale-hash",
+          synced_at: "",
+          syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1, title: "Original" })),
+          updated_at: "2026-01-01T00:00:00Z",
+        },
+      },
+    };
+
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let batchCallCount = 0;
+      const mockGql = makeMockGql({
+        batchUpdatedAt: () => {
+          batchCallCount++;
+          if (batchCallCount === 1) {
+            // Stale check — pass
+            return { repository: { i0: { number: 1, updatedAt: "2026-01-01T00:00:00Z" } } };
+          }
+          // Post-push refresh — fail
+          throw new Error("GraphQL batch error");
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      // Should have logged a warning about the batch failure
+      const batchWarn = warnSpy.mock.calls.find(
+        (c) => (c[0] as string).includes("updatedAt") && (c[0] as string).includes("失敗"),
+      );
+      expect(batchWarn).toBeDefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
