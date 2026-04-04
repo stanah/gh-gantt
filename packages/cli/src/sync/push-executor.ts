@@ -1,7 +1,7 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
-import { hashTask, extractSyncFields } from "./hash.js";
+import { hashTask, hashSyncFields, extractSyncFields } from "./hash.js";
 import {
   isDraftTask,
   isMilestoneSyntheticTask,
@@ -104,8 +104,17 @@ export async function executePush(
   // Track which tasks were actually pushed (by their current ID after push)
   const pushedTaskIds = new Set<string>();
   const replacedDraftIds = new Set<string>();
-  // Track tasks where relationship mutations failed (partial failure)
-  const failedRelationTaskIds = new Set<string>();
+  // Track per-field relationship mutation failures for accurate partial retry
+  interface RelationFailure {
+    parentFailed: boolean;
+    blockedByFailed: boolean;
+  }
+  const failedRelations = new Map<string, RelationFailure>();
+  // Pre-relation baseline: remote state before relation mutations were attempted
+  const preRelationBaseline = new Map<
+    string,
+    Pick<import("@gh-gantt/shared").SyncFields, "parent" | "blocked_by">
+  >();
 
   // Filter out synthetic milestone tasks (read-only, managed by pull)
   const nonSyntheticDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
@@ -291,10 +300,16 @@ export async function executePush(
     }
 
     // Set up relationships for newly created issues (parallel)
+    // Newly created issues have no relations on remote yet, so baseline is always null/empty
     const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
-    const relationMutations: Promise<{ taskId: string; ok: boolean }>[] = [];
+    const relationMutations: Promise<{
+      taskId: string;
+      field: "parent" | "blocked_by";
+      ok: boolean;
+    }>[] = [];
 
     for (const id of createdTaskIds) {
+      preRelationBaseline.set(id, { parent: null, blocked_by: [] });
       const task = taskMap.get(id);
       if (task?.parent) {
         const childEntry = syncState.id_map[task.id];
@@ -302,10 +317,10 @@ export async function executePush(
         if (childEntry?.issue_node_id && parentEntry?.issue_node_id) {
           relationMutations.push(
             addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id).then(
-              () => ({ taskId: task.id, ok: true }),
+              () => ({ taskId: task.id, field: "parent" as const, ok: true }),
               (err) => {
                 console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
-                return { taskId: task.id, ok: false };
+                return { taskId: task.id, field: "parent" as const, ok: false };
               },
             ),
           );
@@ -320,12 +335,12 @@ export async function executePush(
             if (blockerEntry?.issue_node_id) {
               relationMutations.push(
                 addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id).then(
-                  () => ({ taskId: task.id, ok: true }),
+                  () => ({ taskId: task.id, field: "blocked_by" as const, ok: true }),
                   (err) => {
                     console.warn(
                       `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
                     );
-                    return { taskId: task.id, ok: false };
+                    return { taskId: task.id, field: "blocked_by" as const, ok: false };
                   },
                 ),
               );
@@ -338,7 +353,15 @@ export async function executePush(
     if (relationMutations.length > 0) {
       const results = await Promise.all(relationMutations);
       for (const r of results) {
-        if (!r.ok) failedRelationTaskIds.add(r.taskId);
+        if (!r.ok) {
+          const existing = failedRelations.get(r.taskId) ?? {
+            parentFailed: false,
+            blockedByFailed: false,
+          };
+          if (r.field === "parent") existing.parentFailed = true;
+          else existing.blockedByFailed = true;
+          failedRelations.set(r.taskId, existing);
+        }
       }
     }
   } else if (draftDiffs.length > 0) {
@@ -430,7 +453,14 @@ export async function executePush(
 
       const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
-        let relationFailed = false;
+        // Capture pre-mutation baseline for rollback on failure
+        preRelationBaseline.set(task.id, {
+          parent: snapshot?.syncFields?.parent ?? null,
+          blocked_by: snapshot?.syncFields?.blocked_by ?? [],
+        });
+
+        let parentFailed = false;
+        let blockedByFailed = false;
         const oldParent = snapshot?.syncFields?.parent ?? null;
         const newParent = task.parent;
 
@@ -443,7 +473,7 @@ export async function executePush(
                 await removeSubIssue(gql, oldParentEntry.issue_node_id, idEntry.issue_node_id);
               } catch (err) {
                 console.warn(`  ⚠ sub-issue 関係の削除に失敗 (${task.id}): ${formatError(err)}`);
-                relationFailed = true;
+                parentFailed = true;
               }
             }
           }
@@ -454,7 +484,7 @@ export async function executePush(
                 await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id);
               } catch (err) {
                 console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
-                relationFailed = true;
+                parentFailed = true;
               }
             }
           }
@@ -506,10 +536,12 @@ export async function executePush(
 
         if (blockerMutations.length > 0) {
           const results = await Promise.all(blockerMutations);
-          if (results.some((r) => !r.ok)) relationFailed = true;
+          if (results.some((r) => !r.ok)) blockedByFailed = true;
         }
 
-        if (relationFailed) failedRelationTaskIds.add(task.id);
+        if (parentFailed || blockedByFailed) {
+          failedRelations.set(task.id, { parentFailed, blockedByFailed });
+        }
       }
 
       pushedTaskIds.add(task.id);
@@ -532,25 +564,32 @@ export async function executePush(
     const task = tasksFile.tasks.find((t) => t.id === id);
     if (task) {
       const existing = newSnapshots[id];
-      const newHash = hashTask(task);
       let syncFields = extractSyncFields(task);
 
-      // If relationship mutations failed, preserve old parent/blocked_by in syncFields
-      // so that computeLocalDiff detects the diff and retries on next push
-      if (failedRelationTaskIds.has(id) && existing?.syncFields) {
-        syncFields = {
-          ...syncFields,
-          parent: existing.syncFields.parent,
-          blocked_by: existing.syncFields.blocked_by,
-        };
+      // If relationship mutations partially failed, roll back only the failed fields
+      // to the pre-mutation baseline so computeLocalDiff detects the diff on next push
+      const failure = failedRelations.get(id);
+      if (failure) {
+        const baseline = preRelationBaseline.get(id);
+        if (baseline) {
+          if (failure.parentFailed) {
+            syncFields = { ...syncFields, parent: baseline.parent };
+          }
+          if (failure.blockedByFailed) {
+            syncFields = { ...syncFields, blocked_by: baseline.blocked_by };
+          }
+        }
       }
 
+      // Hash must match syncFields so diff detection works correctly
+      const snapshotHash = failure ? hashSyncFields(syncFields) : hashTask(task);
+
       newSnapshots[id] = {
-        hash: newHash,
+        hash: snapshotHash,
         synced_at: new Date().toISOString(),
         syncFields,
         updated_at: freshUpdatedAt.get(id) ?? existing?.updated_at,
-        remoteHash: newHash,
+        remoteHash: snapshotHash,
       };
     }
   }
