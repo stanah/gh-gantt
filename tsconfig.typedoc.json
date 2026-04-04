@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "isolatedDeclarations": false,
+    "noEmit": true,
+    "paths": {
+      "@gh-gantt/shared": ["./packages/shared/src/index.ts"]
+    }
+  },
+  "include": ["packages/shared/src/**/*.ts", "packages/cli/src/**/*.ts"],
+  "exclude": ["**/__tests__/**", "**/*.test.ts", "**/e2e/**"]
+}
