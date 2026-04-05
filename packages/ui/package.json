@@ -8,6 +8,7 @@
     "dev": "vp dev",
     "preview": "vp preview",
     "test": "vp test run",
+    "test:json": "vp test run --reporter=default --reporter=json --outputFile=../../test-results-ui.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

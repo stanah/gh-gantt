@@ -9,7 +9,7 @@ function deferred() {
   return { promise, resolve };
 }
 
-describe("createUndoRedoManager", () => {
+describe("[FR-VIS-009-AC1] 操作の取り消しとやり直しができる", () => {
   it("tracks push/undo/redo counts and clears redo on push", async () => {
     const manager = createUndoRedoManager();
     const actionA = { undo: vi.fn(), redo: vi.fn() };

@@ -180,7 +180,7 @@ describe("computeLocalDiff", () => {
 // ---------------------------------------------------------------------------
 // estimateApiCalls
 // ---------------------------------------------------------------------------
-describe("estimateApiCalls", () => {
+describe("[NFR-SYNC-002-AC1] 変更のないタスクに対して不要な API コールを行わない", () => {
   it("returns 0 for empty diffs", () => {
     expect(estimateApiCalls([])).toBe(0);
   });
@@ -235,7 +235,7 @@ describe("estimateApiCalls", () => {
 // ---------------------------------------------------------------------------
 // formatDiffPreview
 // ---------------------------------------------------------------------------
-describe("formatDiffPreview", () => {
+describe("[FR-SYNC-003-AC2] dry run で変更内容をプレビューできる", () => {
   it("returns zero counts for empty diffs", () => {
     const result = formatDiffPreview([]);
     expect(result.preview).toBe(true);

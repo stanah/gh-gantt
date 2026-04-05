@@ -37,7 +37,7 @@ vi.mock("../store/tasks.js", () => ({
   },
 }));
 
-describe("list command action", () => {
+describe("[FR-CLI-001-AC1] タスクを一覧表示しステータス・タイプ・アサインでフィルタできる", () => {
   let originalExitCode: number | undefined;
 
   beforeEach(() => {

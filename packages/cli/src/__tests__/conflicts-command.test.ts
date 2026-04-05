@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { formatConflictList } from "../commands/conflicts.js";
 import type { SyncState } from "@gh-gantt/shared";
 
-describe("formatConflictList", () => {
+describe("[FR-SYNC-001-AC3] コンフリクトの検出と解決操作を CLI で実行できる", () => {
   it("formats conflict list with base values from snapshots", () => {
     const tasks: Record<string, unknown>[] = [
       {

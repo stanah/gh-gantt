@@ -1,0 +1,22 @@
+id: ADR-005
+title: ローカルファーストのデータ管理
+date: "2026-02-09"
+status: accepted
+context: |
+  AI エージェントはセッション間でコンテキストを失う。
+  プロジェクトの現在地を素早く把握する手段が必要。
+decision: |
+  プロジェクトデータを .gantt-sync/ にローカル保持する。
+  gh-gantt status や gh-gantt list で API コールなしにプロジェクト状態を参照できる。
+alternatives:
+  - name: 毎回 API から取得
+    reason_rejected: ネットワーク接続が必須。レートリミット。コンテキスト回復が遅い
+  - name: データベース (SQLite 等)
+    reason_rejected: JSON ファイルの方がデバッグしやすく、git で差分が見える
+consequences:
+  - .gantt-sync/ ディレクトリの管理 (.gitignore に追加)
+  - tasks.json, sync-state.json, gantt.config.json のファイル形式を定義
+  - オフライン状態でもリード操作が可能
+related_requirements:
+  - FR-STORE-001
+  - FR-STORE-002

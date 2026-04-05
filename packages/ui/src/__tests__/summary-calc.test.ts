@@ -28,7 +28,7 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   ...overrides,
 });
 
-describe("calculateSummaryDates", () => {
+describe("[FR-VIS-008-AC1] 子タスクの日付範囲からサマリーバーの開始・終了を算出する", () => {
   it("returns min start and max end of children", () => {
     const parent = makeTask({ id: "p", sub_tasks: ["c1", "c2"] });
     const children = [

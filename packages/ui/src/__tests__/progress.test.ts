@@ -28,7 +28,7 @@ const makeTask = (overrides: Partial<Task> = {}): Task => ({
   ...overrides,
 });
 
-describe("calculateProgress", () => {
+describe("[FR-HIER-002-AC1] 親タスクの進捗が子タスクの状態から自動算出される", () => {
   it("returns 100 for closed task", () => {
     expect(calculateProgress(makeTask({ state: "closed" }), [], {}, "Status")).toBe(100);
   });

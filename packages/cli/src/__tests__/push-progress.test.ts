@@ -54,7 +54,7 @@ function makeConfig(): Config {
   } as Config;
 }
 
-describe("push progress saving", () => {
+describe("[NFR-SYNC-001-AC2] push 途中の進捗を保存し中断からの再開を可能にする", () => {
   it("saveProgress is called after each draft is converted to a real issue", async () => {
     const draft1 = makeTask("o/r#draft-1", { title: "Draft 1" });
     const draft2 = makeTask("o/r#draft-2", { title: "Draft 2" });

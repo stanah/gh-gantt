@@ -14,7 +14,7 @@ describe("isMilestoneSyntheticTask", () => {
   });
 });
 
-describe("milestoneToTask", () => {
+describe("[FR-CLI-005-AC1] マイルストーンをタスクとして同期・表示できる", () => {
   const baseMilestone: RawMilestone = {
     id: "MDk6TWlsZXN0b25lMQ==",
     title: "v1.0",

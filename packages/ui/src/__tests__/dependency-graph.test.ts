@@ -27,7 +27,7 @@ const makeTask = (id: string, blockedBy: Task["blocked_by"] = []): Task => ({
   blocked_by: blockedBy,
 });
 
-describe("detectCycles", () => {
+describe("[FR-HIER-003-AC2] 依存関係の循環を検出する", () => {
   it("returns empty for acyclic graph", () => {
     const tasks = [makeTask("a"), makeTask("b", [{ task: "a", type: "finish-to-start", lag: 0 }])];
     expect(detectCycles(tasks)).toEqual([]);

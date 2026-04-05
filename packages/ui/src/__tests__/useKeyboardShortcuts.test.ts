@@ -9,7 +9,7 @@ function asTarget(value: unknown): EventTarget {
   return value as EventTarget;
 }
 
-describe("isEditableTarget", () => {
+describe("[FR-VIS-004-AC1] キーボードでタスク選択・展開・操作ができる", () => {
   it("returns true for input-like elements", () => {
     expect(isEditableTarget(asTarget({ tagName: "input" }))).toBe(true);
     expect(isEditableTarget(asTarget({ tagName: "TEXTAREA" }))).toBe(true);

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 
-describe("ConfigStore", () => {
+describe("[FR-STORE-001-AC1] gantt.config.json を Zod バリデーション付きで読み書きできる", () => {
   let dir: string;
 
   beforeEach(async () => {
@@ -47,7 +47,7 @@ describe("ConfigStore", () => {
   });
 });
 
-describe("TasksStore", () => {
+describe("[FR-STORE-002-AC1] tasks.json を Zod バリデーション付きで読み書きできる", () => {
   let dir: string;
 
   beforeEach(async () => {

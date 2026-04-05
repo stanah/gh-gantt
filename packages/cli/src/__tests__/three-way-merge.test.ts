@@ -31,7 +31,7 @@ describe("SYNC_FIELD_KEYS", () => {
   });
 });
 
-describe("threeWayMerge", () => {
+describe("[FR-SYNC-001-AC1] ローカル・リモート両方が変更した場合にコンフリクトを検出する", () => {
   it("returns base unchanged when nothing changed", () => {
     const base = makeSyncFields();
     const current = makeSyncFields();

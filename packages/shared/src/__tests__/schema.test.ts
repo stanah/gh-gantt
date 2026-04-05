@@ -59,7 +59,7 @@ const validConfig = {
   },
 };
 
-describe("ConfigSchema", () => {
+describe("[NFR-STORE-001-AC1] 不正な形式のファイルを読み込んだ場合にバリデーションエラーを返す", () => {
   it("validates a minimal valid config without conflict_strategy", () => {
     expect(ConfigSchema.parse(validConfig)).toBeDefined();
   });

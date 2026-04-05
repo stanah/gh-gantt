@@ -27,7 +27,7 @@ const baseTask: Task = {
   blocked_by: [],
 };
 
-describe("hashTask", () => {
+describe("[FR-SYNC-005-AC1] タスクの内容からハッシュを算出し変更を検出できる", () => {
   it("produces the same hash for the same data", () => {
     const h1 = hashTask(baseTask);
     const h2 = hashTask(baseTask);

@@ -66,7 +66,7 @@ vi.mock("../store/tasks.js", () => {
   };
 });
 
-describe("list command --type validation", () => {
+describe("[FR-CLI-001-AC2] --type オプションで不正なタイプが指定された場合エラーを返す", () => {
   beforeEach(() => {
     process.exitCode = undefined;
   });

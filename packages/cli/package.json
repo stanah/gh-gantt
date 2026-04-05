@@ -10,10 +10,12 @@
     "build": "vp pack",
     "dev": "vp pack --watch",
     "test": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts'",
+    "test:json": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=default --reporter=json --outputFile=../../test-results-cli.json",
     "test:e2e-sync": "vp test run src/__tests__/e2e-sync.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@gh-gantt/shared": "workspace:*",
     "@octokit/graphql": "^8.0.0",
     "cli-table3": "^0.6.5",

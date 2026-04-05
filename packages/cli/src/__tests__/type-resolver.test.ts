@@ -27,7 +27,7 @@ const taskTypes: Record<string, TaskType> = {
   milestone: { label: "Milestone", display: "milestone", color: "#E74C3C", github_label: null },
 };
 
-describe("resolveTaskType", () => {
+describe("[FR-HIER-004-AC1] ラベルや Issue Type からタスクタイプを正しく解決できる", () => {
   it("resolves type from custom field value (highest priority)", () => {
     const result = resolveTaskType(["bug"], { Type: "Epic" }, taskTypes, "Type");
     expect(result).toBe("epic");

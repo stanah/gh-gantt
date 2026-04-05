@@ -26,7 +26,7 @@ function makeConfig(): Config {
   };
 }
 
-describe("resolveTaskId", () => {
+describe("[FR-CLI-007-AC1] Issue 番号または内部 ID でタスクを一意に特定できる", () => {
   const config = makeConfig();
 
   it("resolves #6 to owner/repo#6", () => {

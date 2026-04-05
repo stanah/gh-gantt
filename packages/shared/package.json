@@ -9,6 +9,7 @@
     "build": "vp pack",
     "dev": "vp pack --watch",
     "test": "vp test run",
+    "test:json": "vp test run --reporter=default --reporter=json --outputFile=../../test-results-shared.json",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

@@ -29,7 +29,17 @@ jobs:
       - run: vp install
       - run: vp check
       - run: vp run build
-      - run: vp run test
+
+      - run: vp run test:json
+
+      - name: Generate docs
+        run: vp run docs:gen
+
+      - name: Validate requirements traceability
+        run: |
+          vp run req:trace
+          git diff --exit-code docs/requirements.yaml || (echo "requirements.yaml is out of date. Run 'pnpm req:trace' and commit." && exit 1)
+          vp run req:validate
 
   e2e:
     runs-on: ubuntu-latest

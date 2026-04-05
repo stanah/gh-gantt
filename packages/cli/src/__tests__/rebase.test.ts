@@ -53,7 +53,7 @@ function makeConfig(
   };
 }
 
-describe("rebaseSyncFields", () => {
+describe("[FR-SYNC-006-AC1] pull 時に syncFields を最新のスナップショットにリベースできる", () => {
   it("re-resolves type using current config task_types", () => {
     const syncFields = makeSyncFields({
       type: "feature", // 旧設定で解決された値

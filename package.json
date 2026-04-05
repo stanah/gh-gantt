@@ -12,12 +12,19 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
-    "typecheck": "pnpm -r typecheck"
+    "test:json": "pnpm -r test:json",
+    "typecheck": "pnpm -r typecheck",
+    "docs:gen": "tsx scripts/docs-gen.ts",
+    "req:trace": "tsx scripts/req-trace.ts",
+    "req:validate": "tsx scripts/req-validate.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "lefthook": "^2.1.4",
-    "vite-plus": "^0.1.13"
+    "tsx": "^4.21.0",
+    "typedoc": "^0.28.18",
+    "vite-plus": "^0.1.13",
+    "yaml": "^2.8.3"
   },
   "engines": {
     "node": ">=20"

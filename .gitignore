@@ -14,3 +14,5 @@ dist/
 .playwright-mcp/
 gh-gantt-*.png
 *.skill
+docs/generated/
+test-results*.json
