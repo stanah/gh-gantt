@@ -49,7 +49,7 @@ function applyTypeSources(
           display: defaults.display,
           color: defaults.color,
           github_label: null,
-          ...taskTypes[key],
+          ...(taskTypes[key] ?? {}),
           [bindingKey]: source.name,
         };
       }
@@ -64,7 +64,7 @@ function applyTypeSources(
         display: "bar",
         color: "#95A5A6",
         github_label: null,
-        ...taskTypes[key],
+        ...(taskTypes[key] ?? {}),
         [bindingKey]: source.name,
       };
     }
