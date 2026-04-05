@@ -70,8 +70,15 @@ async function main() {
       const data: VitestResult = JSON.parse(json);
       testResults.testResults.push(...data.testResults);
       found = true;
-    } catch {
-      // ファイルが存在しない場合はスキップ
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw err;
     }
   }
   if (!found) {
@@ -89,6 +96,7 @@ async function main() {
     const relPath = suite.name.replace(ROOT + "/", "");
 
     for (const test of suite.assertionResults) {
+      if (test.status !== "passed" && test.status !== "failed") continue;
       const fullTitle = [...test.ancestorTitles, test.title].join(" ");
       const ids = extractReqIds(fullTitle);
       for (const id of ids) {
@@ -100,7 +108,7 @@ async function main() {
           }
         } else {
           idMap.set(id, {
-            status: test.status === "passed" ? "passed" : "failed",
+            status: test.status,
             testFiles: new Set([relPath]),
           });
         }
@@ -123,7 +131,7 @@ async function main() {
             ac.tests = testFiles;
             updated++;
           }
-        } else if (ac.status !== "uncovered") {
+        } else if (ac.status !== "uncovered" || (ac.tests && ac.tests.length > 0)) {
           ac.status = "uncovered";
           ac.tests = [];
           updated++;

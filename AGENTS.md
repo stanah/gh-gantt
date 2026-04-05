@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+AI エージェント向けのガイドライン。このリポジトリで作業する際の指針を提供する。
 
 ## なぜ gh-gantt を作るのか
 

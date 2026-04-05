@@ -113,8 +113,12 @@ async function main() {
         }
       }
     }
-  } catch {
-    // ADR ディレクトリが存在しない場合はスキップ
+  } catch (err: unknown) {
+    if (err instanceof Error && "code" in err && (err as NodeJS.ErrnoException).code === "ENOENT") {
+      // ADR ディレクトリが存在しない場合はスキップ
+    } else {
+      throw err;
+    }
   }
 
   if (warnings.length > 0) {

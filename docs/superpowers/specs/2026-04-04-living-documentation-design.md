@@ -57,7 +57,7 @@ NFR-{AREA}-{NNN}             → 非機能要件 (Non-Functional Requirement)
 {prefix}-{AREA}-{NNN}-AC{N}  → 受入基準 (Acceptance Criteria)
 ```
 
-機能領域コード: `SYNC`, `HIER`, `VIS`, `CLI`, `API`
+機能領域コード: `SYNC`, `HIER`, `VIS`, `CLI`, `API`, `STORE`
 
 ### 振る舞い詳細の扱い
 
