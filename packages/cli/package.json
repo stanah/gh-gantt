@@ -10,6 +10,7 @@
     "build": "vp pack",
     "dev": "vp pack --watch",
     "test": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts'",
+    "test:json": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=default --reporter=json --outputFile=../../test-results-cli.json",
     "test:e2e-sync": "vp test run src/__tests__/e2e-sync.test.ts",
     "typecheck": "tsc --noEmit"
   },

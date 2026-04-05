@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui",
+    "test:json": "pnpm -r test:json",
     "typecheck": "pnpm -r typecheck",
     "docs:gen": "tsx scripts/docs-gen.ts",
     "req:trace": "tsx scripts/req-trace.ts",

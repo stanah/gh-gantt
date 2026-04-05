@@ -30,11 +30,7 @@ jobs:
       - run: vp check
       - run: vp run build
 
-      - name: Test with JSON reporter
-        run: |
-          pnpm --filter @gh-gantt/shared exec vp test run --reporter=default --reporter=json --outputFile=../../test-results-shared.json
-          pnpm --filter @gh-gantt/cli exec vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=default --reporter=json --outputFile=../../test-results-cli.json
-          pnpm --filter @gh-gantt/ui exec vp test run --reporter=default --reporter=json --outputFile=../../test-results-ui.json
+      - run: vp run test:json
 
       - name: Generate docs
         run: vp run docs:gen
