@@ -54,8 +54,15 @@ async function collectTestReqIds(): Promise<Set<string>> {
       files = (await readdir(fullDir)).filter(
         (f) => f.endsWith(".test.ts") || f.endsWith(".test.tsx"),
       );
-    } catch {
-      continue;
+    } catch (err: unknown) {
+      if (
+        err instanceof Error &&
+        "code" in err &&
+        (err as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        continue;
+      }
+      throw err;
     }
     for (const file of files) {
       const content = await readFile(resolve(fullDir, file), "utf-8");

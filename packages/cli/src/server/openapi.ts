@@ -73,6 +73,35 @@ const ErrorResponseSchema = z.object({
 });
 registry.register("ErrorResponse", ErrorResponseSchema);
 
+const ConflictResponseSchema = z.object({
+  message: z.string(),
+});
+registry.register("ConflictResponse", ConflictResponseSchema);
+
+const TasksWithProgressResponseSchema = z.object({
+  tasks: z.array(TaskSchema),
+  cache: z.object({
+    comments: z.record(
+      z.array(z.object({ author: z.string(), body: z.string(), created_at: z.string() })),
+    ),
+    reactions: z.record(z.record(z.number())),
+  }),
+});
+registry.register("TasksWithProgressResponse", TasksWithProgressResponseSchema);
+
+const ReparentResponseSchema = z.object({
+  tasks: z.array(TaskSchema),
+});
+registry.register("ReparentResponse", ReparentResponseSchema);
+
+const PushResultSchema = z.object({
+  created: z.number(),
+  updated: z.number(),
+  skipped: z.number(),
+  message: z.string().optional(),
+});
+registry.register("PushResult", PushResultSchema);
+
 registry.registerPath({
   method: "get",
   path: "/api/config",
@@ -92,7 +121,7 @@ registry.registerPath({
   responses: {
     200: {
       description: "タスク一覧 (進捗情報付き)",
-      content: { "application/json": { schema: TasksFileSchema } },
+      content: { "application/json": { schema: TasksWithProgressResponseSchema } },
     },
   },
 });
@@ -153,7 +182,7 @@ registry.registerPath({
   responses: {
     200: {
       description: "更新後のタスク一覧",
-      content: { "application/json": { schema: TasksFileSchema } },
+      content: { "application/json": { schema: ReparentResponseSchema } },
     },
     400: {
       description: "循環参照・階層違反",
@@ -182,7 +211,7 @@ registry.registerPath({
     },
     409: {
       description: "未解決コンフリクトあり",
-      content: { "application/json": { schema: ErrorResponseSchema } },
+      content: { "application/json": { schema: ConflictResponseSchema } },
     },
   },
 });
@@ -201,7 +230,7 @@ registry.registerPath({
       description: "push 結果",
       content: {
         "application/json": {
-          schema: z.object({}),
+          schema: PushResultSchema,
         },
       },
     },

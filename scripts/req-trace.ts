@@ -1,5 +1,5 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
+import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse, stringify } from "yaml";
 
@@ -93,7 +93,7 @@ async function main() {
   const idMap = new Map<string, { status: "passed" | "failed"; testFiles: Set<string> }>();
 
   for (const suite of testResults.testResults) {
-    const relPath = suite.name.replace(ROOT + "/", "");
+    const relPath = relative(ROOT, suite.name).replaceAll("\\", "/");
 
     for (const test of suite.assertionResults) {
       if (test.status !== "passed" && test.status !== "failed") continue;

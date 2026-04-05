@@ -7,7 +7,7 @@ vi.mock("../store/config.js", () => ({
   })),
 }));
 
-describe("[FR-CLI-002-AC2] 存在しないタスク ID でエラーを返す", () => {
+describe("show command error handling", () => {
   beforeEach(() => {
     process.exitCode = undefined;
   });
