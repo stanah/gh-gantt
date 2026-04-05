@@ -19,7 +19,7 @@ registry.register("Statuses", StatusesSchema);
 const TaskCreateRequestSchema = z.object({
   title: z.string(),
   type: z.string(),
-  body: z.string().optional(),
+  body: z.string().nullable().optional(),
   start_date: z.string().nullable().optional(),
   end_date: z.string().nullable().optional(),
   parent: z.string().nullable().optional(),
@@ -64,6 +64,7 @@ registry.register("PushRequest", PushRequestSchema);
 
 const ErrorResponseSchema = z.object({
   error: z.string(),
+  code: z.string().optional(),
 });
 registry.register("ErrorResponse", ErrorResponseSchema);
 
@@ -72,8 +73,10 @@ const ConflictResponseSchema = z.object({
 });
 registry.register("ConflictResponse", ConflictResponseSchema);
 
+const TaskWithProgressSchema = TaskSchema.extend({ _progress: z.number() });
+
 const TasksWithProgressResponseSchema = z.object({
-  tasks: z.array(TaskSchema),
+  tasks: z.array(TaskWithProgressSchema),
   cache: z.object({
     comments: z.record(
       z.array(z.object({ author: z.string(), body: z.string(), created_at: z.string() })),
@@ -230,7 +233,7 @@ registry.registerPath({
     },
     409: {
       description: "未解決コンフリクトあり",
-      content: { "application/json": { schema: ErrorResponseSchema } },
+      content: { "application/json": { schema: ConflictResponseSchema } },
     },
   },
 });
