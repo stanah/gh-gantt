@@ -7,13 +7,7 @@ import { z } from "zod";
 
 extendZodWithOpenApi(z);
 
-import {
-  ConfigSchema,
-  TaskSchema,
-  TasksFileSchema,
-  DependencySchema,
-  StatusesSchema,
-} from "@gh-gantt/shared";
+import { ConfigSchema, TaskSchema, DependencySchema, StatusesSchema } from "@gh-gantt/shared";
 
 export const registry = new OpenAPIRegistry();
 
