@@ -32,6 +32,39 @@ export interface PushResult {
   skipped: number;
 }
 
+/**
+ * addSubIssue を指数バックオフでリトライする。
+ *
+ * GitHub の sub-issue API は同一親配下で priority (順序) を内部割り当てするため、
+ * 並列呼び出しや連続呼び出しで "Priority has already been taken" が返ることがある。
+ * この関数は同エラーおよび一過性エラーをリトライ対象とする。
+ */
+export async function addSubIssueWithRetry(
+  gql: typeof graphql,
+  parentNodeId: string,
+  childNodeId: string,
+  maxAttempts = 4,
+): Promise<void> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await addSubIssue(gql, parentNodeId, childNodeId);
+      return;
+    } catch (err) {
+      lastErr = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      const retryable =
+        /Priority has already been taken|timeout|ECONN|rate limit|abuse|secondary rate|5\d\d/i.test(
+          msg,
+        );
+      if (!retryable || attempt === maxAttempts - 1) break;
+      const delay = 100 * 2 ** attempt + Math.floor(Math.random() * 50);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 export function replaceTaskIdReferences(tasks: Task[], oldId: string, newId: string): void {
   for (const task of tasks) {
     if (task.parent === oldId) {
@@ -299,14 +332,18 @@ export async function executePush(
       }
     }
 
-    // Set up relationships for newly created issues (parallel)
-    // Newly created issues have no relations on remote yet, so baseline is always null/empty
+    // Set up relationships for newly created issues.
+    // Newly created issues have no relations on remote yet, so baseline is always null/empty.
+    //
+    // sub-issue (親子) 関係は「同一親への追加」を **逐次** 実行する必要がある。
+    // GitHub sub-issue API は親ごとに priority (順序) を割り当てるため、
+    // 同一親に対して並列/高速連続で addSubIssue を呼ぶと
+    // "Priority has already been taken" エラーが頻発する。
+    // そのため親ノード ID でグループ化し、グループ内は直列、グループ間は並列で実行する。
+    // blocked_by は priority 制約がないので従来どおり並列で良い。
     const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
-    const relationMutations: Promise<{
-      taskId: string;
-      field: "parent" | "blocked_by";
-      ok: boolean;
-    }>[] = [];
+    const subIssueGroups = new Map<string, Array<{ taskId: string; childNodeId: string }>>();
+    const blockerMutations: Promise<{ taskId: string; ok: boolean }>[] = [];
 
     for (const id of createdTaskIds) {
       preRelationBaseline.set(id, { parent: null, blocked_by: [] });
@@ -315,15 +352,9 @@ export async function executePush(
         const childEntry = syncState.id_map[task.id];
         const parentEntry = syncState.id_map[task.parent];
         if (childEntry?.issue_node_id && parentEntry?.issue_node_id) {
-          relationMutations.push(
-            addSubIssue(gql, parentEntry.issue_node_id, childEntry.issue_node_id).then(
-              () => ({ taskId: task.id, field: "parent" as const, ok: true }),
-              (err) => {
-                console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
-                return { taskId: task.id, field: "parent" as const, ok: false };
-              },
-            ),
-          );
+          const list = subIssueGroups.get(parentEntry.issue_node_id) ?? [];
+          list.push({ taskId: task.id, childNodeId: childEntry.issue_node_id });
+          subIssueGroups.set(parentEntry.issue_node_id, list);
         }
       }
 
@@ -333,14 +364,14 @@ export async function executePush(
           for (const dep of task.blocked_by) {
             const blockerEntry = syncState.id_map[dep.task];
             if (blockerEntry?.issue_node_id) {
-              relationMutations.push(
+              blockerMutations.push(
                 addBlockedByIssue(gql, taskEntry.issue_node_id, blockerEntry.issue_node_id).then(
-                  () => ({ taskId: task.id, field: "blocked_by" as const, ok: true }),
+                  () => ({ taskId: task.id, ok: true }),
                   (err) => {
                     console.warn(
                       `  ⚠ blocked-by 関係の設定に失敗 (${task.id} ← ${dep.task}): ${formatError(err)}`,
                     );
-                    return { taskId: task.id, field: "blocked_by" as const, ok: false };
+                    return { taskId: task.id, ok: false };
                   },
                 ),
               );
@@ -350,16 +381,45 @@ export async function executePush(
       }
     }
 
-    if (relationMutations.length > 0) {
-      const results = await Promise.all(relationMutations);
+    // 親グループ単位で並列、グループ内は直列
+    const subIssueGroupResults = await Promise.all(
+      Array.from(subIssueGroups.entries()).map(async ([parentNodeId, children]) => {
+        const groupResults: Array<{ taskId: string; ok: boolean }> = [];
+        for (const { taskId, childNodeId } of children) {
+          try {
+            await addSubIssueWithRetry(gql, parentNodeId, childNodeId);
+            groupResults.push({ taskId, ok: true });
+          } catch (err) {
+            console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${taskId}): ${formatError(err)}`);
+            groupResults.push({ taskId, ok: false });
+          }
+        }
+        return groupResults;
+      }),
+    );
+
+    for (const group of subIssueGroupResults) {
+      for (const r of group) {
+        if (!r.ok) {
+          const existing = failedRelations.get(r.taskId) ?? {
+            parentFailed: false,
+            blockedByFailed: false,
+          };
+          existing.parentFailed = true;
+          failedRelations.set(r.taskId, existing);
+        }
+      }
+    }
+
+    if (blockerMutations.length > 0) {
+      const results = await Promise.all(blockerMutations);
       for (const r of results) {
         if (!r.ok) {
           const existing = failedRelations.get(r.taskId) ?? {
             parentFailed: false,
             blockedByFailed: false,
           };
-          if (r.field === "parent") existing.parentFailed = true;
-          else existing.blockedByFailed = true;
+          existing.blockedByFailed = true;
           failedRelations.set(r.taskId, existing);
         }
       }
@@ -481,7 +541,11 @@ export async function executePush(
             const newParentEntry = syncState.id_map[newParent];
             if (newParentEntry?.issue_node_id) {
               try {
-                await addSubIssue(gql, newParentEntry.issue_node_id, idEntry.issue_node_id);
+                await addSubIssueWithRetry(
+                  gql,
+                  newParentEntry.issue_node_id,
+                  idEntry.issue_node_id,
+                );
               } catch (err) {
                 console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
                 parentFailed = true;
