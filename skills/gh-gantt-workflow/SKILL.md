@@ -32,25 +32,25 @@ Evidence: コマンド出力をそのまま提示する。
 4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
 5. ブランチ作成 — `git checkout -b feat/issue-<number>-<description> main`
 6. 開発 & 検証（workflow.md に指定があればそのスキルを使用）
-   - 振る舞い変更を伴う場合は `gh-gantt-living-documentation` を invoke して `requirements.yaml` に AC を追加し、テストに `[ID]` を付与する
-   - テスト追加・変更後は `pnpm test:json && pnpm req:trace` を実行し、更新された `requirements.yaml` をコミットする
+   - 振る舞い変更を伴う場合は `gh-gantt-living-documentation` を invoke して `docs/requirements.yaml` に AC を追加し、テストに `[ID]` を付与する
+   - テスト追加・変更後は `pnpm test:json && pnpm req:trace && pnpm req:validate` を実行し、更新された `docs/requirements.yaml` をコミットする
 7. コミット & PR — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
 8. レビュー指摘対応 — 指摘内容を精査し妥当性を判断してから対応する。Bot のレビューを鵜呑みにしない。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）
 9. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
 ## Red Flags
 
-| やりがちなこと                                    | 問題                                                             |
-| ------------------------------------------------- | ---------------------------------------------------------------- |
-| pull せずに作業開始                               | 古いデータで作業、コンフリクトリスク                             |
-| タスク選択をスキップ                              | Issue と紐づかない                                               |
-| コミット後にタスク更新を忘れる                    | GitHub と乖離                                                    |
-| エージェントがタスクを勝手に絞り込む              | ユーザーが見るべきタスクが隠される                               |
-| レビュー指摘を Issue 化する                       | レビュー修正は同じ PR に追加コミットするだけ                     |
-| Bot レビューを全て鵜呑みにする                    | 誤検知や文脈に合わない指摘がある。精査してから対応する           |
-| PR マージ前に手動で Issue を close する           | `Closes #N` で自動クローズに任せる                               |
-| 振る舞い変更なのに requirements.yaml を更新しない | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |
-| テスト追加後に req:trace を忘れる                 | CI で requirements.yaml の diff エラーになる                     |
+| やりがちなこと                                         | 問題                                                             |
+| ------------------------------------------------------ | ---------------------------------------------------------------- |
+| pull せずに作業開始                                    | 古いデータで作業、コンフリクトリスク                             |
+| タスク選択をスキップ                                   | Issue と紐づかない                                               |
+| コミット後にタスク更新を忘れる                         | GitHub と乖離                                                    |
+| エージェントがタスクを勝手に絞り込む                   | ユーザーが見るべきタスクが隠される                               |
+| レビュー指摘を Issue 化する                            | レビュー修正は同じ PR に追加コミットするだけ                     |
+| Bot レビューを全て鵜呑みにする                         | 誤検知や文脈に合わない指摘がある。精査してから対応する           |
+| PR マージ前に手動で Issue を close する                | `Closes #N` で自動クローズに任せる                               |
+| 振る舞い変更なのに docs/requirements.yaml を更新しない | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |
+| テスト追加後に req:trace を忘れる                      | CI で docs/requirements.yaml の diff エラーになる                |
 
 | 言い訳                                | 現実                                                  |
 | ------------------------------------- | ----------------------------------------------------- |
