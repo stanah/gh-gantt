@@ -90,9 +90,13 @@ test("search input filters tasks by title", async ({ page }) => {
   await expect(page.locator("[data-task-id='task-3']")).not.toBeVisible();
 });
 
-test("zoom controls are rendered", async ({ page }) => {
-  await expect(page.getByRole("button", { name: "Zoom In" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Zoom Out" })).toBeVisible();
+test("スケール切替ボタン (Week/Month/Quarter/Year) と Scroll to Today が表示される", async ({
+  page,
+}) => {
+  await expect(page.getByRole("button", { name: "Week" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Month" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Quarter" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Year" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Scroll to Today" })).toBeVisible();
 });
 
