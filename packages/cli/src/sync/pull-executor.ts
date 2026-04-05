@@ -15,6 +15,7 @@ import { applyConflictMarkers } from "./conflict-marker.js";
 import { computeLocalDiff } from "./diff.js";
 import { mapRemoteItemToTask } from "./mapper.js";
 import { rebaseSyncFields } from "./rebase.js";
+import { validateSyncState, type SyncStateFinding } from "./validate-sync-state.js";
 
 export interface PullResult {
   added: number;
@@ -24,6 +25,13 @@ export interface PullResult {
   hasConflicts: boolean;
   details: PullTaskDetail[];
   skipped: boolean;
+  /** sync-state 整合性検証で検出された findings (自動修復されたものを含む) */
+  syncStateFindings: SyncStateFinding[];
+}
+
+export interface PullOptions {
+  /** sameIdSets quick-skip をバイパスし、フル pull を強制する */
+  force?: boolean;
 }
 
 export interface PullTaskDetail {
@@ -38,9 +46,19 @@ export async function executePull(
   config: Config,
   tasksFile: TasksFile,
   syncState: SyncState,
+  opts: PullOptions = {},
 ): Promise<{ result: PullResult; tasksFile: TasksFile; syncState: SyncState }> {
   const { owner, repo: repoName, project_number } = config.project.github;
   const repoFullName = `${owner}/${repoName}`;
+
+  // 最初に sync-state の整合性を検証し、自動修復可能な不整合を修正する。
+  // 修正済みの syncState をこの関数以降の全処理で使用する。
+  // findings は PullResult.syncStateFindings として返却し、表示は呼び出し側 (command 層) が行う。
+  const { syncState: validatedSyncState, findings: syncStateFindings } = validateSyncState(
+    syncState,
+    tasksFile,
+  );
+  syncState = validatedSyncState;
 
   // Record which tasks have unpushed local changes BEFORE merging
   const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
@@ -82,13 +100,14 @@ export async function executePull(
     }
   }
 
-  // Quick check: skip sub-issues fetch if no remote changes
+  // Quick check: skip sub-issues fetch if no remote changes.
+  // --force 指定時は整合性担保のため quick-skip をバイパスし常にフル処理する。
   const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
   const localIds = new Set(localNonDraft.map((t) => t.id));
   const remoteIds = new Set(remoteTasks.keys());
   const sameIdSets =
     localIds.size === remoteIds.size && [...localIds].every((id) => remoteIds.has(id));
-  if (sameIdSets) {
+  if (sameIdSets && !opts.force) {
     let changed = false;
     for (const [id, remote] of remoteTasks) {
       const snap = syncState.snapshots[id];
@@ -115,6 +134,7 @@ export async function executePull(
           hasConflicts: false,
           details: [],
           skipped: true,
+          syncStateFindings,
         },
         tasksFile,
         syncState: {
@@ -305,6 +325,7 @@ export async function executePull(
       hasConflicts: hasConflictsFlag,
       details,
       skipped: false,
+      syncStateFindings,
     },
     tasksFile: newTasksFile,
     syncState: newSyncState,

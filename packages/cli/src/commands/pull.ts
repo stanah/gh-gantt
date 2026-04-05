@@ -14,6 +14,10 @@ export const pullCommand = new Command("pull")
   .option("--dry-run", "Show changes without applying")
   .option("--with-comments", "Also fetch issue comments")
   .option("--force-comments", "Re-fetch all comments (implies --with-comments)")
+  .option(
+    "--force",
+    "Bypass sync-state quick-skip and force a full re-fetch (use when sync-state looks inconsistent)",
+  )
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -35,7 +39,13 @@ export const pullCommand = new Command("pull")
       result,
       tasksFile: newTasksFile,
       syncState: newSyncState,
-    } = await executePull(gql, config, tasksFile, syncState);
+    } = await executePull(gql, config, tasksFile, syncState, { force: opts.force });
+
+    // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 警告 ⚠)
+    for (const finding of result.syncStateFindings) {
+      const prefix = finding.autoFixed ? "  ↻ 自動修復" : "  ⚠";
+      console.warn(`${prefix}: ${finding.message}`);
+    }
 
     console.log(`Fetched items from GitHub`);
 
