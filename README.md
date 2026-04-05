@@ -29,7 +29,7 @@ pnpm --filter @gh-gantt/cli exec pnpm link --global
 
 ### Prerequisites
 
-- Node.js >= 20
+- Node.js >= 24
 - pnpm >= 10
 - GitHub CLI (`gh`) installed and authenticated via `gh auth login`
 

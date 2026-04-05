@@ -16,3 +16,4 @@ gh-gantt-*.png
 *.skill
 docs/generated/
 test-results*.json
+.pnpm-store/
