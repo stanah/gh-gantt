@@ -132,7 +132,7 @@ docs/generated/api/            (Published Snapshot)
 ### 生成ルール
 
 - `docs/generated/` は `.gitignore` に追加。生成物はコミットしない
-- `pnpm docs` で OpenAPI + TypeDoc を一括生成
+- `pnpm docs:gen` で OpenAPI + TypeDoc を一括生成
 - CI で生成スクリプトを実行し、エラーなく完了することを検証
 
 ## Layer 4: Tests as Requirements

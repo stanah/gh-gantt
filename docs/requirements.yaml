@@ -176,9 +176,8 @@ areas:
             tests: []
           - id: FR-CLI-002-AC2
             description: 存在しないタスク ID でエラーを返す
-            status: covered
-            tests:
-              - packages/cli/src/__tests__/task-show.test.ts
+            status: uncovered
+            tests: []
       - id: FR-CLI-003
         summary: タスク更新
         acceptance_criteria:
