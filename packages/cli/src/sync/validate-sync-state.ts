@@ -9,11 +9,7 @@ import type { SyncState, TasksFile } from "@gh-gantt/shared";
  */
 export interface SyncStateFinding {
   level: "warn" | "info";
-  category:
-    | "orphan_snapshot"
-    | "orphan_id_map"
-    | "invalid_snapshot_hash"
-    | "missing_snapshot_updated_at";
+  category: "orphan_snapshot" | "orphan_id_map" | "invalid_snapshot_hash";
   taskId: string;
   message: string;
   autoFixed: boolean;

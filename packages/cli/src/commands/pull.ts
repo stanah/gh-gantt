@@ -41,10 +41,11 @@ export const pullCommand = new Command("pull")
       syncState: newSyncState,
     } = await executePull(gql, config, tasksFile, syncState, { force: opts.force });
 
-    // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 警告 ⚠)
+    // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 情報 ℹ / 警告 ⚠)
     for (const finding of result.syncStateFindings) {
-      const prefix = finding.autoFixed ? "  ↻ 自動修復" : "  ⚠";
-      console.warn(`${prefix}: ${finding.message}`);
+      const prefix = finding.autoFixed ? "  ↻ 自動修復" : finding.level === "info" ? "  ℹ" : "  ⚠";
+      const log = finding.level === "info" ? console.log : console.warn;
+      log(`${prefix}: ${finding.message}`);
     }
 
     console.log(`Fetched items from GitHub`);
