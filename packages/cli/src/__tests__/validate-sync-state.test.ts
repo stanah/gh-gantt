@@ -80,13 +80,12 @@ describe("validateSyncState [Issue #123]", () => {
     expect(orphan!.autoFixed).toBe(true);
   });
 
-  it("hash が空文字列の snapshot を自動削除する", () => {
-    const task = makeTask("o/r#1");
-    const tasksFile: TasksFile = { tasks: [task], cache: { comments: {}, reactions: {} } };
+  it("hash が空文字列で tasks に存在しない snapshot を自動削除する", () => {
+    const tasksFile: TasksFile = { tasks: [], cache: { comments: {}, reactions: {} } };
     const syncState = makeSyncState({
       id_map: { "o/r#1": { issue_number: 1, issue_node_id: "I1", project_item_id: "P1" } },
       snapshots: {
-        "o/r#1": { hash: "", synced_at: "" }, // 不正な hash
+        "o/r#1": { hash: "", synced_at: "" }, // 不正な hash、tasks に無い
       },
     });
 
@@ -96,6 +95,26 @@ describe("validateSyncState [Issue #123]", () => {
     const invalid = findings.find((f) => f.category === "invalid_snapshot_hash");
     expect(invalid).toBeDefined();
     expect(invalid!.autoFixed).toBe(true);
+  });
+
+  it("hash が空文字列で tasks に存在する snapshot はローカル変更保護のため削除しない", () => {
+    const task = makeTask("o/r#1");
+    const tasksFile: TasksFile = { tasks: [task], cache: { comments: {}, reactions: {} } };
+    const syncState = makeSyncState({
+      id_map: { "o/r#1": { issue_number: 1, issue_node_id: "I1", project_item_id: "P1" } },
+      snapshots: {
+        "o/r#1": { hash: "", synced_at: "" }, // 不正な hash だが tasks に存在
+      },
+    });
+
+    const { syncState: result, findings } = validateSyncState(syncState, tasksFile);
+
+    // ローカル変更保護のため snapshot は保持される
+    expect(result.snapshots["o/r#1"]).toBeDefined();
+    const invalid = findings.find((f) => f.category === "invalid_snapshot_hash");
+    expect(invalid).toBeDefined();
+    expect(invalid!.autoFixed).toBe(false);
+    expect(invalid!.message).toContain("--force");
   });
 
   it("orphan id_map (tasks に無い) は warn のみで自動削除しない", () => {
@@ -114,7 +133,7 @@ describe("validateSyncState [Issue #123]", () => {
     const orphanIdMap = findings.find((f) => f.category === "orphan_id_map");
     expect(orphanIdMap).toBeDefined();
     expect(orphanIdMap!.autoFixed).toBe(false);
-    expect(orphanIdMap!.message).toContain("--force");
+    expect(orphanIdMap!.message).toContain("再初期化");
   });
 
   it("複数種類の不整合を同時に検出できる", () => {

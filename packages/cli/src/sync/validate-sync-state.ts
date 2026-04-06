@@ -66,16 +66,27 @@ export function validateSyncState(
     // 2. invalid hash — hash が壊れていると diff 検出が正しく働かない。
     // Zod でパース済みなら空文字列ケースのみだが、手動編集や旧バージョン由来の
     // 破損 JSON を想定し typeof ガードも残す (防御的)。
+    // tasks に存在する場合はローカル変更保護のため削除せず warn のみ。
     if (!snapshot.hash || typeof snapshot.hash !== "string") {
-      delete newSnapshots[id];
-      mutated = true;
-      findings.push({
-        level: "warn",
-        category: "invalid_snapshot_hash",
-        taskId: id,
-        message: `snapshot ${id} の hash が不正のため削除しました。次回 pull で再構築されます`,
-        autoFixed: true,
-      });
+      if (inTasks) {
+        findings.push({
+          level: "warn",
+          category: "invalid_snapshot_hash",
+          taskId: id,
+          message: `snapshot ${id} の hash が不正です。ローカル変更保護のため保持しますが、'gh-gantt pull --force' での再同期を推奨します`,
+          autoFixed: false,
+        });
+      } else {
+        delete newSnapshots[id];
+        mutated = true;
+        findings.push({
+          level: "warn",
+          category: "invalid_snapshot_hash",
+          taskId: id,
+          message: `snapshot ${id} の hash が不正のため削除しました。次回 pull で再構築されます`,
+          autoFixed: true,
+        });
+      }
       continue;
     }
   }
@@ -87,7 +98,7 @@ export function validateSyncState(
         level: "warn",
         category: "orphan_id_map",
         taskId: id,
-        message: `id_map ${id} が tasksFile に存在しません。リモートで削除されていれば次回 pull で解消されます。不整合が残る場合は 'gh-gantt pull --force' を実行してください`,
+        message: `id_map ${id} が tasksFile に存在しません。pull は id_map を再構築しないため、この不整合は自動では解消されません。問題が続く場合は .gantt-sync/ の再初期化を検討してください`,
         autoFixed: false,
       });
     }
