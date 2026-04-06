@@ -332,8 +332,8 @@ export async function executePush(
       }
     }
 
-    // Set up relationships for newly created issues.
-    // Newly created issues have no relations on remote yet, so baseline is always null/empty.
+    // 新規作成された Issue の関係 (sub-issue / blocked-by) を設定する。
+    // 新規作成 Issue はリモート側に関係が未設定のため、baseline は常に null/empty。
     //
     // sub-issue (親子) 関係は「同一親への追加」を **逐次** 実行する必要がある。
     // GitHub sub-issue API は親ごとに priority (順序) を割り当てるため、
