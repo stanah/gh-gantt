@@ -133,7 +133,7 @@ describe("validateSyncState [Issue #123]", () => {
     const orphanIdMap = findings.find((f) => f.category === "orphan_id_map");
     expect(orphanIdMap).toBeDefined();
     expect(orphanIdMap!.autoFixed).toBe(false);
-    expect(orphanIdMap!.message).toContain("再初期化");
+    expect(orphanIdMap!.message).toContain("--force");
   });
 
   it("複数種類の不整合を同時に検出できる", () => {

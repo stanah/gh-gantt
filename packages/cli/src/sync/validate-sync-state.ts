@@ -54,7 +54,7 @@ export function validateSyncState(
       delete newSnapshots[id];
       mutated = true;
       findings.push({
-        level: "warn",
+        level: "info",
         category: "orphan_snapshot",
         taskId: id,
         message: `snapshot ${id} が tasksFile にも id_map にも存在しないため削除しました`,
@@ -80,7 +80,7 @@ export function validateSyncState(
         delete newSnapshots[id];
         mutated = true;
         findings.push({
-          level: "warn",
+          level: "info",
           category: "invalid_snapshot_hash",
           taskId: id,
           message: `snapshot ${id} の hash が不正のため削除しました。次回 pull で再構築されます`,
@@ -98,7 +98,7 @@ export function validateSyncState(
         level: "warn",
         category: "orphan_id_map",
         taskId: id,
-        message: `id_map ${id} が tasksFile に存在しません。pull は id_map を再構築しないため、この不整合は自動では解消されません。問題が続く場合は .gantt-sync/ の再初期化を検討してください`,
+        message: `id_map ${id} が tasksFile に存在しません。まず 'gh-gantt pull --force' を試してください。それでも解消しない場合は .gantt-sync/ の再初期化を検討してください`,
         autoFixed: false,
       });
     }
