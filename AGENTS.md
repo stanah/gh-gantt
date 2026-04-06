@@ -85,7 +85,9 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 
 - **コミットメッセージ** — タイトル・本文ともに日本語（prefix は英語: `feat:`, `fix:`, `docs:` 等）
 - **コードコメント** — インラインコメント、ブロックコメントすべて日本語
-- **テスト名** — `describe` / `it` の文字列は日本語。要件 ID プレフィックス `[FR-*]` は英語
+- **テスト名** — `describe` / `it` の文字列は日本語。プレフィックスは英語で以下を使い分ける：
+  - `[FR-*]` — 要件 ID（Living Documentation の requirements.yaml 由来）
+  - `[Issue #N]` — GitHub Issue 紐づき（バグ修正・改善等、要件 ID が無いもの）
 - **TypeDoc / JSDoc コメント** — 関数・型の説明は日本語
 - **ドキュメント** — CLAUDE.md, AGENTS.md, ADR, requirements.yaml 等すべて日本語
 - **変数名・関数名・型名** — 英語（プログラミング言語の慣例に従う）

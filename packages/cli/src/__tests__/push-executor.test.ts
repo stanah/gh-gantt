@@ -1260,6 +1260,118 @@ describe("executePush", () => {
       }
     });
 
+    it("[Issue #146] 同一親への addSubIssue を逐次化し Priority 衝突時はリトライする", async () => {
+      // 1 epic の下に 3 つの draft task を作成するケースを再現。
+      // 並列実行されると "Priority has already been taken" が発生するため、
+      // push-executor は (a) 同一親配下の addSubIssue を直列実行し、
+      // (b) 同エラー時は exponential backoff でリトライする必要がある。
+      const epic = makeTask("o/r#draft-epic", {
+        type: "epic",
+        github_issue: null,
+        title: "Epic",
+      });
+      const child1 = makeTask("o/r#draft-1", {
+        github_issue: null,
+        parent: "o/r#draft-epic",
+        title: "Child 1",
+      });
+      const child2 = makeTask("o/r#draft-2", {
+        github_issue: null,
+        parent: "o/r#draft-epic",
+        title: "Child 2",
+      });
+      const child3 = makeTask("o/r#draft-3", {
+        github_issue: null,
+        parent: "o/r#draft-epic",
+        title: "Child 3",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [epic, child1, child2, child3],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: {},
+        snapshots: {},
+      };
+
+      // addSubIssue の並列実行検知 + priority 衝突のシミュレーション。
+      let inFlightAddSubIssue = 0;
+      let maxConcurrentAddSubIssue = 0;
+      // 最初の 1 回は Priority エラーで失敗させ、リトライで成功することを検証する。
+      let addSubIssueCallCount = 0;
+      let firstAttemptFailed = false;
+
+      let issueSeq = 100;
+      const mockGql = vi.fn().mockImplementation(async (query: string, _vars?: any) => {
+        if (query.includes("createIssue")) {
+          const n = issueSeq++;
+          return { createIssue: { issue: { id: `ISSUE_${n}`, number: n } } };
+        }
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "ITEM_NEW" } } };
+        }
+        if (query.includes("addSubIssue")) {
+          addSubIssueCallCount++;
+          inFlightAddSubIssue++;
+          maxConcurrentAddSubIssue = Math.max(maxConcurrentAddSubIssue, inFlightAddSubIssue);
+          try {
+            // 同一親配下で 2 回目の呼び出しで一度だけ Priority エラーを返す
+            if (!firstAttemptFailed && addSubIssueCallCount === 2) {
+              firstAttemptFailed = true;
+              throw new Error(
+                "Request failed: An error occured while adding the sub-issue to the parent issue. Priority has already been taken",
+              );
+            }
+            await new Promise((r) => setTimeout(r, 5));
+            return { addSubIssue: { issue: { id: "X" } } };
+          } finally {
+            inFlightAddSubIssue--;
+          }
+        }
+        if (query.includes("updateProjectV2ItemFieldValue")) {
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        }
+        if (query.includes("labels") || query.includes("milestones")) {
+          return {
+            repository: { id: "REPO_1", labels: { nodes: [] }, milestones: { nodes: [] } },
+          };
+        }
+        if (query.includes("repository(")) {
+          return { repository: { id: "REPO_1" } };
+        }
+        if (query.includes("issue(number:")) {
+          const numbers = extractBatchIssueNumbers(query);
+          return makeBatchIssueResponse(numbers);
+        }
+        return {};
+      });
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const { result } = await executePush(mockGql as any, makeConfig(), tasksFile, syncState, {
+          saveProgress: async () => {},
+        });
+
+        // 全 4 件 (epic + 3 children) が created になること
+        expect(result.created).toBe(4);
+        // 同一親配下なので並列実行されていてはならない
+        expect(maxConcurrentAddSubIssue).toBe(1);
+        // 初回失敗 + 3 件成功 = 4 回の addSubIssue 呼び出し (リトライ含む)
+        expect(addSubIssueCallCount).toBe(4);
+        expect(firstAttemptFailed).toBe(true);
+        // sub-issue 失敗ログが出ていないこと (リトライで救済されているため)
+        const subIssueFailWarn = warnSpy.mock.calls.find((c: any[]) =>
+          (c[0] as string).includes("sub-issue 関係の設定に失敗"),
+        );
+        expect(subIssueFailWarn).toBeUndefined();
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it("fetchBatchUpdatedAt logs warning on batch failure", async () => {
       const task = makeTask("o/r#1", { github_issue: 1, title: "Modified" });
       const tasksFile: TasksFile = {
