@@ -62,7 +62,7 @@ export async function addSubIssueWithRetry(
       await new Promise((r) => setTimeout(r, delay));
     }
   }
-  throw lastErr;
+  throw lastErr ?? new Error("addSubIssueWithRetry: 全試行が失敗しました");
 }
 
 export function replaceTaskIdReferences(tasks: Task[], oldId: string, newId: string): void {
