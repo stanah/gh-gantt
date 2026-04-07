@@ -355,6 +355,17 @@ export async function executePush(
           const list = subIssueGroups.get(parentEntry.issue_node_id) ?? [];
           list.push({ taskId: task.id, childNodeId: childEntry.issue_node_id });
           subIssueGroups.set(parentEntry.issue_node_id, list);
+        } else {
+          const missing = !childEntry?.issue_node_id ? task.id : task.parent;
+          console.warn(
+            `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${missing})`,
+          );
+          const existing = failedRelations.get(task.id) ?? {
+            parentFailed: false,
+            blockedByFailed: false,
+          };
+          existing.parentFailed = true;
+          failedRelations.set(task.id, existing);
         }
       }
 
@@ -375,8 +386,30 @@ export async function executePush(
                   },
                 ),
               );
+            } else {
+              console.warn(
+                `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← ${dep.task})`,
+              );
+              const existing = failedRelations.get(task.id) ?? {
+                parentFailed: false,
+                blockedByFailed: false,
+              };
+              existing.blockedByFailed = true;
+              failedRelations.set(task.id, existing);
             }
           }
+        } else {
+          for (const dep of task.blocked_by) {
+            console.warn(
+              `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← ${dep.task})`,
+            );
+          }
+          const existing = failedRelations.get(task.id) ?? {
+            parentFailed: false,
+            blockedByFailed: false,
+          };
+          existing.blockedByFailed = true;
+          failedRelations.set(task.id, existing);
         }
       }
     }
@@ -550,6 +583,11 @@ export async function executePush(
                 console.warn(`  ⚠ sub-issue 関係の設定に失敗 (${task.id}): ${formatError(err)}`);
                 parentFailed = true;
               }
+            } else {
+              console.warn(
+                `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${newParent})`,
+              );
+              parentFailed = true;
             }
           }
         }
@@ -575,6 +613,11 @@ export async function executePush(
                   },
                 ),
               );
+            } else {
+              console.warn(
+                `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← ${dep.task})`,
+              );
+              blockedByFailed = true;
             }
           }
         }
@@ -594,6 +637,11 @@ export async function executePush(
                   },
                 ),
               );
+            } else {
+              console.warn(
+                `  ⚠ issue_node_id が取得できないため blocked-by 削除をスキップ (${task.id} ← ${dep.task})`,
+              );
+              blockedByFailed = true;
             }
           }
         }
