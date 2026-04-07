@@ -356,9 +356,14 @@ export async function executePush(
           list.push({ taskId: task.id, childNodeId: childEntry.issue_node_id });
           subIssueGroups.set(parentEntry.issue_node_id, list);
         } else {
-          const missing = !childEntry?.issue_node_id ? task.id : task.parent;
+          const missingIds = [
+            !childEntry?.issue_node_id ? task.id : null,
+            !parentEntry?.issue_node_id ? task.parent : null,
+          ]
+            .filter(Boolean)
+            .join(", ");
           console.warn(
-            `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${missing})`,
+            `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${missingIds})`,
           );
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
@@ -399,11 +404,9 @@ export async function executePush(
             }
           }
         } else {
-          for (const dep of task.blocked_by) {
-            console.warn(
-              `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← ${dep.task})`,
-            );
-          }
+          console.warn(
+            `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id}: ${task.blocked_by.length} 件)`,
+          );
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
             blockedByFailed: false,
