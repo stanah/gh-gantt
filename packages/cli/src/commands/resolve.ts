@@ -4,7 +4,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
-import { extractSyncFields } from "../sync/hash.js";
+import { extractSyncFields, hashTask } from "../sync/hash.js";
 import { formatConflictList } from "./conflicts.js";
 import { formatValue } from "../util/format.js";
 import type { Task } from "@gh-gantt/shared";
@@ -21,13 +21,16 @@ function extractIssueNumber(id: string): number | undefined {
  * Pure function for testability.
  * Resolves conflict markers in tasks.
  * Mutates the tasks array in place.
+ * Returns a map of task id -> set of fields resolved with "theirs".
  */
 export function resolveAll(
   tasks: Record<string, unknown>[],
   choice: "ours" | "theirs",
   filterIssue?: number,
   filterField?: string,
-): void {
+): Map<string, Set<string>> {
+  const theirsResolutions = new Map<string, Set<string>>();
+
   for (const task of tasks) {
     const id = task.id as string;
 
@@ -44,8 +47,18 @@ export function resolveAll(
       // Filter by field if specified
       if (filterField !== undefined && marker.field !== filterField) continue;
       resolveMarker(task, marker.field, choice);
+
+      // Track fields resolved with "theirs"
+      if (choice === "theirs") {
+        if (!theirsResolutions.has(id)) {
+          theirsResolutions.set(id, new Set());
+        }
+        theirsResolutions.get(id)!.add(marker.field);
+      }
     }
   }
+
+  return theirsResolutions;
 }
 
 export const resolveCommand = new Command("resolve")
@@ -64,10 +77,31 @@ export const resolveCommand = new Command("resolve")
 
     const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
 
+    // Track conflict resolution choices for each task
+    // Map: task id -> { totalConflicts: number, theirsCount: number }
+    const resolutionStats = new Map<string, { totalConflicts: number; theirsCount: number }>();
+
+    // Count initial conflicts for each task
+    for (const task of tasks) {
+      const id = task.id as string;
+      const markers = detectMarkers(task);
+      if (markers.length > 0) {
+        resolutionStats.set(id, { totalConflicts: markers.length, theirsCount: 0 });
+      }
+    }
+
     if (opts?.ours || opts?.theirs) {
       // Batch mode
       const choice = opts.ours ? "ours" : "theirs";
-      resolveAll(tasks, choice, issue, opts.field);
+      const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
+
+      // Update theirsCount based on resolutions
+      for (const [id, fields] of batchResolutions) {
+        const stats = resolutionStats.get(id);
+        if (stats) {
+          stats.theirsCount = fields.size;
+        }
+      }
     } else {
       // Interactive mode
       const rl = readline.createInterface({ input, output });
@@ -102,6 +136,14 @@ export const resolveCommand = new Command("resolve")
 
             const choice = answer === "o" ? "ours" : "theirs";
             resolveMarker(task, marker.field, choice);
+
+            // Track fields resolved with "theirs"
+            if (choice === "theirs") {
+              const stats = resolutionStats.get(id);
+              if (stats) {
+                stats.theirsCount++;
+              }
+            }
           }
         }
       } finally {
@@ -119,11 +161,27 @@ export const resolveCommand = new Command("resolve")
 
       try {
         const existing = syncState.snapshots[id];
-        // Do NOT update snapshot.hash — resolved task should remain pushable
-        // (hash differs from snapshot.hash → computeLocalDiff detects it as modified)
-        // Only update syncFields for future 3-way merge base
-        if (existing) {
-          const taskTyped = task as unknown as Task;
+        if (!existing) continue;
+
+        const taskTyped = task as unknown as Task;
+        const stats = resolutionStats.get(id);
+
+        // すべてのコンフリクトが --theirs で解決された場合のみ、
+        // snapshot.hash をリモート値に揃える
+        // これによりタスクがリモートと同一状態になり、status/push で検出されなくなる
+        const allResolvedWithTheirs =
+          stats && stats.theirsCount > 0 && stats.theirsCount === stats.totalConflicts;
+
+        if (allResolvedWithTheirs && existing.remoteHash) {
+          // remoteHash をそのまま使用してタスクをリモートと同一状態にする
+          syncState.snapshots[id] = {
+            ...existing,
+            hash: existing.remoteHash,
+            syncFields: extractSyncFields(taskTyped),
+          };
+        } else {
+          // --ours で解決された場合、または一部のみ --theirs で解決された場合は、
+          // hash を更新しない（ローカル変更として push 可能にするため）
           syncState.snapshots[id] = {
             ...existing,
             syncFields: extractSyncFields(taskTyped),
