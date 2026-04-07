@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { resolveAll } from "../commands/resolve.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
-import type { Task, SyncState, Snapshot } from "@gh-gantt/shared";
+import type { Task, SyncState } from "@gh-gantt/shared";
 
 describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
   let tasks: Record<string, unknown>[];
@@ -113,17 +113,18 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     expect(tasks[0]).not.toHaveProperty("title_incoming");
 
     // theirsResolutions に記録される
-    expect(theirsResolutions.get("owner/repo#8")).toEqual(
-      new Set(["title", "body", "state"]),
-    );
+    expect(theirsResolutions.get("owner/repo#8")).toEqual(new Set(["title", "body", "state"]));
 
-    // snapshot 更新ロジックを模擬
+    // snapshot 更新ロジックを模擬（実装と同じ条件: 全コンフリクトが --theirs で解決）
     const id = "owner/repo#8";
     const existing = syncState.snapshots[id];
     const taskTyped = tasks[0] as unknown as Task;
     const theirsFields = theirsResolutions.get(id);
+    const totalConflicts = 3; // title, body, state
+    const allResolvedWithTheirs =
+      theirsFields && theirsFields.size > 0 && theirsFields.size === totalConflicts;
 
-    if (theirsFields && theirsFields.size > 0 && existing?.remoteHash) {
+    if (allResolvedWithTheirs && existing?.remoteHash) {
       // remoteHash をそのまま使用してタスクをリモートと同一状態にする
       syncState.snapshots[id] = {
         ...existing,
