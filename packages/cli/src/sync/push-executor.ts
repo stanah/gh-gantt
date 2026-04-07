@@ -356,14 +356,14 @@ export async function executePush(
           list.push({ taskId: task.id, childNodeId: childEntry.issue_node_id });
           subIssueGroups.set(parentEntry.issue_node_id, list);
         } else {
-          const missingIds = [
-            !childEntry?.issue_node_id ? task.id : null,
-            !parentEntry?.issue_node_id ? task.parent : null,
+          const missingParts = [
+            !childEntry?.issue_node_id ? `child:${task.id}` : null,
+            !parentEntry?.issue_node_id ? `parent:${task.parent}` : null,
           ]
             .filter(Boolean)
             .join(", ");
           console.warn(
-            `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${missingIds})`,
+            `  ⚠ issue_node_id が取得できないため sub-issue 関係をスキップ (${missingParts})`,
           );
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
@@ -393,7 +393,7 @@ export async function executePush(
               );
             } else {
               console.warn(
-                `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← ${dep.task})`,
+                `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id} ← blocker:${dep.task})`,
               );
               const existing = failedRelations.get(task.id) ?? {
                 parentFailed: false,
@@ -405,7 +405,7 @@ export async function executePush(
           }
         } else {
           console.warn(
-            `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (${task.id}: ${task.blocked_by.length} 件)`,
+            `  ⚠ issue_node_id が取得できないため blocked-by 関係をスキップ (task:${task.id} の issue_node_id が欠損, ${task.blocked_by.length} 件)`,
           );
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
