@@ -121,9 +121,7 @@ export const pullCommand = new Command("pull")
       return;
     }
 
-    if (!opts.json) {
-      console.log(`Fetched items from GitHub`);
-    }
+    console.log(`Fetched items from GitHub`);
 
     // Dry-run reporting
     if (opts.dryRun) {

@@ -23,7 +23,7 @@ export const pushCommand = new Command("push")
   .option("--dry-run", "Show changes without applying")
   .option("-y, --yes", "Skip confirmation prompt")
   .option("--force", "Skip remote change check")
-  .option("--json", "Output as JSON")
+  .option("--json", "Output as JSON (implies non-interactive: skips confirmation prompt)")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
