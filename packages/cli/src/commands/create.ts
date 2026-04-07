@@ -23,6 +23,7 @@ export const createCommand = new Command("create")
   .option("--start-date <date>", "Start date (YYYY-MM-DD)")
   .option("--end-date <date>", "End date (YYYY-MM-DD)")
   .option("--parent <id>", "Parent task ID")
+  .option("--json", "Output as JSON")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -136,12 +137,16 @@ export const createCommand = new Command("create")
     tasksFile.tasks.push(task);
     await tasksStore.write(tasksFile);
 
-    console.log(`Created draft task: ${taskId}`);
-    console.log(`  Title: ${title}`);
-    console.log(`  Type: ${type}`);
-    if (startDate) console.log(`  Start: ${startDate}`);
-    if (endDate) console.log(`  End: ${endDate}`);
-    if (parent) console.log(`  Parent: ${parent}`);
-    console.log();
-    console.log('Run "gh-gantt push" to create the GitHub issue.');
+    if (opts.json) {
+      console.log(JSON.stringify({ task }, null, 2));
+    } else {
+      console.log(`Created draft task: ${taskId}`);
+      console.log(`  Title: ${title}`);
+      console.log(`  Type: ${type}`);
+      if (startDate) console.log(`  Start: ${startDate}`);
+      if (endDate) console.log(`  End: ${endDate}`);
+      if (parent) console.log(`  Parent: ${parent}`);
+      console.log();
+      console.log('Run "gh-gantt push" to create the GitHub issue.');
+    }
   });

@@ -5,7 +5,7 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
 import { extractSyncFields } from "../sync/hash.js";
-import { formatConflictList } from "./conflicts.js";
+import { formatConflictList, buildConflictJson } from "./conflicts.js";
 import { formatValue } from "../util/format.js";
 import type { Task } from "@gh-gantt/shared";
 
@@ -67,7 +67,8 @@ export const resolveCommand = new Command("resolve")
   .option("--ours", "Resolve all conflicts with local values")
   .option("--theirs", "Resolve all conflicts with remote values")
   .option("--field <field>", "Resolve only specific field")
-  .action(async (issue?: number, opts?: { ours?: boolean; theirs?: boolean; field?: string }) => {
+  .option("--json", "Output remaining conflicts as JSON (batch mode only)")
+  .action(async (issue?: number, opts?: { ours?: boolean; theirs?: boolean; field?: string; json?: boolean }) => {
     const projectRoot = process.cwd();
     const tasksStore = new TasksStore(projectRoot);
     const stateStore = new SyncStateStore(projectRoot);
@@ -205,6 +206,11 @@ export const resolveCommand = new Command("resolve")
     await stateStore.write(syncState);
 
     // Print remaining conflicts or success
-    const remaining = formatConflictList(tasks, syncState.snapshots, issue);
-    console.log(remaining);
+    if (opts?.json) {
+      const json = buildConflictJson(tasks, syncState.snapshots, issue);
+      console.log(JSON.stringify(json, null, 2));
+    } else {
+      const remaining = formatConflictList(tasks, syncState.snapshots, issue);
+      console.log(remaining);
+    }
   });

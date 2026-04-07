@@ -14,7 +14,8 @@ import type { Task } from "@gh-gantt/shared";
 
 export const statusCommand = new Command("status")
   .description("Show sync status between local and remote")
-  .action(async () => {
+  .option("--json", "Output as JSON")
+  .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
     const tasksStore = new TasksStore(projectRoot);
@@ -82,7 +83,44 @@ export const statusCommand = new Command("status")
       }
     }
 
-    // Print status
+    // Draft tasks
+    const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
+
+    if (opts.json) {
+      // JSON 出力
+      console.log(
+        JSON.stringify(
+          {
+            last_synced_at: syncState.last_synced_at,
+            local_tasks: tasksFile.tasks.length,
+            remote_tasks: remoteTasks.length,
+            local_changes: localDiffs.map((d) => ({
+              type: d.type,
+              id: d.id,
+              title: d.task.title ?? null,
+            })),
+            remote_changed: remoteChanged,
+            conflicts: conflicts.map((c) => ({
+              task_id: c.taskId,
+              title: c.title,
+              field_conflicts: c.fieldConflicts.map((fc) => ({
+                field: fc.field,
+                local: fc.current,
+                remote: fc.incoming,
+                base: fc.base,
+              })),
+            })),
+            draft_tasks: draftTasks.map((t) => ({ id: t.id, title: t.title, type: t.type })),
+            config: { auto_create_issues: config.sync.auto_create_issues },
+          },
+          null,
+          2,
+        ),
+      );
+      return;
+    }
+
+    // テキスト出力
     console.log(`Last synced: ${syncState.last_synced_at}`);
     console.log(`Local tasks: ${tasksFile.tasks.length}`);
     console.log(`Remote tasks: ${remoteTasks.length}`);
@@ -121,8 +159,6 @@ export const statusCommand = new Command("status")
       console.log(`Sync: auto_create_issues=${config.sync.auto_create_issues}`);
     }
 
-    // Draft tasks
-    const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
     if (draftTasks.length > 0) {
       console.log();
       console.log(`Draft tasks (${draftTasks.length}):`);
