@@ -113,9 +113,7 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     expect(tasks[0]).not.toHaveProperty("title_incoming");
 
     // theirsResolutions に記録される
-    expect(theirsResolutions.get("owner/repo#8")).toEqual(
-      new Set(["title", "body", "state"]),
-    );
+    expect(theirsResolutions.get("owner/repo#8")).toEqual(new Set(["title", "body", "state"]));
 
     // snapshot 更新ロジックを模擬
     const id = "owner/repo#8";
