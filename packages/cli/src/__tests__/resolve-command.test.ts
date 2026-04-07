@@ -15,7 +15,7 @@ describe("resolveAll", () => {
       },
     ];
 
-    resolveAll(tasks, "ours");
+    const theirsResolutions = resolveAll(tasks, "ours");
 
     expect(tasks[0].state).toBe("open");
     expect(tasks[0].title).toBe("Fix login bug");
@@ -23,6 +23,8 @@ describe("resolveAll", () => {
     expect(tasks[0]).not.toHaveProperty("state_incoming");
     expect(tasks[0]).not.toHaveProperty("title_current");
     expect(tasks[0]).not.toHaveProperty("title_incoming");
+    // --ours なので theirsResolutions は空
+    expect(theirsResolutions.size).toBe(0);
   });
 
   it("resolves all markers with --theirs", () => {
@@ -38,7 +40,7 @@ describe("resolveAll", () => {
       },
     ];
 
-    resolveAll(tasks, "theirs");
+    const theirsResolutions = resolveAll(tasks, "theirs");
 
     expect(tasks[0].state).toBe("closed");
     expect(tasks[0].title).toBe("Fix login bug v2");
@@ -46,6 +48,9 @@ describe("resolveAll", () => {
     expect(tasks[0]).not.toHaveProperty("state_incoming");
     expect(tasks[0]).not.toHaveProperty("title_current");
     expect(tasks[0]).not.toHaveProperty("title_incoming");
+    // --theirs なので theirsResolutions に記録される
+    expect(theirsResolutions.size).toBe(1);
+    expect(theirsResolutions.get("owner/repo#8")).toEqual(new Set(["state", "title"]));
   });
 
   it("resolves specific task only (by issue number)", () => {
@@ -65,7 +70,7 @@ describe("resolveAll", () => {
       },
     ];
 
-    resolveAll(tasks, "ours", 8);
+    const theirsResolutions = resolveAll(tasks, "ours", 8);
 
     // Task 8 should be resolved
     expect(tasks[0]).not.toHaveProperty("state_current");
@@ -75,6 +80,9 @@ describe("resolveAll", () => {
     // Task 9 should still have conflicts
     expect(tasks[1]).toHaveProperty("title_current");
     expect(tasks[1]).toHaveProperty("title_incoming");
+
+    // --ours なので theirsResolutions は空
+    expect(theirsResolutions.size).toBe(0);
   });
 
   it("resolves specific field only", () => {
@@ -90,7 +98,7 @@ describe("resolveAll", () => {
       },
     ];
 
-    resolveAll(tasks, "theirs", undefined, "state");
+    const theirsResolutions = resolveAll(tasks, "theirs", undefined, "state");
 
     // state should be resolved with incoming value
     expect(tasks[0].state).toBe("closed");
@@ -100,5 +108,9 @@ describe("resolveAll", () => {
     // title should still have conflicts
     expect(tasks[0]).toHaveProperty("title_current");
     expect(tasks[0]).toHaveProperty("title_incoming");
+
+    // state のみ --theirs で解決
+    expect(theirsResolutions.size).toBe(1);
+    expect(theirsResolutions.get("owner/repo#8")).toEqual(new Set(["state"]));
   });
 });
