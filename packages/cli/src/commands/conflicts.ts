@@ -64,10 +64,71 @@ export function formatConflictList(
   return lines.join("\n");
 }
 
+export interface ConflictJson {
+  tasks: Array<{
+    id: string;
+    title: string;
+    issue: number | null;
+    conflicts: Array<{
+      field: string;
+      current: unknown;
+      incoming: unknown;
+      base: unknown;
+    }>;
+  }>;
+  task_count: number;
+  conflict_count: number;
+}
+
+/**
+ * Pure function for testability.
+ * Builds a JSON-serializable conflict report.
+ */
+export function buildConflictJson(
+  tasks: Record<string, unknown>[],
+  snapshots: SyncState["snapshots"],
+  filterIssue?: number,
+): ConflictJson {
+  const result: ConflictJson = { tasks: [], task_count: 0, conflict_count: 0 };
+
+  for (const task of tasks) {
+    const id = task.id as string;
+
+    if (filterIssue !== undefined) {
+      const issueNum = extractIssueNumber(id);
+      if (issueNum !== filterIssue) continue;
+    }
+
+    const markers = detectMarkers(task);
+    if (markers.length === 0) continue;
+
+    const snapshot = snapshots[id];
+    const syncFields = snapshot?.syncFields as Record<string, unknown> | undefined;
+
+    result.task_count++;
+    result.conflict_count += markers.length;
+
+    result.tasks.push({
+      id,
+      title: task.title as string,
+      issue: extractIssueNumber(id) ?? null,
+      conflicts: markers.map((marker) => ({
+        field: marker.field,
+        current: marker.current,
+        incoming: marker.incoming,
+        base: syncFields ? (syncFields[marker.field] ?? null) : null,
+      })),
+    });
+  }
+
+  return result;
+}
+
 export const conflictsCommand = new Command("conflicts")
   .description("Show unresolved sync conflicts")
   .argument("[issue]", "Filter by issue number", parseInt)
-  .action(async (issue?: number) => {
+  .option("--json", "Output as JSON")
+  .action(async (issue?: number, opts?: { json?: boolean }) => {
     const projectRoot = process.cwd();
     const tasksStore = new TasksStore(projectRoot);
     const stateStore = new SyncStateStore(projectRoot);
@@ -76,6 +137,12 @@ export const conflictsCommand = new Command("conflicts")
     const syncState = await stateStore.read();
 
     const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
-    const output = formatConflictList(tasks, syncState.snapshots, issue);
-    console.log(output);
+
+    if (opts?.json) {
+      const json = buildConflictJson(tasks, syncState.snapshots, issue);
+      console.log(JSON.stringify(json, null, 2));
+    } else {
+      const output = formatConflictList(tasks, syncState.snapshots, issue);
+      console.log(output);
+    }
   });

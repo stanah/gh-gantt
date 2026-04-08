@@ -18,6 +18,7 @@ export const pullCommand = new Command("pull")
     "--force",
     "Bypass sync-state quick-skip and force a full re-fetch (use when sync-state looks inconsistent)",
   )
+  .option("--json", "Output as JSON")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -42,30 +43,97 @@ export const pullCommand = new Command("pull")
     } = await executePull(gql, config, tasksFile, syncState, { force: opts.force });
 
     // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 情報 ℹ / 警告 ⚠)
-    for (const finding of result.syncStateFindings) {
-      const prefix = finding.autoFixed ? "  ↻ 自動修復" : finding.level === "info" ? "  ℹ" : "  ⚠";
-      const log = finding.level === "info" ? console.log : console.warn;
-      log(`${prefix}: ${finding.message}`);
+    if (!opts.json) {
+      for (const finding of result.syncStateFindings) {
+        const prefix = finding.autoFixed
+          ? "  ↻ 自動修復"
+          : finding.level === "info"
+            ? "  ℹ"
+            : "  ⚠";
+        const log = finding.level === "info" ? console.log : console.warn;
+        log(`${prefix}: ${finding.message}`);
+      }
     }
-
-    console.log(`Fetched items from GitHub`);
 
     if (result.skipped) {
       // Save updated field/option metadata even when no task changes
       await stateStore.write(newSyncState);
 
       if (!opts.withComments && !opts.forceComments) {
-        console.log("No remote changes detected, skipping sub-issues fetch.");
-        console.log(`Pull summary: +0 ~0 !0 -0`);
-        console.log("Pull complete.");
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                skipped: true,
+                dry_run: !!opts.dryRun,
+                summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+                details: [],
+                sync_state_findings: result.syncStateFindings,
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          console.log("No remote changes detected, skipping sub-issues fetch.");
+          console.log(`Pull summary: +0 ~0 !0 -0`);
+          console.log("Pull complete.");
+        }
         return;
       }
-      console.log("No remote changes detected, but fetching comments as requested.");
-      console.log(`Pull summary: +0 ~0 !0 -0`);
-      console.log("Pull complete.");
+      if (opts.json) {
+        console.log(
+          JSON.stringify(
+            {
+              skipped: true,
+              dry_run: !!opts.dryRun,
+              summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+              details: [],
+              sync_state_findings: result.syncStateFindings,
+            },
+            null,
+            2,
+          ),
+        );
+      } else {
+        console.log("No remote changes detected, but fetching comments as requested.");
+        console.log(`Pull summary: +0 ~0 !0 -0`);
+        console.log("Pull complete.");
+      }
       await fetchAndSaveComments(gql, tasksFile.tasks, projectRoot, opts);
       return;
     }
+
+    if (opts.json) {
+      // JSON 出力（dry-run 含む）
+      console.log(
+        JSON.stringify(
+          {
+            skipped: false,
+            dry_run: !!opts.dryRun,
+            summary: {
+              added: result.added,
+              updated: result.updated,
+              conflicts: result.conflicts,
+              removed: result.removed,
+            },
+            details: result.details,
+            sync_state_findings: result.syncStateFindings,
+          },
+          null,
+          2,
+        ),
+      );
+
+      if (!opts.dryRun) {
+        await tasksStore.write(newTasksFile);
+        await stateStore.write(newSyncState);
+        await fetchAndSaveComments(gql, newTasksFile.tasks, projectRoot, opts);
+      }
+      return;
+    }
+
+    console.log(`Fetched items from GitHub`);
 
     // Dry-run reporting
     if (opts.dryRun) {
