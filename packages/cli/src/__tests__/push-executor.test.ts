@@ -1424,4 +1424,394 @@ describe("executePush", () => {
       }
     });
   });
+
+  describe("[Issue #151] issue_node_id 欠損時のサイレントスキップ修正", () => {
+    it("新規作成タスク: parent の issue_node_id が欠損している場合 warning を出力し failedRelations に記録する", async () => {
+      const parentTask = makeTask("o/r#10", { github_issue: 10 });
+      const draftTask = makeTask("o/r#draft-1", {
+        github_issue: null,
+        parent: "o/r#10",
+        title: "New task",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [parentTask, draftTask],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          // issue_node_id が意図的に欠損
+          "o/r#10": { issue_number: 10 } as any,
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#10": {
+            hash: hashTask(parentTask),
+            synced_at: "",
+            syncFields: extractSyncFields(parentTask),
+          },
+        },
+      };
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        let addSubIssueCalled = false;
+        const mockGql = vi.fn().mockImplementation(async (query: string) => {
+          if (query.includes("createIssue")) {
+            return { createIssue: { issue: { id: "NEW_ISSUE_1", number: 99 } } };
+          }
+          if (query.includes("addProjectV2ItemById")) {
+            return { addProjectV2ItemById: { item: { id: "NEW_ITEM_1" } } };
+          }
+          if (query.includes("addSubIssue")) {
+            addSubIssueCalled = true;
+            return { addSubIssue: { issue: { id: "X" } } };
+          }
+          if (query.includes("updateProjectV2ItemFieldValue")) {
+            return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+          }
+          if (query.includes("labels") || query.includes("milestones")) {
+            return {
+              repository: { id: "REPO_1", labels: { nodes: [] }, milestones: { nodes: [] } },
+            };
+          }
+          if (query.includes("repository(")) {
+            return { repository: { id: "REPO_1" } };
+          }
+          if (query.includes("issue(number:")) {
+            const numbers = extractBatchIssueNumbers(query);
+            return makeBatchIssueResponse(numbers);
+          }
+          return {};
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          syncState,
+          { saveProgress: async () => {} },
+        );
+
+        // addSubIssue は呼び出されてはならない
+        expect(addSubIssueCalled).toBe(false);
+
+        // warning が出力されること
+        const warnMsg = warnSpy.mock.calls.find((c) =>
+          (c[0] as string).includes("issue_node_id が取得できないため sub-issue 関係をスキップ"),
+        );
+        expect(warnMsg).toBeDefined();
+
+        // snapshot の parent が null に保持され、次回 push でリトライされること
+        const snap = newSyncState.snapshots["o/r#99"];
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.parent).toBeNull();
+
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#99")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("新規作成タスク: blocker の issue_node_id が欠損している場合 warning を出力し failedRelations に記録する", async () => {
+      const blockerTask = makeTask("o/r#5", { github_issue: 5 });
+      const draftTask = makeTask("o/r#draft-1", {
+        github_issue: null,
+        blocked_by: [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }],
+        title: "New task",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [blockerTask, draftTask],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          // blocker の issue_node_id が意図的に欠損
+          "o/r#5": { issue_number: 5 } as any,
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#5": {
+            hash: hashTask(blockerTask),
+            synced_at: "",
+            syncFields: extractSyncFields(blockerTask),
+          },
+        },
+      };
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        let addBlockedByCalled = false;
+        const mockGql = vi.fn().mockImplementation(async (query: string) => {
+          if (query.includes("createIssue")) {
+            return { createIssue: { issue: { id: "NEW_ISSUE_1", number: 99 } } };
+          }
+          if (query.includes("addProjectV2ItemById")) {
+            return { addProjectV2ItemById: { item: { id: "NEW_ITEM_1" } } };
+          }
+          if (query.includes("addBlockedBy")) {
+            addBlockedByCalled = true;
+            return { addIssueRelation: { issue: { id: "ISSUE_1" } } };
+          }
+          if (query.includes("updateProjectV2ItemFieldValue")) {
+            return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+          }
+          if (query.includes("labels") || query.includes("milestones")) {
+            return {
+              repository: { id: "REPO_1", labels: { nodes: [] }, milestones: { nodes: [] } },
+            };
+          }
+          if (query.includes("repository(")) {
+            return { repository: { id: "REPO_1" } };
+          }
+          if (query.includes("issue(number:")) {
+            const numbers = extractBatchIssueNumbers(query);
+            return makeBatchIssueResponse(numbers);
+          }
+          return {};
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          syncState,
+          { saveProgress: async () => {} },
+        );
+
+        // addBlockedBy は呼び出されてはならない
+        expect(addBlockedByCalled).toBe(false);
+
+        // warning が出力されること
+        const warnMsg = warnSpy.mock.calls.find((c) =>
+          (c[0] as string).includes("issue_node_id が取得できないため blocked-by 関係をスキップ"),
+        );
+        expect(warnMsg).toBeDefined();
+
+        // snapshot の blocked_by が [] に保持され、次回 push でリトライされること
+        const snap = newSyncState.snapshots["o/r#99"];
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.blocked_by).toEqual([]);
+
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#99")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("既存タスク: 新 parent の issue_node_id が欠損している場合 warning + parentFailed でスナップショットをロールバック", async () => {
+      const newParent = makeTask("o/r#20", { github_issue: 20 });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        parent: "o/r#20",
+      });
+      const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+      const tasksFile: TasksFile = {
+        tasks: [newParent, task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+          // 新 parent の issue_node_id が意図的に欠損
+          "o/r#20": { issue_number: 20 } as any,
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: oldSyncFields,
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        let addSubIssueCalled = false;
+        const mockGql = makeMockGql({
+          addSubIssue: () => {
+            addSubIssueCalled = true;
+            return { addSubIssue: { issue: { id: "X" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          syncState,
+        );
+
+        // addSubIssue は呼び出されてはならない
+        expect(addSubIssueCalled).toBe(false);
+
+        // warning が出力されること
+        const warnMsg = warnSpy.mock.calls.find((c) =>
+          (c[0] as string).includes("issue_node_id が取得できないため sub-issue 関係をスキップ"),
+        );
+        expect(warnMsg).toBeDefined();
+
+        // parent が old value (null) にロールバックされること
+        const snap = newSyncState.snapshots["o/r#1"];
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.parent).toBe(oldSyncFields.parent);
+
+        // computeLocalDiff で diff が検出され次回リトライ可能
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("既存タスク: blocked_by 追加で blocker の issue_node_id が欠損している場合 warning + blockedByFailed", async () => {
+      const blocker = makeTask("o/r#5", { github_issue: 5 });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        blocked_by: [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }],
+      });
+      const oldSyncFields = extractSyncFields(makeTask("o/r#1", { github_issue: 1 }));
+      const tasksFile: TasksFile = {
+        tasks: [blocker, task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+          // blocker の issue_node_id が意図的に欠損
+          "o/r#5": { issue_number: 5 } as any,
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: oldSyncFields,
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        let addBlockedByCalled = false;
+        const mockGql = makeMockGql({
+          addBlockedBy: () => {
+            addBlockedByCalled = true;
+            return { addIssueRelation: { issue: { id: "ISSUE_1" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          syncState,
+        );
+
+        // addBlockedBy は呼び出されてはならない
+        expect(addBlockedByCalled).toBe(false);
+
+        // warning が出力されること
+        const warnMsg = warnSpy.mock.calls.find((c) =>
+          (c[0] as string).includes("issue_node_id が取得できないため blocked-by 関係をスキップ"),
+        );
+        expect(warnMsg).toBeDefined();
+
+        // blocked_by が old value ([]) にロールバックされること
+        const snap = newSyncState.snapshots["o/r#1"];
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.blocked_by).toEqual(oldSyncFields.blocked_by);
+
+        // computeLocalDiff で diff が検出され次回リトライ可能
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("既存タスク: blocked_by 削除で blocker の issue_node_id が欠損している場合 warning + blockedByFailed", async () => {
+      const blocker = makeTask("o/r#5", { github_issue: 5 });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        blocked_by: [], // blocker を削除
+      });
+      const oldBlockedBy = [{ task: "o/r#5", type: "finish-to-start" as const, lag: 0 }];
+      const oldSyncFields = extractSyncFields(
+        makeTask("o/r#1", { github_issue: 1, blocked_by: oldBlockedBy }),
+      );
+      const tasksFile: TasksFile = {
+        tasks: [blocker, task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+          // blocker の issue_node_id が意図的に欠損
+          "o/r#5": { issue_number: 5 } as any,
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: oldSyncFields,
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        let removeBlockedByCalled = false;
+        const mockGql = makeMockGql({
+          removeBlockedBy: () => {
+            removeBlockedByCalled = true;
+            return { removeIssueRelation: { issue: { id: "ISSUE_1" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          syncState,
+        );
+
+        // removeBlockedBy は呼び出されてはならない
+        expect(removeBlockedByCalled).toBe(false);
+
+        // warning が出力されること
+        const warnMsg = warnSpy.mock.calls.find((c) =>
+          (c[0] as string).includes("issue_node_id が取得できないため blocked-by 削除をスキップ"),
+        );
+        expect(warnMsg).toBeDefined();
+
+        // blocked_by が old value にロールバックされること（削除に失敗したため）
+        const snap = newSyncState.snapshots["o/r#1"];
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.blocked_by).toEqual(oldBlockedBy);
+
+        // computeLocalDiff で diff が検出され次回リトライ可能
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
 });
