@@ -12,6 +12,11 @@ import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import type { Task } from "@gh-gantt/shared";
 
+function extractIssueNumber(id: string): number | undefined {
+  const match = id.match(/#(\d+)$/);
+  return match ? parseInt(match[1], 10) : undefined;
+}
+
 export const statusCommand = new Command("status")
   .description("Show sync status between local and remote")
   .option("--json", "Output as JSON")
@@ -101,12 +106,13 @@ export const statusCommand = new Command("status")
             })),
             remote_changed: remoteChanged,
             conflicts: conflicts.map((c) => ({
-              task_id: c.taskId,
+              id: c.taskId,
               title: c.title,
-              field_conflicts: c.fieldConflicts.map((fc) => ({
+              issue: extractIssueNumber(c.taskId) ?? null,
+              conflicts: c.fieldConflicts.map((fc) => ({
                 field: fc.field,
-                local: fc.current,
-                remote: fc.incoming,
+                current: fc.current,
+                incoming: fc.incoming,
                 base: fc.base,
               })),
             })),

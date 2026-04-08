@@ -63,7 +63,13 @@ export const pullCommand = new Command("pull")
         if (opts.json) {
           console.log(
             JSON.stringify(
-              { skipped: true, dry_run: !!opts.dryRun, summary: { added: 0, updated: 0, conflicts: 0, removed: 0 }, details: [] },
+              {
+                skipped: true,
+                dry_run: !!opts.dryRun,
+                summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+                details: [],
+                sync_state_findings: result.syncStateFindings,
+              },
               null,
               2,
             ),
@@ -78,7 +84,13 @@ export const pullCommand = new Command("pull")
       if (opts.json) {
         console.log(
           JSON.stringify(
-            { skipped: true, dry_run: !!opts.dryRun, summary: { added: 0, updated: 0, conflicts: 0, removed: 0 }, details: [] },
+            {
+              skipped: true,
+              dry_run: !!opts.dryRun,
+              summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+              details: [],
+              sync_state_findings: result.syncStateFindings,
+            },
             null,
             2,
           ),

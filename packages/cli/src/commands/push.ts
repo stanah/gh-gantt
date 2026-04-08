@@ -46,7 +46,12 @@ export const pushCommand = new Command("push")
       if (opts.json) {
         console.log(
           JSON.stringify(
-            { changes: [], dry_run: !!opts.dryRun, summary: { created: 0, updated: 0, skipped: 0 } },
+            {
+              changes: [],
+              dry_run: !!opts.dryRun,
+              estimated_api_calls: 0,
+              summary: { created: 0, updated: 0, skipped: 0 },
+            },
             null,
             2,
           ),
@@ -64,7 +69,12 @@ export const pushCommand = new Command("push")
       if (opts.json) {
         console.log(
           JSON.stringify(
-            { changes: [], dry_run: !!opts.dryRun, summary: { created: 0, updated: 0, skipped: 0 } },
+            {
+              changes: [],
+              dry_run: !!opts.dryRun,
+              estimated_api_calls: 0,
+              summary: { created: 0, updated: 0, skipped: 0 },
+            },
             null,
             2,
           ),
@@ -126,7 +136,11 @@ export const pushCommand = new Command("push")
               })),
               dry_run: true,
               estimated_api_calls: estimateApiCalls(pushableDiffs),
-              summary: { created: 0, updated: 0, skipped: 0 },
+              summary: {
+                created: draftCount + milestoneCount,
+                updated: existingCount,
+                skipped: deletedCount,
+              },
             },
             null,
             2,

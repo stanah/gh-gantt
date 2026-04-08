@@ -68,7 +68,7 @@ export interface ConflictJson {
   tasks: Array<{
     id: string;
     title: string;
-    issue: number | undefined;
+    issue: number | null;
     conflicts: Array<{
       field: string;
       current: unknown;
@@ -111,12 +111,12 @@ export function buildConflictJson(
     result.tasks.push({
       id,
       title: task.title as string,
-      issue: extractIssueNumber(id),
+      issue: extractIssueNumber(id) ?? null,
       conflicts: markers.map((marker) => ({
         field: marker.field,
         current: marker.current,
         incoming: marker.incoming,
-        base: syncFields ? syncFields[marker.field] : undefined,
+        base: syncFields ? (syncFields[marker.field] ?? null) : null,
       })),
     });
   }
