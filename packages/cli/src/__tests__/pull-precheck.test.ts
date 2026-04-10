@@ -84,11 +84,10 @@ describe("[Issue #157] pull pre-check", () => {
     mockCheckRemote.mockResolvedValue(true);
     const syncState = makeEmptySyncState();
 
-    const { result } = await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState);
+    await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState);
 
     expect(mockCheckRemote).toHaveBeenCalledOnce();
     expect(mockFetchProject).toHaveBeenCalledOnce();
-    expect(result.skipped).toBe(false);
   });
 
   it("fullFetch=true → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {

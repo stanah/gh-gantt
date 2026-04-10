@@ -158,9 +158,7 @@ export async function executePull(
           conflicts: 0,
           hasConflicts: false,
           details: [],
-          // fetchProject は実行済みだが sub-issues fetch を省略した。
-          // pre-check による完全スキップ（skipped: true）とは区別する。
-          skipped: false,
+          skipped: true,
           syncStateFindings,
         },
         tasksFile,
