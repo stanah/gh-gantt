@@ -7,6 +7,7 @@ import {
   REPOSITORY_METADATA_QUERY,
   ORG_ISSUE_TYPES_QUERY,
   buildUserIdsQuery,
+  ISSUES_SINCE_QUERY,
 } from "./queries.js";
 
 export interface RawProjectItem {
@@ -197,4 +198,15 @@ export async function fetchRepositoryId(
 ): Promise<string> {
   const result: any = await gql(REPOSITORY_ID_QUERY, { owner, repo });
   return result.repository.id;
+}
+
+// since 以降にリモートで更新された Issue が存在するか確認する
+export async function checkRemoteChanges(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+  since: string,
+): Promise<boolean> {
+  const result: any = await gql(ISSUES_SINCE_QUERY, { owner, repo, since });
+  return result.repository.issues.totalCount > 0;
 }
