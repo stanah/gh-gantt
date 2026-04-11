@@ -77,6 +77,9 @@ export async function fetchProject(
     for (const item of project.items.nodes) {
       if (!item.content) continue;
       const content = item.content;
+      // Skip non-Issue content (PullRequest, DraftIssue) — gh-gantt only tracks Issues.
+      // Without this guard, Issue-only fields like `state` are undefined and crash later.
+      if (content.__typename && content.__typename !== "Issue") continue;
       const fieldMap: Record<string, unknown> = {};
       for (const fv of item.fieldValues.nodes) {
         if (fv.field?.name) {

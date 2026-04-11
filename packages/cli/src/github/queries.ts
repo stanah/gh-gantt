@@ -49,6 +49,7 @@ const PROJECT_V2_FRAGMENT = `
               }
             }
             content {
+              __typename
               ... on Issue {
                 id
                 number
