@@ -46,8 +46,8 @@ function makePullRequestItem() {
   return {
     id: "item-pr",
     fieldValues: { nodes: [] },
-    // GraphQL returns only __typename for non-matching fragments.
-    // Issue-specific fields (state, assignees, etc.) are absent.
+    // GraphQL は一致しないフラグメントに対して __typename のみ返す。
+    // Issue 固有のフィールド（state, assignees など）は存在しない。
     content: {
       __typename: "PullRequest",
     },
@@ -65,7 +65,7 @@ function makeDraftIssueItem() {
 }
 
 describe("fetchProject", () => {
-  it("returns Issue items with lowercase state", async () => {
+  it("[Issue #159] Issue 項目の state を小文字で返す", async () => {
     const gql = vi.fn().mockResolvedValueOnce(makeProjectResponse([makeIssueItem()])) as any;
     const result = await fetchProject(gql, "stanah", 5, "user");
     expect(result.items).toHaveLength(1);
@@ -73,26 +73,26 @@ describe("fetchProject", () => {
     expect(result.items[0].content?.number).toBe(1);
   });
 
-  it("skips PullRequest items instead of crashing", async () => {
+  it("[Issue #159] PullRequest 項目をクラッシュさせずスキップする", async () => {
     const gql = vi
       .fn()
       .mockResolvedValueOnce(makeProjectResponse([makeIssueItem(), makePullRequestItem()])) as any;
     const result = await fetchProject(gql, "stanah", 5, "user");
-    // Only the Issue should be kept; PR should be filtered out.
+    // Issue のみ残り、PR はフィルタアウトされること。
     expect(result.items).toHaveLength(1);
     expect(result.items[0].content?.number).toBe(1);
   });
 
-  it("skips DraftIssue items", async () => {
+  it("[Issue #159] DraftIssue 項目をスキップする", async () => {
     const gql = vi
       .fn()
       .mockResolvedValueOnce(makeProjectResponse([makeIssueItem(), makeDraftIssueItem()])) as any;
     const result = await fetchProject(gql, "stanah", 5, "user");
     expect(result.items).toHaveLength(1);
-    expect(result.items[0].content?.__typename ?? "Issue").toBe("Issue");
+    expect(result.items[0].content?.number).toBe(1);
   });
 
-  it("handles a project with only PullRequests gracefully", async () => {
+  it("[Issue #159] PullRequest のみのプロジェクトを正常に処理する", async () => {
     const gql = vi.fn().mockResolvedValueOnce(makeProjectResponse([makePullRequestItem()])) as any;
     const result = await fetchProject(gql, "stanah", 5, "user");
     expect(result.items).toHaveLength(0);
