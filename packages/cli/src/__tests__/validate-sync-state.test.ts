@@ -170,4 +170,66 @@ describe("validateSyncState [Issue #123]", () => {
     // warn only なので元のオブジェクトと同一参照
     expect(result).toBe(syncState);
   });
+
+  describe("[Issue #167] missing_id_map の検出", () => {
+    it("tasks.json にあるが id_map に無い非 draft タスクを検出する", () => {
+      const task = makeTask("o/r#10");
+      const tasksFile: TasksFile = { tasks: [task], cache: { comments: {}, reactions: {} } };
+      const syncState = makeSyncState({
+        id_map: {}, // #10 のエントリが欠けている
+      });
+
+      const { findings } = validateSyncState(syncState, tasksFile);
+
+      const missing = findings.find((f) => f.category === "missing_id_map");
+      expect(missing).toBeDefined();
+      expect(missing!.taskId).toBe("o/r#10");
+      expect(missing!.level).toBe("info");
+      // 次回 pull で自動修復されるため autoFixed=false (validate 自体では直せない) かつメッセージで自動修復を予告する
+      expect(missing!.autoFixed).toBe(false);
+      expect(missing!.message).toMatch(/pull/);
+    });
+
+    it("draft タスクは missing_id_map として検出されない (仕様通り id_map に入らない)", () => {
+      const draftTask = makeTask("o/r#draft-1");
+      const tasksFile: TasksFile = { tasks: [draftTask], cache: { comments: {}, reactions: {} } };
+      const syncState = makeSyncState({ id_map: {} });
+
+      const { findings } = validateSyncState(syncState, tasksFile);
+
+      const missing = findings.filter((f) => f.category === "missing_id_map");
+      expect(missing).toHaveLength(0);
+    });
+
+    it("milestone 合成タスクは missing_id_map として検出されない (id_map を使わない)", () => {
+      // milestone 合成 ID は "milestone:<repo>#<number>" 形式 (buildMilestoneSyntheticId 参照)
+      const milestoneTask = makeTask("milestone:o/r#1");
+      const tasksFile: TasksFile = {
+        tasks: [milestoneTask],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState = makeSyncState({ id_map: {} });
+
+      const { findings } = validateSyncState(syncState, tasksFile);
+
+      const missing = findings.filter((f) => f.category === "missing_id_map");
+      expect(missing).toHaveLength(0);
+    });
+
+    it("複数の missing_id_map を列挙する", () => {
+      const tasks = [makeTask("o/r#10"), makeTask("o/r#20"), makeTask("o/r#30")];
+      const tasksFile: TasksFile = { tasks, cache: { comments: {}, reactions: {} } };
+      const syncState = makeSyncState({
+        id_map: {
+          "o/r#20": { issue_number: 20, issue_node_id: "I20", project_item_id: "P20" },
+        },
+      });
+
+      const { findings } = validateSyncState(syncState, tasksFile);
+
+      const missing = findings.filter((f) => f.category === "missing_id_map");
+      expect(missing).toHaveLength(2);
+      expect(missing.map((f) => f.taskId).sort()).toEqual(["o/r#10", "o/r#30"]);
+    });
+  });
 });

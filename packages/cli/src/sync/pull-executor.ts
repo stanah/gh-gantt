@@ -5,6 +5,7 @@ import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import {
   applySubIssueLinks,
   applyBlockedByLinks,
+  buildTaskId,
   isDraftTask,
   isMilestoneSyntheticTask,
   milestoneToTask,
@@ -64,8 +65,14 @@ export async function executePull(
 
   // Pre-check: issue の更新有無を軽量クエリで確認し、変化なし時はフル fetch をスキップする。
   // force / fullFetch / 初回同期（last_synced_at 空）の場合はバイパス。
+  // [Issue #167] sync-state に id_map 不整合が検出されている場合もバイパスしてフル fetch に
+  // 降格する。これにより pull がユーザーに --force を強いずにセルフヒーリングする。
   // pre-check は最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
-  const skipPrecheck = opts.force || opts.fullFetch || !syncState.last_synced_at;
+  const hasSyncStateInconsistency = syncStateFindings.some(
+    (f) => f.category === "missing_id_map" || f.category === "orphan_id_map",
+  );
+  const skipPrecheck =
+    opts.force || opts.fullFetch || !syncState.last_synced_at || hasSyncStateInconsistency;
   if (!skipPrecheck) {
     let hasChanges = true;
     try {
@@ -133,6 +140,45 @@ export async function executePull(
     }
   }
 
+  // [Issue #167] id_map を projectData.items から authoritative に rebuild する。
+  //
+  // pull が id_map を更新しない設計だと、gh-gantt を経由せず作成された Issue
+  // (GitHub UI / gh issue create / PR マージによる自動追加 / 外部エディタによる
+  // sync-state.json 直接編集等) が tasks.json には入るが id_map には入らない
+  // 状態が発生し、その後の push で silent skip される (push-executor.ts:476-479)。
+  //
+  // 毎 pull で projectData.items から rebuild することで、pull が外部変化に対する
+  // セルフヒーリング点となる。副次的効果:
+  //   - 外部作成 issue → 次 pull で自動補完
+  //   - 破損した id_map → 次 pull で自動上書き
+  //   - stale な node_id → 自動更新
+  //   - orphan id_map (project から detach された) → 自動削除
+  //
+  // draft タスク (github_issue=null) は projectData.items に含まれないため
+  // id_map には入らない。push が draft→real 変換時に初めて id_map に追加する
+  // 既存仕様 (push-executor.ts:309) と整合する。
+  const newIdMap: SyncState["id_map"] = {};
+  for (const item of projectData.items) {
+    if (!item.content) continue;
+    const taskId = buildTaskId(item.content.repository, item.content.number);
+    newIdMap[taskId] = {
+      issue_number: item.content.number,
+      issue_node_id: item.content.nodeId,
+      project_item_id: item.id,
+    };
+  }
+
+  // [Issue #167] rebuild 後に findings を正しい状態へ promote する。
+  // validateSyncState は rebuild 前の状態で findings を出しているため、missing_id_map
+  // エントリのうち今 rebuild で補完されたものを autoFixed: true に promote し、
+  // メッセージも「次回 pull で補完」ではなく「自動補完しました」の過去形にする。
+  for (const finding of syncStateFindings) {
+    if (finding.category === "missing_id_map" && newIdMap[finding.taskId]) {
+      finding.autoFixed = true;
+      finding.message = `${finding.taskId} を id_map に自動補完しました (GraphQL から rebuild)`;
+    }
+  }
+
   // Quick check: skip sub-issues fetch if no remote changes.
   // --force 指定時は整合性担保のため quick-skip をバイパスし常にフル処理する。
   const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
@@ -172,6 +218,7 @@ export async function executePull(
         tasksFile,
         syncState: {
           ...syncState,
+          id_map: newIdMap,
           field_ids: fieldIds,
           option_ids: optionIds,
         },
@@ -274,7 +321,15 @@ export async function executePull(
     }
   }
 
-  // Tasks that exist locally but not remotely
+  // Tasks that exist locally but not remotely.
+  // [Issue #167] kept-local で残されたタスクが GitHub Project から detach された
+  // 場合 (remote に無い & ローカル変更あり)、mergedTasks には残るが newIdMap には
+  // 入らない (projectData.items の rebuild から漏れるため)。次 pull で validateSyncState が
+  // missing_id_map finding を emit し、その pull 内で現状のまま (project に戻るまで)
+  // id_map は空のまま → push は silent skip する設計。これは
+  // 「project が source of truth であり、detach された issue は gh-gantt の管理外」という
+  // ADR-007 の方針に沿った挙動。detach を永続化したいならローカルから削除、
+  // 再 attach したいなら GitHub 側で対応する。
   for (const [id, localTask] of localTaskMap) {
     if (isDraftTask(id)) {
       mergedTasks.push(localTask);
@@ -338,6 +393,7 @@ export async function executePull(
   const newSyncState: SyncState = {
     ...syncState,
     last_synced_at: new Date().toISOString(),
+    id_map: newIdMap,
     snapshots: newSnapshots,
     field_ids: fieldIds,
     option_ids: optionIds,

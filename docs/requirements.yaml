@@ -373,6 +373,24 @@ areas:
               snapshot.hash が正しく更新される (regression #154)
             status: uncovered
             tests: []
+          - id: NFR-STABILITY-001-AC3
+            description: |
+              gh-gantt を経由せず作成された Issue (GitHub UI / gh issue create /
+              PR マージによる自動追加 / sync-state.json 直接編集等) が tasks.json
+              に存在する状況で、次回の pull 時に id_map が projectData.items から
+              authoritative に rebuild され、push が silent skip せず正常に動作する
+              (regression #167)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-167-pull-id-map-rebuild.test.ts
+          - id: NFR-STABILITY-001-AC4
+            description: |
+              validateSyncState が「tasks.json に存在するが id_map に無い」という
+              逆方向の不整合 (missing_id_map) を検出し、次回 pull で自動修復される
+              旨をユーザーに提示する (regression #167)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/validate-sync-state.test.ts
       - id: NFR-STABILITY-002
         summary: silent failure の禁止
         acceptance_criteria:
