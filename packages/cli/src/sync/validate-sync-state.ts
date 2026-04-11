@@ -33,9 +33,12 @@ export interface ValidateSyncStateResult {
  * - **orphan id_map**: id_map に存在するが tasksFile に存在しない ID
  *   → 警告のみ (リモート側にはまだ存在する可能性があるため自動削除しない)
  * - **missing id_map** [Issue #167]: tasksFile に存在するが id_map に無い ID
- *   → 情報のみ (level: "info"。validate 自体では修復できないが、同一 pull 内で
- *     pull-executor が id_map を rebuild して自動修復し、autoFixed: true に promote する。
- *     draft タスクと milestone 合成タスクは id_map を使わないため除外)
+ *   → 情報のみ (level: "info")。validate 自体では修復不可。発生源は 2 系統あり:
+ *     (a) pre-pull 状態の破損 — pull-executor が rebuild で自動修復し promote する。
+ *     (b) kept-local detach — project から消失したがローカル変更のため保持されたタスク。
+ *         rebuild 対象外のため autoFixed: false のまま残り、ユーザー操作 (ローカル削除
+ *         または project への再 attach) が必要。
+ *     draft タスクと milestone 合成タスクは id_map を使わないため除外。
  *
  * いずれも pull がタスクをスキップしたり、想定外の挙動を起こす原因になり得る。
  */
@@ -109,11 +112,11 @@ export function validateSyncState(
     }
   }
 
-  // 4. missing id_map [Issue #167] — tasks にあるが id_map に無い。
-  // validate 自体では GraphQL にアクセスできないため修復不可だが、pull-executor が
-  // projectData.items から id_map を authoritative に rebuild するため次 pull で解消する。
+  // 4. missing id_map [Issue #167] — tasks にあるが id_map に無い。validate 自体では
+  // 修復不可。解消経路は 2 系統 (JSDoc 参照)。
   // draft タスクは push 経由で初めて id_map に入る仕様のため除外。
-  // milestone 合成タスクは id_map を使わない (REST 経由でリポジトリの milestone を pull する) ため除外。
+  // milestone 合成タスクは projectData.items ではなく fetchRepositoryMetadata の
+  // milestones から合成される (id_map を使わない) ため除外。
   for (const task of tasksFile.tasks) {
     if (isDraftTask(task.id)) continue;
     if (isMilestoneSyntheticTask(task.id)) continue;
@@ -122,7 +125,7 @@ export function validateSyncState(
         level: "info",
         category: "missing_id_map",
         taskId: task.id,
-        message: `${task.id} が id_map に存在しません。次回 'gh-gantt pull' で自動的に補完されます (外部作成 Issue や sync-state の破損でも自己修復されます)`,
+        message: `${task.id} が id_map に存在しません。task が GitHub Project に含まれていれば pull で自動補完されます。含まれていない場合は project への再追加またはローカルから削除が必要です`,
         autoFixed: false,
       });
     }

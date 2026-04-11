@@ -64,9 +64,9 @@ export async function executePull(
   syncState = validatedSyncState;
 
   // Pre-check: issue の更新有無を軽量クエリで確認し、変化なし時はフル fetch をスキップする。
-  // force / fullFetch / 初回同期（last_synced_at 空）の場合はバイパス。
-  // [Issue #167] sync-state に id_map 不整合が検出されている場合もバイパスしてフル fetch に
-  // 降格する。これにより pull がユーザーに --force を強いずにセルフヒーリングする。
+  // force / fullFetch / 初回同期 (last_synced_at 空) の場合はバイパス。
+  // [Issue #167] id_map 不整合検出時もバイパスする: 早期 return すると下流の
+  // id_map rebuild 経路に到達できず、破損が次 pull まで持ち越されるため。
   // pre-check は最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
   const hasSyncStateInconsistency = syncStateFindings.some(
     (f) => f.category === "missing_id_map" || f.category === "orphan_id_map",
@@ -140,28 +140,15 @@ export async function executePull(
     }
   }
 
-  // [Issue #167] id_map を projectData.items から authoritative に rebuild する。
-  //
-  // pull が id_map を更新しない設計だと、gh-gantt を経由せず作成された Issue
-  // (GitHub UI / gh issue create / PR マージによる自動追加 / 外部エディタによる
-  // sync-state.json 直接編集等) が tasks.json には入るが id_map には入らない
-  // 状態が発生し、その後の push で silent skip される (push-executor.ts:476-479)。
-  //
-  // fetchProject が実行される経路 (pre-check で早期 return していない場合) では、
-  // projectData.items から rebuild することで pull が外部変化に対するセルフヒーリング
-  // 点となる。pre-check で「変化なし」と判定されて早期 return する場合はそもそも
-  // id_map 再構築の必要がない (tasks.json と一致しているはず) が、不整合が検出されて
-  // いる場合は pre-check をバイパスしてこの経路に入るため、セルフヒーリング保証される。
-  //
-  // 副次的効果:
-  //   - 外部作成 issue → 次回 fetchProject を伴う pull で自動補完
-  //   - 破損した id_map → 次回 fetchProject を伴う pull で自動上書き
-  //   - stale な node_id → 自動更新
-  //   - orphan id_map (project から detach された) → 自動削除
+  // [Issue #167] pull が id_map を更新しない旧設計では、gh-gantt を経由せず
+  // 作成された Issue や sync-state.json の破損が push の silent skip の温床と
+  // なっていた (push-executor の existingDiffs ループで idEntry が undefined の
+  // 場合に skip される)。fetchProject 実行時に毎回 projectData.items から
+  // id_map を authoritative に rebuild することで、pull が外部変化への
+  // セルフヒーリング点となる (NFR-STABILITY-001)。
   //
   // draft タスク (github_issue=null) は projectData.items に含まれないため
-  // id_map には入らない。push が draft→real 変換時に初めて id_map に追加する
-  // 既存仕様 (push-executor.ts:309) と整合する。
+  // 対象外。draft→real 変換時の id_map 追加は push-executor の責務 (責務分離)。
   const newIdMap: SyncState["id_map"] = {};
   for (const item of projectData.items) {
     if (!item.content) continue;
@@ -173,14 +160,9 @@ export async function executePull(
     };
   }
 
-  // [Issue #167] rebuild 後に id_map 関連 findings を正しい状態へ promote する。
-  // validateSyncState は rebuild 前の状態で findings を生成しているため、以下を更新:
-  //
-  // - missing_id_map: newIdMap に入った場合のみ "自動補完しました" に promote
-  //   (rebuild しても project に無いままなら未解消のため warn のまま残す)
-  // - orphan_id_map: rebuild により必ず解消される (project に存在すれば
-  //   mergedTasks に追加され、project に無ければ newIdMap から除去される)
-  //   ため常に "自動解消しました" に promote する
+  // [Issue #167] rebuild 前に採取した findings を実状態に合わせて promote する。
+  // - missing_id_map: newIdMap に入った場合のみ解消 (project に無いままなら未解消)
+  // - orphan_id_map: rebuild により entry が必ず newIdMap から除去されるため無条件解消
   for (const finding of syncStateFindings) {
     if (finding.category === "missing_id_map" && newIdMap[finding.taskId]) {
       finding.autoFixed = true;
@@ -336,14 +318,6 @@ export async function executePull(
   }
 
   // Tasks that exist locally but not remotely.
-  // [Issue #167] kept-local で残されたタスクが GitHub Project から detach された
-  // 場合 (remote に無い & ローカル変更あり)、mergedTasks には残るが newIdMap には
-  // 入らない (projectData.items の rebuild から漏れるため)。次 pull で validateSyncState が
-  // missing_id_map finding を emit し、その pull 内で現状のまま (project に戻るまで)
-  // id_map は空のまま → push は silent skip する設計。これは
-  // 「project が source of truth であり、detach された issue は gh-gantt の管理外」という
-  // ADR-007 の方針に沿った挙動。detach を永続化したいならローカルから削除、
-  // 再 attach したいなら GitHub 側で対応する。
   for (const [id, localTask] of localTaskMap) {
     if (isDraftTask(id)) {
       mergedTasks.push(localTask);
@@ -419,19 +393,12 @@ export async function executePull(
     ...(hasConflictsFlag ? { has_conflicts: true } : {}),
   };
 
-  // [Issue #167] 最終状態の再検証。
-  //
-  // pull 冒頭の validateSyncState は pre-pull 状態の不整合しか捕捉できない。
-  // 例えば kept-local で残された detach 済みタスク (projectData.items に無いが
-  // ローカル変更ありで削除しなかったタスク) は、pull 後に tasks.json には存在
-  // するが newIdMap には入らない状態になる。この不整合を放置すると次 push で
-  // push-executor.ts:476-479 により silent skip され、NFR-STABILITY-002 違反に
-  // なる。
-  //
-  // そのため、返却前の newTasksFile + newSyncState に対して再度
-  // validateSyncState を実行し、pull 中に新たに発生した不整合を findings に
-  // 追加する。既に冒頭の validate で報告済みの (category, taskId) はスキップして
-  // 重複を避ける。
+  // [Issue #167] pull 冒頭の validate は pre-pull 状態しか捕捉できない。
+  // pull 処理中に新しく不整合が生まれる経路 — 代表例は kept-local detach
+  // (projectData に無いタスクをローカル変更保護のため残す) で、mergedTasks に
+  // 残るが newIdMap から漏れる — を顕在化するため、返却前の最終状態に対して
+  // 再検証を行う。放置すると push で silent skip され NFR-STABILITY-002 に反する。
+  // 冒頭で既報告の (category, taskId) は重複を避けるため skip する。
   const finalValidation = validateSyncState(newSyncState, newTasksFile);
   const reportedKeys = new Set(syncStateFindings.map((f) => `${f.category}:${f.taskId}`));
   for (const finding of finalValidation.findings) {

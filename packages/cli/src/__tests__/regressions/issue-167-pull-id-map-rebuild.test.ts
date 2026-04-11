@@ -32,13 +32,7 @@ const mockFetchProject = vi.mocked(fetchProject);
 const mockFetchRepoMeta = vi.mocked(fetchRepositoryMetadata);
 const mockCheckRemote = vi.mocked(checkRemoteChanges);
 
-/**
- * テスト用の最小 Config を構築する。
- * 本リグレッションテストで参照される Config のパスは限定的だが、
- * Config インターフェースの必須フィールドはすべて満たす。
- * 型アサーションを使わず satisfies で shape を検証することで、
- * 将来 Config に必須フィールドが追加された際にコンパイルエラーで気付けるようにする。
- */
+/** テスト用 Config。satisfies で将来の必須フィールド追加をコンパイル時検出する。 */
 function makeConfig(): Config {
   const config = {
     version: "1",
