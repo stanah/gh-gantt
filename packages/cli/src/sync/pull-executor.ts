@@ -5,6 +5,7 @@ import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import {
   applySubIssueLinks,
   applyBlockedByLinks,
+  buildTaskId,
   isDraftTask,
   isMilestoneSyntheticTask,
   milestoneToTask,
@@ -63,9 +64,15 @@ export async function executePull(
   syncState = validatedSyncState;
 
   // Pre-check: issue の更新有無を軽量クエリで確認し、変化なし時はフル fetch をスキップする。
-  // force / fullFetch / 初回同期（last_synced_at 空）の場合はバイパス。
+  // force / fullFetch / 初回同期 (last_synced_at 空) の場合はバイパス。
+  // [Issue #167] id_map 不整合検出時もバイパスする: 早期 return すると下流の
+  // id_map rebuild 経路に到達できず、破損が次 pull まで持ち越されるため。
   // pre-check は最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
-  const skipPrecheck = opts.force || opts.fullFetch || !syncState.last_synced_at;
+  const hasSyncStateInconsistency = syncStateFindings.some(
+    (f) => f.category === "missing_id_map" || f.category === "orphan_id_map",
+  );
+  const skipPrecheck =
+    opts.force || opts.fullFetch || !syncState.last_synced_at || hasSyncStateInconsistency;
   if (!skipPrecheck) {
     let hasChanges = true;
     try {
@@ -133,6 +140,41 @@ export async function executePull(
     }
   }
 
+  // [Issue #167] pull が id_map を更新しない旧設計では、gh-gantt を経由せず
+  // 作成された Issue や sync-state.json の破損が push の silent skip の温床と
+  // なっていた (push-executor の existingDiffs ループで idEntry が undefined の
+  // 場合に skip される)。fetchProject 実行時に毎回 projectData.items から
+  // id_map を authoritative に rebuild することで、pull が外部変化への
+  // セルフヒーリング点となる (NFR-STABILITY-001)。
+  //
+  // draft タスク (github_issue=null) は projectData.items に含まれないため
+  // 対象外。draft→real 変換時の id_map 追加は push-executor の責務 (責務分離)。
+  const newIdMap: SyncState["id_map"] = {};
+  for (const item of projectData.items) {
+    if (!item.content) continue;
+    const taskId = buildTaskId(item.content.repository, item.content.number);
+    newIdMap[taskId] = {
+      issue_number: item.content.number,
+      issue_node_id: item.content.nodeId,
+      project_item_id: item.id,
+    };
+  }
+
+  // [Issue #167] rebuild 前に採取した findings を実状態に合わせて promote する。
+  // - missing_id_map: newIdMap に入った場合のみ解消 (project に無いままなら未解消)
+  // - orphan_id_map: rebuild により entry が必ず newIdMap から除去されるため無条件解消
+  for (const finding of syncStateFindings) {
+    if (finding.category === "missing_id_map" && newIdMap[finding.taskId]) {
+      finding.autoFixed = true;
+      finding.level = "info";
+      finding.message = `${finding.taskId} を id_map に自動補完しました (GraphQL から rebuild)`;
+    } else if (finding.category === "orphan_id_map") {
+      finding.autoFixed = true;
+      finding.level = "info";
+      finding.message = `${finding.taskId} の orphan id_map エントリを自動解消しました (GraphQL から rebuild)`;
+    }
+  }
+
   // Quick check: skip sub-issues fetch if no remote changes.
   // --force 指定時は整合性担保のため quick-skip をバイパスし常にフル処理する。
   const localNonDraft = tasksFile.tasks.filter((t) => !isDraftTask(t.id));
@@ -172,6 +214,7 @@ export async function executePull(
         tasksFile,
         syncState: {
           ...syncState,
+          id_map: newIdMap,
           field_ids: fieldIds,
           option_ids: optionIds,
         },
@@ -274,7 +317,7 @@ export async function executePull(
     }
   }
 
-  // Tasks that exist locally but not remotely
+  // Tasks that exist locally but not remotely.
   for (const [id, localTask] of localTaskMap) {
     if (isDraftTask(id)) {
       mergedTasks.push(localTask);
@@ -338,6 +381,7 @@ export async function executePull(
   const newSyncState: SyncState = {
     ...syncState,
     last_synced_at: new Date().toISOString(),
+    id_map: newIdMap,
     snapshots: newSnapshots,
     field_ids: fieldIds,
     option_ids: optionIds,
@@ -348,6 +392,21 @@ export async function executePull(
     cache: tasksFile.cache,
     ...(hasConflictsFlag ? { has_conflicts: true } : {}),
   };
+
+  // [Issue #167] pull 冒頭の validate は pre-pull 状態しか捕捉できない。
+  // pull 処理中に新しく不整合が生まれる経路 — 代表例は kept-local detach
+  // (projectData に無いタスクをローカル変更保護のため残す) で、mergedTasks に
+  // 残るが newIdMap から漏れる — を顕在化するため、返却前の最終状態に対して
+  // 再検証を行う。放置すると push で silent skip され NFR-STABILITY-002 に反する。
+  // 冒頭で既報告の (category, taskId) は重複を避けるため skip する。
+  const finalValidation = validateSyncState(newSyncState, newTasksFile);
+  const reportedKeys = new Set(syncStateFindings.map((f) => `${f.category}:${f.taskId}`));
+  for (const finding of finalValidation.findings) {
+    const key = `${finding.category}:${finding.taskId}`;
+    if (reportedKeys.has(key)) continue;
+    syncStateFindings.push(finding);
+    reportedKeys.add(key);
+  }
 
   return {
     result: {

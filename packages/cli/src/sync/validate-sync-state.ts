@@ -1,4 +1,5 @@
 import type { SyncState, TasksFile } from "@gh-gantt/shared";
+import { isDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
 
 /**
  * sync-state の整合性検証で見つかった問題。
@@ -9,7 +10,7 @@ import type { SyncState, TasksFile } from "@gh-gantt/shared";
  */
 export interface SyncStateFinding {
   level: "warn" | "info";
-  category: "orphan_snapshot" | "orphan_id_map" | "invalid_snapshot_hash";
+  category: "orphan_snapshot" | "orphan_id_map" | "missing_id_map" | "invalid_snapshot_hash";
   taskId: string;
   message: string;
   autoFixed: boolean;
@@ -31,6 +32,13 @@ export interface ValidateSyncStateResult {
  *   → snapshot ごと削除し、次回 pull で再構築させる
  * - **orphan id_map**: id_map に存在するが tasksFile に存在しない ID
  *   → 警告のみ (リモート側にはまだ存在する可能性があるため自動削除しない)
+ * - **missing id_map** [Issue #167]: tasksFile に存在するが id_map に無い ID
+ *   → 情報のみ (level: "info")。validate 自体では修復不可。発生源は 2 系統あり:
+ *     (a) pre-pull 状態の破損 — pull-executor が rebuild で自動修復し promote する。
+ *     (b) kept-local detach — project から消失したがローカル変更のため保持されたタスク。
+ *         rebuild 対象外のため autoFixed: false のまま残り、ユーザー操作 (ローカル削除
+ *         または project への再 attach) が必要。
+ *     draft タスクと milestone 合成タスクは id_map を使わないため除外。
  *
  * いずれも pull がタスクをスキップしたり、想定外の挙動を起こす原因になり得る。
  */
@@ -99,6 +107,25 @@ export function validateSyncState(
         category: "orphan_id_map",
         taskId: id,
         message: `id_map ${id} が tasksFile に存在しません。まず 'gh-gantt pull --force' を試してください。それでも解消しない場合は .gantt-sync/ の再初期化を検討してください`,
+        autoFixed: false,
+      });
+    }
+  }
+
+  // 4. missing id_map [Issue #167] — tasks にあるが id_map に無い。validate 自体では
+  // 修復不可。解消経路は 2 系統 (JSDoc 参照)。
+  // draft タスクは push 経由で初めて id_map に入る仕様のため除外。
+  // milestone 合成タスクは projectData.items ではなく fetchRepositoryMetadata の
+  // milestones から合成される (id_map を使わない) ため除外。
+  for (const task of tasksFile.tasks) {
+    if (isDraftTask(task.id)) continue;
+    if (isMilestoneSyntheticTask(task.id)) continue;
+    if (!idMapKeys.has(task.id)) {
+      findings.push({
+        level: "info",
+        category: "missing_id_map",
+        taskId: task.id,
+        message: `${task.id} が id_map に存在しません。task が GitHub Project に含まれていれば pull で自動補完されます。含まれていない場合は project への再追加またはローカルから削除が必要です`,
         autoFixed: false,
       });
     }
