@@ -171,7 +171,7 @@ describe("validateSyncState [Issue #123]", () => {
     expect(result).toBe(syncState);
   });
 
-  describe("[Issue #167] missing_id_map の検出", () => {
+  describe("[NFR-STABILITY-001-AC4] [Issue #167] missing_id_map の検出", () => {
     it("tasks.json にあるが id_map に無い非 draft タスクを検出する", () => {
       const task = makeTask("o/r#10");
       const tasksFile: TasksFile = { tasks: [task], cache: { comments: {}, reactions: {} } };

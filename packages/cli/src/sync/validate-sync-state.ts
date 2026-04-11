@@ -33,8 +33,9 @@ export interface ValidateSyncStateResult {
  * - **orphan id_map**: id_map に存在するが tasksFile に存在しない ID
  *   → 警告のみ (リモート側にはまだ存在する可能性があるため自動削除しない)
  * - **missing id_map** [Issue #167]: tasksFile に存在するが id_map に無い ID
- *   → 警告のみ (validate 自体では修復できないが、次 pull で id_map が rebuild されて
- *     自動修復される。draft タスクと milestone 合成タスクは id_map を使わないため除外)
+ *   → 情報のみ (level: "info"。validate 自体では修復できないが、同一 pull 内で
+ *     pull-executor が id_map を rebuild して自動修復し、autoFixed: true に promote する。
+ *     draft タスクと milestone 合成タスクは id_map を使わないため除外)
  *
  * いずれも pull がタスクをスキップしたり、想定外の挙動を起こす原因になり得る。
  */

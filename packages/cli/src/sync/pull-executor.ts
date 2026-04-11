@@ -147,10 +147,15 @@ export async function executePull(
   // sync-state.json 直接編集等) が tasks.json には入るが id_map には入らない
   // 状態が発生し、その後の push で silent skip される (push-executor.ts:476-479)。
   //
-  // 毎 pull で projectData.items から rebuild することで、pull が外部変化に対する
-  // セルフヒーリング点となる。副次的効果:
-  //   - 外部作成 issue → 次 pull で自動補完
-  //   - 破損した id_map → 次 pull で自動上書き
+  // fetchProject が実行される経路 (pre-check で早期 return していない場合) では、
+  // projectData.items から rebuild することで pull が外部変化に対するセルフヒーリング
+  // 点となる。pre-check で「変化なし」と判定されて早期 return する場合はそもそも
+  // id_map 再構築の必要がない (tasks.json と一致しているはず) が、不整合が検出されて
+  // いる場合は pre-check をバイパスしてこの経路に入るため、セルフヒーリング保証される。
+  //
+  // 副次的効果:
+  //   - 外部作成 issue → 次回 fetchProject を伴う pull で自動補完
+  //   - 破損した id_map → 次回 fetchProject を伴う pull で自動上書き
   //   - stale な node_id → 自動更新
   //   - orphan id_map (project から detach された) → 自動削除
   //
@@ -168,14 +173,23 @@ export async function executePull(
     };
   }
 
-  // [Issue #167] rebuild 後に findings を正しい状態へ promote する。
-  // validateSyncState は rebuild 前の状態で findings を出しているため、missing_id_map
-  // エントリのうち今 rebuild で補完されたものを autoFixed: true に promote し、
-  // メッセージも「次回 pull で補完」ではなく「自動補完しました」の過去形にする。
+  // [Issue #167] rebuild 後に id_map 関連 findings を正しい状態へ promote する。
+  // validateSyncState は rebuild 前の状態で findings を生成しているため、以下を更新:
+  //
+  // - missing_id_map: newIdMap に入った場合のみ "自動補完しました" に promote
+  //   (rebuild しても project に無いままなら未解消のため warn のまま残す)
+  // - orphan_id_map: rebuild により必ず解消される (project に存在すれば
+  //   mergedTasks に追加され、project に無ければ newIdMap から除去される)
+  //   ため常に "自動解消しました" に promote する
   for (const finding of syncStateFindings) {
     if (finding.category === "missing_id_map" && newIdMap[finding.taskId]) {
       finding.autoFixed = true;
+      finding.level = "info";
       finding.message = `${finding.taskId} を id_map に自動補完しました (GraphQL から rebuild)`;
+    } else if (finding.category === "orphan_id_map") {
+      finding.autoFixed = true;
+      finding.level = "info";
+      finding.message = `${finding.taskId} の orphan id_map エントリを自動解消しました (GraphQL から rebuild)`;
     }
   }
 

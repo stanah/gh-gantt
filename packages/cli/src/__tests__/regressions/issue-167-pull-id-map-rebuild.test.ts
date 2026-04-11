@@ -32,16 +32,38 @@ const mockFetchProject = vi.mocked(fetchProject);
 const mockFetchRepoMeta = vi.mocked(fetchRepositoryMetadata);
 const mockCheckRemote = vi.mocked(checkRemoteChanges);
 
+/**
+ * テスト用の最小 Config を構築する。
+ * 本リグレッションテストで参照される Config のパスは限定的だが、
+ * Config インターフェースの必須フィールドはすべて満たす。
+ * 型アサーションを使わず satisfies で shape を検証することで、
+ * 将来 Config に必須フィールドが追加された際にコンパイルエラーで気付けるようにする。
+ */
 function makeConfig(): Config {
-  return {
+  const config = {
+    version: "1",
     project: {
+      name: "test",
       github: { owner: "stanah", repo: "gh-gantt", project_number: 1 },
     },
-    sync: { auto_create_issues: true, field_mapping: {} },
-    task_types: {
-      task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
+    sync: {
+      auto_create_issues: true,
+      conflict_strategy: "remote-wins" as const,
+      field_mapping: {
+        start_date: "Start Date",
+        end_date: "End Date",
+        status: "Status",
+        priority: "Priority",
+      },
     },
-  } as unknown as Config;
+    task_types: {
+      task: { label: "Task", display: "bar" as const, color: "#27AE60", github_label: null },
+    },
+    type_hierarchy: {},
+    statuses: { field_name: "Status", values: {} },
+    gantt: { default_view: "week" as const },
+  } satisfies Config;
+  return config;
 }
 
 function makeSyncState(overrides: Partial<SyncState> = {}): SyncState {
@@ -116,7 +138,7 @@ function makeDraftTask(draftNumber: number): Task {
 
 const gql = vi.fn();
 
-describe("[Issue #167] pull が id_map を authoritative に rebuild する", () => {
+describe("[NFR-STABILITY-001-AC3] [Issue #167] pull が id_map を authoritative に rebuild する", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchRepoMeta.mockResolvedValue({
@@ -480,6 +502,56 @@ describe("[Issue #167] pull が id_map を authoritative に rebuild する", ()
         issue_node_id: "I_10",
         project_item_id: "PVTI_10",
       });
+    });
+
+    it("orphan_id_map finding が rebuild 後 autoFixed に promote される", async () => {
+      // #10 は project に存在するが、id_map には #10 と #999 (orphan) の両方がある。
+      // tasks.json には #10 のみ存在 → validateSyncState が #999 を orphan_id_map として
+      // 検出する。rebuild 後、#999 は newIdMap から除去されるため autoFixed に promote
+      // されるべき。
+      mockFetchProject.mockResolvedValue({
+        projectNodeId: "PVT_1",
+        projectTitle: "Test",
+        fields: [],
+        items: [makeProjectItem(10)],
+      });
+
+      const stateWithOrphan = makeSyncState({
+        id_map: {
+          "stanah/gh-gantt#10": {
+            issue_number: 10,
+            issue_node_id: "I_10",
+            project_item_id: "PVTI_10",
+          },
+          "stanah/gh-gantt#999": {
+            issue_number: 999,
+            issue_node_id: "I_999",
+            project_item_id: "PVTI_999",
+          },
+        },
+      });
+
+      const { result, syncState: newState } = await executePull(
+        gql as never,
+        makeConfig(),
+        makeTasksFile([makeSyncTask(10)]),
+        stateWithOrphan,
+        { force: true },
+      );
+
+      // #999 は newIdMap (= 新 id_map) から除去される
+      expect(newState.id_map["stanah/gh-gantt#999"]).toBeUndefined();
+      expect(newState.id_map["stanah/gh-gantt#10"]).toBeDefined();
+
+      // orphan_id_map finding は autoFixed=true に promote され、
+      // メッセージも過去形に書き換えられる
+      const orphan = result.syncStateFindings.find(
+        (f) => f.category === "orphan_id_map" && f.taskId === "stanah/gh-gantt#999",
+      );
+      expect(orphan).toBeDefined();
+      expect(orphan!.autoFixed).toBe(true);
+      expect(orphan!.level).toBe("info");
+      expect(orphan!.message).toMatch(/自動解消しました/);
     });
   });
 });
