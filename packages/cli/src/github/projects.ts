@@ -208,5 +208,11 @@ export async function checkRemoteChanges(
   since: string,
 ): Promise<boolean> {
   const result: any = await gql(ISSUES_SINCE_QUERY, { owner, repo, since });
-  return result.repository.issues.totalCount > 0;
+  const totalCount = result?.repository?.issues?.totalCount;
+  if (typeof totalCount !== "number") {
+    throw new Error(
+      `pre-check のレスポンスが不正です (repository.issues.totalCount が取得できませんでした)`,
+    );
+  }
+  return totalCount > 0;
 }

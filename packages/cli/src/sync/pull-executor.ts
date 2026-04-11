@@ -64,9 +64,17 @@ export async function executePull(
 
   // Pre-check: issue の更新有無を軽量クエリで確認し、変化なし時はフル fetch をスキップする。
   // force / fullFetch / 初回同期（last_synced_at 空）の場合はバイパス。
+  // pre-check は最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
   const skipPrecheck = opts.force || opts.fullFetch || !syncState.last_synced_at;
   if (!skipPrecheck) {
-    const hasChanges = await checkRemoteChanges(gql, owner, repoName, syncState.last_synced_at);
+    let hasChanges = true;
+    try {
+      hasChanges = await checkRemoteChanges(gql, owner, repoName, syncState.last_synced_at);
+    } catch (error) {
+      console.warn(
+        `  ⚠ pre-check に失敗したためフル fetch にフォールバック: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
     if (!hasChanges) {
       return {
         result: {

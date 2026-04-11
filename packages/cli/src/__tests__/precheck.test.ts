@@ -1,8 +1,8 @@
 import { describe, it, expect, vi } from "vitest";
 import { checkRemoteChanges } from "../github/projects.js";
 
-describe("checkRemoteChanges", () => {
-  it("totalCount > 0 のとき true を返す", async () => {
+describe("[Issue #157] checkRemoteChanges", () => {
+  it("[Issue #157] totalCount > 0 のとき true を返す", async () => {
     const gql = vi.fn().mockResolvedValue({
       repository: { issues: { totalCount: 3 } },
     });
@@ -16,7 +16,7 @@ describe("checkRemoteChanges", () => {
     expect(gql).toHaveBeenCalledOnce();
   });
 
-  it("totalCount === 0 のとき false を返す", async () => {
+  it("[Issue #157] totalCount === 0 のとき false を返す", async () => {
     const gql = vi.fn().mockResolvedValue({
       repository: { issues: { totalCount: 0 } },
     });

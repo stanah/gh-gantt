@@ -1,6 +1,6 @@
 # pull GraphQL pre-check 実装計画
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **エージェント作業者向け:** 必須サブスキルとして `superpowers:subagent-driven-development`（推奨）または `superpowers:executing-plans` を使用し、この計画をタスクごとに実装してください。ステップはチェックボックス (`- [ ]`) 形式で追跡します。
 
 **Goal:** pull 時に変化がなければ 1 回の GraphQL で skip し、フル fetch を回避する
 

@@ -69,7 +69,7 @@ describe("[Issue #157] pull pre-check", () => {
     });
   });
 
-  it("pre-check で変化なし → fetchProject が呼ばれず skipped=true", async () => {
+  it("[Issue #157] pre-check で変化なし → fetchProject が呼ばれず skipped=true", async () => {
     mockCheckRemote.mockResolvedValue(false);
     const syncState = makeEmptySyncState();
 
@@ -80,7 +80,7 @@ describe("[Issue #157] pull pre-check", () => {
     expect(result.skipped).toBe(true);
   });
 
-  it("pre-check で変化あり → fetchProject が呼ばれる", async () => {
+  it("[Issue #157] pre-check で変化あり → fetchProject が呼ばれる", async () => {
     mockCheckRemote.mockResolvedValue(true);
     const syncState = makeEmptySyncState();
 
@@ -90,7 +90,7 @@ describe("[Issue #157] pull pre-check", () => {
     expect(mockFetchProject).toHaveBeenCalledOnce();
   });
 
-  it("fullFetch=true → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
+  it("[Issue #157] fullFetch=true → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
     const syncState = makeEmptySyncState();
 
     await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState, {
@@ -101,7 +101,7 @@ describe("[Issue #157] pull pre-check", () => {
     expect(mockFetchProject).toHaveBeenCalledOnce();
   });
 
-  it("force=true → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
+  it("[Issue #157] force=true → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
     const syncState = makeEmptySyncState();
 
     await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState, { force: true });
@@ -110,12 +110,37 @@ describe("[Issue #157] pull pre-check", () => {
     expect(mockFetchProject).toHaveBeenCalledOnce();
   });
 
-  it("last_synced_at が空 → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
+  it("[Issue #157] last_synced_at が空 → checkRemoteChanges が呼ばれず fetchProject が呼ばれる", async () => {
     const syncState = { ...makeEmptySyncState(), last_synced_at: "" };
 
     await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState);
 
     expect(mockCheckRemote).not.toHaveBeenCalled();
     expect(mockFetchProject).toHaveBeenCalledOnce();
+  });
+
+  it("[Issue #157] pre-check が例外を投げたらフル fetch にフォールバック", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      mockCheckRemote.mockRejectedValue(new Error("rate limit exceeded"));
+      const syncState = makeEmptySyncState();
+
+      const { result } = await executePull(
+        gql as any,
+        makeConfig(),
+        makeEmptyTasksFile(),
+        syncState,
+      );
+
+      expect(mockCheckRemote).toHaveBeenCalledOnce();
+      expect(mockFetchProject).toHaveBeenCalledOnce();
+      expect(result.skipped).toBe(true); // 空→空の quick-skip で skipped=true
+      const warnMsg = warnSpy.mock.calls.find((c) =>
+        (c[0] as string).includes("pre-check に失敗したためフル fetch にフォールバック"),
+      );
+      expect(warnMsg).toBeDefined();
+    } finally {
+      warnSpy.mockRestore();
+    }
   });
 });
