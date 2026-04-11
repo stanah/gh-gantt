@@ -504,6 +504,69 @@ describe("[NFR-STABILITY-001-AC3] [Issue #167] pull が id_map を authoritative
       });
     });
 
+    it("kept-local で detach されたタスクに対して missing_id_map finding が追加される", async () => {
+      // シナリオ: pre-pull 状態は整合 (タスク #10 が tasks.json と id_map の両方にあり、
+      // snapshot も存在する)。pull 中に projectData.items から #10 が消失 (detach) し、
+      // ローカル変更があるため kept-local として mergedTasks に残される。
+      // 結果として「tasks.json にあるが id_map に無い」状態が発生するが、pull 冒頭の
+      // validateSyncState はこれを検出できない (pre-pull 時点では整合していたため)。
+      // 返却前の再検証によって missing_id_map finding が追加されることを検証する。
+      mockFetchProject.mockResolvedValue({
+        projectNodeId: "PVT_1",
+        projectTitle: "Test",
+        fields: [],
+        items: [], // #10 は project から detach された
+      });
+
+      const localTask = makeSyncTask(10);
+      // ローカル変更を表現 (snapshot.hash と現在の hash が異なる状態)
+      localTask.title = "Modified title locally";
+
+      const preConsistentState = makeSyncState({
+        id_map: {
+          "stanah/gh-gantt#10": {
+            issue_number: 10,
+            issue_node_id: "I_10",
+            project_item_id: "PVTI_10",
+          },
+        },
+        snapshots: {
+          "stanah/gh-gantt#10": {
+            // 本物の hash と異なる値を入れることで「ローカル変更あり」を表現
+            hash: "pre-modification-hash",
+            synced_at: "2026-04-01T00:00:00Z",
+            updated_at: "2026-04-01T00:00:00Z",
+          },
+        },
+      });
+
+      const {
+        result,
+        tasksFile: newTasksFile,
+        syncState: newState,
+      } = await executePull(
+        gql as never,
+        makeConfig(),
+        makeTasksFile([localTask]),
+        preConsistentState,
+        { force: true },
+      );
+
+      // kept-local で #10 は tasks.json に残る
+      expect(newTasksFile.tasks.map((t) => t.id)).toContain("stanah/gh-gantt#10");
+      // しかし newIdMap には入らない (projectData.items から消失したため)
+      expect(newState.id_map["stanah/gh-gantt#10"]).toBeUndefined();
+
+      // 返却前の再検証により missing_id_map finding が追加される
+      const missing = result.syncStateFindings.find(
+        (f) => f.category === "missing_id_map" && f.taskId === "stanah/gh-gantt#10",
+      );
+      expect(missing).toBeDefined();
+      expect(missing!.level).toBe("info");
+      // この finding は再検証由来なので autoFixed=false (rebuild で解消されていない)
+      expect(missing!.autoFixed).toBe(false);
+    });
+
     it("orphan_id_map finding が rebuild 後 autoFixed に promote される", async () => {
       // #10 は project に存在するが、id_map には #10 と #999 (orphan) の両方がある。
       // tasks.json には #10 のみ存在 → validateSyncState が #999 を orphan_id_map として

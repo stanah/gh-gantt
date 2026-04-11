@@ -419,6 +419,28 @@ export async function executePull(
     ...(hasConflictsFlag ? { has_conflicts: true } : {}),
   };
 
+  // [Issue #167] 最終状態の再検証。
+  //
+  // pull 冒頭の validateSyncState は pre-pull 状態の不整合しか捕捉できない。
+  // 例えば kept-local で残された detach 済みタスク (projectData.items に無いが
+  // ローカル変更ありで削除しなかったタスク) は、pull 後に tasks.json には存在
+  // するが newIdMap には入らない状態になる。この不整合を放置すると次 push で
+  // push-executor.ts:476-479 により silent skip され、NFR-STABILITY-002 違反に
+  // なる。
+  //
+  // そのため、返却前の newTasksFile + newSyncState に対して再度
+  // validateSyncState を実行し、pull 中に新たに発生した不整合を findings に
+  // 追加する。既に冒頭の validate で報告済みの (category, taskId) はスキップして
+  // 重複を避ける。
+  const finalValidation = validateSyncState(newSyncState, newTasksFile);
+  const reportedKeys = new Set(syncStateFindings.map((f) => `${f.category}:${f.taskId}`));
+  for (const finding of finalValidation.findings) {
+    const key = `${finding.category}:${finding.taskId}`;
+    if (reportedKeys.has(key)) continue;
+    syncStateFindings.push(finding);
+    reportedKeys.add(key);
+  }
+
   return {
     result: {
       added,
