@@ -350,3 +350,74 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/schema.test.ts
+  - id: STABILITY
+    name: Stability & Reliability
+    description: |
+      クロスカッティングな安定性要件。データ整合性、silent failure 禁止、
+      環境差異対応、リグレッション防止を横断的に保証する。
+      詳細な設計判断は ADR-007 (Phase ベースのロードマップ)、
+      ADR-008 (実環境スモークテスト) を参照。
+    requirements:
+      - id: NFR-STABILITY-001
+        summary: sync-state と tasks.json の整合性保証
+        acceptance_criteria:
+          - id: NFR-STABILITY-001-AC1
+            description: |
+              snapshot.hash と tasks.json の内容が不整合な状態で sync 操作を
+              実行した場合、操作前に検知してエラーを返す
+            status: uncovered
+            tests: []
+          - id: NFR-STABILITY-001-AC2
+            description: |
+              resolve --theirs で全コンフリクトを解決した場合、
+              snapshot.hash が正しく更新される (regression #154)
+            status: uncovered
+            tests: []
+      - id: NFR-STABILITY-002
+        summary: silent failure の禁止
+        acceptance_criteria:
+          - id: NFR-STABILITY-002-AC1
+            description: |
+              sub-issue や blocked-by 設定時に issue_node_id が欠損している
+              場合、無言でスキップせずエラーまたは警告として顕在化する
+              (regression #153)
+            status: uncovered
+            tests: []
+          - id: NFR-STABILITY-002-AC2
+            description: |
+              バグ修正 PR には必ず tests/regressions/issue-<N>-<slug>.test.ts
+              の形式でリグレッションテストを追加する (規律)
+            status: uncovered
+            tests: []
+      - id: NFR-STABILITY-003
+        summary: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
+        acceptance_criteria:
+          - id: NFR-STABILITY-003-AC1
+            description: |
+              個人リポジトリに対して init → pull が Labels フォールバックで
+              正しく動作し、生成された gantt.config.json がスナップショットと
+              一致する
+            status: uncovered
+            tests: []
+          - id: NFR-STABILITY-003-AC2
+            description: |
+              Org リポジトリ (Issue Types 有効) に対して init → pull が
+              Issue Types を正しく検出し、生成された gantt.config.json が
+              スナップショットと一致する
+            status: uncovered
+            tests: []
+      - id: NFR-STABILITY-004
+        summary: スモークテストの継続実行による回帰検知
+        acceptance_criteria:
+          - id: NFR-STABILITY-004-AC1
+            description: |
+              pnpm smoke:personal / pnpm smoke:org がローカルから実行可能で、
+              GitHub App による認証が成立する
+            status: uncovered
+            tests: []
+          - id: NFR-STABILITY-004-AC2
+            description: |
+              CI で PR ごとに個人環境スモークが実行され、main マージ後と
+              月次 cron で Org 環境スモークも追加で実行される
+            status: uncovered
+            tests: []
