@@ -19,6 +19,7 @@ export const pullCommand = new Command("pull")
     "Bypass sync-state quick-skip and force a full re-fetch (use when sync-state looks inconsistent)",
   )
   .option("--json", "Output as JSON")
+  .option("--full-fetch", "Skip pre-check and always fetch all project data")
   .action(async (opts) => {
     const projectRoot = process.cwd();
     const configStore = new ConfigStore(projectRoot);
@@ -40,7 +41,10 @@ export const pullCommand = new Command("pull")
       result,
       tasksFile: newTasksFile,
       syncState: newSyncState,
-    } = await executePull(gql, config, tasksFile, syncState, { force: opts.force });
+    } = await executePull(gql, config, tasksFile, syncState, {
+      force: opts.force,
+      fullFetch: opts.fullFetch,
+    });
 
     // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 情報 ℹ / 警告 ⚠)
     if (!opts.json) {

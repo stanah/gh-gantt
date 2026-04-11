@@ -1,6 +1,6 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
-import { fetchProject, fetchRepositoryMetadata } from "../github/projects.js";
+import { fetchProject, fetchRepositoryMetadata, checkRemoteChanges } from "../github/projects.js";
 import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
 import {
   applySubIssueLinks,
@@ -32,6 +32,8 @@ export interface PullResult {
 export interface PullOptions {
   /** sameIdSets quick-skip をバイパスし、フル pull を強制する */
   force?: boolean;
+  /** pre-check をバイパスし、常にフル fetch を実行する */
+  fullFetch?: boolean;
 }
 
 export interface PullTaskDetail {
@@ -59,6 +61,37 @@ export async function executePull(
     tasksFile,
   );
   syncState = validatedSyncState;
+
+  // Pre-check: issue の更新有無を軽量クエリで確認し、変化なし時はフル fetch をスキップする。
+  // force / fullFetch / 初回同期（last_synced_at 空）の場合はバイパス。
+  // pre-check は最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
+  const skipPrecheck = opts.force || opts.fullFetch || !syncState.last_synced_at;
+  if (!skipPrecheck) {
+    let hasChanges = true;
+    try {
+      hasChanges = await checkRemoteChanges(gql, owner, repoName, syncState.last_synced_at);
+    } catch (error) {
+      console.warn(
+        `  ⚠ pre-check に失敗したためフル fetch にフォールバック: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    if (!hasChanges) {
+      return {
+        result: {
+          added: 0,
+          updated: 0,
+          removed: 0,
+          conflicts: 0,
+          hasConflicts: false,
+          details: [],
+          skipped: true,
+          syncStateFindings,
+        },
+        tasksFile,
+        syncState,
+      };
+    }
+  }
 
   // Record which tasks have unpushed local changes BEFORE merging
   const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);

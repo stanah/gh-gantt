@@ -181,3 +181,13 @@ export const ISSUE_RELATIONSHIPS_QUERY = `
     }
   }
 `;
+
+export const ISSUES_SINCE_QUERY = `
+  query($owner: String!, $repo: String!, $since: DateTime!) {
+    repository(owner: $owner, name: $repo) {
+      issues(filterBy: { since: $since }, first: 1) {
+        totalCount
+      }
+    }
+  }
+`;
