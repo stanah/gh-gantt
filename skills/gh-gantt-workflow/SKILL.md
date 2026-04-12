@@ -74,7 +74,7 @@ Evidence: コマンド出力をそのまま提示する。
 11. `git push`
 12. **★`before_pr`** — workflow.md の該当セクションを実行
 13. `gh pr create` — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
-14. **★`on_review_received`**（レビュー指摘を受けた場合）— workflow.md の該当セクションを実行し、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）
+14. **★`on_review_received`**（レビュー指摘を受けた場合）— **REQUIRED:** `gh-gantt-review-cycle` スキルを invoke してレビューサイクルを実行。指摘を精査し、妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。返信は pending review にまとめて 1 回で submit する
 15. **★`on_session_end`** — workflow.md の該当セクションを実行
 16. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 

@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash(gh pr create*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "PR を作成しました。レビューコメントが届いたら `gh-gantt-review-cycle` スキルを使って対応してください。\n\n即座にレビューを確認する場合:\n1. gh api repos/{owner}/{repo}/pulls/{number}/reviews でレビュー状態を確認\n2. Bot レビュー (CodeRabbit, Copilot) が届いていれば精査を開始\n\nセッション内で待機する場合: /loop で定期的にレビュー状態をポーリングできます。"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash(git commit*)",
