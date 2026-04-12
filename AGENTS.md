@@ -71,6 +71,27 @@ pnpm --filter @gh-gantt/cli exec vp test run src/__tests__/hash.test.ts
 pnpm build && pnpm --filter @gh-gantt/cli exec pnpm link --global
 ```
 
+### CI 再現チェック
+
+`lefthook` の pre-push フックが CI (`.github/workflows/ci.yml`) と同等のチェックを自動実行する。
+push 前に以下が順に走るため、CI で落ちることを事前に検出できる。
+
+| ステップ     | コマンド                                  | 目的                                          |
+| ------------ | ----------------------------------------- | --------------------------------------------- |
+| test         | `pnpm test:json`                          | 全テスト + JSON レポーター (req:trace の入力) |
+| build        | `pnpm build`                              | ビルド検証                                    |
+| req-trace    | `pnpm req:trace` + `git diff --exit-code` | requirements.yaml のトレーサビリティ検証      |
+| req-validate | `pnpm req:validate`                       | テストタグと requirements.yaml の整合性       |
+| docs-gen     | `pnpm docs:gen` + `git diff --exit-code`  | 生成ドキュメントの drift 検出                 |
+
+pre-commit フックではブランチ状態チェック（main への直接コミット防止、マージ済みブランチへの誤コミット検出）も実行する。
+
+**手動で CI 相当のチェックを実行する場合:**
+
+```bash
+pnpm test:json && pnpm build && pnpm req:trace && git diff --exit-code docs/requirements.yaml && pnpm req:validate && pnpm docs:gen && git diff --exit-code docs/generated/
+```
+
 ## アーキテクチャ
 
 pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
