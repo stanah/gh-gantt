@@ -51,7 +51,7 @@ jobs:
       - run: vp run build
 
       - name: 個人環境スモークテスト
-        run: pnpm smoke:personal
+        run: vp run smoke:personal
         env:
           GITHUB_TOKEN: ${{ secrets.SMOKE_GITHUB_TOKEN }}
           SMOKE_PERSONAL_REPO: ${{ vars.SMOKE_PERSONAL_REPO }}
@@ -87,7 +87,7 @@ jobs:
           owner: gh-gantt-e2e
 
       - name: Org 環境スモークテスト
-        run: pnpm smoke:org
+        run: vp run smoke:org
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           SMOKE_ORG_REPO: ${{ vars.SMOKE_ORG_REPO }}
