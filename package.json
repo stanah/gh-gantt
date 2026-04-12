@@ -19,6 +19,8 @@
     "req:validate": "tsx scripts/req-validate.ts"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.58.2",
     "lefthook": "^2.1.4",
     "tsx": "^4.21.0",
