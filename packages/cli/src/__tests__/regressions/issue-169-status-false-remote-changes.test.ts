@@ -125,7 +125,7 @@ function makeTask(issueNumber: number, updatedAt = "2026-04-01T00:00:00Z"): Task
 
 const gql = vi.fn();
 
-describe("[Issue #169] pull がハッシュ一致でも snapshot.updated_at を refresh する (#36 regression)", () => {
+describe("[NFR-STABILITY-001-AC5] [Issue #169] pull がハッシュ一致でも snapshot.updated_at を refresh する (#36 regression)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockFetchRepoMeta.mockResolvedValue({
@@ -136,7 +136,7 @@ describe("[Issue #169] pull がハッシュ一致でも snapshot.updated_at を 
     mockCheckRemote.mockResolvedValue(true);
   });
 
-  it("ハッシュ一致 + updated_at のみ進行 → snapshot.updated_at が remote に追従する", async () => {
+  it("[Issue #169] ハッシュ一致 + updated_at のみ進行 → snapshot.updated_at が remote に追従する", async () => {
     const oldUpdatedAt = "2026-04-01T00:00:00Z";
     const newUpdatedAt = "2026-04-05T12:00:00Z";
 
@@ -204,7 +204,7 @@ describe("[Issue #169] pull がハッシュ一致でも snapshot.updated_at を 
     expect(snap!.updated_at).toBe(newUpdatedAt);
   });
 
-  it("updated_at 追従後の 2 回目 pull で quick-skip が正しく機能する", async () => {
+  it("[Issue #169] updated_at 追従後の 2 回目 pull で quick-skip が正しく機能する", async () => {
     const oldUpdatedAt = "2026-04-01T00:00:00Z";
     const newUpdatedAt = "2026-04-05T12:00:00Z";
 
@@ -272,7 +272,7 @@ describe("[Issue #169] pull がハッシュ一致でも snapshot.updated_at を 
     expect(secondResult.skipped).toBe(true);
   });
 
-  it("複数タスクで一部のみ updated_at が進行 → 進行分のみ refresh される", async () => {
+  it("[Issue #169] 複数タスクで一部のみ updated_at が進行 → 進行分のみ refresh される", async () => {
     const baseTime = "2026-04-01T00:00:00Z";
     const advancedTime = "2026-04-05T12:00:00Z";
 
