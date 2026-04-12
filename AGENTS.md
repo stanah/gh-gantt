@@ -82,14 +82,14 @@ push 前に以下が順に走るため、CI で落ちることを事前に検出
 | build        | `pnpm build`                              | ビルド検証                                    |
 | req-trace    | `pnpm req:trace` + `git diff --exit-code` | requirements.yaml のトレーサビリティ検証      |
 | req-validate | `pnpm req:validate`                       | テストタグと requirements.yaml の整合性       |
-| docs-gen     | `pnpm docs:gen` + `git diff --exit-code`  | 生成ドキュメントの drift 検出                 |
+| docs-gen     | `pnpm docs:gen`                           | 生成ドキュメントの生成確認                    |
 
 pre-commit フックではブランチ状態チェック（main への直接コミット防止、マージ済みブランチへの誤コミット検出）も実行する。
 
 **手動で CI 相当のチェックを実行する場合:**
 
 ```bash
-pnpm test:json && pnpm build && pnpm req:trace && git diff --exit-code docs/requirements.yaml && pnpm req:validate && pnpm docs:gen && git diff --exit-code docs/generated/
+pnpm test:json && pnpm build && pnpm req:trace && git diff --exit-code docs/requirements.yaml && pnpm req:validate && pnpm docs:gen
 ```
 
 ## アーキテクチャ

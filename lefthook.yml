@@ -12,7 +12,7 @@ pre-commit:
           exit 1
         fi
         if command -v gh >/dev/null 2>&1; then
-          state=$(gh pr list --head "$branch" --state merged --json number --jq '.[0].number' 2>/dev/null)
+          state=$(gh pr list --head "$branch" --state merged --json number --jq '.[0].number // empty' 2>/dev/null)
           if [ -n "$state" ]; then
             echo "⚠ このブランチの PR #$state は既にマージ済みです。main に戻って新しいブランチを作成してください。"
             exit 1
@@ -40,6 +40,6 @@ pre-push:
       # テストファイルの [FR-*]/[NFR-*] タグと requirements.yaml の整合性を検証する。
       run: vp run req:validate < /dev/null
     - name: docs-gen
-      run: |
-        vp run docs:gen < /dev/null
-        git diff --exit-code docs/generated/ || (echo "docs/generated/ is out of date. Run 'pnpm docs:gen' and commit." && exit 1)
+      # docs/generated/ は gitignore 対象のため差分検出は行わず、
+      # ドキュメント生成コマンド自体が成功することのみ確認する。
+      run: vp run docs:gen < /dev/null

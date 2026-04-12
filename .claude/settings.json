@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "branch=$(git branch --show-current) && if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo '⚠ main ブランチへの直接コミットは禁止です。feature ブランチを作成してください。' >&2; exit 2; fi && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
+            "command": "branch=$(git branch --show-current) && if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo '⚠ main ブランチへの直接コミットは禁止です。feature ブランチを作成してください。' >&2; exit 2; fi && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number // empty' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
           },
           {
             "type": "prompt",
@@ -19,7 +19,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "branch=$(git branch --show-current) && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
+            "command": "branch=$(git branch --show-current) && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number // empty' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
           }
         ]
       },
