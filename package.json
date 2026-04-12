@@ -1,9 +1,10 @@
 {
   "name": "gh-gantt",
-  "version": "0.1.0",
+  "version": "0.1.0-alpha",
   "private": true,
   "description": "GitHub Projects Gantt chart with hierarchical progress tracking",
   "license": "MIT",
+  "type": "module",
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev & gh-gantt serve --api-only & wait",
@@ -19,6 +20,8 @@
     "req:validate": "tsx scripts/req-validate.ts"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@playwright/test": "^1.58.2",
     "lefthook": "^2.1.4",
     "tsx": "^4.21.0",
