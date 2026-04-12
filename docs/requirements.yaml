@@ -391,6 +391,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/validate-sync-state.test.ts
+          - id: NFR-STABILITY-001-AC5
+            description: |
+              pull がハッシュ一致 (内容変更なし) の場合でも snapshot.updated_at
+              を remote 側の updated_at に追従させ、status コマンドが false positive
+              な「Remote changes」を報告しない (regression #169, #36)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-169-status-false-remote-changes.test.ts
       - id: NFR-STABILITY-002
         summary: silent failure の禁止
         acceptance_criteria:
