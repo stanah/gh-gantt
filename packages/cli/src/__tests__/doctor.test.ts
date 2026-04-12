@@ -1,11 +1,20 @@
 /**
  * [NFR-STABILITY-001] doctor コマンドの整合性チェック
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { mkdtemp, mkdir, writeFile, rm, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
+import {
+  detectCycles,
+  GANTT_DIR,
+  CONFIG_FILE,
+  TASKS_FILE,
+  SYNC_STATE_FILE,
+} from "@gh-gantt/shared";
+import type { Task, SyncState, TasksFile, Config } from "@gh-gantt/shared";
 
-// doctor.ts 内部のチェック関数をテストするため、モジュールを動的にインポートする
-// ファイル読み込みと execFile をモックして純粋にロジックをテストする
+// ── ヘルパー ──
 
 function makeTask(id: string, overrides: Partial<Task> = {}): Task {
   return {
@@ -53,46 +62,124 @@ function makeTasksFile(tasks: Task[]): TasksFile {
   };
 }
 
-// doctor コマンドは fs と execFile に依存するため、
-// 内部ロジックのテストはチェック対象ごとに分離する
+function makeConfig(): Config {
+  return {
+    version: "1",
+    project: {
+      name: "test",
+      github: { owner: "o", repo: "r", project_number: 1 },
+    },
+    sync: {
+      auto_create_issues: false,
+      field_mapping: { start_date: "Start", end_date: "End", status: "Status" },
+    },
+    task_types: {
+      task: { label: "Task", display: "bar", color: "#000", github_label: null },
+    },
+    type_hierarchy: {},
+    statuses: { field_name: "Status", values: { Done: { color: "#0f0", done: true } } },
+    gantt: {
+      default_view: "week",
+      working_days: [1, 2, 3, 4, 5],
+      colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+    },
+  };
+}
+
+async function setupProjectDir(opts: {
+  config?: Config | false;
+  tasksFile?: TasksFile | false;
+  syncState?: SyncState | false;
+}): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "doctor-test-"));
+  const ganttDir = join(dir, GANTT_DIR);
+  await mkdir(ganttDir, { recursive: true });
+
+  if (opts.config !== false) {
+    await writeFile(
+      join(ganttDir, CONFIG_FILE),
+      JSON.stringify(opts.config ?? makeConfig(), null, 2),
+    );
+  }
+  if (opts.tasksFile !== false) {
+    await writeFile(
+      join(ganttDir, TASKS_FILE),
+      JSON.stringify(opts.tasksFile ?? makeTasksFile([]), null, 2),
+    );
+  }
+  if (opts.syncState !== false) {
+    await writeFile(
+      join(ganttDir, SYNC_STATE_FILE),
+      JSON.stringify(opts.syncState ?? makeSyncState(), null, 2),
+    );
+  }
+
+  return dir;
+}
+
+/**
+ * doctor コマンドを --json --offline で実行し結果オブジェクトを返す。
+ * --offline を常に付与して GitHub 認証の外部依存を排除する。
+ */
+async function runDoctorJson(
+  dir: string,
+  extraArgs: string[] = [],
+): Promise<{
+  checks: Array<{
+    name: string;
+    status: string;
+    message: string;
+    details?: string[];
+    fixed?: boolean;
+  }>;
+  summary: { pass: number; warn: number; fail: number };
+}> {
+  const originalCwd = process.cwd();
+  process.chdir(dir);
+
+  const logs: string[] = [];
+  const origLog = console.log;
+  console.log = (...args: unknown[]) => logs.push(args.join(" "));
+  const origExitCode = process.exitCode;
+
+  try {
+    const { doctorCommand } = await import("../commands/doctor.js");
+    const args = ["node", "doctor", "--json"];
+    // --offline がまだ含まれていなければ追加
+    if (!extraArgs.includes("--offline")) {
+      args.push("--offline");
+    }
+    args.push(...extraArgs);
+    await doctorCommand.parseAsync(args, { from: "user" });
+    return JSON.parse(logs.join(""));
+  } finally {
+    console.log = origLog;
+    process.exitCode = origExitCode;
+    process.chdir(originalCwd);
+  }
+}
+
+// ── テスト ──
 
 describe("[NFR-STABILITY-001] doctor コマンド", () => {
-  describe("循環依存チェック", () => {
-    // detectCycles のロジックを直接テスト（doctor.ts と同じアルゴリズム）
-    function detectCycles(tasks: Task[]): string[][] {
-      const graph = new Map<string, string[]>();
-      for (const task of tasks) {
-        if (!graph.has(task.id)) graph.set(task.id, []);
-        for (const dep of task.blocked_by) {
-          if (!graph.has(dep.task)) graph.set(dep.task, []);
-          graph.get(dep.task)!.push(task.id);
-        }
-      }
-      const cycles: string[][] = [];
-      const visited = new Set<string>();
-      const inStack = new Set<string>();
-      const path: string[] = [];
-      function dfs(node: string) {
-        visited.add(node);
-        inStack.add(node);
-        path.push(node);
-        for (const neighbor of graph.get(node) ?? []) {
-          if (inStack.has(neighbor)) {
-            const cycleStart = path.indexOf(neighbor);
-            cycles.push(path.slice(cycleStart));
-          } else if (!visited.has(neighbor)) {
-            dfs(neighbor);
-          }
-        }
-        path.pop();
-        inStack.delete(node);
-      }
-      for (const node of graph.keys()) {
-        if (!visited.has(node)) dfs(node);
-      }
-      return cycles;
-    }
+  let testDir: string | undefined;
+  const safeDir = tmpdir();
 
+  beforeEach(() => {
+    process.chdir(safeDir);
+  });
+
+  afterEach(async () => {
+    process.chdir(safeDir);
+    if (testDir) {
+      await rm(testDir, { recursive: true, force: true });
+      testDir = undefined;
+    }
+  });
+
+  // ── 単体ロジックテスト（shared の detectCycles を使用） ──
+
+  describe("循環依存チェック（shared detectCycles）", () => {
     it("循環がない場合は空配列を返す", () => {
       const tasks = [
         makeTask("A"),
@@ -126,102 +213,181 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
     });
   });
 
-  describe("id_map 整合性チェック", () => {
-    function checkIdMap(tasksFile: TasksFile, syncState: SyncState) {
-      const taskIds = new Set(tasksFile.tasks.map((t) => t.id));
-      const idMapKeys = new Set(Object.keys(syncState.id_map));
-      const issues: string[] = [];
-      for (const id of idMapKeys) {
-        if (!taskIds.has(id)) {
-          issues.push(`id_map に ${id} がありますが tasks.json に存在しません`);
-        }
-      }
-      for (const task of tasksFile.tasks) {
-        if (task.id.startsWith("draft-")) continue;
-        if (task.id.startsWith("milestone-")) continue;
-        if (!idMapKeys.has(task.id)) {
-          issues.push(`${task.id} が id_map に存在しません`);
-        }
-      }
-      return issues;
-    }
+  // ── コマンド定義テスト ──
 
-    it("整合している場合は空配列を返す", () => {
-      const tasks = [makeTask("stanah/gh-gantt#1")];
-      const syncState = makeSyncState({
-        id_map: {
-          "stanah/gh-gantt#1": {
-            issue_number: 1,
-            issue_node_id: "I_1",
-            project_item_id: "PVTI_1",
-          },
-        },
-      });
-      expect(checkIdMap(makeTasksFile(tasks), syncState)).toEqual([]);
+  describe("コマンド定義", () => {
+    it("doctor コマンドが program に登録されている", async () => {
+      const { buildProgram } = await import("../program.js");
+      const program = buildProgram();
+      const names = program.commands.map((c) => c.name());
+      expect(names).toContain("doctor");
     });
 
-    it("id_map に余分なエントリがある場合を検出する", () => {
-      const syncState = makeSyncState({
-        id_map: {
-          "stanah/gh-gantt#99": {
-            issue_number: 99,
-            issue_node_id: "I_99",
-            project_item_id: "PVTI_99",
-          },
-        },
-      });
-      const issues = checkIdMap(makeTasksFile([]), syncState);
-      expect(issues).toHaveLength(1);
-      expect(issues[0]).toContain("#99");
-    });
-
-    it("tasks にあるが id_map に無いエントリを検出する", () => {
-      const tasks = [makeTask("stanah/gh-gantt#5")];
-      const issues = checkIdMap(makeTasksFile(tasks), makeSyncState());
-      expect(issues).toHaveLength(1);
-      expect(issues[0]).toContain("#5");
-    });
-
-    it("draft タスクは id_map 不在でもスキップする", () => {
-      const tasks = [makeTask("draft-abc")];
-      const issues = checkIdMap(makeTasksFile(tasks), makeSyncState());
-      expect(issues).toEqual([]);
-    });
-
-    it("milestone 合成タスクは id_map 不在でもスキップする", () => {
-      const tasks = [makeTask("milestone-v1")];
-      const issues = checkIdMap(makeTasksFile(tasks), makeSyncState());
-      expect(issues).toEqual([]);
+    it("--fix, --offline, --json オプションが定義されている", async () => {
+      const { doctorCommand } = await import("../commands/doctor.js");
+      const optionNames = doctorCommand.options.map((o) => o.long);
+      expect(optionNames).toContain("--fix");
+      expect(optionNames).toContain("--offline");
+      expect(optionNames).toContain("--json");
     });
   });
 
-  describe("ハッシュ整合性チェック", () => {
-    it("snapshot.hash が空文字列の場合に検出する", () => {
-      const tasks = [makeTask("stanah/gh-gantt#1")];
-      const syncState = makeSyncState({
-        snapshots: {
-          "stanah/gh-gantt#1": {
-            hash: "",
-            synced_at: "",
-          },
-        },
-      });
-      // hash が空 → 不整合
-      const snapshot = syncState.snapshots["stanah/gh-gantt#1"];
-      expect(!snapshot.hash || typeof snapshot.hash !== "string").toBe(true);
+  // ── 統合テスト（ファイルシステムベース） ──
+
+  describe("ファイル存在チェック", () => {
+    it("全ファイルが正常な場合 PASS を返す", async () => {
+      testDir = await setupProjectDir({});
+      const output = await runDoctorJson(testDir);
+
+      const configCheck = output.checks.find((c) => c.name === "config-schema");
+      expect(configCheck?.status).toBe("PASS");
+      const tasksCheck = output.checks.find((c) => c.name === "tasks-file");
+      expect(tasksCheck?.status).toBe("PASS");
+      const stateCheck = output.checks.find((c) => c.name === "sync-state-file");
+      expect(stateCheck?.status).toBe("PASS");
     });
 
-    it("正常な snapshot.hash は問題なし", () => {
-      const syncState = makeSyncState({
-        snapshots: {
-          "stanah/gh-gantt#1": {
-            hash: "abc123def456",
-            synced_at: "",
+    it("config が存在しない場合 FAIL を返す", async () => {
+      testDir = await setupProjectDir({ config: false });
+      const output = await runDoctorJson(testDir);
+
+      const configCheck = output.checks.find((c) => c.name === "config-schema");
+      expect(configCheck?.status).toBe("FAIL");
+      expect(configCheck?.message).toContain("見つかりません");
+    });
+
+    it("tasks.json が存在しない場合 FAIL を返す", async () => {
+      testDir = await setupProjectDir({ tasksFile: false });
+      const output = await runDoctorJson(testDir);
+
+      const tasksCheck = output.checks.find((c) => c.name === "tasks-file");
+      expect(tasksCheck?.status).toBe("FAIL");
+    });
+
+    it("sync-state.json が存在しない場合 FAIL を返す", async () => {
+      testDir = await setupProjectDir({ syncState: false });
+      const output = await runDoctorJson(testDir);
+
+      const stateCheck = output.checks.find((c) => c.name === "sync-state-file");
+      expect(stateCheck?.status).toBe("FAIL");
+    });
+  });
+
+  describe("循環依存検出（統合）", () => {
+    it("循環がなければ PASS", async () => {
+      const tasks = [
+        makeTask("o/r#1", { github_issue: 1 }),
+        makeTask("o/r#2", {
+          github_issue: 2,
+          blocked_by: [{ task: "o/r#1", type: "finish-to-start", lag: 0 }],
+        }),
+      ];
+      testDir = await setupProjectDir({
+        tasksFile: makeTasksFile(tasks),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+            "o/r#2": { issue_number: 2, issue_node_id: "I_2", project_item_id: "PI_2" },
           },
-        },
+          snapshots: {
+            "o/r#1": { hash: "abc", synced_at: "2026-01-01T00:00:00Z" },
+            "o/r#2": { hash: "def", synced_at: "2026-01-01T00:00:00Z" },
+          },
+        }),
       });
-      const snapshot = syncState.snapshots["stanah/gh-gantt#1"];
-      expect(!snapshot.hash || typeof snapshot.hash !== "string").toBe(false);
+
+      const output = await runDoctorJson(testDir);
+      const cycleCheck = output.checks.find((c) => c.name === "dependency-cycles");
+      expect(cycleCheck?.status).toBe("PASS");
+    });
+
+    it("循環があれば FAIL と詳細を返す", async () => {
+      const tasks = [
+        makeTask("o/r#1", {
+          github_issue: 1,
+          blocked_by: [{ task: "o/r#2", type: "finish-to-start", lag: 0 }],
+        }),
+        makeTask("o/r#2", {
+          github_issue: 2,
+          blocked_by: [{ task: "o/r#1", type: "finish-to-start", lag: 0 }],
+        }),
+      ];
+      testDir = await setupProjectDir({
+        tasksFile: makeTasksFile(tasks),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+            "o/r#2": { issue_number: 2, issue_node_id: "I_2", project_item_id: "PI_2" },
+          },
+          snapshots: {
+            "o/r#1": { hash: "abc", synced_at: "2026-01-01T00:00:00Z" },
+            "o/r#2": { hash: "def", synced_at: "2026-01-01T00:00:00Z" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const cycleCheck = output.checks.find((c) => c.name === "dependency-cycles");
+      expect(cycleCheck?.status).toBe("FAIL");
+      expect(cycleCheck?.details?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("--fix オプション", () => {
+    it("--fix なしでは sync-state.json を書き換えない", async () => {
+      testDir = await setupProjectDir({
+        tasksFile: makeTasksFile([]),
+        syncState: makeSyncState({
+          snapshots: {
+            "orphan-2": { hash: "xyz", synced_at: "2026-01-01T00:00:00Z" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const integrityCheck = output.checks.find((c) => c.name === "sync-state-integrity");
+      expect(integrityCheck?.fixed).toBeUndefined();
+
+      // sync-state.json が書き戻されていないことを確認
+      const written = JSON.parse(
+        await readFile(join(testDir, GANTT_DIR, SYNC_STATE_FILE), "utf-8"),
+      );
+      expect(written.snapshots["orphan-2"]).toBeDefined();
+    });
+
+    it("orphan snapshot を自動修復して書き戻す", async () => {
+      testDir = await setupProjectDir({
+        tasksFile: makeTasksFile([]),
+        syncState: makeSyncState({
+          snapshots: {
+            "orphan-1": { hash: "abc", synced_at: "2026-01-01T00:00:00Z" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir, ["--fix"]);
+      const integrityCheck = output.checks.find((c) => c.name === "sync-state-integrity");
+      expect(integrityCheck?.fixed).toBe(true);
+
+      // sync-state.json が書き戻されていることを確認
+      const written = JSON.parse(
+        await readFile(join(testDir, GANTT_DIR, SYNC_STATE_FILE), "utf-8"),
+      );
+      expect(written.snapshots["orphan-1"]).toBeUndefined();
+    });
+  });
+
+  describe("終了コード", () => {
+    it("問題がなければ summary.fail が 0", async () => {
+      testDir = await setupProjectDir({});
+      const output = await runDoctorJson(testDir);
+      expect(output.summary.fail).toBe(0);
+    });
+
+    it("FAIL チェックがあれば summary.fail > 0", async () => {
+      testDir = await setupProjectDir({ config: false });
+      const output = await runDoctorJson(testDir);
+      expect(output.summary.fail).toBeGreaterThan(0);
     });
   });
 });
