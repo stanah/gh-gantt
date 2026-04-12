@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash(git commit*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "branch=$(git branch --show-current) && if [ \"$branch\" = \"main\" ] || [ \"$branch\" = \"master\" ]; then echo '⚠ main ブランチへの直接コミットは禁止です。feature ブランチを作成してください。' >&2; exit 2; fi && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
+          },
+          {
+            "type": "prompt",
+            "prompt": "コミット前チェックリスト:\n1. git diff で変更内容を確認したか\n2. レビュー (code-reviewer 等) を invoke してその結果をユーザーに提示したか\n3. ユーザーから明示的な承認（「OK」「進めて」等）を得たか\n4. 要件トレーサビリティテスト・リグレッションテストに適切なプレフィックスを付与したか\n\n未完了の項目がある場合、コミットを中止して先に実施すること。\nユーザーがレビュー省略を明示した場合のみスキップ可。"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "branch=$(git branch --show-current) && if command -v gh >/dev/null 2>&1; then merged=$(gh pr list --head \"$branch\" --state merged --json number --jq '.[0].number' 2>/dev/null); if [ -n \"$merged\" ]; then echo \"⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。\" >&2; exit 2; fi; fi"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(gh pr create*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "PR 作成前チェックリスト:\n1. 現在のブランチが最新の main から分岐しているか\n2. pnpm test:json が全パスしたか\n3. pnpm req:trace && git diff --exit-code docs/requirements.yaml が通ったか\n4. pnpm build が成功したか\n5. push 済みか（pre-push フックが全チェックを自動実行する）\n\n未確認の項目がある場合、先に確認・実行すること。"
+          }
+        ]
+      }
+    ]
+  }
+}
