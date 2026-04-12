@@ -1,5 +1,16 @@
 {
   "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash(gh pr create*)",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "PR が作成されました。gh-gantt-review-cycle スキルを invoke し、Phase 0 (自動監視) を開始してください。これは REQUIRED です。レビューが届くまで /loop で自動ポーリングしてください。手動チェックに頼ってはなりません。"
+          }
+        ]
+      }
+    ],
     "PreToolUse": [
       {
         "matcher": "Bash(git commit*)",
