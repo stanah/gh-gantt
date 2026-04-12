@@ -11,6 +11,7 @@ import { createTaskUpdateCommand } from "./commands/task/update.js";
 import { createTaskLinkCommand } from "./commands/task/link.js";
 import { conflictsCommand } from "./commands/conflicts.js";
 import { resolveCommand } from "./commands/resolve.js";
+import { doctorCommand } from "./commands/doctor.js";
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -25,6 +26,7 @@ export function buildProgram(): Command {
   program.addCommand(createCommand);
   program.addCommand(conflictsCommand);
   program.addCommand(resolveCommand);
+  program.addCommand(doctorCommand);
 
   // Flattened task commands (formerly under `task` subcommand)
   program.addCommand(createTaskListCommand());
