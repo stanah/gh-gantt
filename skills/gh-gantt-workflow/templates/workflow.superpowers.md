@@ -14,7 +14,8 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. 直近の PR 状態を確認する（`gh pr list --author @me`）
+3. 直近の PR 状態を確認する（`gh pr list --author @me --state open --json number,title,reviewDecision`）
+4. open PR にレビューが届いている場合（`reviewDecision` が `CHANGES_REQUESTED` または reviews/comments が存在）、`gh-gantt-review-cycle` スキルを invoke してレビュー対応を開始する
 
 ## on_task_selected
 
