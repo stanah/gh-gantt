@@ -1,0 +1,94 @@
+name: Smoke Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # 毎月1日 00:00 UTC に実行
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "実行環境 (personal / org / both)"
+        required: false
+        default: "both"
+        type: choice
+        options:
+          - personal
+          - org
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # PR ごと: 個人環境のみ
+  smoke-personal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # PR、main push、cron、または手動で personal/both が指定された場合
+    if: >-
+      github.event_name == 'pull_request' ||
+      github.event_name == 'push' ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.env == 'personal' || inputs.env == 'both'))
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+      - run: vp run build
+
+      - name: 個人環境スモークテスト
+        run: vp run smoke:personal
+        env:
+          GITHUB_TOKEN: ${{ secrets.SMOKE_GITHUB_TOKEN }}
+          SMOKE_PERSONAL_REPO: ${{ vars.SMOKE_PERSONAL_REPO }}
+          SMOKE_PERSONAL_PROJECT_URL: ${{ vars.SMOKE_PERSONAL_PROJECT_URL }}
+
+  # main マージ後 + cron: Org 環境
+  smoke-org:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # main push、cron、または手動で org/both が指定された場合
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' &&
+       (inputs.env == 'org' || inputs.env == 'both'))
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+      - run: vp run build
+
+      - name: GitHub App トークンを取得
+        id: app-token
+        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2
+        with:
+          app-id: ${{ secrets.SMOKE_APP_ID }}
+          private-key: ${{ secrets.SMOKE_APP_PRIVATE_KEY }}
+          owner: gh-gantt-e2e
+
+      - name: Org 環境スモークテスト
+        run: vp run smoke:org
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          SMOKE_ORG_REPO: ${{ vars.SMOKE_ORG_REPO }}
+          SMOKE_ORG_PROJECT_URL: ${{ vars.SMOKE_ORG_PROJECT_URL }}

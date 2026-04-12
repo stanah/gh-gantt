@@ -423,15 +423,17 @@ areas:
               個人リポジトリに対して init → pull が Labels フォールバックで
               正しく動作し、生成された gantt.config.json がスナップショットと
               一致する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/smoke.test.ts
           - id: NFR-STABILITY-003-AC2
             description: |
               Org リポジトリ (Issue Types 有効) に対して init → pull が
               Issue Types を正しく検出し、生成された gantt.config.json が
               スナップショットと一致する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/smoke.test.ts
       - id: NFR-STABILITY-004
         summary: スモークテストの継続実行による回帰検知
         acceptance_criteria:
@@ -439,11 +441,13 @@ areas:
             description: |
               pnpm smoke:personal / pnpm smoke:org がローカルから実行可能で、
               GitHub App による認証が成立する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/smoke.test.ts
           - id: NFR-STABILITY-004-AC2
             description: |
               CI で PR ごとに個人環境スモークが実行され、main マージ後と
               月次 cron で Org 環境スモークも追加で実行される
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/smoke.test.ts
