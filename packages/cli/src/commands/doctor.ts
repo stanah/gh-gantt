@@ -183,6 +183,15 @@ function checkHashIntegrity(tasksFile: TasksFile, syncState: SyncState): CheckRe
 
     if (!snapshot.hash || typeof snapshot.hash !== "string") {
       mismatches.push(`${task.id}: snapshot.hash が不正 (値: ${JSON.stringify(snapshot.hash)})`);
+      continue;
+    }
+
+    // hashTask() で再計算し、snapshot.hash と比較
+    const recalculated = hashTask(task);
+    if (recalculated !== snapshot.hash) {
+      mismatches.push(
+        `${task.id}: ハッシュ不一致 (snapshot: ${snapshot.hash.slice(0, 8)}... / 再計算: ${recalculated.slice(0, 8)}...)`,
+      );
     }
   }
 
@@ -218,6 +227,26 @@ async function checkGitHubAuth(): Promise<CheckResult> {
     await execFileAsync("gh", ["auth", "status"], { timeout: 10000 });
     return { name: "github-auth", status: "PASS", message: "GitHub 認証は有効です" };
   } catch (err) {
+    // gh CLI が未インストールの場合
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        name: "github-auth",
+        status: "WARN",
+        message: "gh CLI が見つかりません。インストールしてください",
+      };
+    }
+    // タイムアウト
+    if (
+      (err as NodeJS.ErrnoException).code === "ETIMEDOUT" ||
+      (err as { killed?: boolean }).killed
+    ) {
+      return {
+        name: "github-auth",
+        status: "WARN",
+        message: "gh auth status がタイムアウトしました。ネットワーク接続を確認してください",
+      };
+    }
+    // 認証エラー
     const message =
       err instanceof Error && "stderr" in err ? (err as { stderr: string }).stderr : String(err);
     return {
@@ -265,8 +294,8 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
       await new SyncStateStore(projectRoot).write(fixedSyncState);
     }
 
-    // 5. hash 整合性
-    checks.push(checkHashIntegrity(tasksFile, syncState));
+    // 5. hash 整合性 (修復後の syncState があればそちらを使用)
+    checks.push(checkHashIntegrity(tasksFile, fixedSyncState ?? syncState));
 
     // 6. 循環依存検出
     checks.push(checkCycles(tasksFile.tasks));
