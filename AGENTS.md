@@ -104,7 +104,13 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 
 このプロジェクトでは**日本語を第一言語とする**。以下はすべて日本語で記述すること：
 
-- **コミットメッセージ** — タイトル・本文ともに日本語（prefix は英語: `feat:`, `fix:`, `docs:` 等）
+- **コミットメッセージ** — Conventional Commits 準拠 (ADR-009)。commitlint で強制される
+  - 形式: `type(scope): 日本語の説明 (#Issue番号)`
+  - type: `feat`, `fix`, `docs`, `ci`, `chore`, `refactor`, `test`, `perf`, `style`, `build`
+  - scope (任意): パッケージ名 (`cli`, `shared`, `ui`) やドメイン (`sync`, `harness`, `api`)
+  - 例: `feat(sync): pull 時の差分検出を改善 (#123)`
+  - 例: `fix: タスク一覧の表示順を修正 (#456)`
+  - **移行ルール**: 旧ブラケット記法 `[E-1] 説明` → `feat(harness): 説明 (E-1)` のように type + scope に変換し、旧 ID は末尾の括弧に残す
 - **コードコメント** — インラインコメント、ブロックコメントすべて日本語
 - **テスト名** — `describe` / `it` の文字列は日本語
   - 要件トレーサビリティテスト: `describe` に `[FR-*]` / `[NFR-*]` プレフィックスを付与（`req:trace` が走査する対象）
