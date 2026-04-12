@@ -2,10 +2,44 @@ no_tty: true
 
 pre-commit:
   jobs:
+    - name: branch-check
+      # マージ済み PR があるブランチへの誤コミットを防止する。
+      # main/master ブランチへの直接コミットも警告する。
+      run: |
+        branch=$(git branch --show-current)
+        if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+          echo "⚠ main ブランチへの直接コミットです。意図的な場合は --no-verify で回避してください。"
+          exit 1
+        fi
+        if command -v gh >/dev/null 2>&1; then
+          state=$(gh pr list --head "$branch" --state merged --json number --jq '.[0].number // empty' 2>/dev/null)
+          if [ -n "$state" ]; then
+            echo "⚠ このブランチの PR #$state は既にマージ済みです。main に戻って新しいブランチを作成してください。"
+            exit 1
+          fi
+        fi
     - name: lint
       run: vp check < /dev/null
 
 pre-push:
+  # CI (.github/workflows/ci.yml) と同等のチェックをローカルで再現する。
+  # CI で落ちてから修正する手間を排除するため、push 前に全チェックを実行する。
   jobs:
     - name: test
-      run: vp run test < /dev/null
+      # test:json は test + JSON レポーター出力。req:trace の入力となる。
+      run: vp run test:json < /dev/null
+    - name: build
+      run: vp run build < /dev/null
+    - name: req-trace
+      # テスト結果 JSON から requirements.yaml のトレーサビリティを再生成し、
+      # コミット済みの requirements.yaml と差分がないことを検証する。
+      run: |
+        vp run req:trace < /dev/null
+        git diff --exit-code docs/requirements.yaml || (echo "requirements.yaml is out of date. Run 'pnpm req:trace' and commit." && exit 1)
+    - name: req-validate
+      # テストファイルの [FR-*]/[NFR-*] タグと requirements.yaml の整合性を検証する。
+      run: vp run req:validate < /dev/null
+    - name: docs-gen
+      # docs/generated/ は gitignore 対象のため差分検出は行わず、
+      # ドキュメント生成コマンド自体が成功することのみ確認する。
+      run: vp run docs:gen < /dev/null

@@ -71,6 +71,27 @@ pnpm --filter @gh-gantt/cli exec vp test run src/__tests__/hash.test.ts
 pnpm build && pnpm --filter @gh-gantt/cli exec pnpm link --global
 ```
 
+### CI 再現チェック
+
+`lefthook` の pre-push フックが CI (`.github/workflows/ci.yml`) と同等のチェックを自動実行する。
+push 前に以下が順に走るため、CI で落ちることを事前に検出できる。
+
+| ステップ     | コマンド                                  | 目的                                          |
+| ------------ | ----------------------------------------- | --------------------------------------------- |
+| test         | `pnpm test:json`                          | 全テスト + JSON レポーター (req:trace の入力) |
+| build        | `pnpm build`                              | ビルド検証                                    |
+| req-trace    | `pnpm req:trace` + `git diff --exit-code` | requirements.yaml のトレーサビリティ検証      |
+| req-validate | `pnpm req:validate`                       | テストタグと requirements.yaml の整合性       |
+| docs-gen     | `pnpm docs:gen`                           | 生成ドキュメントの生成確認                    |
+
+pre-commit フックではブランチ状態チェック（main への直接コミット防止、マージ済みブランチへの誤コミット検出）も実行する。
+
+**手動で CI 相当のチェックを実行する場合:**
+
+```bash
+pnpm test:json && pnpm build && pnpm req:trace && git diff --exit-code docs/requirements.yaml && pnpm req:validate && pnpm docs:gen
+```
+
 ## アーキテクチャ
 
 pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
@@ -85,9 +106,10 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 
 - **コミットメッセージ** — タイトル・本文ともに日本語（prefix は英語: `feat:`, `fix:`, `docs:` 等）
 - **コードコメント** — インラインコメント、ブロックコメントすべて日本語
-- **テスト名** — `describe` / `it` の文字列は日本語。プレフィックスは英語で以下を使い分ける：
-  - `[FR-*]` — 要件 ID（Living Documentation の requirements.yaml 由来）
-  - `[Issue #N]` — GitHub Issue 紐づき（バグ修正・改善等、要件 ID が無いもの）
+- **テスト名** — `describe` / `it` の文字列は日本語
+  - 要件トレーサビリティテスト: `describe` に `[FR-*]` / `[NFR-*]` プレフィックスを付与（`req:trace` が走査する対象）
+  - リグレッションテスト: `describe` に `[NFR-*]` + `[Issue #N]` を付与。ファイルは `regressions/` 配下に配置
+  - ユニットテスト: プレフィックス不要。テスト名は日本語で内容を記述すれば十分
 - **TypeDoc / JSDoc コメント** — 関数・型の説明は日本語
 - **ドキュメント** — CLAUDE.md, AGENTS.md, ADR, requirements.yaml 等すべて日本語
 - **変数名・関数名・型名** — 英語（プログラミング言語の慣例に従う）
@@ -103,7 +125,7 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 - **いずれの場合も**: レビュー結果をユーザーに提示し、明示的な承認（「OK」「進めて」等）を得てから `git commit` / `git push` / `gh pr create` を実行する
 - **省略してよいケース**: ユーザーが「そのままコミットして」等、レビュー省略を明示した場合のみ
 
-このルールは `gh-gantt-workflow` スキルの `before_commit` / `before_push` フックで参照される。プロジェクトの `.gantt-sync/workflow.md` でも同じ規律を記載しておくこと。
+このルールは `.claude/settings.json` の PreToolUse hooks により、`git commit` / `gh pr create` 実行時にエージェントへ自動注入される。lefthook の pre-commit / pre-push とあわせて三層ガード (ADR-010) を構成する。
 
 ## 開発規約
 
