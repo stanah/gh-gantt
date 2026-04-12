@@ -1,19 +1,13 @@
 import { Command } from "commander";
-import { readFile } from "node:fs/promises";
-import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import {
-  ConfigSchema,
-  TasksFileSchema,
-  SyncStateSchema,
-  GANTT_DIR,
-  CONFIG_FILE,
-  TASKS_FILE,
-  SYNC_STATE_FILE,
-} from "@gh-gantt/shared";
 import type { Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import { detectCycles } from "@gh-gantt/shared";
+import { ConfigStore } from "../store/config.js";
+import { TasksStore } from "../store/tasks.js";
+import { SyncStateStore } from "../store/state.js";
 import { hashTask } from "../sync/hash.js";
+import { validateSyncState, type SyncStateFinding } from "../sync/validate-sync-state.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +20,8 @@ interface CheckResult {
   status: CheckStatus;
   message: string;
   details?: string[];
+  /** --fix で自動修復された場合 true */
+  fixed?: boolean;
 }
 
 /** doctor コマンドの全体結果 */
@@ -38,44 +34,153 @@ interface DoctorResult {
 
 /** gantt.config.json の schema 妥当性をチェック */
 async function checkConfig(projectRoot: string): Promise<CheckResult> {
-  const path = join(projectRoot, GANTT_DIR, CONFIG_FILE);
   try {
-    const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
-    ConfigSchema.parse(parsed);
+    await new ConfigStore(projectRoot).read();
     return { name: "config-schema", status: "PASS", message: "gantt.config.json は有効です" };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return {
         name: "config-schema",
         status: "FAIL",
-        message: `${CONFIG_FILE} が見つかりません。'gh-gantt init' を実行してください`,
+        message: "gantt.config.json が見つかりません。'gh-gantt init' を実行してください",
       };
     }
     return {
       name: "config-schema",
       status: "FAIL",
-      message: `${CONFIG_FILE} のスキーマが不正です`,
+      message: "gantt.config.json のスキーマが不正です",
       details: [String(err instanceof Error ? err.message : err)],
     };
   }
 }
 
-/** sync-state.json と tasks.json のハッシュ整合性をチェック */
-async function checkHashIntegrity(
-  tasksFile: TasksFile,
+/** tasks.json の schema 妥当性をチェック */
+async function checkTasksFile(
+  projectRoot: string,
+): Promise<{ result: CheckResult; data: TasksFile | null }> {
+  try {
+    const data = await new TasksStore(projectRoot).read();
+    return {
+      result: { name: "tasks-file", status: "PASS", message: "tasks.json は有効です" },
+      data,
+    };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        result: {
+          name: "tasks-file",
+          status: "FAIL",
+          message: "tasks.json が見つかりません。'gh-gantt pull' を実行してください",
+        },
+        data: null,
+      };
+    }
+    return {
+      result: {
+        name: "tasks-file",
+        status: "FAIL",
+        message: "tasks.json の読み込みに失敗しました",
+        details: [String(err instanceof Error ? err.message : err)],
+      },
+      data: null,
+    };
+  }
+}
+
+/** sync-state.json の schema 妥当性をチェック */
+async function checkSyncStateFile(
+  projectRoot: string,
+): Promise<{ result: CheckResult; data: SyncState | null }> {
+  try {
+    const data = await new SyncStateStore(projectRoot).read();
+    return {
+      result: { name: "sync-state-file", status: "PASS", message: "sync-state.json は有効です" },
+      data,
+    };
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+      return {
+        result: {
+          name: "sync-state-file",
+          status: "FAIL",
+          message: "sync-state.json が見つかりません。'gh-gantt pull' を実行してください",
+        },
+        data: null,
+      };
+    }
+    return {
+      result: {
+        name: "sync-state-file",
+        status: "FAIL",
+        message: "sync-state.json の読み込みに失敗しました",
+        details: [String(err instanceof Error ? err.message : err)],
+      },
+      data: null,
+    };
+  }
+}
+
+/** sync-state 整合性チェック（validateSyncState を利用） */
+function checkSyncStateIntegrity(
   syncState: SyncState,
-): Promise<CheckResult> {
+  tasksFile: TasksFile,
+  fix: boolean,
+): { result: CheckResult; fixedSyncState: SyncState | null; findings: SyncStateFinding[] } {
+  const { syncState: validated, findings } = validateSyncState(syncState, tasksFile);
+
+  if (findings.length === 0) {
+    return {
+      result: {
+        name: "sync-state-integrity",
+        status: "PASS",
+        message: "sync-state 整合性は正常です",
+      },
+      fixedSyncState: null,
+      findings,
+    };
+  }
+
+  const autoFixable = findings.filter((f) => f.autoFixed);
+  const warnings = findings.filter((f) => !f.autoFixed);
+  const details = findings.map((f) => `[${f.category}] ${f.message}`);
+
+  // --fix で自動修復可能なものがある場合
+  if (fix && autoFixable.length > 0) {
+    return {
+      result: {
+        name: "sync-state-integrity",
+        status: warnings.length > 0 ? "WARN" : "PASS",
+        message:
+          `${autoFixable.length} 件を自動修復しました` +
+          (warnings.length > 0 ? `（${warnings.length} 件は手動対応が必要です）` : ""),
+        details,
+        fixed: true,
+      },
+      fixedSyncState: validated,
+      findings,
+    };
+  }
+
+  return {
+    result: {
+      name: "sync-state-integrity",
+      status: "WARN",
+      message: `${findings.length} 件の sync-state 不整合があります`,
+      details,
+    },
+    fixedSyncState: null,
+    findings,
+  };
+}
+
+/** hash 再計算照合: hashTask() で再計算し snapshot.hash と比較 */
+function checkHashIntegrity(tasksFile: TasksFile, syncState: SyncState): CheckResult {
   const mismatches: string[] = [];
 
   for (const task of tasksFile.tasks) {
     const snapshot = syncState.snapshots[task.id];
     if (!snapshot) continue;
 
-    const currentHash = hashTask(task);
-    // snapshot.hash はローカル側の最後に同期したハッシュ。
-    // ローカル変更がなければ currentHash === snapshot.hash になるはず。
-    // ここでは snapshot 自体の hash フィールドが空や不正でないかをチェック。
     if (!snapshot.hash || typeof snapshot.hash !== "string") {
       mismatches.push(`${task.id}: snapshot.hash が不正 (値: ${JSON.stringify(snapshot.hash)})`);
     }
@@ -92,75 +197,9 @@ async function checkHashIntegrity(
   };
 }
 
-/** id_map と tasks.json の対応関係をチェック */
-function checkIdMap(tasksFile: TasksFile, syncState: SyncState): CheckResult {
-  const taskIds = new Set(tasksFile.tasks.map((t) => t.id));
-  const idMapKeys = new Set(Object.keys(syncState.id_map));
-  const issues: string[] = [];
-
-  // id_map にあるが tasks に無い
-  for (const id of idMapKeys) {
-    if (!taskIds.has(id)) {
-      issues.push(`id_map に ${id} がありますが tasks.json に存在しません`);
-    }
-  }
-
-  // tasks にあるが id_map に無い (draft- と milestone- は除外)
-  for (const task of tasksFile.tasks) {
-    if (task.id.startsWith("draft-")) continue;
-    if (task.id.startsWith("milestone-")) continue;
-    if (!idMapKeys.has(task.id)) {
-      issues.push(`${task.id} が id_map に存在しません`);
-    }
-  }
-
-  if (issues.length === 0) {
-    return { name: "id-map", status: "PASS", message: "id_map と tasks.json は整合しています" };
-  }
-  return {
-    name: "id-map",
-    status: "WARN",
-    message: `${issues.length} 件の id_map 不整合があります`,
-    details: issues,
-  };
-}
-
-/** タスク間の依存関係の循環検出 */
+/** タスク間の依存関係の循環検出（shared の detectCycles を使用） */
 function checkCycles(tasks: Task[]): CheckResult {
-  // detectCycles のロジックをインラインで実装 (ui パッケージへの依存を避ける)
-  const graph = new Map<string, string[]>();
-  for (const task of tasks) {
-    if (!graph.has(task.id)) graph.set(task.id, []);
-    for (const dep of task.blocked_by) {
-      if (!graph.has(dep.task)) graph.set(dep.task, []);
-      graph.get(dep.task)!.push(task.id);
-    }
-  }
-
-  const cycles: string[][] = [];
-  const visited = new Set<string>();
-  const inStack = new Set<string>();
-  const path: string[] = [];
-
-  function dfs(node: string) {
-    visited.add(node);
-    inStack.add(node);
-    path.push(node);
-    for (const neighbor of graph.get(node) ?? []) {
-      if (inStack.has(neighbor)) {
-        const cycleStart = path.indexOf(neighbor);
-        cycles.push(path.slice(cycleStart));
-      } else if (!visited.has(neighbor)) {
-        dfs(neighbor);
-      }
-    }
-    path.pop();
-    inStack.delete(node);
-  }
-
-  for (const node of graph.keys()) {
-    if (!visited.has(node)) dfs(node);
-  }
+  const cycles = detectCycles(tasks);
 
   if (cycles.length === 0) {
     return { name: "dependency-cycles", status: "PASS", message: "循環依存はありません" };
@@ -192,65 +231,51 @@ async function checkGitHubAuth(): Promise<CheckResult> {
 
 // ── メインロジック ──
 
-async function runDoctor(projectRoot: string): Promise<DoctorResult> {
+interface DoctorOptions {
+  fix: boolean;
+  offline: boolean;
+}
+
+async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<DoctorResult> {
   const checks: CheckResult[] = [];
 
   // 1. config チェック
   checks.push(await checkConfig(projectRoot));
 
-  // sync データの読み込みを試みる
-  let tasksFile: TasksFile | null = null;
-  let syncState: SyncState | null = null;
+  // 2. tasks.json チェック
+  const { result: tasksResult, data: tasksFile } = await checkTasksFile(projectRoot);
+  checks.push(tasksResult);
 
-  try {
-    const tasksRaw = await readFile(join(projectRoot, GANTT_DIR, TASKS_FILE), "utf-8");
-    tasksFile = TasksFileSchema.parse(JSON.parse(tasksRaw));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      checks.push({
-        name: "tasks-file",
-        status: "FAIL",
-        message: `${TASKS_FILE} が見つかりません。'gh-gantt pull' を実行してください`,
-      });
-    } else {
-      checks.push({
-        name: "tasks-file",
-        status: "FAIL",
-        message: `${TASKS_FILE} の読み込みに失敗しました`,
-        details: [String(err instanceof Error ? err.message : err)],
-      });
-    }
-  }
-
-  try {
-    const stateRaw = await readFile(join(projectRoot, GANTT_DIR, SYNC_STATE_FILE), "utf-8");
-    syncState = SyncStateSchema.parse(JSON.parse(stateRaw));
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      checks.push({
-        name: "sync-state-file",
-        status: "FAIL",
-        message: `${SYNC_STATE_FILE} が見つかりません。'gh-gantt pull' を実行してください`,
-      });
-    } else {
-      checks.push({
-        name: "sync-state-file",
-        status: "FAIL",
-        message: `${SYNC_STATE_FILE} の読み込みに失敗しました`,
-        details: [String(err instanceof Error ? err.message : err)],
-      });
-    }
-  }
+  // 3. sync-state.json チェック
+  const { result: stateResult, data: syncState } = await checkSyncStateFile(projectRoot);
+  checks.push(stateResult);
 
   // tasks と syncState が両方読めた場合のみ整合性チェックを実行
   if (tasksFile && syncState) {
-    checks.push(await checkHashIntegrity(tasksFile, syncState));
-    checks.push(checkIdMap(tasksFile, syncState));
+    // 4. sync-state 整合性
+    const { result: integrityResult, fixedSyncState } = checkSyncStateIntegrity(
+      syncState,
+      tasksFile,
+      opts.fix,
+    );
+    checks.push(integrityResult);
+
+    // --fix で修復した場合、書き戻し
+    if (fixedSyncState && opts.fix) {
+      await new SyncStateStore(projectRoot).write(fixedSyncState);
+    }
+
+    // 5. hash 整合性
+    checks.push(checkHashIntegrity(tasksFile, syncState));
+
+    // 6. 循環依存検出
     checks.push(checkCycles(tasksFile.tasks));
   }
 
-  // 5. GitHub 認証チェック
-  checks.push(await checkGitHubAuth());
+  // 7. 認証チェック (--offline で省略)
+  if (!opts.offline) {
+    checks.push(await checkGitHubAuth());
+  }
 
   const summary = {
     pass: checks.filter((c) => c.status === "PASS").length,
@@ -264,22 +289,20 @@ async function runDoctor(projectRoot: string): Promise<DoctorResult> {
 // ── コマンド定義 ──
 
 export const doctorCommand = new Command("doctor")
-  .description("ローカル状態の整合性チェックと診断")
+  .description("ローカル状態の整合性チェックと簡易修復")
+  .option("--fix", "自動修復可能な問題を修復する")
+  .option("--offline", "認証チェックをスキップする")
   .option("--json", "JSON 形式で出力")
-  .option("--fix", "自動修復可能な項目を修正")
   .action(async (opts) => {
     const projectRoot = process.cwd();
-
-    if (opts.fix) {
-      // --fix は将来の拡張用。現時点では自動修復対象がないことを明示する。
-      console.log("--fix: 現在自動修復可能な項目はありません。診断のみ実行します。");
-      console.log();
-    }
-
-    const result = await runDoctor(projectRoot);
+    const result = await runDoctor(projectRoot, {
+      fix: !!opts.fix,
+      offline: !!opts.offline,
+    });
 
     if (opts.json) {
       console.log(JSON.stringify(result, null, 2));
+      process.exitCode = result.summary.fail > 0 ? 1 : 0;
       return;
     }
 
@@ -289,7 +312,10 @@ export const doctorCommand = new Command("doctor")
       s === "PASS" ? "[PASS]" : s === "WARN" ? "[WARN]" : "[FAIL]";
 
     for (const check of result.checks) {
-      console.log(`${statusIcon(check.status)} ${statusLabel(check.status)} ${check.message}`);
+      const fixedTag = check.fixed ? " (修復済み)" : "";
+      console.log(
+        `${statusIcon(check.status)} ${statusLabel(check.status)} ${check.message}${fixedTag}`,
+      );
       if (check.details) {
         for (const detail of check.details) {
           console.log(`    ${detail}`);
