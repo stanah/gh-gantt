@@ -363,7 +363,15 @@ export async function executePull(
         remoteHash,
       };
     } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
-      newSnapshots[task.id] = { ...existing, remoteHash };
+      // ハッシュ一致 (内容変更なし) でも updated_at を remote に追従する。
+      // GitHub は hashTask 対象外フィールド (linked_prs, タイムライン等) の
+      // 変化でも updated_at を進めるため、ここで refresh しないと
+      // status の updated_at 比較が永続的に false positive を返す (#169, #36 regression)。
+      newSnapshots[task.id] = {
+        ...existing,
+        updated_at: remoteTask?.updated_at ?? existing.updated_at,
+        remoteHash,
+      };
     } else {
       newSnapshots[task.id] = {
         hash: hashTask(task),
