@@ -17,8 +17,11 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. 直近の PR 状態を確認する（`gh pr list --author @me --state open --json number,title,reviewDecision`）
-4. open PR にレビューが届いている場合、`gh-gantt-review-cycle` スキルを invoke してレビュー対応を開始する
+3. 直近の PR 状態を確認する（`gh pr list --author @me --state open --json number,title,isDraft`）
+4. `CronList` で active な `[REVIEW-CYCLE PR#*]` cron を確認する:
+   - cron がある open PR → 次の cron fire で自動処理される
+   - cron がない open PR (not draft) → `gh-gantt-review-cycle` の Phase 0 で cron 登録
+   - cron がある が PR が閉じている → `CronDelete` で孤児削除
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。
 
