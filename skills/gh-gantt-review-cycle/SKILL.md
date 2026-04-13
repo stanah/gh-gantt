@@ -85,26 +85,23 @@ gh api repos/{owner}/{repo}/pulls/<number>/comments \
 - コミットメッセージ: `fix(scope): レビュー指摘対応 (#PR番号)`
 - 1 つのコミットに複数の指摘修正をまとめてよい
 
-## Phase 4: 一括返信（pending review）
+## Phase 4: レビューコメントへの返信
 
-<HARD-GATE>
-レビューコメントへの返信は必ず pending review にまとめて 1 回で submit する。
-個別に返信を投稿してはならない（通知が複数回発生するため）。
-</HARD-GATE>
+**GitHub API の制約**: `/pulls/{num}/comments/{id}/replies` は個別にしか投稿できず、pending review に attach することはできない。REST API の pending review は「新規インラインコメント」用であって、既存スレッドへの「返信」用ではない。
+
+そのため、以下の手順で投稿する:
 
 ```bash
-# 1. pending review を作成
-REVIEW_ID=$(gh api repos/{owner}/{repo}/pulls/<number>/reviews \
-  -f body="" -f event="PENDING" --jq '.id')
-
-# 2. 各コメントに返信を追加
+# 各コメントに個別に返信を投稿
 gh api repos/{owner}/{repo}/pulls/<number>/comments/{comment_id}/replies \
   -f body="対応しました。[コミットハッシュ] で修正しています。"
-
-# 3. すべての返信を追加した後、一括 submit
-gh api repos/{owner}/{repo}/pulls/<number>/reviews/${REVIEW_ID}/events \
-  -f event="COMMENT"
 ```
+
+**通知削減の工夫**:
+
+- 返信本文に `[コミットハッシュ]` を必ず含め、レビュアーが一目で対応状況を把握できるようにする
+- 対応済み・却下の別を明示する（「対応済み:」「却下:」等のプレフィックス）
+- 複数コメントへの返信は短時間にまとめて投稿する（GitHub はディガレーション通知を行うため、連続投稿は 1 通の通知にまとまる傾向がある）
 
 ## Phase 5: スレッド一括 resolve（GraphQL）
 
