@@ -32,9 +32,11 @@ jobs:
   smoke-personal:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # PR、main push、cron、または手動で personal/both が指定された場合
+    # PR (同一リポジトリのみ)、main push、cron、または手動で personal/both が指定された場合
+    # fork PR では secrets が渡されないため実行しない
     if: >-
-      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
       github.event_name == 'push' ||
       github.event_name == 'schedule' ||
       (github.event_name == 'workflow_dispatch' &&

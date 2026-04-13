@@ -5,7 +5,9 @@
     "rootDir": "src",
     "isolatedDeclarations": false,
     "declaration": false,
-    "declarationMap": false
+    "declarationMap": false,
+    "types": ["node"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "exclude": ["src/__tests__"]
 }

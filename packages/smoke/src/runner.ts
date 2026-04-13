@@ -60,12 +60,25 @@ function runStep(name: string, fn: () => void): StepResult {
       durationMs: Math.round(performance.now() - start),
     };
   } catch (err) {
-    const error = err instanceof Error ? err.message : String(err);
+    // execFileSync 例外には stderr/stdout が付与されるため、CI ログ追跡のため保持する
+    const parts: string[] = [];
+    if (err instanceof Error) {
+      parts.push(err.message);
+      const withStreams = err as Error & { stderr?: Buffer | string; stdout?: Buffer | string };
+      if (withStreams.stderr) {
+        parts.push(`stderr: ${String(withStreams.stderr).trim()}`);
+      }
+      if (withStreams.stdout) {
+        parts.push(`stdout: ${String(withStreams.stdout).trim()}`);
+      }
+    } else {
+      parts.push(String(err));
+    }
     return {
       name,
       success: false,
       durationMs: Math.round(performance.now() - start),
-      error,
+      error: parts.join("\n"),
     };
   }
 }
@@ -115,6 +128,11 @@ export function runTier1Smoke(env: SmokeEnv, config: EnvConfig): SmokeResult {
         execCli(["status"], { cwd: workDir });
       }),
     );
+
+    // status が失敗した場合は push を実行しない（前ステップが壊れている状態で書き込み操作を試みるのは危険）
+    if (!steps[2]!.success) {
+      return buildResult(env, config, steps, totalStart);
+    }
 
     // Step 4: push --dry-run (書き込み操作の検証だが実際には書き込まない)
     steps.push(
