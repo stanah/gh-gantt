@@ -96,12 +96,23 @@ Org 環境では GitHub App を使用し、PAT よりも安全にスコープを
 
 ## CI 実行タイミング
 
-| トリガー                  | 個人環境 | Org 環境 |
-| ------------------------- | -------- | -------- |
-| PR                        | o        | -        |
-| main マージ               | o        | o        |
-| 月次 cron (1日 00:00 UTC) | o        | o        |
-| 手動 (workflow_dispatch)  | 選択可   | 選択可   |
+**現状: 手動実行 (`workflow_dispatch`) のみ**
+
+個人 PAT (`SMOKE_GITHUB_TOKEN`) を CI に配置することの security review が未完了のため、
+PR / push / cron の自動トリガーは無効化している。当面は必要に応じて
+Actions タブから手動で起動する。
+
+| トリガー                 | 個人環境 | Org 環境 |
+| ------------------------ | -------- | -------- |
+| 手動 (workflow_dispatch) | 選択可   | 選択可   |
+| PR / push / cron         | -        | -        |
+
+### 自動トリガー再開の手順 (security review 完了後)
+
+1. Fine-grained PAT (個人環境用) を repo/project に限定した最小スコープで発行
+2. `SMOKE_GITHUB_TOKEN` secret に登録
+3. `.github/workflows/smoke.yml` の `on:` に `pull_request` / `push` / `schedule` を追加
+4. `smoke-personal` / `smoke-org` の `if:` 条件を自動トリガー対応に戻す
 
 ## 関連
 

@@ -448,6 +448,5 @@ areas:
             description: |
               CI で PR ごとに個人環境スモークが実行され、main マージ後と
               月次 cron で Org 環境スモークも追加で実行される
-            status: covered
-            tests:
-              - packages/smoke/src/__tests__/smoke.test.ts
+            status: uncovered
+            tests: []
