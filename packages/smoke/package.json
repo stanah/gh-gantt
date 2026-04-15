@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "echo 'smoke package has no build step' && exit 0",
+    "build": "node -e \"process.exit(0)\"",
     "typecheck": "tsc --noEmit",
     "smoke:personal": "tsx src/run.ts --env personal",
     "smoke:org": "tsx src/run.ts --env org",
@@ -15,7 +15,7 @@
     "@gh-gantt/cli": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
+    "@types/node": "^24.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.5.0",
     "vite-plus": "^0.1.13"

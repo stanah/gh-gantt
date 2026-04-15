@@ -41,8 +41,13 @@ pnpm smoke:org
 
 ### ローカル実行
 
-`gh auth login` 済みであれば、gh-gantt CLI が自動的に gh CLI のトークンを使用する。
-追加の認証設定は不要。
+以下のいずれかを満たしていれば自動的にトークンが取得される (優先順):
+
+1. 環境変数 `GITHUB_TOKEN` が設定されている
+2. 環境変数 `GH_TOKEN` が設定されている
+3. `gh auth login` 済み (gh CLI の `gh auth token` からフォールバック取得)
+
+推奨は `gh auth login`。追加の環境変数設定は不要。
 
 ### CI (GitHub Actions)
 

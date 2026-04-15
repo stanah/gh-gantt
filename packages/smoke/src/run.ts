@@ -10,7 +10,7 @@
  *   0: 全ステップ成功
  *   1: いずれかのステップが失敗
  */
-import { getEnvConfig, hasRequiredAuth, type SmokeEnv } from "./config.js";
+import { getAuthToken, getEnvConfig, type SmokeEnv } from "./config.js";
 import { reportResult } from "./reporter.js";
 import { runTier1Smoke } from "./runner.js";
 
@@ -33,20 +33,28 @@ function parseArgs(): SmokeEnv {
 function main(): void {
   const env = parseArgs();
 
-  // 認証トークンが未設定なら明示的に失敗させる (silent な成功扱いは不適切)
-  if (!hasRequiredAuth()) {
+  // 認証トークンを取得 (GITHUB_TOKEN / GH_TOKEN / gh CLI の順)
+  // 取得できない場合は明示的に失敗させる (silent な成功扱いは不適切)
+  const token = getAuthToken();
+  if (token === null) {
     console.error(
       [
-        "エラー: GITHUB_TOKEN が設定されていません。",
+        "エラー: 認証トークンを取得できませんでした。",
         "",
-        "ローカル実行の場合: `gh auth login` 済みの状態で `GITHUB_TOKEN=$(gh auth token) pnpm smoke:personal` のように渡してください。",
-        "CI 実行の場合 (workflow_dispatch): repository secrets に SMOKE_GITHUB_TOKEN (personal) / SMOKE_APP_ID + SMOKE_APP_PRIVATE_KEY (org) を設定してください。",
+        "以下のいずれかを実施してください:",
+        "  - `gh auth login` を実行する (ローカル推奨)",
+        "  - 環境変数 GITHUB_TOKEN または GH_TOKEN を設定する",
+        "  - CI (workflow_dispatch) 実行時は repository secrets に",
+        "    SMOKE_GITHUB_TOKEN (personal) / SMOKE_APP_ID + SMOKE_APP_PRIVATE_KEY (org) を設定する",
         "",
-        "設定手順: packages/smoke/README.md を参照してください。",
+        "詳細: packages/smoke/README.md を参照してください。",
       ].join("\n"),
     );
     process.exit(1);
   }
+
+  // CLI が参照できるよう GITHUB_TOKEN を現プロセスの環境に設定
+  process.env["GITHUB_TOKEN"] = token;
 
   const config = getEnvConfig(env);
 

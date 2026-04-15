@@ -4,6 +4,7 @@
  * ADR-008 に従い、個人リポジトリと Org リポジトリの 2 系統を定義する。
  * 環境変数で上書き可能にし、CI と ローカルの両方で利用できるようにする。
  */
+import { execFileSync } from "node:child_process";
 
 /** スモーク環境の種別 */
 export type SmokeEnv = "personal" | "org";
@@ -45,13 +46,38 @@ export function getEnvConfig(env: SmokeEnv): EnvConfig {
 }
 
 /**
- * 必須の環境変数 (GITHUB_TOKEN) が設定されているか確認する
+ * GitHub 認証トークンを取得する
  *
- * 未設定の場合はスモークをスキップすべきことを示す。
- * CI で secrets が未登録な状態で実行されると空文字列が渡されるため、
- * 空文字列も未設定として扱う。
+ * 優先順:
+ * 1. 環境変数 `GITHUB_TOKEN`
+ * 2. 環境変数 `GH_TOKEN`
+ * 3. gh CLI の `gh auth token` (ローカル実行で `gh auth login` 済みの場合)
+ *
+ * 取得できない場合は `null` を返す。
+ * CI で secrets が未登録な状態では空文字列が渡されるため、空文字列も未設定として扱う。
+ */
+export function getAuthToken(): string | null {
+  const envToken = process.env["GITHUB_TOKEN"] || process.env["GH_TOKEN"];
+  if (envToken) return envToken;
+
+  // gh CLI にフォールバック (ローカル実行で gh auth login 済みの場合)
+  try {
+    const token = execFileSync("gh", ["auth", "token"], {
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5000,
+    }).trim();
+    return token || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 認証トークンが取得可能か確認する
+ *
+ * 失敗時は run.ts 側で明示的に exit(1) される (silent success は不適切)。
  */
 export function hasRequiredAuth(): boolean {
-  const token = process.env["GITHUB_TOKEN"];
-  return token !== undefined && token !== "";
+  return getAuthToken() !== null;
 }
