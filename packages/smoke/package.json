@@ -1,0 +1,23 @@
+{
+  "name": "@gh-gantt/smoke",
+  "version": "0.1.0-alpha",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node -e \"process.exit(0)\"",
+    "typecheck": "tsc --noEmit",
+    "smoke:personal": "tsx src/run.ts --env personal",
+    "smoke:org": "tsx src/run.ts --env org",
+    "test": "vp test run",
+    "test:json": "vp test run --reporter=default --reporter=json --outputFile=../../test-results-smoke.json"
+  },
+  "dependencies": {
+    "@gh-gantt/cli": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.5.0",
+    "vite-plus": "^0.1.13"
+  }
+}

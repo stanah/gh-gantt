@@ -1,0 +1,83 @@
+name: Smoke Test
+
+# セキュリティ考慮により PR / push / cron の自動トリガーは無効化している。
+# 個人 PAT を CI に配置する判断を後回しにし、当面は手動実行のみとする。
+# 自動実行を再開する際は pull_request / push / schedule を復活させること。
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "実行環境 (personal / org / both)"
+        required: false
+        default: "personal"
+        type: choice
+        options:
+          - personal
+          - org
+          - both
+
+permissions:
+  contents: read
+
+concurrency:
+  group: smoke-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 手動で personal/both を選択した場合のみ実行
+  smoke-personal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.env == 'personal' || inputs.env == 'both')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+      - run: vp run build
+
+      - name: 個人環境スモークテスト
+        run: vp run smoke:personal
+        env:
+          GITHUB_TOKEN: ${{ secrets.SMOKE_GITHUB_TOKEN }}
+          SMOKE_PERSONAL_REPO: ${{ vars.SMOKE_PERSONAL_REPO }}
+          SMOKE_PERSONAL_PROJECT_URL: ${{ vars.SMOKE_PERSONAL_PROJECT_URL }}
+
+  # 手動で org/both を選択した場合のみ実行
+  smoke-org:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      (inputs.env == 'org' || inputs.env == 'both')
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - run: vp install
+      - run: vp run build
+
+      - name: GitHub App トークンを取得
+        id: app-token
+        uses: actions/create-github-app-token@df432ceedc7162793a195dd1713ff69aefc7379e # v2
+        with:
+          app-id: ${{ secrets.SMOKE_APP_ID }}
+          private-key: ${{ secrets.SMOKE_APP_PRIVATE_KEY }}
+          owner: gh-gantt-e2e
+
+      - name: Org 環境スモークテスト
+        run: vp run smoke:org
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          SMOKE_ORG_REPO: ${{ vars.SMOKE_ORG_REPO }}
+          SMOKE_ORG_PROJECT_URL: ${{ vars.SMOKE_ORG_PROJECT_URL }}
