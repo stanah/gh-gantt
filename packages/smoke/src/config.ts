@@ -27,20 +27,23 @@ export interface EnvConfig {
  * - SMOKE_ORG_REPO / SMOKE_ORG_PROJECT_URL
  */
 export function getEnvConfig(env: SmokeEnv): EnvConfig {
-  // 空文字列も未設定として扱うため `||` を使用 (CI の空 secrets 対策)
+  // 空文字列/空白のみは未設定として扱う (CI secrets の空値/誤設定対策)
+  const personalRepo = process.env["SMOKE_PERSONAL_REPO"]?.trim();
+  const personalProjectUrl = process.env["SMOKE_PERSONAL_PROJECT_URL"]?.trim();
+  const orgRepo = process.env["SMOKE_ORG_REPO"]?.trim();
+  const orgProjectUrl = process.env["SMOKE_ORG_PROJECT_URL"]?.trim();
+
   if (env === "personal") {
     return {
-      repo: process.env["SMOKE_PERSONAL_REPO"] || "stanah/gh-gantt-e2e-test",
-      projectUrl:
-        process.env["SMOKE_PERSONAL_PROJECT_URL"] || "https://github.com/users/stanah/projects/4",
+      repo: personalRepo || "stanah/gh-gantt-e2e-test",
+      projectUrl: personalProjectUrl || "https://github.com/users/stanah/projects/4",
       description: "個人リポジトリ (Labels フォールバック)",
     };
   }
 
   return {
-    repo: process.env["SMOKE_ORG_REPO"] || "gh-gantt-e2e/test-repo",
-    projectUrl:
-      process.env["SMOKE_ORG_PROJECT_URL"] || "https://github.com/orgs/gh-gantt-e2e/projects/1",
+    repo: orgRepo || "gh-gantt-e2e/test-repo",
+    projectUrl: orgProjectUrl || "https://github.com/orgs/gh-gantt-e2e/projects/1",
     description: "Org リポジトリ (Issue Types 有効)",
   };
 }

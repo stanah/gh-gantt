@@ -5,9 +5,11 @@
     "rootDir": "src",
     "isolatedDeclarations": false,
     "declaration": false,
-    "declarationMap": false,
-    "types": ["node"]
+    "declarationMap": false
   },
   "include": ["src"],
+  // vitest の型が tsc では解決できない (vite-plus が内部バンドルしているため)。
+  // テストの型チェックは vp test run (Vitest 実行時) に委ねる。
+  // 他パッケージ (cli, shared) も同様の制約がある。
   "exclude": ["src/__tests__"]
 }
