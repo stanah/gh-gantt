@@ -57,8 +57,11 @@ export function getEnvConfig(env: SmokeEnv): EnvConfig {
  * CI で secrets が未登録な状態では空文字列が渡されるため、空文字列も未設定として扱う。
  */
 export function getAuthToken(): string | null {
-  const envToken = process.env["GITHUB_TOKEN"] || process.env["GH_TOKEN"];
-  if (envToken) return envToken;
+  const githubToken = process.env["GITHUB_TOKEN"]?.trim();
+  if (githubToken) return githubToken;
+
+  const ghToken = process.env["GH_TOKEN"]?.trim();
+  if (ghToken) return ghToken;
 
   // gh CLI にフォールバック (ローカル実行で gh auth login 済みの場合)
   try {
