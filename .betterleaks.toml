@@ -1,0 +1,26 @@
+# .betterleaks.toml
+# betterleaks 秘密情報スキャン設定 (ADR-011 参照)
+#
+# 方針:
+# - デフォルトルールをそのまま採用する (`extend.useDefault = true`)
+# - 初期 allowlist は最小限。path 単位の包括 allowlist は避け、
+#   誤検知は regex ベースで個別登録する。
+# - ビルド成果物 (node_modules, dist, docs/generated 等) は gitignore 済みで
+#   スキャン対象に入らないため allowlist 不要。
+
+title = "gh-gantt betterleaks config"
+
+[extend]
+useDefault = true
+
+# 現時点ではプロジェクト固有の allowlist なし。
+# 誤検知が発生したら下記の形式で追加すること:
+#
+# [[allowlists]]
+# description = "何を許容するか / なぜ安全かを必ず記述"
+# targetRules = ["generic-api-key"]  # 特定ルールのみ対象にする場合
+# regexTarget = "match"              # "match" / "secret" / "line"
+# regexes = ['''literal-safe-value''']
+#
+# 注意: paths = [...] だけで広く除外しないこと。
+# そのディレクトリ配下への本物の漏洩を永続的に見逃す。

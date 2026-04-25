@@ -26,6 +26,33 @@ pre-commit:
         fi
     - name: lint
       run: vp check < /dev/null
+    - name: betterleaks
+      # staged 差分に秘密情報が含まれていないか検査する (ADR-011)。
+      # docker が利用不可 (未インストール / daemon 停止) の環境では skip し、
+      # CI (secret-scan workflow) を最終ゲートとする。
+      run: |
+        # docker CLI が無い、または daemon に繋がらない場合は skip。
+        # `docker info` は daemon 到達性まで検査するため `command -v docker` より確実。
+        if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+          echo "⚠ docker が利用できません (未インストール or daemon 停止): betterleaks スキャンをスキップします (CI では検出されます)"
+          exit 0
+        fi
+        # staged 差分がなければスキャン不要
+        if git diff --cached --quiet; then
+          exit 0
+        fi
+        # 差分を stdin 経由で betterleaks に渡す。
+        # リポジトリルートを :ro でマウントし -w で作業ディレクトリに設定することで、
+        # .betterleaks.toml が CI と同じく参照される (将来 allowlist 追加時に重要)。
+        # @sha256 digest pin でタグ差し替えによるサプライチェーン攻撃を防ぐ。
+        # --redact=75 で万一ログ出力に secret が混ざっても 75% obfuscate される。
+        # --no-color は lefthook ログの視認性のため。
+        repo_root=$(git rev-parse --show-toplevel)
+        git diff --cached -U0 | docker run --rm -i \
+          -v "$repo_root:$repo_root:ro" \
+          -w "$repo_root" \
+          ghcr.io/betterleaks/betterleaks:v1.1.2@sha256:05a6e6cea419b8013cd3c361b6edf307a558615490d3d28f78f46887911f1512 \
+          stdin --no-color --redact=75
 
 pre-push:
   # CI (.github/workflows/ci.yml) と同等のチェックをローカルで再現する。
