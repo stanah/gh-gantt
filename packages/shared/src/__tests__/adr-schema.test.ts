@@ -130,4 +130,38 @@ status: accepted
     expect(result.frontmatter.id).toBe("ADR-002");
     expect(result.body).toContain("ハイフン区切り");
   });
+
+  it("CRLF 改行 (Windows 改行コード) を受理する", () => {
+    const lf = `---
+id: ADR-003
+title: CRLF テスト
+date: 2026-03-20
+status: accepted
+---
+
+## Context
+
+foo
+`;
+    const crlf = lf.replace(/\n/g, "\r\n");
+    const result = parseAdrFile(crlf);
+    expect(result.frontmatter.id).toBe("ADR-003");
+    expect(result.body).toContain("## Context");
+  });
+
+  it("UTF-8 BOM 付きファイルを受理する", () => {
+    const content = `﻿---
+id: ADR-004
+title: BOM テスト
+date: 2026-03-20
+status: accepted
+---
+
+## Context
+
+foo
+`;
+    const result = parseAdrFile(content);
+    expect(result.frontmatter.id).toBe("ADR-004");
+  });
 });

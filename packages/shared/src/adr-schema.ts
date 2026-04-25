@@ -24,10 +24,11 @@ export interface ParsedAdr {
   body: string;
 }
 
-const FRONTMATTER_RE = /^---\n([\s\S]*?)\n---\n([\s\S]*)$/;
+const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/;
 
 export function parseAdrFile(content: string): ParsedAdr {
-  const match = content.match(FRONTMATTER_RE);
+  const normalized = content.replace(/^﻿/, "");
+  const match = normalized.match(FRONTMATTER_RE);
   if (!match) {
     throw new Error("ADR ファイルに frontmatter が見つかりません");
   }

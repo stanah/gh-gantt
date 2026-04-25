@@ -75,7 +75,9 @@ GitHub App なら Org 限定のスコープで権限を絞れる。
 
 - Org と個人の 2 系統のテスト基盤を維持する必要がある (運用コスト増)
 - GitHub GraphQL API の rate limit を考慮したスケジューリングが必要
-- スモークテストが flaky 化するリスクがあり、早期に flaky 検出ロジックの 導入が必要 (Phase 2 で対応)
+- スモークテストが flaky 化するリスクがあり、早期に flaky 検出ロジックの
+  導入が必要 (Phase 2 で対応)
 - GitHub App の作成とインストール、secrets 管理の初期セットアップが必要
-- gh-gantt doctor コマンドが「日常的に回す継続検証ツール」として機能し、 セルフホスティングの利点を最大化できる
+- gh-gantt doctor コマンドが「日常的に回す継続検証ツール」として機能し、
+  セルフホスティングの利点を最大化できる
 - Tier 1 のみでは push 経路が検証されないため、Phase 2 以降で Tier 2 (create → push → pull の round-trip) を段階的に追加する必要がある

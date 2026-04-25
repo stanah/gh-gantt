@@ -106,7 +106,14 @@ async function main() {
     const filenameIdRe = /^(ADR-\d{3})-/;
     for (const file of adrFiles) {
       const content = await readFile(resolve(ADR_DIR, file), "utf-8");
-      const { frontmatter } = parseAdrFile(content);
+      let frontmatter: Awaited<ReturnType<typeof parseAdrFile>>["frontmatter"];
+      try {
+        ({ frontmatter } = parseAdrFile(content));
+      } catch (parseErr: unknown) {
+        const message = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        errors.push(`Invalid ADR file: ${file} の解析に失敗しました: ${message}`);
+        continue;
+      }
       const filenameMatch = file.match(filenameIdRe);
       if (!filenameMatch) {
         errors.push(`Invalid ADR filename: ${file} は ADR-NNN-<slug>.md 形式である必要があります`);
