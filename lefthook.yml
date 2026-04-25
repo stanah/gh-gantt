@@ -42,10 +42,16 @@ pre-commit:
           exit 0
         fi
         # 差分を stdin 経由で betterleaks に渡す。
+        # リポジトリルートを :ro でマウントし -w で作業ディレクトリに設定することで、
+        # .betterleaks.toml が CI と同じく参照される (将来 allowlist 追加時に重要)。
+        # @sha256 digest pin でタグ差し替えによるサプライチェーン攻撃を防ぐ。
         # --redact=75 で万一ログ出力に secret が混ざっても 75% obfuscate される。
         # --no-color は lefthook ログの視認性のため。
+        repo_root=$(git rev-parse --show-toplevel)
         git diff --cached -U0 | docker run --rm -i \
-          ghcr.io/betterleaks/betterleaks:v1.1.2 \
+          -v "$repo_root:$repo_root:ro" \
+          -w "$repo_root" \
+          ghcr.io/betterleaks/betterleaks:v1.1.2@sha256:05a6e6cea419b8013cd3c361b6edf307a558615490d3d28f78f46887911f1512 \
           stdin --no-color --redact=75
 
 pre-push:

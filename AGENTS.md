@@ -173,4 +173,4 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 - テスト: vp test (Vitest 4.1 ベース、vite-plus 同梱)
 - リント: vp check (Oxlint + Oxfmt)
 - ローカルデータ: `.gantt-sync/`（gitignore 済み）
-- 秘密情報スキャン: docker 前提の `betterleaks` を pre-commit + CI で実行 (ADR-011、詳細は `AGENTS.md`)
+- 秘密情報スキャン: docker 前提の `betterleaks` を pre-commit + CI で実行 (詳細は ADR-011)
