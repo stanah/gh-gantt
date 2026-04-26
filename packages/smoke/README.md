@@ -121,6 +121,6 @@ Actions タブから手動で起動する。
 
 ## 関連
 
-- [ADR-008: 実環境スモークテストによる Org/個人環境差異の検証](../../docs/adr/ADR-008-real-environment-smoke-testing.yaml)
+- [ADR-008: 実環境スモークテストによる Org/個人環境差異の検証](../../docs/adr/ADR-008-real-environment-smoke-testing.md)
 - NFR-STABILITY-003: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
 - NFR-STABILITY-004: スモークテストの継続実行による回帰検知

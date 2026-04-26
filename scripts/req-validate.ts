@@ -1,6 +1,7 @@
 import { readFile, readdir } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parseAdrFile } from "@gh-gantt/shared";
 import { parse } from "yaml";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -32,11 +33,6 @@ interface Requirements {
   version: string;
   vision: string;
   areas: Area[];
-}
-
-interface ADR {
-  id: string;
-  related_requirements: string[];
 }
 
 async function collectTestReqIds(): Promise<Set<string>> {
@@ -106,15 +102,33 @@ async function main() {
   }
 
   try {
-    const adrFiles = (await readdir(ADR_DIR)).filter((f) => f.endsWith(".yaml"));
+    const adrFiles = (await readdir(ADR_DIR)).filter((f) => f.endsWith(".md"));
+    const filenameIdRe = /^(ADR-\d{3})-/;
     for (const file of adrFiles) {
       const content = await readFile(resolve(ADR_DIR, file), "utf-8");
-      const adr: ADR = parse(content);
-      if (adr.related_requirements) {
-        for (const reqId of adr.related_requirements) {
+      let frontmatter: Awaited<ReturnType<typeof parseAdrFile>>["frontmatter"];
+      try {
+        ({ frontmatter } = parseAdrFile(content));
+      } catch (parseErr: unknown) {
+        const message = parseErr instanceof Error ? parseErr.message : String(parseErr);
+        errors.push(`Invalid ADR file: ${file} の解析に失敗しました: ${message}`);
+        continue;
+      }
+      const filenameMatch = file.match(filenameIdRe);
+      if (!filenameMatch) {
+        errors.push(`Invalid ADR filename: ${file} は ADR-NNN-<slug>.md 形式である必要があります`);
+        continue;
+      }
+      if (filenameMatch[1] !== frontmatter.id) {
+        errors.push(
+          `ADR ID Mismatch: ${file} のファイル名先頭 "${filenameMatch[1]}" と frontmatter の id "${frontmatter.id}" が一致しません`,
+        );
+      }
+      if (frontmatter.related_requirements) {
+        for (const reqId of frontmatter.related_requirements) {
           if (!allReqIds.has(reqId)) {
             errors.push(
-              `Stale ADR Ref: ${adr.id} の related_requirements "${reqId}" は requirements.yaml に存在しません`,
+              `Stale ADR Ref: ${frontmatter.id} の related_requirements "${reqId}" は requirements.yaml に存在しません`,
             );
           }
         }
