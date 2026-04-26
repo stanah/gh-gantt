@@ -26,6 +26,10 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/conflicts-command.test.ts
+          - id: FR-SYNC-001-AC4
+            description: リモート削除 + ローカル変更ありの場合、警告を表示しタスクをローカルに保持する (delete/modify コンフリクト)
+            status: uncovered
+            tests: []
       - id: FR-SYNC-002
         summary: pull による GitHub → ローカル同期
         acceptance_criteria:
