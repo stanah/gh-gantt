@@ -12,8 +12,8 @@ dist/
 .worktrees/
 .superpowers/
 # Living Documentation の方針: AI ブレインストーミング由来の spec / plan は
-# 実装完了後に throwaway となり、決定は ADR-NNN に集約される。新規ファイルの
-# 紛れ込みを防ぐため tracked にしない (既存ファイルは別途 git rm で整理予定)。
+# 実装完了後に throwaway となり、決定は ADR-NNN / Issue / PR description に
+# 集約される。tracked にしない。
 docs/superpowers/specs/
 docs/superpowers/plans/
 .playwright-mcp/
