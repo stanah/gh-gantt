@@ -1,6 +1,21 @@
 import type { Page } from "@playwright/test";
-import configJson from "./fixtures/config.json";
-import tasksJson from "./fixtures/tasks.json";
+import { readFileSync } from "node:fs";
+
+type FixtureTask = {
+  id: string;
+  [key: string]: unknown;
+};
+
+type TasksFixture = {
+  tasks: FixtureTask[];
+};
+
+function readJsonFixture<T>(path: string): T {
+  return JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8")) as T;
+}
+
+const configJson = readJsonFixture<Record<string, unknown>>("./fixtures/config.json");
+const tasksJson = readJsonFixture<TasksFixture>("./fixtures/tasks.json");
 
 export async function mockApi(page: Page) {
   await page.route("**/api/config", (route) => route.fulfill({ json: configJson }));
