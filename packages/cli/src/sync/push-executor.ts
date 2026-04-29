@@ -1,5 +1,5 @@
 import type { graphql } from "@octokit/graphql";
-import type { Config, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
+import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, hashSyncFields, extractSyncFields } from "./hash.js";
 import {
@@ -169,7 +169,11 @@ export async function executePush(
     parentFailed: boolean;
     blockedByFailed: boolean;
   }
+  interface IssueTypeFailure {
+    previousSyncFields: SyncFields | undefined;
+  }
   const failedRelations = new Map<string, RelationFailure>();
+  const failedIssueTypes = new Map<string, IssueTypeFailure>();
   // Pre-relation baseline: remote state before relation mutations were attempted
   const preRelationBaseline = new Map<
     string,
@@ -522,6 +526,10 @@ export async function executePush(
           const issueTypeId = await resolveGithubIssueTypeId(task.type);
           if (issueTypeId !== undefined) {
             issueMutations.push(updateIssueIssueType(gql, idEntry.issue_node_id, issueTypeId));
+          } else if (issueTypeId === undefined) {
+            failedIssueTypes.set(task.id, {
+              previousSyncFields: snapshot?.syncFields,
+            });
           }
         }
 
@@ -720,23 +728,42 @@ export async function executePush(
       const existing = newSnapshots[id];
       let syncFields = extractSyncFields(task);
 
+      const issueTypeFailure = failedIssueTypes.get(id);
+      if (issueTypeFailure) {
+        if (issueTypeFailure.previousSyncFields) {
+          syncFields = { ...syncFields, type: issueTypeFailure.previousSyncFields.type };
+        } else {
+          if (existing) {
+            newSnapshots[id] = {
+              ...existing,
+              synced_at: new Date().toISOString(),
+              updated_at: freshUpdatedAt.get(id) ?? existing.updated_at,
+            };
+          } else {
+            delete newSnapshots[id];
+          }
+          continue;
+        }
+      }
+
       // If relationship mutations partially failed, roll back only the failed fields
       // to the pre-mutation baseline so computeLocalDiff detects the diff on next push
-      const failure = failedRelations.get(id);
-      if (failure) {
+      const relationFailure = failedRelations.get(id);
+      if (relationFailure) {
         const baseline = preRelationBaseline.get(id);
         if (baseline) {
-          if (failure.parentFailed) {
+          if (relationFailure.parentFailed) {
             syncFields = { ...syncFields, parent: baseline.parent };
           }
-          if (failure.blockedByFailed) {
+          if (relationFailure.blockedByFailed) {
             syncFields = { ...syncFields, blocked_by: baseline.blocked_by };
           }
         }
       }
 
       // Hash must match syncFields so diff detection works correctly
-      const snapshotHash = failure ? hashSyncFields(syncFields) : hashTask(task);
+      const hasRetryableFailure = Boolean(issueTypeFailure || relationFailure);
+      const snapshotHash = hasRetryableFailure ? hashSyncFields(syncFields) : hashTask(task);
 
       newSnapshots[id] = {
         hash: snapshotHash,

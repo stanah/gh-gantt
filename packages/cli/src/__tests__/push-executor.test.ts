@@ -354,6 +354,98 @@ describe("executePush", () => {
       expect(updateIssueTypeVars.issueTypeId).toBe("IT_FEATURE");
     });
 
+    it("Organization Issue Type が見つからない type 変更は snapshot を進めず次回 push で再試行できる", async () => {
+      const before = makeTask("o/r#1", {
+        github_issue: 1,
+        type: "task",
+        title: "Before",
+      });
+      const after = makeTask("o/r#1", {
+        github_issue: 1,
+        type: "feature",
+        title: "Before",
+      });
+      const oldSyncFields = extractSyncFields(before);
+      const tasksFile: TasksFile = {
+        tasks: [after],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(before),
+            synced_at: "",
+            syncFields: oldSyncFields,
+          },
+        },
+      };
+      const config = makeConfig({
+        task_types: {
+          task: { label: "Task", display: "bar", color: "#000", github_label: null },
+          feature: {
+            label: "Feature",
+            display: "bar",
+            color: "#00f",
+            github_label: null,
+            github_issue_type: "Feature",
+          },
+        },
+      });
+
+      let updateIssueTypeVars: any;
+      const fallbackGql = makeMockGql();
+      const mockGql = vi.fn().mockImplementation(async (query: string, vars?: any) => {
+        if (query.includes("issueTypes")) {
+          return {
+            organization: {
+              issueTypes: {
+                nodes: [
+                  {
+                    id: "IT_BUG",
+                    name: "Bug",
+                    description: null,
+                    isEnabled: true,
+                  },
+                ],
+              },
+            },
+          };
+        }
+        if (query.includes("updateIssueIssueType")) {
+          updateIssueTypeVars = vars;
+          return { updateIssueIssueType: { issue: { id: "ISSUE_1" } } };
+        }
+        return fallbackGql(query, vars);
+      });
+
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          config,
+          tasksFile,
+          syncState,
+        );
+
+        const snap = newSyncState.snapshots["o/r#1"];
+        expect(updateIssueTypeVars).toBeUndefined();
+        expect(snap).toBeDefined();
+        expect(snap!.syncFields?.type).toBe(oldSyncFields.type);
+        expect(snap!.hash).not.toBe(hashTask(after));
+
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs.some((d) => d.id === "o/r#1")).toBe(true);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
     it("snapshot updated_at is refreshed after push (Fix 1-1)", async () => {
       const task = makeTask("o/r#1", { github_issue: 1, title: "Modified" });
       const tasksFile: TasksFile = {
