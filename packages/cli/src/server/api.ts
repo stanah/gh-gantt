@@ -4,18 +4,13 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
-import { hashTask, extractSyncFields } from "../sync/hash.js";
+import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { executePull } from "../sync/pull-executor.js";
 import { createGraphQLClient } from "../github/client.js";
-import {
-  isDraftTask,
-  isMilestoneSyntheticTask,
-  buildDraftTaskId,
-  getNextDraftNumber,
-} from "../github/issues.js";
-import type { Task, StatusValue, SyncState } from "@gh-gantt/shared";
+import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
+import type { Task, StatusValue } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
 export function createApiRouter(projectRoot: string): Router {
@@ -32,7 +27,7 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const config = await configStore.read();
       res.json(config);
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to read config" });
     }
   });
@@ -64,7 +59,7 @@ export function createApiRouter(projectRoot: string): Router {
         config.statuses.field_name,
       );
       res.json({ tasks: tasksWithProgress, cache: mergedCache });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to read tasks" });
     }
   });
@@ -144,6 +139,7 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const taskId = decodeURIComponent(req.params.id);
       const updates = req.body;
+      const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const idx = tasksFile.tasks.findIndex((t) => t.id === taskId);
 
@@ -155,6 +151,7 @@ export function createApiRouter(projectRoot: string): Router {
       const UPDATABLE_FIELDS = [
         "title",
         "body",
+        "type",
         "state",
         "state_reason",
         "assignees",
@@ -170,6 +167,22 @@ export function createApiRouter(projectRoot: string): Router {
       ] as const;
 
       const oldTask = tasksFile.tasks[idx];
+      if ("type" in updates) {
+        if (typeof updates.type !== "string" || !config.task_types[updates.type]) {
+          res.status(400).json({ error: `Unknown task type: "${updates.type}"` });
+          return;
+        }
+      }
+      if ("labels" in updates) {
+        if (
+          !Array.isArray(updates.labels) ||
+          updates.labels.some((label: unknown) => typeof label !== "string")
+        ) {
+          res.status(400).json({ error: "labels must be an array of strings" });
+          return;
+        }
+      }
+
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
         if (key in updates) {
@@ -178,8 +191,20 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const updatedTask = { ...oldTask, ...safeUpdates };
 
+      if (safeUpdates.type && safeUpdates.type !== oldTask.type) {
+        const oldTypeDef = config.task_types[oldTask.type];
+        const newTypeDef = config.task_types[safeUpdates.type];
+        if (oldTypeDef?.github_label) {
+          updatedTask.labels = updatedTask.labels.filter(
+            (label) => label !== oldTypeDef.github_label,
+          );
+        }
+        if (newTypeDef?.github_label && !updatedTask.labels.includes(newTypeDef.github_label)) {
+          updatedTask.labels = [...updatedTask.labels, newTypeDef.github_label];
+        }
+      }
+
       // Auto-update dates on status transition
-      const config = await configStore.read();
       const statusField = config.statuses.field_name;
       const oldStatus = oldTask.custom_fields[statusField] as string | undefined;
       const newStatus = updatedTask.custom_fields[statusField] as string | undefined;
@@ -210,7 +235,7 @@ export function createApiRouter(projectRoot: string): Router {
       await tasksStore.write(tasksFile);
 
       res.json(updatedTask);
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to update task" });
     }
   });
@@ -406,7 +431,7 @@ export function createApiRouter(projectRoot: string): Router {
         local_changes: localChanges.length,
         total_tasks: tasksFile.tasks.length,
       });
-    } catch (err) {
+    } catch {
       res.status(500).json({ error: "Failed to get sync status" });
     }
   });

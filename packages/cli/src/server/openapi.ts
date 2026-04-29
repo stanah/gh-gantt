@@ -29,6 +29,7 @@ registry.register("TaskCreateRequest", TaskCreateRequestSchema);
 const TaskUpdateRequestSchema = z.object({
   title: z.string().optional(),
   body: z.string().nullable().optional(),
+  type: z.string().optional(),
   state: z.enum(["open", "closed"]).optional(),
   state_reason: z.string().nullable().optional(),
   assignees: z.array(z.string()).optional(),

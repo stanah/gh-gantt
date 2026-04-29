@@ -1,8 +1,8 @@
 import type { graphql } from "@octokit/graphql";
 
 const CREATE_ISSUE_MUTATION = `
-  mutation($repositoryId: ID!, $title: String!, $body: String, $labelIds: [ID!], $milestoneId: ID, $assigneeIds: [ID!]) {
-    createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds, milestoneId: $milestoneId, assigneeIds: $assigneeIds }) {
+  mutation($repositoryId: ID!, $title: String!, $body: String, $labelIds: [ID!], $milestoneId: ID, $assigneeIds: [ID!], $issueTypeId: ID) {
+    createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds, milestoneId: $milestoneId, assigneeIds: $assigneeIds, issueTypeId: $issueTypeId }) {
       issue {
         id
         number
@@ -24,6 +24,14 @@ const ADD_PROJECT_V2_ITEM_MUTATION = `
 const UPDATE_ISSUE_MUTATION = `
   mutation($issueId: ID!, $title: String, $body: String) {
     updateIssue(input: { id: $issueId, title: $title, body: $body }) {
+      issue { id }
+    }
+  }
+`;
+
+const UPDATE_ISSUE_ISSUE_TYPE_MUTATION = `
+  mutation($issueId: ID!, $issueTypeId: ID) {
+    updateIssueIssueType(input: { issueId: $issueId, issueTypeId: $issueTypeId }) {
       issue { id }
     }
   }
@@ -66,6 +74,17 @@ export async function updateIssue(
   });
 }
 
+export async function updateIssueIssueType(
+  gql: typeof graphql,
+  issueNodeId: string,
+  issueTypeId: string | null,
+): Promise<void> {
+  await gql(UPDATE_ISSUE_ISSUE_TYPE_MUTATION, {
+    issueId: issueNodeId,
+    issueTypeId,
+  });
+}
+
 export async function setIssueState(
   gql: typeof graphql,
   issueNodeId: string,
@@ -84,6 +103,7 @@ export interface CreateIssueOptions {
   labelIds?: string[];
   milestoneId?: string;
   assigneeIds?: string[];
+  issueTypeId?: string;
 }
 
 export async function createIssue(
@@ -98,6 +118,7 @@ export async function createIssue(
     labelIds: options.labelIds?.length ? options.labelIds : undefined,
     milestoneId: options.milestoneId ?? undefined,
     assigneeIds: options.assigneeIds?.length ? options.assigneeIds : undefined,
+    issueTypeId: options.issueTypeId ?? undefined,
   });
   return {
     issueId: result.createIssue.issue.id,

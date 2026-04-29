@@ -173,4 +173,197 @@ describe("createApiRouter", () => {
       globalThis.Map = OriginalMap;
     }
   });
+
+  it("PATCH /api/tasks/:id で type 変更を保存し github_label を差し替える", async () => {
+    const configStore = new ConfigStore(dir);
+    const tasksStore = new TasksStore(dir);
+
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
+        feature: {
+          label: "Feature",
+          display: "bar",
+          color: "#222222",
+          github_label: "feature",
+        },
+      },
+      type_hierarchy: {},
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+    });
+    await tasksStore.write({
+      tasks: [
+        {
+          id: "o/r#1",
+          type: "task",
+          github_issue: 1,
+          github_repo: "o/r",
+          parent: null,
+          sub_tasks: [],
+          title: "Task",
+          body: null,
+          state: "open" as const,
+          state_reason: null,
+          assignees: [],
+          labels: ["task", "keep"],
+          milestone: null,
+          linked_prs: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          closed_at: null,
+          custom_fields: {},
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+        },
+      ],
+      cache: { comments: {}, reactions: {} },
+    });
+
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === "/api/tasks/:id" && layer.route?.methods?.patch,
+    );
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("PATCH /api/tasks/:id handler not found");
+
+    let statusCode = 200;
+    let jsonPayload: any;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+
+    await handler(
+      {
+        params: { id: encodeURIComponent("o/r#1") },
+        body: { type: "feature" },
+      },
+      res,
+    );
+
+    const written = await tasksStore.read();
+
+    expect(statusCode).toBe(200);
+    expect(jsonPayload.type).toBe("feature");
+    expect(jsonPayload.labels).toEqual(["keep", "feature"]);
+    expect(written.tasks[0].type).toBe("feature");
+    expect(written.tasks[0].labels).toEqual(["keep", "feature"]);
+  });
+
+  it("PATCH /api/tasks/:id は labels が文字列配列でない場合 400 を返す", async () => {
+    const configStore = new ConfigStore(dir);
+    const tasksStore = new TasksStore(dir);
+
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
+        feature: {
+          label: "Feature",
+          display: "bar",
+          color: "#222222",
+          github_label: "feature",
+        },
+      },
+      type_hierarchy: {},
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+    });
+    await tasksStore.write({
+      tasks: [
+        {
+          id: "o/r#1",
+          type: "task",
+          github_issue: 1,
+          github_repo: "o/r",
+          parent: null,
+          sub_tasks: [],
+          title: "Task",
+          body: null,
+          state: "open" as const,
+          state_reason: null,
+          assignees: [],
+          labels: ["task", "keep"],
+          milestone: null,
+          linked_prs: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          closed_at: null,
+          custom_fields: {},
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+        },
+      ],
+      cache: { comments: {}, reactions: {} },
+    });
+
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === "/api/tasks/:id" && layer.route?.methods?.patch,
+    );
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("PATCH /api/tasks/:id handler not found");
+
+    let statusCode = 200;
+    let jsonPayload: any;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+
+    await handler(
+      {
+        params: { id: encodeURIComponent("o/r#1") },
+        body: { type: "feature", labels: null },
+      },
+      res,
+    );
+
+    const written = await tasksStore.read();
+
+    expect(statusCode).toBe(400);
+    expect(jsonPayload.error).toBe("labels must be an array of strings");
+    expect(written.tasks[0].type).toBe("task");
+    expect(written.tasks[0].labels).toEqual(["task", "keep"]);
+  });
 });
