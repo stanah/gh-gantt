@@ -1,9 +1,21 @@
 import { Command } from "commander";
 import express from "express";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createApiRouter } from "../server/api.js";
 import { DEFAULT_PORT } from "@gh-gantt/shared";
+
+export function resolveUiDistPath(moduleUrl = import.meta.url): string | null {
+  const moduleDir = dirname(fileURLToPath(moduleUrl));
+  const candidates = [
+    join(moduleDir, "ui", "dist"),
+    join(moduleDir, "..", "ui", "dist"),
+    join(moduleDir, "..", "..", "ui", "dist"),
+    join(moduleDir, "..", "..", "..", "ui", "dist"),
+  ];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
 
 export const serveCommand = new Command("serve")
   .description("Start the Gantt chart UI server")
@@ -15,7 +27,7 @@ export const serveCommand = new Command("serve")
 
     const app = express();
 
-    // CORS for dev mode (Vite dev server on different port)
+    // 開発時は Vite dev server が別ポートで動くため CORS を許可する。
     app.use((_req, res, next) => {
       res.header("Access-Control-Allow-Origin", "*");
       res.header("Access-Control-Allow-Methods", "GET, PATCH, POST, OPTIONS");
@@ -27,22 +39,27 @@ export const serveCommand = new Command("serve")
       next();
     });
 
-    // Mount API routes
+    // API は gh-gantt を実行したプロジェクトの同期データを読む。
     const apiRouter = createApiRouter(projectRoot);
     app.use(apiRouter);
 
     if (!opts.apiOnly) {
-      // Serve built UI if available
-      const uiDistPath = join(projectRoot, "packages", "ui", "dist");
-      if (existsSync(uiDistPath)) {
+      const uiDistPath = resolveUiDistPath();
+      if (uiDistPath) {
         app.use(express.static(uiDistPath));
-        // SPA fallback
-        app.get("*", (_req, res) => {
+        // SPA ルーティングは静的配信後に index.html へ戻す。
+        app.get("*", (req, res, next) => {
+          if (req.path === "/api" || req.path.startsWith("/api/")) {
+            next();
+            return;
+          }
           res.sendFile(join(uiDistPath, "index.html"));
         });
         console.log(`Serving UI from ${uiDistPath}`);
       } else {
-        console.log(`No built UI found. Run 'pnpm --filter @gh-gantt/ui build' first.`);
+        console.log(
+          `No built UI found in the gh-gantt installation. Run 'pnpm --filter @gh-gantt/ui build' first.`,
+        );
         console.log(`For development, use 'pnpm dev' to start Vite dev server alongside.`);
       }
     }
