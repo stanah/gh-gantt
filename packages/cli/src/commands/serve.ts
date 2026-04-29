@@ -48,7 +48,11 @@ export const serveCommand = new Command("serve")
       if (uiDistPath) {
         app.use(express.static(uiDistPath));
         // SPA ルーティングは静的配信後に index.html へ戻す。
-        app.get("*", (_req, res) => {
+        app.get("*", (req, res, next) => {
+          if (req.path === "/api" || req.path.startsWith("/api/")) {
+            next();
+            return;
+          }
           res.sendFile(join(uiDistPath, "index.html"));
         });
         console.log(`Serving UI from ${uiDistPath}`);

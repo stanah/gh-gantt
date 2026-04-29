@@ -80,4 +80,31 @@ describe("serve コマンド", () => {
     expect(mocks.app.use).toHaveBeenCalledWith(mocks.staticMiddleware);
     expect(mocks.createApiRouter).toHaveBeenCalledWith(projectRoot);
   });
+
+  it("/api 配下の未定義パスは SPA fallback ではなく API 側へ委譲する", async () => {
+    const { serveCommand } = await import("../commands/serve.js");
+    const testDir = dirname(fileURLToPath(import.meta.url));
+    const cliUiDistPath = join(testDir, "..", "..", "..", "ui", "dist");
+
+    mocks.existsSync.mockImplementation((path: unknown) => path === cliUiDistPath);
+
+    await serveCommand.parseAsync(["serve", "--port", "0"], { from: "user" });
+
+    const fallbackHandler = mocks.app.get.mock.calls.find(([path]) => path === "*")?.[1] as
+      | ((
+          req: { path: string },
+          res: { sendFile: ReturnType<typeof vi.fn> },
+          next: () => void,
+        ) => void)
+      | undefined;
+    if (!fallbackHandler) throw new Error("SPA fallback handler not found");
+
+    const sendFile = vi.fn();
+    const next = vi.fn();
+
+    fallbackHandler({ path: "/api/missing" }, { sendFile }, next);
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(sendFile).not.toHaveBeenCalled();
+  });
 });
