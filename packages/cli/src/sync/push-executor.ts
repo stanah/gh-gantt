@@ -9,7 +9,12 @@ import {
   buildTaskId,
   buildMilestoneSyntheticId,
 } from "../github/issues.js";
-import { fetchRepositoryId, fetchRepositoryMetadata, fetchUserIds } from "../github/projects.js";
+import {
+  fetchRepositoryId,
+  fetchRepositoryMetadata,
+  fetchUserIds,
+  fetchOrgIssueTypes,
+} from "../github/projects.js";
 import { buildIssueUpdatedAtQuery } from "../github/queries.js";
 import { getToken } from "../github/auth.js";
 import {
@@ -18,6 +23,7 @@ import {
   addSubIssue,
   removeSubIssue,
   updateIssue,
+  updateIssueIssueType,
   setIssueState,
   updateProjectItemField,
   createGithubMilestone,
@@ -133,6 +139,27 @@ export async function executePush(
 
   const fm = config.sync.field_mapping;
   const { owner, repo } = config.project.github;
+  let issueTypeIdByName: Map<string, string> | undefined;
+  const usesGithubIssueTypes = Object.values(config.task_types).some((t) => t.github_issue_type);
+
+  const resolveGithubIssueTypeId = async (typeName: string): Promise<string | null | undefined> => {
+    const issueTypeName = config.task_types[typeName]?.github_issue_type ?? null;
+    if (!issueTypeName) return null;
+
+    if (!issueTypeIdByName) {
+      const orgIssueTypes = await fetchOrgIssueTypes(gql, owner);
+      issueTypeIdByName = new Map(orgIssueTypes.map((t) => [t.name, t.id]));
+    }
+
+    const issueTypeId = issueTypeIdByName.get(issueTypeName);
+    if (!issueTypeId) {
+      console.warn(
+        `  ⚠ Organization Issue Type "${issueTypeName}" が見つからないため type 同期をスキップ (${typeName})`,
+      );
+      return undefined;
+    }
+    return issueTypeId;
+  };
 
   // Track which tasks were actually pushed (by their current ID after push)
   const pushedTaskIds = new Set<string>();
@@ -240,6 +267,7 @@ export async function executePush(
       const assigneeIds = task.assignees
         .map((login) => userIdMap.get(login))
         .filter((id): id is string => id != null);
+      const issueTypeId = await resolveGithubIssueTypeId(task.type);
 
       // Create GitHub issue
       const { issueId, issueNumber } = await createIssue(gql, repositoryId, {
@@ -248,6 +276,7 @@ export async function executePush(
         labelIds,
         milestoneId,
         assigneeIds,
+        issueTypeId: issueTypeId ?? undefined,
       });
 
       // Add to project
@@ -480,13 +509,23 @@ export async function executePush(
 
     if (diff.type === "modified" || diff.type === "added") {
       if (idEntry.issue_node_id) {
-        await Promise.all([
+        const issueMutations: Promise<unknown>[] = [
           updateIssue(gql, idEntry.issue_node_id, {
             title: task.title,
             body: task.body ?? undefined,
           }),
           setIssueState(gql, idEntry.issue_node_id, task.state),
-        ]);
+        ];
+
+        const snapshot = syncState.snapshots[task.id];
+        if (usesGithubIssueTypes && snapshot?.syncFields?.type !== task.type) {
+          const issueTypeId = await resolveGithubIssueTypeId(task.type);
+          if (issueTypeId !== undefined) {
+            issueMutations.push(updateIssueIssueType(gql, idEntry.issue_node_id, issueTypeId));
+          }
+        }
+
+        await Promise.all(issueMutations);
       }
 
       if (idEntry.project_item_id) {

@@ -205,6 +205,155 @@ describe("executePush", () => {
       expect(closeIssueCalls.length).toBe(1);
     });
 
+    it("Organization Issue Type が設定された draft task は createIssue に issueTypeId を渡す", async () => {
+      const draft = makeTask("o/r#draft-1", {
+        type: "feature",
+        title: "Feature task",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [draft],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: {},
+        snapshots: {},
+      };
+      const config = makeConfig({
+        task_types: {
+          task: { label: "Task", display: "bar", color: "#000", github_label: null },
+          feature: {
+            label: "Feature",
+            display: "bar",
+            color: "#00f",
+            github_label: null,
+            github_issue_type: "Feature",
+          },
+        },
+      });
+
+      let createIssueVars: any;
+      const mockGql = vi.fn().mockImplementation(async (query: string, vars?: any) => {
+        if (query.includes("issueTypes")) {
+          return {
+            organization: {
+              issueTypes: {
+                nodes: [
+                  {
+                    id: "IT_FEATURE",
+                    name: "Feature",
+                    description: null,
+                    isEnabled: true,
+                  },
+                ],
+              },
+            },
+          };
+        }
+        if (query.includes("createIssue")) {
+          createIssueVars = vars;
+          return { createIssue: { issue: { id: "ISSUE_99", number: 99 } } };
+        }
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "ITEM_99" } } };
+        }
+        if (query.includes("labels") || query.includes("milestones")) {
+          return {
+            repository: { labels: { nodes: [] }, milestones: { nodes: [] } },
+          };
+        }
+        if (query.includes("repository(")) {
+          return { repository: { id: "REPO_1" } };
+        }
+        if (query.includes("issue(number:")) {
+          return makeBatchIssueResponse(extractBatchIssueNumbers(query));
+        }
+        return {};
+      });
+
+      const { result } = await executePush(mockGql as any, config, tasksFile, syncState);
+
+      expect(result.created).toBe(1);
+      expect(createIssueVars.issueTypeId).toBe("IT_FEATURE");
+    });
+
+    it("既存 task の type 変更は Organization Issue Type を updateIssueIssueType で更新する", async () => {
+      const before = makeTask("o/r#1", {
+        github_issue: 1,
+        type: "task",
+        title: "Before",
+      });
+      const after = makeTask("o/r#1", {
+        github_issue: 1,
+        type: "feature",
+        title: "Before",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [after],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(before),
+            synced_at: "",
+            syncFields: extractSyncFields(before),
+          },
+        },
+      };
+      const config = makeConfig({
+        task_types: {
+          task: { label: "Task", display: "bar", color: "#000", github_label: null },
+          feature: {
+            label: "Feature",
+            display: "bar",
+            color: "#00f",
+            github_label: null,
+            github_issue_type: "Feature",
+          },
+        },
+      });
+
+      let updateIssueTypeVars: any;
+      const fallbackGql = makeMockGql();
+      const mockGql = vi.fn().mockImplementation(async (query: string, vars?: any) => {
+        if (query.includes("issueTypes")) {
+          return {
+            organization: {
+              issueTypes: {
+                nodes: [
+                  {
+                    id: "IT_FEATURE",
+                    name: "Feature",
+                    description: null,
+                    isEnabled: true,
+                  },
+                ],
+              },
+            },
+          };
+        }
+        if (query.includes("updateIssueIssueType")) {
+          updateIssueTypeVars = vars;
+          return { updateIssueIssueType: { issue: { id: "ISSUE_1" } } };
+        }
+        return fallbackGql(query, vars);
+      });
+
+      const { result } = await executePush(mockGql as any, config, tasksFile, syncState);
+
+      expect(result.updated).toBe(1);
+      expect(updateIssueTypeVars.issueTypeId).toBe("IT_FEATURE");
+    });
+
     it("snapshot updated_at is refreshed after push (Fix 1-1)", async () => {
       const task = makeTask("o/r#1", { github_issue: 1, title: "Modified" });
       const tasksFile: TasksFile = {

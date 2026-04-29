@@ -144,6 +144,7 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const taskId = decodeURIComponent(req.params.id);
       const updates = req.body;
+      const config = await configStore.read();
       const tasksFile = await tasksStore.read();
       const idx = tasksFile.tasks.findIndex((t) => t.id === taskId);
 
@@ -155,6 +156,7 @@ export function createApiRouter(projectRoot: string): Router {
       const UPDATABLE_FIELDS = [
         "title",
         "body",
+        "type",
         "state",
         "state_reason",
         "assignees",
@@ -170,6 +172,13 @@ export function createApiRouter(projectRoot: string): Router {
       ] as const;
 
       const oldTask = tasksFile.tasks[idx];
+      if ("type" in updates) {
+        if (typeof updates.type !== "string" || !config.task_types[updates.type]) {
+          res.status(400).json({ error: `Unknown task type: "${updates.type}"` });
+          return;
+        }
+      }
+
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
         if (key in updates) {
@@ -178,8 +187,20 @@ export function createApiRouter(projectRoot: string): Router {
       }
       const updatedTask = { ...oldTask, ...safeUpdates };
 
+      if (safeUpdates.type && safeUpdates.type !== oldTask.type) {
+        const oldTypeDef = config.task_types[oldTask.type];
+        const newTypeDef = config.task_types[safeUpdates.type];
+        if (oldTypeDef?.github_label) {
+          updatedTask.labels = updatedTask.labels.filter(
+            (label) => label !== oldTypeDef.github_label,
+          );
+        }
+        if (newTypeDef?.github_label && !updatedTask.labels.includes(newTypeDef.github_label)) {
+          updatedTask.labels = [...updatedTask.labels, newTypeDef.github_label];
+        }
+      }
+
       // Auto-update dates on status transition
-      const config = await configStore.read();
       const statusField = config.statuses.field_name;
       const oldStatus = oldTask.custom_fields[statusField] as string | undefined;
       const newStatus = updatedTask.custom_fields[statusField] as string | undefined;
