@@ -43,6 +43,7 @@ interface TaskTreeBodyProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
+  dependencyHighlightEnabled?: boolean;
   highlightedTaskIds?: Set<string>;
   highlightRelationMap?: Map<string, RelationType>;
   searchQuery?: string;
@@ -62,6 +63,7 @@ export function TaskTreeBody({
   displayOptions,
   hoveredTaskId,
   onHoverTask,
+  dependencyHighlightEnabled = true,
   highlightedTaskIds,
   highlightRelationMap,
   searchQuery,
@@ -89,8 +91,11 @@ export function TaskTreeBody({
       showAssignees={displayOptions?.has("assignees")}
       showPriority={displayOptions?.has("priority")}
       priorityFieldName={config.sync?.field_mapping?.priority}
-      highlightType={highlightRelationMap?.get(node.task.id) ?? null}
+      highlightType={
+        dependencyHighlightEnabled ? (highlightRelationMap?.get(node.task.id) ?? null) : null
+      }
       isDimmed={
+        dependencyHighlightEnabled &&
         hoveredTaskId != null &&
         hoveredTaskId !== node.task.id &&
         !highlightedTaskIds?.has(node.task.id)

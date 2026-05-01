@@ -45,6 +45,7 @@ interface GanttChartProps {
   displayOptions?: Set<DisplayOption>;
   hoveredTaskId?: string | null;
   onHoverTask?: (taskId: string | null) => void;
+  dependencyHighlightEnabled?: boolean;
   highlightRelationMap?: Map<string, RelationType>;
 }
 
@@ -62,6 +63,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     displayOptions,
     hoveredTaskId,
     onHoverTask,
+    dependencyHighlightEnabled = true,
     highlightRelationMap,
   },
   ref,
@@ -259,7 +261,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         xScale={xScale}
         totalWidth={totalWidth}
         totalHeight={totalHeight}
-        hoveredTaskId={hoveredTaskId ?? null}
+        hoveredTaskId={dependencyHighlightEnabled ? (hoveredTaskId ?? null) : null}
       />
       <svg
         ref={mainSvgRef}
@@ -324,8 +326,11 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           const showAssignees = displayOptions?.has("assignees");
 
           const isHoveredTask = hoveredTaskId === task.id;
-          const highlightType = highlightRelationMap?.get(task.id) ?? null;
-          const isDimmed = hoveredTaskId != null && !isHoveredTask && !highlightType;
+          const highlightType = dependencyHighlightEnabled
+            ? (highlightRelationMap?.get(task.id) ?? null)
+            : null;
+          const isDimmed =
+            dependencyHighlightEnabled && hoveredTaskId != null && !isHoveredTask && !highlightType;
 
           if (display === "summary") {
             return (

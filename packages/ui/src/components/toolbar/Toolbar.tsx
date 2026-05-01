@@ -1,5 +1,6 @@
 // packages/ui/src/components/toolbar/Toolbar.tsx
 import React from "react";
+import { GitBranch } from "lucide-react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
 import type { SprintConfig, ViewScale } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
@@ -10,6 +11,7 @@ import { UndoRedoGroup } from "./UndoRedoGroup.js";
 import { SyncGroup } from "./SyncGroup.js";
 import { MoreMenu } from "./MoreMenu.js";
 import { ThemeToggle } from "./ThemeToggle.js";
+import { IconButton } from "./IconButton.js";
 
 interface ToolbarProps {
   projectName: string;
@@ -23,6 +25,8 @@ interface ToolbarProps {
   lastSyncedAt?: string;
   displayOptions: Set<DisplayOption>;
   onToggleDisplayOption: (opt: DisplayOption) => void;
+  dependencyHighlightEnabled: boolean;
+  onToggleDependencyHighlight: () => void;
   hideClosed: boolean;
   onToggleHideClosed: () => void;
   taskTypes: Record<string, TaskType>;
@@ -110,6 +114,12 @@ export function Toolbar(props: ToolbarProps) {
         undoRedoBusy={props.undoRedoBusy}
       />
       <div style={{ flex: 1 }} />
+      <IconButton
+        icon={<GitBranch size={14} />}
+        title="Dependency Highlight"
+        onClick={props.onToggleDependencyHighlight}
+        active={props.dependencyHighlightEnabled}
+      />
       <MoreMenu
         displayOptions={props.displayOptions}
         onToggleDisplayOption={props.onToggleDisplayOption}
