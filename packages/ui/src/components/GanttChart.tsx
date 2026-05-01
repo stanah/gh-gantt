@@ -255,14 +255,16 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         pixelsPerDay={pixelsPerDay}
         sprints={config.sprints}
       />
-      <GanttBlockLines
-        tasks={tasks}
-        flatList={flatList}
-        xScale={xScale}
-        totalWidth={totalWidth}
-        totalHeight={totalHeight}
-        hoveredTaskId={dependencyHighlightEnabled ? (hoveredTaskId ?? null) : null}
-      />
+      {dependencyHighlightEnabled && (
+        <GanttBlockLines
+          tasks={tasks}
+          flatList={flatList}
+          xScale={xScale}
+          totalWidth={totalWidth}
+          totalHeight={totalHeight}
+          hoveredTaskId={hoveredTaskId ?? null}
+        />
+      )}
       <svg
         ref={mainSvgRef}
         role="group"

@@ -3,6 +3,22 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest
 import React from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
+
+const dependencyGraphMocks = vi.hoisted(() => ({
+  buildDependencyEdges: vi.fn(() => [
+    {
+      from: "stanah/gh-gantt#1",
+      to: "stanah/gh-gantt#2",
+      type: "finish-to-start",
+      lag: 0,
+    },
+  ]),
+  detectCycles: vi.fn(() => []),
+  getEdgeCoordinates: vi.fn(() => ({ path: "M 0 0 L 10 10" })),
+}));
+
+vi.mock("../lib/dependency-graph.js", () => dependencyGraphMocks);
+
 import { GanttChart } from "../components/GanttChart.js";
 import { TaskTreeBody } from "../components/TaskTree.js";
 import { useTaskFilter } from "../hooks/useTaskFilter.js";
@@ -205,6 +221,29 @@ describe("依存ハイライトトグル", () => {
     );
 
     expect(html).not.toContain('opacity="0.3"');
+  });
+
+  it("GanttChart は OFF のとき依存線を描画せず依存グラフも計算しない", () => {
+    dependencyGraphMocks.buildDependencyEdges.mockClear();
+    dependencyGraphMocks.detectCycles.mockClear();
+    dependencyGraphMocks.getEdgeCoordinates.mockClear();
+
+    renderToStaticMarkup(
+      <GanttChart
+        tasks={tasks}
+        flatList={flatList}
+        config={config}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        header={() => {}}
+        hoveredTaskId={baseTask.id}
+        dependencyHighlightEnabled={false}
+      />,
+    );
+
+    expect(dependencyGraphMocks.buildDependencyEdges).not.toHaveBeenCalled();
+    expect(dependencyGraphMocks.detectCycles).not.toHaveBeenCalled();
+    expect(dependencyGraphMocks.getEdgeCoordinates).not.toHaveBeenCalled();
   });
 
   it("TaskTreeBody は ON のときホバーした非関連タスクを dim する", () => {
