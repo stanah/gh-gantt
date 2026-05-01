@@ -135,6 +135,8 @@ export function App() {
   const {
     hideClosed,
     toggleHideClosed,
+    dependencyHighlightEnabled,
+    toggleDependencyHighlight,
     selectedAssignee,
     selectedAssignees,
     setSelectedAssignee,
@@ -250,8 +252,8 @@ export function App() {
 
   const { getRelated } = useRelatedTasks(tasks, config?.task_types ?? EMPTY_TASK_TYPES);
   const { ids: highlightedTaskIds, relationMap: highlightRelationMap } = useMemo(
-    () => getRelated(hoveredTaskId),
-    [getRelated, hoveredTaskId],
+    () => getRelated(dependencyHighlightEnabled ? hoveredTaskId : null),
+    [dependencyHighlightEnabled, getRelated, hoveredTaskId],
   );
 
   const handleReparent = useCallback(
@@ -551,6 +553,8 @@ export function App() {
             syncing={syncing}
             displayOptions={displayOptions}
             onToggleDisplayOption={toggleDisplayOption}
+            dependencyHighlightEnabled={dependencyHighlightEnabled}
+            onToggleDependencyHighlight={toggleDependencyHighlight}
             hideClosed={hideClosed}
             onToggleHideClosed={toggleHideClosed}
             selectedAssignee={selectedAssignee}
@@ -608,6 +612,7 @@ export function App() {
                     displayOptions={displayOptions}
                     hoveredTaskId={hoveredTaskId}
                     onHoverTask={setHoveredTaskId}
+                    dependencyHighlightEnabled={dependencyHighlightEnabled}
                     highlightedTaskIds={highlightedTaskIds}
                     highlightRelationMap={highlightRelationMap}
                     searchQuery={searchQuery}
@@ -635,6 +640,7 @@ export function App() {
                     displayOptions={displayOptions}
                     hoveredTaskId={hoveredTaskId}
                     onHoverTask={setHoveredTaskId}
+                    dependencyHighlightEnabled={dependencyHighlightEnabled}
                     highlightRelationMap={highlightRelationMap}
                   />
                 }

@@ -7,9 +7,11 @@ export const NO_LABEL = "__no_label__";
 const ASSIGNEES_QUERY_KEY = "assignees";
 const PRIORITIES_QUERY_KEY = "priorities";
 const LABELS_QUERY_KEY = "labels";
+const DEPENDENCY_HIGHLIGHT_QUERY_KEY = "dependencyHighlight";
 
 export interface TaskFilterState {
   hideClosed: boolean;
+  dependencyHighlightEnabled: boolean;
   selectedAssignee: string | null;
   searchQuery: string;
   selectedPriorities: string[];
@@ -45,6 +47,12 @@ function parseLabelsFromQuery(search: string): string[] {
   return params.getAll(LABELS_QUERY_KEY).filter((v) => v.length > 0);
 }
 
+function parseDependencyHighlightFromQuery(search: string): boolean {
+  const params = new URLSearchParams(search);
+  const raw = params.get(DEPENDENCY_HIGHLIGHT_QUERY_KEY);
+  return raw !== "off";
+}
+
 export function useTaskFilter(tasks: Task[]) {
   const [hideClosed, setHideClosed] = useState(true);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>(() => {
@@ -59,10 +67,18 @@ export function useTaskFilter(tasks: Task[]) {
     if (typeof window === "undefined") return [];
     return parseLabelsFromQuery(window.location.search);
   });
+  const [dependencyHighlightEnabled, setDependencyHighlightEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    return parseDependencyHighlightFromQuery(window.location.search);
+  });
   const [searchQuery, setSearchQuery] = useState("");
 
   const toggleHideClosed = useCallback(() => {
     setHideClosed((prev) => !prev);
+  }, []);
+
+  const toggleDependencyHighlight = useCallback(() => {
+    setDependencyHighlightEnabled((prev) => !prev);
   }, []);
 
   const allAssignees = useMemo(() => {
@@ -117,12 +133,19 @@ export function useTaskFilter(tasks: Task[]) {
     for (const label of selectedLabels) {
       url.searchParams.append(LABELS_QUERY_KEY, label);
     }
+    if (dependencyHighlightEnabled) {
+      url.searchParams.delete(DEPENDENCY_HIGHLIGHT_QUERY_KEY);
+    } else {
+      url.searchParams.set(DEPENDENCY_HIGHLIGHT_QUERY_KEY, "off");
+    }
     window.history.replaceState({}, "", url.toString());
-  }, [selectedAssignees, selectedPriorities, selectedLabels]);
+  }, [selectedAssignees, selectedPriorities, selectedLabels, dependencyHighlightEnabled]);
 
   return {
     hideClosed,
     toggleHideClosed,
+    dependencyHighlightEnabled,
+    toggleDependencyHighlight,
     selectedAssignee,
     setSelectedAssignee,
     selectedAssignees,
