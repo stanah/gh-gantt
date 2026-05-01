@@ -6,6 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { GanttChart } from "../components/GanttChart.js";
 import { TaskTreeBody } from "../components/TaskTree.js";
 import { useTaskFilter } from "../hooks/useTaskFilter.js";
+import type { RelationType } from "../hooks/useRelatedTasks.js";
 import type { Config, Task } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 
@@ -103,6 +104,8 @@ const config: Config = {
 
 const tasks = [baseTask, relatedTask, unrelatedTask];
 const flatList: TreeNode[] = tasks.map((task) => ({ task, children: [], depth: 0 }));
+const highlightRelationMap = new Map<string, RelationType>([[relatedTask.id, "blocked"]]);
+const highlightedTaskIds = new Set([baseTask.id, relatedTask.id]);
 const originalConsoleError = console.error.bind(console);
 
 function FilterProbe() {
@@ -168,6 +171,24 @@ describe("依存ハイライトトグル", () => {
     expect(new URL(window.location.href).searchParams.has("dependencyHighlight")).toBe(false);
   });
 
+  it("GanttChart は ON のときホバーした非関連タスクを dim する", () => {
+    const html = renderToStaticMarkup(
+      <GanttChart
+        tasks={tasks}
+        flatList={flatList}
+        config={config}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        header={() => {}}
+        hoveredTaskId={baseTask.id}
+        highlightRelationMap={highlightRelationMap}
+        dependencyHighlightEnabled={true}
+      />,
+    );
+
+    expect(html).toContain('opacity="0.3"');
+  });
+
   it("GanttChart は OFF のときホバーしても非関連タスクを dim しない", () => {
     const html = renderToStaticMarkup(
       <GanttChart
@@ -178,12 +199,30 @@ describe("依存ハイライトトグル", () => {
         onSelectTask={() => {}}
         header={() => {}}
         hoveredTaskId={baseTask.id}
-        highlightRelationMap={new Map()}
+        highlightRelationMap={highlightRelationMap}
         dependencyHighlightEnabled={false}
       />,
     );
 
     expect(html).not.toContain('opacity="0.3"');
+  });
+
+  it("TaskTreeBody は ON のときホバーした非関連タスクを dim する", () => {
+    const html = renderToStaticMarkup(
+      <TaskTreeBody
+        config={config}
+        selectedTaskId={null}
+        onSelectTask={() => {}}
+        flatList={flatList}
+        collapsed={new Set()}
+        onToggleCollapse={() => {}}
+        hoveredTaskId={baseTask.id}
+        highlightedTaskIds={highlightedTaskIds}
+        dependencyHighlightEnabled={true}
+      />,
+    );
+
+    expect(html).toContain("opacity:0.4");
   });
 
   it("TaskTreeBody は OFF のときホバーしても非関連タスクを dim しない", () => {
@@ -196,7 +235,7 @@ describe("依存ハイライトトグル", () => {
         collapsed={new Set()}
         onToggleCollapse={() => {}}
         hoveredTaskId={baseTask.id}
-        highlightedTaskIds={new Set()}
+        highlightedTaskIds={highlightedTaskIds}
         dependencyHighlightEnabled={false}
       />,
     );
