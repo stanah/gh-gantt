@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { act, cleanup, render } from "@testing-library/react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -103,6 +103,7 @@ const config: Config = {
 
 const tasks = [baseTask, relatedTask, unrelatedTask];
 const flatList: TreeNode[] = tasks.map((task) => ({ task, children: [], depth: 0 }));
+const originalConsoleError = console.error.bind(console);
 
 function FilterProbe() {
   const { dependencyHighlightEnabled, toggleDependencyHighlight } = useTaskFilter([]);
@@ -114,6 +115,22 @@ function FilterProbe() {
 }
 
 describe("依存ハイライトトグル", () => {
+  beforeAll(() => {
+    vi.spyOn(console, "error").mockImplementation((message: unknown, ...args: unknown[]) => {
+      if (
+        typeof message === "string" &&
+        message.includes("useLayoutEffect does nothing on the server")
+      ) {
+        return;
+      }
+      originalConsoleError(message, ...args);
+    });
+  });
+
+  afterAll(() => {
+    vi.restoreAllMocks();
+  });
+
   afterEach(() => {
     cleanup();
     window.history.replaceState({}, "", "/");
