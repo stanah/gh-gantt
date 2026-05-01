@@ -91,3 +91,16 @@ export function formatDate(date: Date): string {
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
 }
+
+export function formatUpdatedAt(updatedAt: string): string {
+  const date = new Date(updatedAt);
+  if (!Number.isFinite(date.getTime())) return "-";
+
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const d = String(date.getUTCDate()).padStart(2, "0");
+  const h = String(date.getUTCHours()).padStart(2, "0");
+  const min = String(date.getUTCMinutes()).padStart(2, "0");
+
+  return `${y}-${m}-${d} ${h}:${min} UTC`;
+}

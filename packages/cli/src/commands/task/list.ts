@@ -23,6 +23,7 @@ export interface TaskFilterOptions {
   statusFieldName?: string;
   label?: string;
   search?: string;
+  updatedSince?: string;
 }
 
 export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
@@ -83,6 +84,16 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
     });
   }
 
+  if (opts.updatedSince) {
+    const since = parseUpdatedSince(opts.updatedSince);
+    if (since != null) {
+      result = result.filter((t) => {
+        const updatedAt = Date.parse(t.updated_at);
+        return Number.isFinite(updatedAt) && updatedAt >= since;
+      });
+    }
+  }
+
   return result;
 }
 
@@ -113,6 +124,9 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
         case "start_date":
           cmp = compareDates(a.start_date, b.start_date);
           break;
+        case "updated_at":
+          cmp = compareTimestamps(a.updated_at, b.updated_at);
+          break;
         case "type": {
           const aIdx = typeRank.get(a.type) ?? typeOrder.length;
           const bIdx = typeRank.get(b.type) ?? typeOrder.length;
@@ -137,11 +151,44 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
   return sorted;
 }
 
+function parseUpdatedSince(value: string): number | null {
+  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
+  const timestamp = Date.parse(normalized);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
 function compareDates(a: string | null, b: string | null): number {
   if (a === null && b === null) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
   return a.localeCompare(b);
+}
+
+function compareTimestamps(a: string, b: string): number {
+  const aTime = Date.parse(a);
+  const bTime = Date.parse(b);
+  const aValid = Number.isFinite(aTime);
+  const bValid = Number.isFinite(bTime);
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  return aTime - bTime;
+}
+
+function formatRelativeUpdatedAt(updatedAt: string, now = new Date()): string {
+  const timestamp = Date.parse(updatedAt);
+  if (!Number.isFinite(timestamp)) return "-";
+
+  const diffMs = Math.max(0, now.getTime() - timestamp);
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function formatShortId(task: Task): string {
@@ -152,14 +199,14 @@ function formatShortId(task: Task): string {
   return task.id.includes("#") ? task.id.split("#")[1] : task.id;
 }
 
-function formatTable(tasks: Task[]): string {
+export function formatTable(tasks: Task[], now = new Date()): string {
   const hasMilestones = tasks.some((t) => t.type === "milestone");
   const hasNonMilestones = tasks.some((t) => t.type !== "milestone");
 
   const head =
     hasMilestones && !hasNonMilestones
-      ? ["ID", "Type", "Title", "State", "Due"]
-      : ["ID", "Type", "Title", "State", "Start", "End"];
+      ? ["ID", "Type", "Title", "State", "Due", "Updated"]
+      : ["ID", "Type", "Title", "State", "Start", "End", "Updated"];
 
   const table = new Table({
     head,
@@ -185,12 +232,13 @@ function formatTable(tasks: Task[]): string {
 
   for (const t of tasks) {
     const shortId = formatShortId(t);
+    const updated = formatRelativeUpdatedAt(t.updated_at, now);
     if (hasMilestones && !hasNonMilestones) {
-      table.push([shortId, t.type, t.title, t.state, t.date ?? "-"]);
+      table.push([shortId, t.type, t.title, t.state, t.date ?? "-", updated]);
     } else {
       const dates =
         t.type === "milestone" ? [t.date ?? "-", "-"] : [t.start_date ?? "-", t.end_date ?? "-"];
-      table.push([shortId, t.type, t.title, t.state, ...dates]);
+      table.push([shortId, t.type, t.title, t.state, ...dates, updated]);
     }
   }
 
@@ -210,9 +258,10 @@ export function createTaskListCommand(): Command {
     .option("--status <status>", "Filter by Status custom field value")
     .option("--label <label>", "Filter by label")
     .option("--search <query>", "Search in title and body")
+    .option("--updated-since <date>", "Show tasks updated on or after date (YYYY-MM-DD or ISO)")
     .option(
       "--sort <fields>",
-      "Sort by fields (comma-separated: priority,end_date,start_date,type,title)",
+      "Sort by fields (comma-separated: priority,updated_at,end_date,start_date,type,title)",
     )
     .option("--json", "Output as JSON")
     .action(async (opts) => {
@@ -230,6 +279,12 @@ export function createTaskListCommand(): Command {
         return;
       }
 
+      if (opts.updatedSince && parseUpdatedSince(opts.updatedSince) == null) {
+        console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
+        process.exitCode = 1;
+        return;
+      }
+
       let filtered = filterTasks(tasksFile.tasks, {
         backlog: opts.backlog,
         scheduled: opts.scheduled,
@@ -242,6 +297,7 @@ export function createTaskListCommand(): Command {
         statusFieldName: config.statuses.field_name,
         label: opts.label,
         search: opts.search,
+        updatedSince: opts.updatedSince,
       });
 
       if (opts.sort) {

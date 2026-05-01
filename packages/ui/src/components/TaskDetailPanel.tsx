@@ -6,6 +6,7 @@ import { DetailHeader } from "./detail/DetailHeader.js";
 import { DetailMetaSidebar } from "./detail/DetailMetaSidebar.js";
 import { DetailSubTasks } from "./detail/DetailSubTasks.js";
 import { DetailRelations } from "./detail/DetailRelations.js";
+import { formatUpdatedAt } from "../lib/date-utils.js";
 
 const MIN_PANEL_WIDTH = 320;
 const MAX_PANEL_WIDTH = 800;
@@ -44,6 +45,7 @@ export function TaskDetailPanel({
   const taskType = config.task_types[task.type];
   const isMilestone = task.type === "milestone";
   const isTwoColumn = width >= TWO_COLUMN_THRESHOLD;
+  const updatedAt = formatUpdatedAt(task.updated_at);
   const renderPreview =
     renderMarkdownPreview ?? ((value: string) => <MarkdownRenderer markdown={value} />);
 
@@ -62,6 +64,7 @@ export function TaskDetailPanel({
       type: task.type,
       state: task.state,
       status: currentStatus ?? null,
+      updated_at: task.updated_at,
     };
     if (task.body) info.description = task.body;
     if (task.assignees.length > 0) info.assignees = task.assignees;
@@ -477,6 +480,16 @@ export function TaskDetailPanel({
                 {dateRange}
               </span>
             )}
+            <span
+              style={{
+                padding: "2px 8px",
+                fontSize: 10,
+                background: "var(--color-border-light)",
+                borderRadius: 12,
+              }}
+            >
+              Updated {updatedAt}
+            </span>
             {task.assignees.map((a) => (
               <span
                 key={a}

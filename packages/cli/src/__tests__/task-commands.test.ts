@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
-import { filterTasks, sortTasks } from "../commands/task/list.js";
+import { filterTasks, formatTable, sortTasks } from "../commands/task/list.js";
 import { applyTaskUpdate, filterTasksForUpdate } from "../commands/task/update.js";
 import { collectMilestones } from "../commands/milestone/list.js";
 import { addDependency, removeDependency, setParent, removeParent } from "../commands/task/link.js";
@@ -218,6 +218,45 @@ describe("filterTasks", () => {
   it("combines unblocked with state", () => {
     const result = filterTasks(tasksExtended, { unblocked: true, state: "open" });
     expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#3"]);
+  });
+});
+
+describe("[FR-CLI-001-AC3] 更新日時による一覧表示・ソート・フィルタ", () => {
+  const tasks = [
+    makeTask({
+      id: "owner/repo#1",
+      title: "古いタスク",
+      updated_at: "2026-01-01T00:00:00Z",
+    }),
+    makeTask({
+      id: "owner/repo#2",
+      title: "新しいタスク",
+      updated_at: "2026-01-03T00:00:00Z",
+    }),
+    makeTask({
+      id: "owner/repo#3",
+      title: "境界のタスク",
+      updated_at: "2026-01-02T00:00:00Z",
+    }),
+  ];
+
+  it("updated_at 昇順でソートできる", () => {
+    const result = sortTasks(tasks, "updated_at", makeConfig());
+
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#1", "owner/repo#3", "owner/repo#2"]);
+  });
+
+  it("指定日時以降に更新されたタスクだけに絞り込める", () => {
+    const result = filterTasks(tasks, { updatedSince: "2026-01-02" });
+
+    expect(result.map((t) => t.id)).toEqual(["owner/repo#2", "owner/repo#3"]);
+  });
+
+  it("一覧に更新日時の相対表示列を含める", () => {
+    const table = formatTable([tasks[0]], new Date("2026-01-03T00:00:00Z"));
+
+    expect(table).toContain("Updated");
+    expect(table).toContain("2d ago");
   });
 });
 

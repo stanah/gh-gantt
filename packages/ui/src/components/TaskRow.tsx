@@ -5,7 +5,13 @@ import { PriorityBadge } from "./PriorityBadge.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
 import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
-import { isOverdue, isAtRisk, getOverdueDays, getDaysUntilDue } from "../lib/date-utils.js";
+import {
+  isOverdue,
+  isAtRisk,
+  getOverdueDays,
+  getDaysUntilDue,
+  formatUpdatedAt,
+} from "../lib/date-utils.js";
 
 interface TaskRowProps {
   task: Task;
@@ -115,7 +121,8 @@ export function TaskRow({
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const bodyPreview = isHovered && !isDragging ? getBodyPreview(task.body) : null;
-  const showBodyPreview = Boolean(bodyPreview);
+  const showHoverTooltip = Boolean(isHovered && !isDragging);
+  const updatedAt = formatUpdatedAt(task.updated_at);
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isFriendlyHighlight = isFriendlyRelation(highlightType);
@@ -333,7 +340,7 @@ export function TaskRow({
       )}
       {!isMilestone && <StatusBadge status={status} statusValues={statusValues} />}
 
-      {showBodyPreview && (
+      {showHoverTooltip && (
         <div
           role="tooltip"
           style={{
@@ -355,6 +362,15 @@ export function TaskRow({
             wordBreak: "break-word",
           }}
         >
+          <div
+            style={{
+              color: "var(--color-text-secondary)",
+              fontSize: 10,
+              marginBottom: bodyPreview ? 4 : 0,
+            }}
+          >
+            Updated {updatedAt}
+          </div>
           {bodyPreview}
         </div>
       )}

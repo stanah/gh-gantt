@@ -1,7 +1,8 @@
 // packages/ui/src/components/toolbar/Toolbar.tsx
 import React from "react";
-import { GitBranch } from "lucide-react";
+import { ArrowDownUp, GitBranch } from "lucide-react";
 import type { DisplayOption } from "../../hooks/useDisplayOptions.js";
+import type { TaskSortMode } from "../../hooks/useTaskTree.js";
 import type { SprintConfig, ViewScale } from "@gh-gantt/shared";
 import type { TaskType } from "../../types/index.js";
 import { ZoomGroup } from "./ZoomGroup.js";
@@ -43,6 +44,8 @@ interface ToolbarProps {
   onSelectLabels?: (values: string[]) => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
+  taskSortMode: TaskSortMode;
+  onTaskSortModeChange: (mode: TaskSortMode) => void;
   searchInputRef?: React.Ref<HTMLInputElement>;
   onOpenShortcuts?: () => void;
   onUndo?: () => void;
@@ -53,6 +56,12 @@ interface ToolbarProps {
   redoCount?: number;
   undoRedoBusy?: boolean;
 }
+
+const taskSortOptions: Array<{ value: TaskSortMode; label: string }> = [
+  { value: "default", label: "Default" },
+  { value: "updated_at_asc", label: "Updated ↑" },
+  { value: "updated_at_desc", label: "Updated ↓" },
+];
 
 export function Toolbar(props: ToolbarProps) {
   return (
@@ -104,6 +113,38 @@ export function Toolbar(props: ToolbarProps) {
         onSearchChange={props.onSearchChange}
         searchInputRef={props.searchInputRef}
       />
+      <label
+        title="Task sort"
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 4,
+          color: "var(--color-text-secondary)",
+          whiteSpace: "nowrap",
+        }}
+      >
+        <ArrowDownUp size={13} />
+        <select
+          aria-label="Task sort"
+          value={props.taskSortMode}
+          onChange={(e) => props.onTaskSortModeChange(e.target.value as TaskSortMode)}
+          style={{
+            padding: "3px 6px",
+            border: "1px solid var(--color-border)",
+            borderRadius: 3,
+            fontSize: 11,
+            minHeight: 24,
+            background: "var(--color-bg)",
+            color: "var(--color-text)",
+          }}
+        >
+          {taskSortOptions.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <UndoRedoGroup
         onUndo={props.onUndo}
         onRedo={props.onRedo}
