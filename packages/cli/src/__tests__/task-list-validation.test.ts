@@ -118,6 +118,16 @@ describe("[FR-CLI-001-AC3] --updated-since の入力検証", () => {
     expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --updated-since date"));
   });
 
+  it("空文字なら exitCode=1 とエラーを返す", async () => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const cmd = createTaskListCommand();
+    await cmd.parseAsync(["list", "--updated-since", ""], { from: "user" });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --updated-since date"));
+  });
+
   it.each([
     ["ISO日付形式", "2026-01-02"],
     ["ISO日時形式（UTC）", "2026-01-02T00:00:00Z"],

@@ -356,7 +356,7 @@ export function createTaskListCommand(): Command {
 
       const updatedSinceTimestamp =
         opts.updatedSince != null ? parseUpdatedSince(opts.updatedSince) : undefined;
-      if (opts.updatedSince && updatedSinceTimestamp == null) {
+      if (opts.updatedSince != null && updatedSinceTimestamp == null) {
         console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
         process.exitCode = 1;
         return;

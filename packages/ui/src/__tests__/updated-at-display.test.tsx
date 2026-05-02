@@ -239,6 +239,25 @@ describe("[FR-VIS-003-AC2] 更新日時ソート", () => {
     expect(html).toContain("owner/repo#1,owner/repo#3,owner/repo#2");
   });
 
+  it("useTaskTree の default は入力順を維持する", () => {
+    const tasks = [
+      makeTask({ id: "owner/repo#1", updated_at: "2026-01-01T00:00:00Z" }),
+      makeTask({ id: "owner/repo#2", updated_at: "2026-01-03T00:00:00Z" }),
+      makeTask({ id: "owner/repo#3", updated_at: "2026-01-02T00:00:00Z" }),
+    ];
+
+    function TaskTreeProbe() {
+      const { flatList } = useTaskTree(tasks, new Set(["task"]), {
+        taskSortMode: "default",
+      });
+      return <output>{flatList.map((node) => node.task.id).join(",")}</output>;
+    }
+
+    const html = renderToStaticMarkup(<TaskTreeProbe />);
+
+    expect(html).toContain("owner/repo#1,owner/repo#2,owner/repo#3");
+  });
+
   it("useTaskTree は更新日時の比較用 timestamp をタスクごとに一度だけ計算する", () => {
     const tasks = [
       makeTask({ id: "owner/repo#1", updated_at: "2026-01-01T00:00:00Z" }),
