@@ -28,11 +28,49 @@ const AreaSchema = z.object({
   requirements: z.array(RequirementSchema).min(1),
 });
 
-const RequirementsSchema = z.object({
-  version: z.string().min(1),
-  vision: z.string().min(1),
-  areas: z.array(AreaSchema).min(1),
-});
+const RequirementsSchema = z
+  .object({
+    version: z.string().min(1),
+    vision: z.string().min(1),
+    areas: z.array(AreaSchema).min(1),
+  })
+  .superRefine((requirements, ctx) => {
+    const areaIds = new Set<string>();
+    const requirementIds = new Set<string>();
+    const acceptanceCriteriaIds = new Set<string>();
+
+    for (const [areaIndex, area] of requirements.areas.entries()) {
+      addUniqueIdIssue(ctx, areaIds, area.id, ["areas", areaIndex, "id"], "Area ID");
+
+      for (const [requirementIndex, requirement] of area.requirements.entries()) {
+        addUniqueIdIssue(
+          ctx,
+          requirementIds,
+          requirement.id,
+          ["areas", areaIndex, "requirements", requirementIndex, "id"],
+          "Requirement ID",
+        );
+
+        for (const [criteriaIndex, criteria] of requirement.acceptance_criteria.entries()) {
+          addUniqueIdIssue(
+            ctx,
+            acceptanceCriteriaIds,
+            criteria.id,
+            [
+              "areas",
+              areaIndex,
+              "requirements",
+              requirementIndex,
+              "acceptance_criteria",
+              criteriaIndex,
+              "id",
+            ],
+            "Acceptance Criteria ID",
+          );
+        }
+      }
+    }
+  });
 
 type Requirements = z.infer<typeof RequirementsSchema>;
 
@@ -73,6 +111,24 @@ interface AcceptanceCriteriaCoverage {
 interface TestFileCoverage {
   path: string;
   acceptance_criteria: string[];
+}
+
+function addUniqueIdIssue(
+  ctx: z.RefinementCtx,
+  ids: Set<string>,
+  id: string,
+  path: Array<string | number>,
+  label: string,
+) {
+  if (ids.has(id)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path,
+      message: `${label} が重複しています: ${id}`,
+    });
+    return;
+  }
+  ids.add(id);
 }
 
 export interface RequirementsCoverageReport {
