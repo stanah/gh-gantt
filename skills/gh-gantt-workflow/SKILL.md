@@ -74,7 +74,7 @@ Evidence: コマンド出力をそのまま提示する。
 11. `git push`
 12. **★`before_pr`** — workflow.md の該当セクションを実行
 13. `gh pr create` — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
-14. **★`on_review_received`**（レビュー指摘を受けた場合）— workflow.md の該当セクションを実行し、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）
+14. **★`on_review_received`**（レビュー指摘を受けた場合）— workflow.md の該当セクションを実行し、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応結果の投稿は `gh-gantt review-cycle submit --plan <json>` で pending review に集約し、対応済み thread を一括 resolve する
 15. **★`on_session_end`** — workflow.md の該当セクションを実行
 16. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
@@ -88,6 +88,7 @@ Evidence: コマンド出力をそのまま提示する。
 | エージェントがタスクを勝手に絞り込む                           | ユーザーが見るべきタスクが隠される                               |
 | レビュー指摘を Issue 化する                                    | レビュー修正は同じ PR に追加コミットするだけ                     |
 | Bot レビューを全て鵜呑みにする                                 | 誤検知や文脈に合わない指摘がある。精査してから対応する           |
+| レビュー返信を個別投稿する                                     | pending review にまとめて submit し、通知を 1 回に抑える         |
 | PR マージ前に手動で Issue を close する                        | `Closes #N` で自動クローズに任せる                               |
 | 振る舞い変更なのに要件ファイルを更新しない (Living Doc 採用時) | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |
 | テスト追加後に Reconciliation を忘れる (Living Doc 採用時)     | CI で要件ファイルの diff エラーになる                            |

@@ -32,6 +32,36 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash(gh pr create*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 0 --hook"
+          }
+        ]
+      },
+      {
+        "matcher": "Bash(git push*)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 0 --hook"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 600 --hook"
+          }
+        ]
+      }
     ]
   }
 }

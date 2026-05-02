@@ -17,6 +17,8 @@
     "typecheck": "pnpm -r typecheck",
     "smoke:personal": "pnpm --filter @gh-gantt/smoke smoke:personal",
     "smoke:org": "pnpm --filter @gh-gantt/smoke smoke:org",
+    "review:check": "tsx packages/cli/src/index.ts review-cycle check",
+    "review:submit": "tsx packages/cli/src/index.ts review-cycle submit",
     "docs:gen": "tsx scripts/docs-gen.ts",
     "req:trace": "tsx scripts/req-trace.ts",
     "req:validate": "tsx scripts/req-validate.ts"
