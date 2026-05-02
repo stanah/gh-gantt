@@ -18,20 +18,20 @@ const AcceptanceCriteriaSchema = z.object({
 const RequirementSchema = z.object({
   id: z.string().min(1),
   summary: z.string().min(1),
-  acceptance_criteria: z.array(AcceptanceCriteriaSchema),
+  acceptance_criteria: z.array(AcceptanceCriteriaSchema).min(1),
 });
 
 const AreaSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   description: z.string().min(1),
-  requirements: z.array(RequirementSchema),
+  requirements: z.array(RequirementSchema).min(1),
 });
 
 const RequirementsSchema = z.object({
   version: z.string().min(1),
   vision: z.string().min(1),
-  areas: z.array(AreaSchema),
+  areas: z.array(AreaSchema).min(1),
 });
 
 type Requirements = z.infer<typeof RequirementsSchema>;
