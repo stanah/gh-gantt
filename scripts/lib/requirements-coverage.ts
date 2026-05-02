@@ -312,6 +312,7 @@ function summarizeCriteria(criteria: AcceptanceCriteriaCoverage[]): CountSummary
 }
 
 function summarizeRequirementStatus(counts: CountSummary): RequirementStatus {
+  if (counts.total === 0) return "uncovered";
   if (counts.failing > 0) return "failing";
   if (counts.covered === counts.total) return "covered";
   if (counts.covered > 0) return "partial";
@@ -319,7 +320,7 @@ function summarizeRequirementStatus(counts: CountSummary): RequirementStatus {
 }
 
 function percentage(value: number, total: number): number {
-  if (total === 0) return 100;
+  if (total === 0) return 0;
   return Math.round((value / total) * 1000) / 10;
 }
 
