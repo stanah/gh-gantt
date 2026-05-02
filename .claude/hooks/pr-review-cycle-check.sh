@@ -50,6 +50,7 @@ check_pr() {
   is_draft=$(gh pr view "$number" --json isDraft --jq '.isDraft' 2>/dev/null || echo "true")
   review_decision=$(gh pr view "$number" --json reviewDecision --jq '.reviewDecision // "UNKNOWN"' 2>/dev/null || echo "UNKNOWN")
   url=$(gh pr view "$number" --json url --jq '.url' 2>/dev/null || echo "")
+  review_decision="${review_decision:-UNKNOWN}"
 
   if [ "$state" != "OPEN" ] || [ "$is_draft" = "true" ]; then
     return 0
@@ -69,7 +70,7 @@ check_pr() {
   non_pass_count=$(
     gh pr checks "$number" \
       --json bucket \
-      --jq '[.[] | select(.bucket != "pass")] | length' \
+      --jq '[.[] | select(.bucket != "pass" and .bucket != "skipping")] | length' \
       2>/dev/null || true
   )
   non_pass_count="${non_pass_count:-0}"

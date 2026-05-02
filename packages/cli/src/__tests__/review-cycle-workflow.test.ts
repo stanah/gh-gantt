@@ -36,6 +36,7 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     const script = await readRepoFile(".claude/hooks/pr-review-cycle-check.sh");
 
     expect(script).toContain("gh pr checks");
+    expect(script).toContain('.bucket != "skipping"');
     expect(script).toContain("gh pr view");
     expect(script).toContain("reviewDecision");
     expect(script).toContain("gh api graphql");
