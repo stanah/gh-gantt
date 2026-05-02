@@ -41,10 +41,17 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("repos/$repo/issues/$number/comments");
     expect(script).toContain("repos/$repo/pulls/$number/comments");
     expect(script).toContain("repos/$repo/pulls/$number/reviews");
+    expect(script).toContain("checks_seen");
     expect(script).toContain("quiet_seconds=180");
     expect(script).toContain("stable_samples=3");
     expect(script).toContain("timeout_seconds=900");
     expect(script).toContain("usage: $0 --pr <number>");
+  });
+
+  it("セッションをまたぐ入口として all-open sweep を固定する", async () => {
+    const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
+
+    expect(reference).toContain("--all-open --no-wait");
   });
 });
 

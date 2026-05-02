@@ -194,7 +194,7 @@ check_counts() {
   local number="$1"
   gh pr checks "$number" \
     --json name,bucket \
-    --jq '[([.[] | select(.bucket == "pending")] | length), ([.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending")] | length)] | @tsv' \
+    --jq '[length, ([.[] | select(.bucket == "pending")] | length), ([.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending")] | length)] | @tsv' \
     2>/dev/null
 }
 
@@ -248,10 +248,17 @@ collect_snapshot() {
 
   IFS=$'\t' read -r number_value url state is_draft head_sha review_decision updated_at <<<"$metadata"
 
-  local unresolved_count pending_checks blocking_checks counts latest_activity rate_limit
+  local unresolved_count checks_seen pending_checks blocking_checks counts check_total latest_activity rate_limit
   unresolved_count=$(count_unresolved_threads "$number" || printf 'UNKNOWN\n')
-  counts=$(check_counts "$number" || printf 'UNKNOWN\tUNKNOWN\n')
-  IFS=$'\t' read -r pending_checks blocking_checks <<<"$counts"
+  counts=$(check_counts "$number" || printf 'UNKNOWN\tUNKNOWN\tUNKNOWN\n')
+  IFS=$'\t' read -r check_total pending_checks blocking_checks <<<"$counts"
+  if ! [[ "${check_total:-}" =~ ^[0-9]+$ ]]; then
+    checks_seen="UNKNOWN"
+  elif [ "$check_total" -eq 0 ]; then
+    checks_seen="0"
+  else
+    checks_seen="1"
+  fi
   if ! [[ "${pending_checks:-}" =~ ^[0-9]+$ ]]; then
     pending_checks="UNKNOWN"
   fi
@@ -261,20 +268,23 @@ collect_snapshot() {
   latest_activity=$(max_activity_epoch "$number" "$updated_at")
   rate_limit=$(has_active_rate_limit_comment "$number")
 
-  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+  printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$number_value" "$url" "$state" "$is_draft" "$head_sha" "$review_decision" \
-    "$unresolved_count" "$pending_checks" "$blocking_checks" "$latest_activity|$rate_limit"
+    "$unresolved_count" "$checks_seen" "$pending_checks" "$blocking_checks" "$latest_activity|$rate_limit"
 }
 
 snapshot_needs_followup() {
   local review_decision="$1"
   local unresolved_count="$2"
-  local pending_checks="$3"
-  local blocking_checks="$4"
-  local rate_limit="$5"
+  local checks_seen="$3"
+  local pending_checks="$4"
+  local blocking_checks="$5"
+  local rate_limit="$6"
 
   [ "$review_decision" = "CHANGES_REQUESTED" ] && return 0
   [ "$unresolved_count" = "UNKNOWN" ] && return 0
+  [ "$checks_seen" = "UNKNOWN" ] && return 0
+  [ "$checks_seen" = "0" ] && return 0
   [ "$pending_checks" = "UNKNOWN" ] && return 0
   [ "$blocking_checks" = "UNKNOWN" ] && return 0
   [ "$unresolved_count" -gt 0 ] && return 0
@@ -286,8 +296,8 @@ snapshot_needs_followup() {
 
 print_snapshot() {
   local snapshot="$1"
-  local number_value url state is_draft head_sha review_decision unresolved_count pending_checks blocking_checks tail latest_activity rate_limit
-  IFS=$'\t' read -r number_value url state is_draft head_sha review_decision unresolved_count pending_checks blocking_checks tail <<<"$snapshot"
+  local number_value url state is_draft head_sha review_decision unresolved_count checks_seen pending_checks blocking_checks tail latest_activity rate_limit
+  IFS=$'\t' read -r number_value url state is_draft head_sha review_decision unresolved_count checks_seen pending_checks blocking_checks tail <<<"$snapshot"
   latest_activity="${tail%%|*}"
   rate_limit="${tail#*|}"
 
@@ -301,6 +311,7 @@ print_snapshot() {
   echo "- head: $head_sha"
   echo "- reviewDecision: $review_decision"
   echo "- unresolved review threads: $unresolved_count"
+  echo "- checks seen: $checks_seen"
   echo "- pending checks: $pending_checks"
   echo "- blocking checks: $blocking_checks"
   echo "- active CodeRabbit rate limit: $rate_limit"
@@ -313,13 +324,13 @@ wait_for_pr() {
   started=$(now_epoch)
 
   while :; do
-    local snapshot number_value url state is_draft head_sha review_decision unresolved_count pending_checks blocking_checks tail latest_activity rate_limit
+    local snapshot number_value url state is_draft head_sha review_decision unresolved_count checks_seen pending_checks blocking_checks tail latest_activity rate_limit
     if ! snapshot=$(collect_snapshot "$number"); then
       echo "[gh-gantt workflow] failed to collect PR #$number snapshot" >&2
       return 1
     fi
 
-    IFS=$'\t' read -r number_value url state is_draft head_sha review_decision unresolved_count pending_checks blocking_checks tail <<<"$snapshot"
+    IFS=$'\t' read -r number_value url state is_draft head_sha review_decision unresolved_count checks_seen pending_checks blocking_checks tail <<<"$snapshot"
     latest_activity="${tail%%|*}"
     rate_limit="${tail#*|}"
 
@@ -329,7 +340,7 @@ wait_for_pr() {
     fi
 
     local fingerprint quiet_age elapsed
-    fingerprint="$head_sha|$review_decision|$unresolved_count|$pending_checks|$blocking_checks|$latest_activity|$rate_limit"
+    fingerprint="$head_sha|$review_decision|$unresolved_count|$checks_seen|$pending_checks|$blocking_checks|$latest_activity|$rate_limit"
     if [ "$fingerprint" = "$previous_fingerprint" ]; then
       stable_count=$((stable_count + 1))
     else
@@ -342,7 +353,7 @@ wait_for_pr() {
 
     if [ "$wait_enabled" -eq 0 ]; then
       print_snapshot "$snapshot"
-      if snapshot_needs_followup "$review_decision" "$unresolved_count" "$pending_checks" "$blocking_checks" "$rate_limit"; then
+      if snapshot_needs_followup "$review_decision" "$unresolved_count" "$checks_seen" "$pending_checks" "$blocking_checks" "$rate_limit"; then
         return 1
       fi
       return 0
@@ -354,14 +365,14 @@ wait_for_pr() {
       return 1
     fi
 
-    if ! snapshot_needs_followup "$review_decision" "$unresolved_count" "$pending_checks" "$blocking_checks" "$rate_limit" &&
+    if ! snapshot_needs_followup "$review_decision" "$unresolved_count" "$checks_seen" "$pending_checks" "$blocking_checks" "$rate_limit" &&
       [ "$quiet_age" -ge "$quiet_seconds" ] &&
       [ "$stable_count" -ge "$stable_samples" ]; then
       print_snapshot "$snapshot"
       return 0
     fi
 
-    if snapshot_needs_followup "$review_decision" "$unresolved_count" "$pending_checks" "$blocking_checks" "$rate_limit" &&
+    if snapshot_needs_followup "$review_decision" "$unresolved_count" "$checks_seen" "$pending_checks" "$blocking_checks" "$rate_limit" &&
       [ "$pending_checks" != "UNKNOWN" ] &&
       [ "$pending_checks" -eq 0 ] &&
       [ "$quiet_age" -ge "$quiet_seconds" ] &&
