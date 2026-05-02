@@ -18,6 +18,7 @@
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
 3. 直近の PR 状態を確認する（`gh pr list --author @me`）
+4. open PR があれば `bash .claude/hooks/pr-review-cycle-check.sh --all-open` を実行する
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。
 
@@ -119,15 +120,24 @@
 3. PR description に `Closes #<number>` または `Fixes #<number>` を記載する
 4. PR 本文をユーザーに提示し、承認後に `gh pr create`
 
+## after_pr_create
+
+1. `gh pr view --json number,url,isDraft,state,reviewDecision` で作成した PR を確認する
+2. `gh pr checks <number> --watch` で CI の初期結果を待つ
+3. `bash .claude/hooks/pr-review-cycle-check.sh --pr <number>` を実行する
+4. CodeRabbit / Copilot / Codex review が処理中なら数分後に再確認する
+5. 完了条件は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
+
 ## on_review_received
 
 1. 指摘内容を精査する（Bot のレビューを鵜呑みにしない）
 2. 妥当な指摘と、対応しない指摘を分類する
 3. 対応方針をユーザーに提示し、承認を得る
 4. 対応は同じ PR に追加コミットする（Issue 化は不要）
-5. 対応結果は `gh-gantt review-cycle submit --plan <json>` で pending review に返信を積み、submit で 1 回だけ通知する
-6. 対応済み thread は同じ plan の `resolveThreadIds` に入れ、GraphQL alias mutation で一括 resolve する
-7. **対応後の再検証**（修正規模により段階的）:
+5. 対応結果は GitHub GraphQL の pending review に返信を積み、submit で 1 回だけ通知する
+6. 対応済み thread は GraphQL alias mutation で一括 resolve する
+7. 詳細は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
+8. **対応後の再検証**（修正規模により段階的）:
    - **軽微な修正**（typo、コメント、フォーマット、変数名変更、lint 対応のみ）: 基準 1〜3（lint / typecheck / test）の再実行 + 基準 5（ユーザー承認）のみでよい。基準 4（外部レビュー）は省略可。**Living Doc 採用時**: 要件ファイル / テスト名に触れた場合は基準 6 も再実行
    - **実質的な変更**（ロジック修正、設計変更、新規コード追加）: `before_commit` の全基準を再度通す
 
@@ -149,6 +159,8 @@
 | 実装したエージェント自身がレビューする | 自己評価は過大になる。独立したサブエージェント必須 |
 | 一部の基準だけ満たして commit する     | ハード閾値は全基準必須。1 つでも落ちたら失敗       |
 | レビュー指摘を別 Issue にする          | レビュー修正は既存 PR の一部                       |
+| PR 作成で作業完了扱いする              | 非同期レビューサイクルが始まっている               |
+| PR review 操作を gh-gantt CLI に入れる | GitHub PR は `gh` / GraphQL workflow で扱う        |
 | レビュー返信を個別投稿する             | pending review にまとめて submit する              |
 | before_commit のレビューを省略する     | 手戻りが発生する                                   |
 | ユーザー承認前にコミット・プッシュする | レビュー指摘を取りこぼす                           |

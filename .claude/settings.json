@@ -39,7 +39,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 0 --hook"
+            "command": "bash .claude/hooks/pr-review-cycle-check.sh --current-branch"
           }
         ]
       },
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 0 --hook"
+            "command": "bash .claude/hooks/pr-review-cycle-check.sh --current-branch"
           }
         ]
       }
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "pnpm --silent review:check -- --current-branch --max-age-seconds 600 --hook"
+            "command": "bash .claude/hooks/pr-review-cycle-check.sh --all-open"
           }
         ]
       }

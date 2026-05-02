@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildProgram } from "../program.js";
 
-describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/serve/conflicts/resolve/review-cycle コマンドが定義されている", () => {
+describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/serve/conflicts/resolve コマンドが定義されている", () => {
   const program = buildProgram();
   const commandNames = program.commands.map((c) => c.name());
 
@@ -35,7 +35,6 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/se
       "create",
       "conflicts",
       "resolve",
-      "review-cycle",
     ]) {
       expect(commandNames).toContain(name);
     }
