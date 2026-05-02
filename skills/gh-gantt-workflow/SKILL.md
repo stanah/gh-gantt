@@ -75,8 +75,8 @@ Evidence: コマンド出力をそのまま提示する。
 11. `git push`
 12. **★`before_pr`** — workflow.md の該当セクションを実行
 13. `gh pr create` — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
-14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。PR 作成は完了ではなく、非同期レビュー監視の開始である
-15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
+14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で CI と非同期レビューコメントの安定を待つ。PR 作成は完了ではなく、レビュー監視の開始である
+15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応後は push し、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
 16. **★`on_session_end`** — workflow.md の該当セクションを実行
 17. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
@@ -92,6 +92,7 @@ Evidence: コマンド出力をそのまま提示する。
 | Bot レビューを全て鵜呑みにする                                 | 誤検知や文脈に合わない指摘がある。精査してから対応する           |
 | PR 作成で作業完了扱いする                                      | PR 後の非同期レビューサイクルが始まっている                      |
 | PR review 操作を gh-gantt CLI に追加する                       | GitHub PR の責務であり、`gh` / GraphQL workflow で扱う           |
+| `.claude/hooks` をレビューサイクルの正本にする                 | Codex など hook を自動実行できない環境では保証にならない         |
 | レビュー返信を個別投稿する                                     | pending review にまとめて submit し、通知を 1 回に抑える         |
 | PR マージ前に手動で Issue を close する                        | `Closes #N` で自動クローズに任せる                               |
 | 振る舞い変更なのに要件ファイルを更新しない (Living Doc 採用時) | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |

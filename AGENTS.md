@@ -152,19 +152,6 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 - **ドキュメント** — CLAUDE.md, AGENTS.md, ADR, requirements.yaml 等すべて日本語
 - **変数名・関数名・型名** — 英語（プログラミング言語の慣例に従う）
 
-## レビュー規律（プロジェクト固有ルール）
-
-このプロジェクトでは **コミット前に自己レビューを実施し、ユーザーの承認を得る** ことを必須とする。
-
-- **コード変更**: `git diff` で確認後、利用可能なレビュー機構を invoke する:
-  - サブエージェント: `Agent` tool で `subagent_type: "superpowers:code-reviewer"`, `"pr-review-toolkit:code-reviewer"`, `"code-review"` 等
-  - スキル: `Skill` tool で `code-review`, `pr-review-toolkit:review-pr`, `simplify` 等
-- **ドキュメント・スキル変更**: `git diff` を Read で確認し、変更の要約と影響範囲をユーザーに提示する
-- **いずれの場合も**: レビュー結果をユーザーに提示し、明示的な承認（「OK」「進めて」等）を得てから `git commit` / `git push` / `gh pr create` を実行する
-- **省略してよいケース**: ユーザーが「そのままコミットして」等、レビュー省略を明示した場合のみ
-
-このルールは `.claude/settings.json` の PreToolUse hooks により、`git commit` / `gh pr create` 実行時にエージェントへ自動注入される。lefthook の pre-commit / pre-push とあわせて三層ガード (ADR-010) を構成する。
-
 ## 開発規約
 
 - ESM（`"type": "module"`、import に `.js` 拡張子必須）

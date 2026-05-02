@@ -10,38 +10,41 @@ async function readRepoFile(path: string): Promise<string> {
 }
 
 describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow", () => {
-  it("Claude hooks が gh ベースの review-cycle check を PR 作成後・push 後・次セッションで起動する", async () => {
+  it("Claude hooks ではなく gh-gantt-workflow skill 付属 script を正本にする", async () => {
     const raw = await readRepoFile(".claude/settings.json");
     const settings = JSON.parse(raw) as {
       hooks: Record<string, Array<{ matcher?: string; hooks: Array<{ command?: string }> }>>;
     };
 
-    const postToolUseCommands = settings.hooks.PostToolUse.flatMap((entry) =>
-      entry.hooks.map((hook) => `${entry.matcher ?? ""} ${hook.command ?? ""}`),
+    const allHookCommands = Object.values(settings.hooks).flatMap((entries) =>
+      entries.flatMap((entry) => entry.hooks.map((hook) => hook.command ?? "")),
     );
-    const promptCommands = settings.hooks.UserPromptSubmit.flatMap((entry) =>
-      entry.hooks.map((hook) => hook.command ?? ""),
-    );
+    const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
 
-    expect(postToolUseCommands).toContain(
-      "Bash(gh pr create*) bash .claude/hooks/pr-review-cycle-check.sh --current-branch",
-    );
-    expect(postToolUseCommands).toContain(
-      "Bash(git push*) bash .claude/hooks/pr-review-cycle-check.sh --current-branch",
-    );
-    expect(promptCommands).toContain("bash .claude/hooks/pr-review-cycle-check.sh --all-open");
+    expect(allHookCommands.join("\n")).not.toContain("pr-review-cycle");
+    expect(workflow).toContain("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
   });
 
-  it("hook script が gh pr / gh api graphql で check・reviewDecision・未解決 thread を検出する", async () => {
-    const script = await readRepoFile(".claude/hooks/pr-review-cycle-check.sh");
+  it("wait script が gh pr / gh api graphql で非同期 review surface の安定を待つ", async () => {
+    const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
 
     expect(script).toContain("gh pr checks");
     expect(script).toContain('.bucket != "skipping"');
     expect(script).toContain("gh pr view");
+    expect(script).toContain("--json number,url,state,isDraft,headRefOid,reviewDecision,updatedAt");
     expect(script).toContain("reviewDecision");
     expect(script).toContain("gh api graphql");
-    expect(script).toContain("reviewThreads(first: 100)");
+    expect(script).toContain("reviewThreads(first: 100, after: $cursor)");
+    expect(script).toContain("pageInfo");
+    expect(script).toContain("hasNextPage");
     expect(script).toContain("isResolved == false");
+    expect(script).toContain("repos/$repo/issues/$number/comments");
+    expect(script).toContain("repos/$repo/pulls/$number/comments");
+    expect(script).toContain("repos/$repo/pulls/$number/reviews");
+    expect(script).toContain("quiet_seconds=180");
+    expect(script).toContain("stable_samples=3");
+    expect(script).toContain("timeout_seconds=900");
+    expect(script).toContain("usage: $0 --pr <number>");
   });
 });
 

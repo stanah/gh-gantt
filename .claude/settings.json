@@ -32,36 +32,6 @@
           }
         ]
       }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Bash(gh pr create*)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/pr-review-cycle-check.sh --current-branch"
-          }
-        ]
-      },
-      {
-        "matcher": "Bash(git push*)",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/pr-review-cycle-check.sh --current-branch"
-          }
-        ]
-      }
-    ],
-    "UserPromptSubmit": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "bash .claude/hooks/pr-review-cycle-check.sh --all-open"
-          }
-        ]
-      }
     ]
   }
 }
