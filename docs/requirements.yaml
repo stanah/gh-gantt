@@ -171,6 +171,12 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/task-list-validation.test.ts
+          - id: FR-CLI-001-AC3
+            description: タスク一覧で更新日時を表示し、更新日時によるソートと絞り込みができる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-commands.test.ts
+              - packages/cli/src/__tests__/task-list-validation.test.ts
       - id: FR-CLI-002
         summary: タスク詳細表示
         acceptance_criteria:
@@ -279,6 +285,11 @@ areas:
             description: ビュースケールを week/month/quarter/year で切替できる
             status: uncovered
             tests: []
+          - id: FR-VIS-003-AC2
+            description: タスク一覧を更新日時の昇順・降順で並べ替えできる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/updated-at-display.test.tsx
       - id: FR-VIS-004
         summary: キーボードショートカット
         acceptance_criteria:
@@ -302,6 +313,11 @@ areas:
             description: タスクの詳細情報をパネルに表示する
             status: uncovered
             tests: []
+          - id: FR-VIS-006-AC2
+            description: タスク行と詳細パネルに更新日時を表示できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/updated-at-display.test.tsx
       - id: FR-VIS-007
         summary: 日付計算ユーティリティ
         acceptance_criteria:

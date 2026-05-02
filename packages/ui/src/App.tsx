@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useApi } from "./hooks/useApi.js";
-import { useTaskTree } from "./hooks/useTaskTree.js";
+import { useTaskTree, type TaskSortMode } from "./hooks/useTaskTree.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
 import { useTaskFilter } from "./hooks/useTaskFilter.js";
@@ -70,6 +70,7 @@ export function App() {
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
+  const [taskSortMode, setTaskSortMode] = useState<TaskSortMode>("default");
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
   const hasScrolledToToday = useRef(false);
@@ -162,6 +163,7 @@ export function App() {
     priorityFieldName: priorityFieldName ?? undefined,
     selectedLabels,
     searchQuery,
+    taskSortMode,
   });
 
   const visibleTaskIds = useMemo(() => flatList.map((node) => node.task.id), [flatList]);
@@ -571,6 +573,8 @@ export function App() {
             onSelectLabels={setSelectedLabels}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
+            taskSortMode={taskSortMode}
+            onTaskSortModeChange={setTaskSortMode}
             searchInputRef={searchInputRef}
             onOpenShortcuts={toggleHelp}
             onUndo={() => {

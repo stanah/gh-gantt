@@ -8,6 +8,8 @@ export interface TreeNode {
   depth: number;
 }
 
+export type TaskSortMode = "default" | "updated_at_asc" | "updated_at_desc";
+
 export interface TaskFilterOptions {
   hideClosed?: boolean;
   selectedAssignee?: string | null;
@@ -16,9 +18,30 @@ export interface TaskFilterOptions {
   priorityFieldName?: string;
   selectedLabels?: string[];
   searchQuery?: string;
+  taskSortMode?: TaskSortMode;
 }
 
 const CONTAINER_TYPES = new Set(["epic", "summary"]);
+
+function compareUpdatedAt(
+  a: Task,
+  b: Task,
+  sortMode: TaskSortMode,
+  updatedAtTimestamps?: Map<string, number>,
+): number {
+  if (sortMode === "default") return 0;
+
+  const aTime = updatedAtTimestamps?.get(a.id) ?? Number.NaN;
+  const bTime = updatedAtTimestamps?.get(b.id) ?? Number.NaN;
+  const aValid = Number.isFinite(aTime);
+  const bValid = Number.isFinite(bTime);
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+
+  const cmp = aTime - bTime;
+  return sortMode === "updated_at_desc" ? -cmp : cmp;
+}
 
 function matchesSearch(task: Task, query: string): boolean {
   const q = query.toLowerCase();
@@ -60,6 +83,7 @@ export function useTaskTree(
     priorityFieldName,
     selectedLabels = [],
     searchQuery = "",
+    taskSortMode = "default",
   } = filterOptions;
 
   const tree = useMemo(() => {
@@ -201,13 +225,23 @@ export function useTaskTree(
       : afterAssignee;
 
     const taskMap = new Map(filtered.map((t) => [t.id, t]));
+    const updatedAtTimestamps =
+      taskSortMode === "default"
+        ? undefined
+        : new Map(filtered.map((t) => [t.id, Date.parse(t.updated_at)]));
+
+    const sortTaskList = (items: Task[]): Task[] => {
+      if (taskSortMode === "default") return items;
+      return [...items].sort((a, b) => compareUpdatedAt(a, b, taskSortMode, updatedAtTimestamps));
+    };
 
     const buildNode = (task: Task, depth: number): TreeNode => ({
       task,
-      children: task.sub_tasks
-        .map((id) => taskMap.get(id))
-        .filter((t): t is Task => t != null && enabledTypes.has(t.type))
-        .map((child) => buildNode(child, depth + 1)),
+      children: sortTaskList(
+        task.sub_tasks
+          .map((id) => taskMap.get(id))
+          .filter((t): t is Task => t != null && enabledTypes.has(t.type)),
+      ).map((child) => buildNode(child, depth + 1)),
       depth,
     });
 
@@ -215,7 +249,9 @@ export function useTaskTree(
     roots.sort((a, b) => {
       const aMs = a.type === "milestone" ? 1 : 0;
       const bMs = b.type === "milestone" ? 1 : 0;
-      return aMs - bMs;
+      const milestoneCmp = aMs - bMs;
+      if (milestoneCmp !== 0) return milestoneCmp;
+      return compareUpdatedAt(a, b, taskSortMode, updatedAtTimestamps);
     });
     return roots.map((t) => buildNode(t, 0));
   }, [
@@ -228,6 +264,7 @@ export function useTaskTree(
     priorityFieldName,
     selectedLabels,
     searchQuery,
+    taskSortMode,
   ]);
 
   const flatList = useMemo(() => {

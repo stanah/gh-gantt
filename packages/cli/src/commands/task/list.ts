@@ -6,6 +6,9 @@ import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Config, Task } from "@gh-gantt/shared";
 
 const RESERVED_TYPES = new Set(["milestone", "milestone_type"]);
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATETIME_WITH_TZ_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function isReservedType(type: string): boolean {
   return RESERVED_TYPES.has(type);
@@ -23,6 +26,8 @@ export interface TaskFilterOptions {
   statusFieldName?: string;
   label?: string;
   search?: string;
+  updatedSince?: string;
+  updatedSinceTimestamp?: number;
 }
 
 export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
@@ -83,6 +88,15 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
     });
   }
 
+  if (opts.updatedSince || opts.updatedSinceTimestamp != null) {
+    const since = opts.updatedSinceTimestamp ?? parseUpdatedSince(opts.updatedSince ?? "");
+    if (since == null || !Number.isFinite(since)) return [];
+    result = result.filter((t) => {
+      const updatedAt = Date.parse(t.updated_at);
+      return Number.isFinite(updatedAt) && updatedAt >= since;
+    });
+  }
+
   return result;
 }
 
@@ -113,6 +127,9 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
         case "start_date":
           cmp = compareDates(a.start_date, b.start_date);
           break;
+        case "updated_at":
+          cmp = compareTimestamps(a.updated_at, b.updated_at);
+          break;
         case "type": {
           const aIdx = typeRank.get(a.type) ?? typeOrder.length;
           const bIdx = typeRank.get(b.type) ?? typeOrder.length;
@@ -137,11 +154,113 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
   return sorted;
 }
 
+function parseUpdatedSince(value: string): number | null {
+  const dateOnly = DATE_ONLY_PATTERN.exec(value);
+  if (dateOnly) {
+    if (!isValidDateParts(dateOnly[1], dateOnly[2], dateOnly[3])) return null;
+    const timestamp = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  const isoDateTime = ISO_DATETIME_WITH_TZ_PATTERN.exec(value);
+  if (!isoDateTime) return null;
+  if (!isValidDateParts(isoDateTime[1], isoDateTime[2], isoDateTime[3])) return null;
+  if (!isValidTimeParts(isoDateTime[4], isoDateTime[5], isoDateTime[6] ?? "00")) return null;
+  if (!isValidTimezone(isoDateTime[7])) return null;
+
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isValidDateParts(yearValue: string, monthValue: string, dayValue: string): boolean {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= getDaysInMonth(year, month);
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[month - 1] ?? 0;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+}
+
+function isValidTimeParts(hourValue: string, minuteValue: string, secondValue: string): boolean {
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  const second = Number(secondValue);
+  return (
+    Number.isInteger(hour) &&
+    Number.isInteger(minute) &&
+    Number.isInteger(second) &&
+    hour >= 0 &&
+    hour <= 23 &&
+    minute >= 0 &&
+    minute <= 59 &&
+    second >= 0 &&
+    second <= 59
+  );
+}
+
+function isValidTimezone(value: string): boolean {
+  if (value === "Z") return true;
+  const sign = value[0];
+  const [hourValue, minuteValue] = value.slice(1).split(":");
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  if (
+    (sign !== "+" && sign !== "-") ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return false;
+  }
+
+  return sign === "+"
+    ? hour < 14 || (hour === 14 && minute === 0)
+    : hour < 12 || (hour === 12 && minute === 0);
+}
+
 function compareDates(a: string | null, b: string | null): number {
   if (a === null && b === null) return 0;
   if (a === null) return 1;
   if (b === null) return -1;
   return a.localeCompare(b);
+}
+
+function compareTimestamps(a: string, b: string): number {
+  const aTime = Date.parse(a);
+  const bTime = Date.parse(b);
+  const aValid = Number.isFinite(aTime);
+  const bValid = Number.isFinite(bTime);
+  if (!aValid && !bValid) return 0;
+  if (!aValid) return 1;
+  if (!bValid) return -1;
+  return aTime - bTime;
+}
+
+function formatRelativeUpdatedAt(updatedAt: string, now = new Date()): string {
+  const timestamp = Date.parse(updatedAt);
+  if (!Number.isFinite(timestamp)) return "-";
+
+  const diffMs = Math.max(0, now.getTime() - timestamp);
+  const minutes = Math.floor(diffMs / (60 * 1000));
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
 }
 
 function formatShortId(task: Task): string {
@@ -152,14 +271,14 @@ function formatShortId(task: Task): string {
   return task.id.includes("#") ? task.id.split("#")[1] : task.id;
 }
 
-function formatTable(tasks: Task[]): string {
+export function formatTable(tasks: Task[], now = new Date()): string {
   const hasMilestones = tasks.some((t) => t.type === "milestone");
   const hasNonMilestones = tasks.some((t) => t.type !== "milestone");
 
   const head =
     hasMilestones && !hasNonMilestones
-      ? ["ID", "Type", "Title", "State", "Due"]
-      : ["ID", "Type", "Title", "State", "Start", "End"];
+      ? ["ID", "Type", "Title", "State", "Due", "Updated"]
+      : ["ID", "Type", "Title", "State", "Start", "End", "Updated"];
 
   const table = new Table({
     head,
@@ -185,12 +304,13 @@ function formatTable(tasks: Task[]): string {
 
   for (const t of tasks) {
     const shortId = formatShortId(t);
+    const updated = formatRelativeUpdatedAt(t.updated_at, now);
     if (hasMilestones && !hasNonMilestones) {
-      table.push([shortId, t.type, t.title, t.state, t.date ?? "-"]);
+      table.push([shortId, t.type, t.title, t.state, t.date ?? "-", updated]);
     } else {
       const dates =
         t.type === "milestone" ? [t.date ?? "-", "-"] : [t.start_date ?? "-", t.end_date ?? "-"];
-      table.push([shortId, t.type, t.title, t.state, ...dates]);
+      table.push([shortId, t.type, t.title, t.state, ...dates, updated]);
     }
   }
 
@@ -211,8 +331,12 @@ export function createTaskListCommand(): Command {
     .option("--label <label>", "Filter by label")
     .option("--search <query>", "Search in title and body")
     .option(
+      "--updated-since <date>",
+      "Show tasks updated on or after date (YYYY-MM-DD or ISO datetime with timezone)",
+    )
+    .option(
       "--sort <fields>",
-      "Sort by fields (comma-separated: priority,end_date,start_date,type,title)",
+      "Sort by fields (comma-separated: priority,updated_at,end_date,start_date,type,title)",
     )
     .option("--json", "Output as JSON")
     .action(async (opts) => {
@@ -230,6 +354,14 @@ export function createTaskListCommand(): Command {
         return;
       }
 
+      const updatedSinceTimestamp =
+        opts.updatedSince != null ? parseUpdatedSince(opts.updatedSince) : undefined;
+      if (opts.updatedSince != null && updatedSinceTimestamp == null) {
+        console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
+        process.exitCode = 1;
+        return;
+      }
+
       let filtered = filterTasks(tasksFile.tasks, {
         backlog: opts.backlog,
         scheduled: opts.scheduled,
@@ -242,6 +374,7 @@ export function createTaskListCommand(): Command {
         statusFieldName: config.statuses.field_name,
         label: opts.label,
         search: opts.search,
+        updatedSinceTimestamp,
       });
 
       if (opts.sort) {

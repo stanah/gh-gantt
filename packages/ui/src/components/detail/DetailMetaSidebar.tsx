@@ -1,5 +1,6 @@
 import React from "react";
 import type { Task, Config } from "../../types/index.js";
+import { formatUpdatedAt } from "../../lib/date-utils.js";
 
 interface DetailMetaSidebarProps {
   task: Task;
@@ -48,6 +49,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
   const priorityFieldName = config.sync?.field_mapping?.priority;
   const rawPriority = priorityFieldName ? task.custom_fields[priorityFieldName] : undefined;
   const currentPriority = typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
+  const updatedAt = formatUpdatedAt(task.updated_at);
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -210,6 +212,11 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
             <span style={{ color: "var(--color-text-muted)", fontSize: 11 }}>None</span>
           )}
         </span>
+      </div>
+
+      <div style={{ ...separatorStyle, marginBottom: 14 }}>
+        <label style={labelStyle}>Updated</label>
+        <span style={{ fontSize: 12, fontFamily: "monospace" }}>{updatedAt}</span>
       </div>
     </div>
   );
