@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TaskRow } from "../components/TaskRow.js";
@@ -10,6 +10,11 @@ import type { Config, Task } from "../types/index.js";
 vi.mock("../components/toolbar/ThemeToggle.js", () => ({
   ThemeToggle: () => null,
 }));
+
+afterEach(() => {
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
 
 function makeTask(overrides: Partial<Task> = {}): Task {
   return {
@@ -91,6 +96,57 @@ describe("[FR-VIS-006-AC2] 更新日時表示", () => {
     expect(html).toContain("2026-01-02 03:04 UTC");
   });
 
+  it("TaskRow は非ホバー時に更新日時を整形しない", () => {
+    const task = makeTask();
+    const RealDate = Date;
+    const constructorCalls: unknown[][] = [];
+
+    class TrackingDate extends RealDate {
+      constructor(...args: unknown[]) {
+        constructorCalls.push(args);
+        if (args.length === 0) {
+          super();
+        } else if (args.length === 1) {
+          super(args[0] as string | number | Date);
+        } else {
+          super(
+            args[0] as number,
+            args[1] as number,
+            (args[2] as number | undefined) ?? 1,
+            (args[3] as number | undefined) ?? 0,
+            (args[4] as number | undefined) ?? 0,
+            (args[5] as number | undefined) ?? 0,
+            (args[6] as number | undefined) ?? 0,
+          );
+        }
+      }
+
+      static override now = RealDate.now;
+      static override parse = RealDate.parse;
+      static override UTC = RealDate.UTC;
+    }
+
+    vi.stubGlobal("Date", TrackingDate);
+
+    renderToStaticMarkup(
+      <TaskRow
+        task={task}
+        depth={0}
+        hasChildren={false}
+        isCollapsed={false}
+        onToggle={() => {}}
+        onClick={() => {}}
+        isSelected={false}
+        isHovered={false}
+        statusFieldName="Status"
+        statusValues={config.statuses.values}
+        taskType={config.task_types.task}
+      />,
+    );
+
+    expect(constructorCalls).not.toContainEqual([task.updated_at]);
+  });
+
   it("TaskDetailPanel は更新日時を表示する", () => {
     const task = makeTask();
     const html = renderToStaticMarkup(
@@ -162,5 +218,48 @@ describe("[FR-VIS-003-AC2] 更新日時ソート", () => {
     const html = renderToStaticMarkup(<TaskTreeProbe />);
 
     expect(html).toContain("owner/repo#2,owner/repo#3,owner/repo#1");
+  });
+
+  it("useTaskTree は更新日時の昇順でタスクを並べ替える", () => {
+    const tasks = [
+      makeTask({ id: "owner/repo#1", updated_at: "2026-01-01T00:00:00Z" }),
+      makeTask({ id: "owner/repo#2", updated_at: "2026-01-03T00:00:00Z" }),
+      makeTask({ id: "owner/repo#3", updated_at: "2026-01-02T00:00:00Z" }),
+    ];
+
+    function TaskTreeProbe() {
+      const { flatList } = useTaskTree(tasks, new Set(["task"]), {
+        taskSortMode: "updated_at_asc",
+      });
+      return <output>{flatList.map((node) => node.task.id).join(",")}</output>;
+    }
+
+    const html = renderToStaticMarkup(<TaskTreeProbe />);
+
+    expect(html).toContain("owner/repo#1,owner/repo#3,owner/repo#2");
+  });
+
+  it("useTaskTree は更新日時の比較用 timestamp をタスクごとに一度だけ計算する", () => {
+    const tasks = [
+      makeTask({ id: "owner/repo#1", updated_at: "2026-01-01T00:00:00Z" }),
+      makeTask({ id: "owner/repo#2", updated_at: "2026-01-03T00:00:00Z" }),
+      makeTask({ id: "owner/repo#3", updated_at: "2026-01-02T00:00:00Z" }),
+    ];
+    const originalParse = Date.parse;
+    const parseSpy = vi.spyOn(Date, "parse").mockImplementation((value) => originalParse(value));
+
+    function TaskTreeProbe() {
+      useTaskTree(tasks, new Set(["task"]), {
+        taskSortMode: "updated_at_desc",
+      });
+      return null;
+    }
+
+    renderToStaticMarkup(<TaskTreeProbe />);
+
+    const updatedAtParseCalls = parseSpy.mock.calls.filter(
+      ([value]) => typeof value === "string" && value.startsWith("2026-01-"),
+    );
+    expect(updatedAtParseCalls).toHaveLength(tasks.length);
   });
 });

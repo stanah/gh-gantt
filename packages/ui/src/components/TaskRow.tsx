@@ -122,7 +122,7 @@ export function TaskRow({
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const bodyPreview = isHovered && !isDragging ? getBodyPreview(task.body) : null;
   const showHoverTooltip = Boolean(isHovered && !isDragging);
-  const updatedAt = formatUpdatedAt(task.updated_at);
+  const updatedAt = showHoverTooltip ? formatUpdatedAt(task.updated_at) : null;
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isFriendlyHighlight = isFriendlyRelation(highlightType);

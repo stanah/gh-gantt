@@ -122,6 +122,8 @@ describe("[FR-CLI-001-AC3] --updated-since の入力検証", () => {
     ["ISO日付形式", "2026-01-02"],
     ["ISO日時形式（UTC）", "2026-01-02T00:00:00Z"],
     ["ISO日時形式（オフセット付き）", "2026-01-02T09:00:00+09:00"],
+    ["最大正方向オフセット", "2026-01-02T00:00:00+14:00"],
+    ["最大負方向オフセット", "2026-01-02T00:00:00-12:00"],
   ])("有効な日付形式 (%s) ではエラーを返さない", async (_label, dateValue) => {
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "log").mockImplementation(() => {});
@@ -131,5 +133,35 @@ describe("[FR-CLI-001-AC3] --updated-since の入力検証", () => {
 
     expect(process.exitCode).toBeUndefined();
     expect(errSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["正方向の上限超過", "2026-01-02T00:00:00+14:01"],
+    ["正方向の非現実的オフセット", "2026-01-02T00:00:00+23:00"],
+    ["負方向の上限超過", "2026-01-02T00:00:00-12:01"],
+    ["負方向の非現実的オフセット", "2026-01-02T00:00:00-23:00"],
+  ])("無効なタイムゾーンオフセット (%s) は拒否する", async (_label, dateValue) => {
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const cmd = createTaskListCommand();
+    await cmd.parseAsync(["list", "--updated-since", dateValue], { from: "user" });
+
+    expect(process.exitCode).toBe(1);
+    expect(errSpy).toHaveBeenCalledWith(expect.stringContaining("Invalid --updated-since date"));
+  });
+
+  it("有効な日付形式は検証とフィルタで二重に parse しない", async () => {
+    const originalParse = Date.parse;
+    const parseSpy = vi.spyOn(Date, "parse").mockImplementation((value) => originalParse(value));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
+
+    const cmd = createTaskListCommand();
+    await cmd.parseAsync(["list", "--updated-since", "2026-01-02"], { from: "user" });
+
+    const normalizedDateCalls = parseSpy.mock.calls.filter(
+      ([value]) => value === "2026-01-02T00:00:00Z",
+    );
+    expect(normalizedDateCalls).toHaveLength(1);
   });
 });

@@ -23,11 +23,16 @@ export interface TaskFilterOptions {
 
 const CONTAINER_TYPES = new Set(["epic", "summary"]);
 
-function compareUpdatedAt(a: Task, b: Task, sortMode: TaskSortMode): number {
+function compareUpdatedAt(
+  a: Task,
+  b: Task,
+  sortMode: TaskSortMode,
+  updatedAtTimestamps?: Map<string, number>,
+): number {
   if (sortMode === "default") return 0;
 
-  const aTime = Date.parse(a.updated_at);
-  const bTime = Date.parse(b.updated_at);
+  const aTime = updatedAtTimestamps?.get(a.id) ?? Number.NaN;
+  const bTime = updatedAtTimestamps?.get(b.id) ?? Number.NaN;
   const aValid = Number.isFinite(aTime);
   const bValid = Number.isFinite(bTime);
   if (!aValid && !bValid) return 0;
@@ -220,10 +225,14 @@ export function useTaskTree(
       : afterAssignee;
 
     const taskMap = new Map(filtered.map((t) => [t.id, t]));
+    const updatedAtTimestamps =
+      taskSortMode === "default"
+        ? undefined
+        : new Map(filtered.map((t) => [t.id, Date.parse(t.updated_at)]));
 
     const sortTaskList = (items: Task[]): Task[] => {
       if (taskSortMode === "default") return items;
-      return [...items].sort((a, b) => compareUpdatedAt(a, b, taskSortMode));
+      return [...items].sort((a, b) => compareUpdatedAt(a, b, taskSortMode, updatedAtTimestamps));
     };
 
     const buildNode = (task: Task, depth: number): TreeNode => ({
@@ -242,7 +251,7 @@ export function useTaskTree(
       const bMs = b.type === "milestone" ? 1 : 0;
       const milestoneCmp = aMs - bMs;
       if (milestoneCmp !== 0) return milestoneCmp;
-      return compareUpdatedAt(a, b, taskSortMode);
+      return compareUpdatedAt(a, b, taskSortMode, updatedAtTimestamps);
     });
     return roots.map((t) => buildNode(t, 0));
   }, [

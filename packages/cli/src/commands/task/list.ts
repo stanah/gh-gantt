@@ -27,6 +27,7 @@ export interface TaskFilterOptions {
   label?: string;
   search?: string;
   updatedSince?: string;
+  updatedSinceTimestamp?: number;
 }
 
 export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
@@ -87,9 +88,9 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
     });
   }
 
-  if (opts.updatedSince) {
-    const since = parseUpdatedSince(opts.updatedSince);
-    if (since == null) return [];
+  if (opts.updatedSince || opts.updatedSinceTimestamp != null) {
+    const since = opts.updatedSinceTimestamp ?? parseUpdatedSince(opts.updatedSince ?? "");
+    if (since == null || !Number.isFinite(since)) return [];
     result = result.filter((t) => {
       const updatedAt = Date.parse(t.updated_at);
       return Number.isFinite(updatedAt) && updatedAt >= since;
@@ -208,17 +209,24 @@ function isValidTimeParts(hourValue: string, minuteValue: string, secondValue: s
 
 function isValidTimezone(value: string): boolean {
   if (value === "Z") return true;
+  const sign = value[0];
   const [hourValue, minuteValue] = value.slice(1).split(":");
   const hour = Number(hourValue);
   const minute = Number(minuteValue);
-  return (
-    Number.isInteger(hour) &&
-    Number.isInteger(minute) &&
-    hour >= 0 &&
-    hour <= 23 &&
-    minute >= 0 &&
-    minute <= 59
-  );
+  if (
+    (sign !== "+" && sign !== "-") ||
+    !Number.isInteger(hour) ||
+    !Number.isInteger(minute) ||
+    hour < 0 ||
+    minute < 0 ||
+    minute > 59
+  ) {
+    return false;
+  }
+
+  return sign === "+"
+    ? hour < 14 || (hour === 14 && minute === 0)
+    : hour < 12 || (hour === 12 && minute === 0);
 }
 
 function compareDates(a: string | null, b: string | null): number {
@@ -346,7 +354,9 @@ export function createTaskListCommand(): Command {
         return;
       }
 
-      if (opts.updatedSince && parseUpdatedSince(opts.updatedSince) == null) {
+      const updatedSinceTimestamp =
+        opts.updatedSince != null ? parseUpdatedSince(opts.updatedSince) : undefined;
+      if (opts.updatedSince && updatedSinceTimestamp == null) {
         console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
         process.exitCode = 1;
         return;
@@ -364,7 +374,7 @@ export function createTaskListCommand(): Command {
         statusFieldName: config.statuses.field_name,
         label: opts.label,
         search: opts.search,
-        updatedSince: opts.updatedSince,
+        updatedSinceTimestamp,
       });
 
       if (opts.sort) {
