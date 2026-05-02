@@ -2,6 +2,7 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { stringify } from "yaml";
+import { generateRequirementsCoverageArtifacts } from "./lib/requirements-coverage.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");
@@ -39,9 +40,19 @@ async function generateTypedoc() {
   console.log(`TypeDoc output written to ${resolve(GENERATED_DIR, "api")}`);
 }
 
+async function generateRequirementsCoverage() {
+  const { markdownPath, jsonPath } = await generateRequirementsCoverageArtifacts({
+    requirementsPath: resolve(ROOT, "docs/requirements.yaml"),
+    outDir: GENERATED_DIR,
+    sourceLabel: "docs/requirements.yaml",
+  });
+  console.log(`Requirements coverage written to ${markdownPath}`);
+  console.log(`Requirements coverage JSON written to ${jsonPath}`);
+}
+
 async function main() {
   await mkdir(GENERATED_DIR, { recursive: true });
-  await Promise.all([generateOpenApi(), generateTypedoc()]);
+  await Promise.all([generateOpenApi(), generateTypedoc(), generateRequirementsCoverage()]);
   console.log("Done.");
 }
 

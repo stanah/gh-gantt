@@ -490,3 +490,21 @@ areas:
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts
+      - id: NFR-STABILITY-006
+        summary: 要件とテストから生成する機能網羅レポート
+        acceptance_criteria:
+          - id: NFR-STABILITY-006-AC1
+            description: |
+              pnpm docs:gen が docs/requirements.yaml の status と tests[] から
+              Area / Requirement / Acceptance Criteria / Test file 別の
+              網羅状況を Markdown と JSON として docs/generated/ に生成する
+            status: covered
+            tests:
+              - tests/workflow/requirements-coverage.test.ts
+          - id: NFR-STABILITY-006-AC2
+            description: |
+              要件網羅レポートは生成時刻などの非決定的な値を含まず、
+              Living Documentation の原則に従って手編集ではなく再生成で更新される
+            status: covered
+            tests:
+              - tests/workflow/requirements-coverage.test.ts
