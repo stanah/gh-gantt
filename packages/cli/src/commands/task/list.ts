@@ -6,6 +6,9 @@ import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Config, Task } from "@gh-gantt/shared";
 
 const RESERVED_TYPES = new Set(["milestone", "milestone_type"]);
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_DATETIME_WITH_TZ_PATTERN =
+  /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d{1,9})?)?(Z|[+-]\d{2}:\d{2})$/;
 
 function isReservedType(type: string): boolean {
   return RESERVED_TYPES.has(type);
@@ -86,12 +89,11 @@ export function filterTasks(tasks: Task[], opts: TaskFilterOptions): Task[] {
 
   if (opts.updatedSince) {
     const since = parseUpdatedSince(opts.updatedSince);
-    if (since != null) {
-      result = result.filter((t) => {
-        const updatedAt = Date.parse(t.updated_at);
-        return Number.isFinite(updatedAt) && updatedAt >= since;
-      });
-    }
+    if (since == null) return [];
+    result = result.filter((t) => {
+      const updatedAt = Date.parse(t.updated_at);
+      return Number.isFinite(updatedAt) && updatedAt >= since;
+    });
   }
 
   return result;
@@ -152,9 +154,71 @@ export function sortTasks(tasks: Task[], sortFields: string, config: Config): Ta
 }
 
 function parseUpdatedSince(value: string): number | null {
-  const normalized = /^\d{4}-\d{2}-\d{2}$/.test(value) ? `${value}T00:00:00Z` : value;
-  const timestamp = Date.parse(normalized);
+  const dateOnly = DATE_ONLY_PATTERN.exec(value);
+  if (dateOnly) {
+    if (!isValidDateParts(dateOnly[1], dateOnly[2], dateOnly[3])) return null;
+    const timestamp = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(timestamp) ? timestamp : null;
+  }
+
+  const isoDateTime = ISO_DATETIME_WITH_TZ_PATTERN.exec(value);
+  if (!isoDateTime) return null;
+  if (!isValidDateParts(isoDateTime[1], isoDateTime[2], isoDateTime[3])) return null;
+  if (!isValidTimeParts(isoDateTime[4], isoDateTime[5], isoDateTime[6] ?? "00")) return null;
+  if (!isValidTimezone(isoDateTime[7])) return null;
+
+  const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isValidDateParts(yearValue: string, monthValue: string, dayValue: string): boolean {
+  const year = Number(yearValue);
+  const month = Number(monthValue);
+  const day = Number(dayValue);
+  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) return false;
+  if (month < 1 || month > 12) return false;
+  return day >= 1 && day <= getDaysInMonth(year, month);
+}
+
+function getDaysInMonth(year: number, month: number): number {
+  const days = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  return days[month - 1] ?? 0;
+}
+
+function isLeapYear(year: number): boolean {
+  return year % 400 === 0 || (year % 4 === 0 && year % 100 !== 0);
+}
+
+function isValidTimeParts(hourValue: string, minuteValue: string, secondValue: string): boolean {
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  const second = Number(secondValue);
+  return (
+    Number.isInteger(hour) &&
+    Number.isInteger(minute) &&
+    Number.isInteger(second) &&
+    hour >= 0 &&
+    hour <= 23 &&
+    minute >= 0 &&
+    minute <= 59 &&
+    second >= 0 &&
+    second <= 59
+  );
+}
+
+function isValidTimezone(value: string): boolean {
+  if (value === "Z") return true;
+  const [hourValue, minuteValue] = value.slice(1).split(":");
+  const hour = Number(hourValue);
+  const minute = Number(minuteValue);
+  return (
+    Number.isInteger(hour) &&
+    Number.isInteger(minute) &&
+    hour >= 0 &&
+    hour <= 23 &&
+    minute >= 0 &&
+    minute <= 59
+  );
 }
 
 function compareDates(a: string | null, b: string | null): number {
@@ -258,7 +322,10 @@ export function createTaskListCommand(): Command {
     .option("--status <status>", "Filter by Status custom field value")
     .option("--label <label>", "Filter by label")
     .option("--search <query>", "Search in title and body")
-    .option("--updated-since <date>", "Show tasks updated on or after date (YYYY-MM-DD or ISO)")
+    .option(
+      "--updated-since <date>",
+      "Show tasks updated on or after date (YYYY-MM-DD or ISO datetime with timezone)",
+    )
     .option(
       "--sort <fields>",
       "Sort by fields (comma-separated: priority,updated_at,end_date,start_date,type,title)",

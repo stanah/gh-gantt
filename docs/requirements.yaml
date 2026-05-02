@@ -176,6 +176,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/task-commands.test.ts
+              - packages/cli/src/__tests__/task-list-validation.test.ts
       - id: FR-CLI-002
         summary: タスク詳細表示
         acceptance_criteria:
