@@ -108,6 +108,7 @@ owner="${repo%%/*}"
 name="${repo#*/}"
 
 review_threads_query='query($owner: String!, $name: String!, $number: Int!, $cursor: String) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { reviewThreads(first: 100, after: $cursor) { nodes { isResolved } pageInfo { hasNextPage endCursor } } } } }'
+activity_tail_query='query($owner: String!, $name: String!, $number: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $number) { updatedAt comments(last: 20) { nodes { updatedAt body author { login } } } reviews(last: 20) { nodes { submittedAt } } reviewThreads(last: 50) { nodes { comments(last: 1) { nodes { updatedAt } } } } } } }'
 
 now_epoch() {
   date -u '+%s'
@@ -163,31 +164,53 @@ count_unresolved_threads() {
   done
 }
 
-max_activity_epoch() {
+collect_activity_state() {
   local number="$1"
   local initial_iso="$2"
-  local max_epoch
+  local max_epoch latest_rate_epoch=0 latest_is_rate_limited=0
   max_epoch=$(iso_to_epoch "$initial_iso")
 
-  local endpoint timestamp epoch
-  for endpoint in \
-    "repos/$repo/issues/$number/comments" \
-    "repos/$repo/pulls/$number/comments" \
-    "repos/$repo/pulls/$number/reviews"; do
-    while IFS= read -r timestamp; do
+  local rows timestamp is_rate_limited epoch
+  rows=$(
+    gh api graphql \
+      -F owner="$owner" \
+      -F name="$name" \
+      -F number="$number" \
+      -f query="$activity_tail_query" \
+      --jq '
+        .data.repository.pullRequest as $pr |
+        [
+          [$pr.updatedAt, false],
+          ($pr.comments.nodes[]? | [
+            .updatedAt,
+            ((.author.login | ascii_downcase | contains("coderabbit")) and ((.body | contains("Rate limit exceeded")) or (.body | contains("review_rate_limit_status_start")) or (.body | contains("rate limited by coderabbit.ai"))))
+          ]),
+          ($pr.reviews.nodes[]? | [.submittedAt, false]),
+          ($pr.reviewThreads.nodes[]?.comments.nodes[]? | [.updatedAt, false])
+        ][] | @tsv
+      ' \
+      2>/dev/null
+  ) || {
+    printf '%s|UNKNOWN\n' "$max_epoch"
+    return
+  }
+
+  while IFS=$'\t' read -r timestamp is_rate_limited; do
       [ -n "$timestamp" ] || continue
       epoch=$(iso_to_epoch "$timestamp")
       if [ "$epoch" -gt "$max_epoch" ]; then
         max_epoch="$epoch"
       fi
-    done < <(
-      gh api "$endpoint" --paginate \
-        --jq '.[] | (.updated_at // .submitted_at // .created_at // empty)' \
-        2>/dev/null || true
-    )
-  done
+      if [ "$is_rate_limited" = "true" ] && [ "$epoch" -ge "$latest_rate_epoch" ]; then
+        latest_rate_epoch="$epoch"
+        latest_is_rate_limited=1
+      elif [ "$epoch" -ge "$latest_rate_epoch" ]; then
+        latest_rate_epoch="$epoch"
+        latest_is_rate_limited=0
+      fi
+  done <<<"$rows"
 
-  printf '%s\n' "$max_epoch"
+  printf '%s|%s\n' "$max_epoch" "$latest_is_rate_limited"
 }
 
 check_counts() {
@@ -196,31 +219,6 @@ check_counts() {
     --json name,bucket \
     --jq '[length, ([.[] | select(.bucket == "pending")] | length), ([.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending")] | length)] | @tsv' \
     2>/dev/null
-}
-
-has_active_rate_limit_comment() {
-  local number="$1"
-  local latest_epoch=0 latest_is_rate_limited=0
-
-  while IFS=$'\t' read -r updated_at is_rate_limited; do
-    [ -n "${updated_at:-}" ] || continue
-    local epoch
-    epoch=$(iso_to_epoch "$updated_at")
-    if [ "$epoch" -ge "$latest_epoch" ]; then
-      latest_epoch="$epoch"
-      latest_is_rate_limited="$is_rate_limited"
-    fi
-  done < <(
-    gh api "repos/$repo/issues/$number/comments" --paginate \
-      --jq '.[] | select(.user.login | ascii_downcase | contains("coderabbit")) | [.updated_at, ((.body | contains("Rate limit exceeded")) or (.body | contains("review_rate_limit_status_start")) or (.body | contains("rate limited by coderabbit.ai")))] | @tsv' \
-      2>/dev/null || true
-  )
-
-  if [ "$latest_is_rate_limited" = "true" ]; then
-    printf '1\n'
-  else
-    printf '0\n'
-  fi
 }
 
 collect_snapshot() {
@@ -238,7 +236,7 @@ collect_snapshot() {
 
   IFS=$'\t' read -r number_value url state is_draft head_sha review_decision updated_at <<<"$metadata"
 
-  local unresolved_count checks_seen pending_checks blocking_checks counts check_total latest_activity rate_limit
+  local unresolved_count checks_seen pending_checks blocking_checks counts check_total activity_state latest_activity rate_limit
   unresolved_count=$(count_unresolved_threads "$number" || printf 'UNKNOWN\n')
   counts=$(check_counts "$number" || printf 'UNKNOWN\tUNKNOWN\tUNKNOWN\n')
   IFS=$'\t' read -r check_total pending_checks blocking_checks <<<"$counts"
@@ -255,8 +253,9 @@ collect_snapshot() {
   if ! [[ "${blocking_checks:-}" =~ ^[0-9]+$ ]]; then
     blocking_checks="UNKNOWN"
   fi
-  latest_activity=$(max_activity_epoch "$number" "$updated_at")
-  rate_limit=$(has_active_rate_limit_comment "$number")
+  activity_state=$(collect_activity_state "$number" "$updated_at")
+  latest_activity="${activity_state%%|*}"
+  rate_limit="${activity_state#*|}"
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$number_value" "$url" "$state" "$is_draft" "$head_sha" "$review_decision" \
@@ -277,6 +276,7 @@ snapshot_needs_followup() {
   [ "$checks_seen" = "0" ] && return 0
   [ "$pending_checks" = "UNKNOWN" ] && return 0
   [ "$blocking_checks" = "UNKNOWN" ] && return 0
+  [ "$rate_limit" = "UNKNOWN" ] && return 0
   [ "$unresolved_count" -gt 0 ] && return 0
   [ "$pending_checks" -gt 0 ] && return 0
   [ "$blocking_checks" -gt 0 ] && return 0
@@ -388,11 +388,15 @@ case "$mode" in
     ;;
   all-open)
     found=0
+    pr_numbers=$(gh pr list --author @me --state open --json number --jq '.[].number') || {
+      echo "[gh-gantt workflow] failed to list open PRs for current user" >&2
+      exit 1
+    }
     while IFS= read -r number; do
       [ -n "$number" ] || continue
       found=1
       wait_for_pr "$number" || status=$?
-    done < <(gh pr list --author @me --state open --json number --jq '.[].number' 2>/dev/null)
+    done <<<"$pr_numbers"
     if [ "$found" -eq 0 ]; then
       echo "[gh-gantt workflow] no open PRs for current user"
     fi

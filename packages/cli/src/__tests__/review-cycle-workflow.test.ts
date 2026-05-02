@@ -38,12 +38,13 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("pageInfo");
     expect(script).toContain("hasNextPage");
     expect(script).toContain("isResolved == false");
-    expect(script).toContain("repos/$repo/issues/$number/comments");
-    expect(script).toContain("repos/$repo/pulls/$number/comments");
-    expect(script).toContain("repos/$repo/pulls/$number/reviews");
+    expect(script).toContain("comments(last: 20)");
+    expect(script).toContain("reviews(last: 20)");
+    expect(script).toContain("reviewThreads(last: 50)");
     expect(script).toContain("checks_seen");
-    expect(script).toContain(".updated_at");
+    expect(script).toContain("updatedAt");
     expect(script).toContain("rate limited by coderabbit.ai");
+    expect(script).toContain("failed to list open PRs for current user");
     expect(script).toContain("quiet_seconds=180");
     expect(script).toContain("stable_samples=3");
     expect(script).toContain("timeout_seconds=900");
