@@ -200,29 +200,29 @@ check_counts() {
 
 has_active_rate_limit_comment() {
   local number="$1"
-  local coderabbit_pass latest_epoch=0 latest_is_rate_limited=0
-  coderabbit_pass=$(
+  local coderabbit_completed latest_epoch=0 latest_is_rate_limited=0
+  coderabbit_completed=$(
     gh pr checks "$number" \
-      --json name,bucket \
-      --jq '[.[] | select((.name | ascii_downcase | contains("coderabbit")) and .bucket == "pass")] | length' \
+      --json name,bucket,description \
+      --jq '[.[] | select((.name | ascii_downcase | contains("coderabbit")) and .bucket == "pass" and .description == "Review completed")] | length' \
       2>/dev/null || printf '0\n'
   )
-  if [ "${coderabbit_pass:-0}" -gt 0 ] 2>/dev/null; then
+  if [ "${coderabbit_completed:-0}" -gt 0 ] 2>/dev/null; then
     printf '0\n'
     return
   fi
 
-  while IFS=$'\t' read -r created_at is_rate_limited; do
-    [ -n "${created_at:-}" ] || continue
+  while IFS=$'\t' read -r updated_at is_rate_limited; do
+    [ -n "${updated_at:-}" ] || continue
     local epoch
-    epoch=$(iso_to_epoch "$created_at")
+    epoch=$(iso_to_epoch "$updated_at")
     if [ "$epoch" -ge "$latest_epoch" ]; then
       latest_epoch="$epoch"
       latest_is_rate_limited="$is_rate_limited"
     fi
   done < <(
     gh api "repos/$repo/issues/$number/comments" --paginate \
-      --jq '.[] | select(.user.login | ascii_downcase | contains("coderabbit")) | [.created_at, (.body | contains("Rate limit exceeded"))] | @tsv' \
+      --jq '.[] | select(.user.login | ascii_downcase | contains("coderabbit")) | [.updated_at, ((.body | contains("Rate limit exceeded")) or (.body | contains("review_rate_limit_status_start")) or (.body | contains("rate limited by coderabbit.ai")))] | @tsv' \
       2>/dev/null || true
   )
 
