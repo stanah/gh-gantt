@@ -1,9 +1,9 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { buildProgram } from "../program.js";
+import { buildProgram } from "../../packages/cli/src/program.js";
 
-const repoRoot = resolve(import.meta.dirname, "../../../..");
+const repoRoot = resolve(import.meta.dirname, "../..");
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");

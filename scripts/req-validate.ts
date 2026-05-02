@@ -41,15 +41,14 @@ async function collectTestReqIds(): Promise<Set<string>> {
     "packages/cli/src/__tests__",
     "packages/shared/src/__tests__",
     "packages/ui/src/__tests__",
+    "tests",
   ];
 
   for (const dir of testDirs) {
     const fullDir = resolve(ROOT, dir);
     let files: string[];
     try {
-      files = (await readdir(fullDir)).filter(
-        (f) => f.endsWith(".test.ts") || f.endsWith(".test.tsx"),
-      );
+      files = await collectTestFiles(fullDir);
     } catch (err: unknown) {
       if (
         err instanceof Error &&
@@ -61,13 +60,30 @@ async function collectTestReqIds(): Promise<Set<string>> {
       throw err;
     }
     for (const file of files) {
-      const content = await readFile(resolve(fullDir, file), "utf-8");
+      const content = await readFile(file, "utf-8");
       for (const match of content.matchAll(/\[((?:FR|NFR)-[A-Z]+-\d+-AC\d+)\]/g)) {
         ids.add(match[1]);
       }
     }
   }
   return ids;
+}
+
+async function collectTestFiles(dir: string): Promise<string[]> {
+  const files: string[] = [];
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const path = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await collectTestFiles(path)));
+    } else if (
+      entry.isFile() &&
+      (entry.name.endsWith(".test.ts") || entry.name.endsWith(".test.tsx"))
+    ) {
+      files.push(path);
+    }
+  }
+  return files;
 }
 
 async function main() {

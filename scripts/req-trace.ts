@@ -12,6 +12,7 @@ const TEST_RESULTS_PATHS = [
   resolve(ROOT, "test-results-cli.json"),
   resolve(ROOT, "test-results-ui.json"),
   resolve(ROOT, "test-results-smoke.json"),
+  resolve(ROOT, "test-results-workflow.json"),
 ];
 
 interface VitestResult {

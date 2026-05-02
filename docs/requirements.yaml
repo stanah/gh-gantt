@@ -481,7 +481,7 @@ areas:
               gh-gantt-workflow skill 付属 script と workflow が定義されている
             status: covered
             tests:
-              - packages/cli/src/__tests__/review-cycle-workflow.test.ts
+              - tests/workflow/review-cycle.test.ts
           - id: NFR-STABILITY-005-AC2
             description: |
               レビュー対応結果を gh api graphql で pending review にまとめて
@@ -489,4 +489,4 @@ areas:
               resolve する手順が標準化されている
             status: covered
             tests:
-              - packages/cli/src/__tests__/review-cycle-workflow.test.ts
+              - tests/workflow/review-cycle.test.ts
