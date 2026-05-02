@@ -470,3 +470,23 @@ areas:
               月次 cron で Org 環境スモークも追加で実行される
             status: uncovered
             tests: []
+      - id: NFR-STABILITY-005
+        summary: gh-gantt-workflow skill による PR 後レビューサイクル標準化
+        acceptance_criteria:
+          - id: NFR-STABILITY-005-AC1
+            description: |
+              PR 作成後・push 後・次セッション開始時に、Bot と人間の未解決
+              review thread / changes requested review / pending または blocking
+              checks / PR activity の quiet window を gh で検出し、対応を促す
+              gh-gantt-workflow skill 付属 script と workflow が定義されている
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/review-cycle-workflow.test.ts
+          - id: NFR-STABILITY-005-AC2
+            description: |
+              レビュー対応結果を gh api graphql で pending review にまとめて
+              submit し、対応済み thread を GraphQL alias mutation で一括
+              resolve する手順が標準化されている
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/review-cycle-workflow.test.ts

@@ -18,6 +18,7 @@
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
 3. 直近の PR 状態を確認する（`gh pr list --author @me`）
+4. open PR があれば `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行する
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。
 
@@ -119,13 +120,23 @@
 3. PR description に `Closes #<number>` または `Fixes #<number>` を記載する
 4. PR 本文をユーザーに提示し、承認後に `gh pr create`
 
+## after_pr_create
+
+1. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を実行する
+2. script は CI/checks の完了、review thread pagination、PR comments/reviews の quiet window をまとめて待つ
+3. 完了条件は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
+
 ## on_review_received
 
 1. 指摘内容を精査する（Bot のレビューを鵜呑みにしない）
 2. 妥当な指摘と、対応しない指摘を分類する
 3. 対応方針をユーザーに提示し、承認を得る
 4. 対応は同じ PR に追加コミットする（Issue 化は不要）
-5. **対応後の再検証**（修正規模により段階的）:
+5. 対応結果は GitHub GraphQL の pending review に返信を積み、submit で 1 回だけ通知する
+6. 対応済み thread は GraphQL alias mutation で一括 resolve する
+7. push 後に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する
+8. 詳細は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
+9. **対応後の再検証**（修正規模により段階的）:
    - **軽微な修正**（typo、コメント、フォーマット、変数名変更、lint 対応のみ）: 基準 1〜3（lint / typecheck / test）の再実行 + 基準 5（ユーザー承認）のみでよい。基準 4（外部レビュー）は省略可。**Living Doc 採用時**: 要件ファイル / テスト名に触れた場合は基準 6 も再実行
    - **実質的な変更**（ロジック修正、設計変更、新規コード追加）: `before_commit` の全基準を再度通す
 
@@ -147,6 +158,10 @@
 | 実装したエージェント自身がレビューする | 自己評価は過大になる。独立したサブエージェント必須 |
 | 一部の基準だけ満たして commit する     | ハード閾値は全基準必須。1 つでも落ちたら失敗       |
 | レビュー指摘を別 Issue にする          | レビュー修正は既存 PR の一部                       |
+| PR 作成で作業完了扱いする              | 非同期レビューサイクルが始まっている               |
+| PR review 操作を gh-gantt CLI に入れる | GitHub PR は `gh` / GraphQL workflow で扱う        |
+| `.claude/hooks` を完了保証に使う       | Codex では自動実行されない。skill script を使う    |
+| レビュー返信を個別投稿する             | pending review にまとめて submit する              |
 | before_commit のレビューを省略する     | 手戻りが発生する                                   |
 | ユーザー承認前にコミット・プッシュする | レビュー指摘を取りこぼす                           |
 
