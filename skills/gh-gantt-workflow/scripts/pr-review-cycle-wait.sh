@@ -200,17 +200,7 @@ check_counts() {
 
 has_active_rate_limit_comment() {
   local number="$1"
-  local coderabbit_completed latest_epoch=0 latest_is_rate_limited=0
-  coderabbit_completed=$(
-    gh pr checks "$number" \
-      --json name,bucket,description \
-      --jq '[.[] | select((.name | ascii_downcase | contains("coderabbit")) and .bucket == "pass" and .description == "Review completed")] | length' \
-      2>/dev/null || printf '0\n'
-  )
-  if [ "${coderabbit_completed:-0}" -gt 0 ] 2>/dev/null; then
-    printf '0\n'
-    return
-  fi
+  local latest_epoch=0 latest_is_rate_limited=0
 
   while IFS=$'\t' read -r updated_at is_rate_limited; do
     [ -n "${updated_at:-}" ] || continue

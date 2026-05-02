@@ -42,7 +42,6 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("repos/$repo/pulls/$number/comments");
     expect(script).toContain("repos/$repo/pulls/$number/reviews");
     expect(script).toContain("checks_seen");
-    expect(script).toContain('.description == "Review completed"');
     expect(script).toContain(".updated_at");
     expect(script).toContain("rate limited by coderabbit.ai");
     expect(script).toContain("quiet_seconds=180");
