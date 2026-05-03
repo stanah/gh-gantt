@@ -9,6 +9,17 @@ async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");
 }
 
+function extractCaseBlock(script: string, label: string): string {
+  const lines = script.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `${label})`);
+  expect(start).toBeGreaterThanOrEqual(0);
+
+  const end = lines.findIndex((line, index) => index > start && line.trim() === ";;");
+  expect(end).toBeGreaterThan(start);
+
+  return lines.slice(start, end + 1).join("\n");
+}
+
 describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow", () => {
   it("Claude hooks ではなく gh-gantt-workflow skill 付属 script を正本にする", async () => {
     const raw = await readRepoFile(".claude/settings.json");
@@ -33,6 +44,8 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("gh pr view");
     expect(script).toContain("--json number,url,state,isDraft,headRefOid,reviewDecision,updatedAt");
     expect(script).toContain("reviewDecision");
+    expect(script).toContain('then "NONE" else .reviewDecision end');
+    expect(script).not.toContain('then "UNKNOWN" else .reviewDecision end');
     expect(script).toContain("gh api graphql");
     expect(script).toContain("reviewThreads(first: 100, after: $cursor)");
     expect(script).toContain("pageInfo");
@@ -61,6 +74,7 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
     const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+    const allOpenBlock = extractCaseBlock(script, "all-open");
 
     expect(workflow).toContain("リポジトリのオープン PR 全件");
     expect(workflow).toContain("--all-open --no-wait");
@@ -68,8 +82,10 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(workflow).toContain("追対応条件が 0 件");
     expect(reference).toContain("完了報告前");
     expect(reference).toContain("リポジトリのオープン PR 全件");
+    expect(reference).toContain("`NONE`");
+    expect(reference).toContain("API 取得失敗を示す `UNKNOWN`");
     expect(script).toContain("failed to list open PRs for repository");
-    expect(script).not.toContain("--author @me");
+    expect(allOpenBlock).not.toContain("--author @me");
   });
 
   it("ADR-010 は PR 後レビューサイクルの正本を ADR-013 に委譲する", async () => {

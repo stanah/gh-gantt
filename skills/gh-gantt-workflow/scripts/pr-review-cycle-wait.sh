@@ -227,7 +227,7 @@ collect_snapshot() {
   metadata=$(
     gh pr view "$number" \
       --json number,url,state,isDraft,headRefOid,reviewDecision,updatedAt \
-      --jq '[.number, .url, .state, (.isDraft | tostring), .headRefOid, (if .reviewDecision == null or .reviewDecision == "" then "UNKNOWN" else .reviewDecision end), .updatedAt] | @tsv' \
+      --jq '[.number, .url, .state, (.isDraft | tostring), .headRefOid, (if .reviewDecision == null or .reviewDecision == "" then "NONE" else .reviewDecision end), .updatedAt] | @tsv' \
       2>/dev/null || true
   )
   if [ -z "$metadata" ]; then
