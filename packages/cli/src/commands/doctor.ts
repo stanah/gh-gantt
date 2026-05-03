@@ -1,7 +1,7 @@
 import { Command } from "commander";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import type { Config, StatusValue, Task, SyncState, TasksFile } from "@gh-gantt/shared";
 import { detectCycles } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
@@ -10,6 +10,8 @@ import { hashTask } from "../sync/hash.js";
 import { validateSyncState, type SyncStateFinding } from "../sync/validate-sync-state.js";
 
 const execFileAsync = promisify(execFile);
+const DEFAULT_STALE_IN_PROGRESS_DAYS = 7;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** チェック結果のステータス */
 type CheckStatus = "PASS" | "WARN" | "FAIL";
@@ -33,23 +35,34 @@ interface DoctorResult {
 // ── チェック関数群 ──
 
 /** gantt.config.json の schema 妥当性をチェック */
-async function checkConfig(projectRoot: string): Promise<CheckResult> {
+async function checkConfig(
+  projectRoot: string,
+): Promise<{ result: CheckResult; data: Config | null }> {
   try {
-    await new ConfigStore(projectRoot).read();
-    return { name: "config-schema", status: "PASS", message: "gantt.config.json は有効です" };
+    const data = await new ConfigStore(projectRoot).read();
+    return {
+      result: { name: "config-schema", status: "PASS", message: "gantt.config.json は有効です" },
+      data,
+    };
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === "ENOENT") {
       return {
-        name: "config-schema",
-        status: "FAIL",
-        message: "gantt.config.json が見つかりません。'gh-gantt init' を実行してください",
+        result: {
+          name: "config-schema",
+          status: "FAIL",
+          message: "gantt.config.json が見つかりません。'gh-gantt init' を実行してください",
+        },
+        data: null,
       };
     }
     return {
-      name: "config-schema",
-      status: "FAIL",
-      message: "gantt.config.json のスキーマが不正です",
-      details: [String(err instanceof Error ? err.message : err)],
+      result: {
+        name: "config-schema",
+        status: "FAIL",
+        message: "gantt.config.json のスキーマが不正です",
+        details: [String(err instanceof Error ? err.message : err)],
+      },
+      data: null,
     };
   }
 }
@@ -221,6 +234,155 @@ function checkCycles(tasks: Task[]): CheckResult {
   };
 }
 
+function checkProjectStaleState(tasks: Task[], config: Config, now = new Date()): CheckResult[] {
+  return [
+    checkStaleInProgressTasks(tasks, config, now),
+    checkInProgressTasksWithoutPullRequest(tasks, config),
+    checkOpenTasksWithClosedBlockers(tasks),
+    checkOrphanInProgressTasks(tasks, config),
+  ];
+}
+
+function checkStaleInProgressTasks(tasks: Task[], config: Config, now: Date): CheckResult {
+  const thresholdDays = config.doctor?.stale_in_progress_days ?? DEFAULT_STALE_IN_PROGRESS_DAYS;
+  const staleTasks = tasks
+    .filter((task) => task.state === "open" && isInProgressTask(task, config))
+    .flatMap((task) => {
+      const ageDays = calculateAgeDays(task.updated_at, now);
+      if (ageDays === null) {
+        return [`${task.id}: updated_at が不正です (${task.updated_at})`];
+      }
+      if (ageDays < thresholdDays) return [];
+      return [
+        `${task.id}: ${ageDays} 日更新がありません (updated_at: ${task.updated_at}, threshold: ${thresholdDays} 日)`,
+      ];
+    });
+
+  if (staleTasks.length === 0) {
+    return {
+      name: "project-stale-in-progress",
+      status: "PASS",
+      message: "stale な in-progress タスクはありません",
+    };
+  }
+
+  return {
+    name: "project-stale-in-progress",
+    status: "WARN",
+    message: `${staleTasks.length} 件の stale な in-progress タスクがあります`,
+    details: staleTasks,
+  };
+}
+
+function checkInProgressTasksWithoutPullRequest(tasks: Task[], config: Config): CheckResult {
+  const missingPullRequests = tasks
+    .filter((task) => task.state === "open" && isInProgressTask(task, config))
+    .filter((task) => task.linked_prs.length === 0)
+    .map((task) => `${task.id}: in-progress ですが linked PR がありません`);
+
+  if (missingPullRequests.length === 0) {
+    return {
+      name: "project-in-progress-pr",
+      status: "PASS",
+      message: "in-progress タスクには linked PR があります",
+    };
+  }
+
+  return {
+    name: "project-in-progress-pr",
+    status: "WARN",
+    message: `${missingPullRequests.length} 件の in-progress タスクに linked PR がありません`,
+    details: missingPullRequests,
+  };
+}
+
+function checkOpenTasksWithClosedBlockers(tasks: Task[]): CheckResult {
+  const taskMap = new Map(tasks.map((task) => [task.id, task]));
+  const details = tasks
+    .filter((task) => task.state === "open")
+    .flatMap((task) =>
+      task.blocked_by.flatMap((dependency) => {
+        const blocker = taskMap.get(dependency.task);
+        if (!blocker || blocker.state !== "closed") return [];
+        return [`${task.id}: closed タスク ${blocker.id} を blocker に持っています`];
+      }),
+    );
+
+  if (details.length === 0) {
+    return {
+      name: "project-closed-blockers",
+      status: "PASS",
+      message: "closed タスクを blocker に持つ open タスクはありません",
+    };
+  }
+
+  return {
+    name: "project-closed-blockers",
+    status: "WARN",
+    message: `${details.length} 件の open タスクが closed タスクを blocker に持っています`,
+    details,
+  };
+}
+
+function checkOrphanInProgressTasks(tasks: Task[], config: Config): CheckResult {
+  const details = tasks
+    .filter((task) => task.state === "open" && isInProgressTask(task, config))
+    .filter((task) => task.parent === null && !isEpicLikeTask(task))
+    .map((task) => `${task.id}: in-progress ですが Epic に属していません`);
+
+  if (details.length === 0) {
+    return {
+      name: "project-orphan-in-progress",
+      status: "PASS",
+      message: "孤立した in-progress タスクはありません",
+    };
+  }
+
+  return {
+    name: "project-orphan-in-progress",
+    status: "WARN",
+    message: `${details.length} 件の孤立した in-progress タスクがあります`,
+    details,
+  };
+}
+
+function isInProgressTask(task: Task, config: Config): boolean {
+  const statusName = readStatus(task, config);
+  if (!statusName) return false;
+  const status = config.statuses.values[statusName];
+  if (!status) return isKnownWorkStatusName(statusName);
+  return isWorkStatus(status);
+}
+
+function isWorkStatus(status: StatusValue): boolean {
+  if (status.done) return false;
+  return (
+    status.starts_work === true ||
+    status.category === "in_progress" ||
+    status.category === "in_review"
+  );
+}
+
+function isKnownWorkStatusName(statusName: string): boolean {
+  const normalized = statusName.toLowerCase();
+  return normalized === "in progress" || normalized === "in review" || normalized === "active";
+}
+
+function readStatus(task: Task, config: Config): string | null {
+  const value = task.custom_fields[config.statuses.field_name];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function isEpicLikeTask(task: Task): boolean {
+  return task.type === "epic" || task.labels.includes("epic");
+}
+
+function calculateAgeDays(updatedAt: string, now: Date): number | null {
+  const updatedMs = Date.parse(updatedAt);
+  if (!Number.isFinite(updatedMs)) return null;
+  return Math.max(0, Math.floor((now.getTime() - updatedMs) / MS_PER_DAY));
+}
+
 /** GitHub 認証の有効性をチェック */
 async function checkGitHubAuth(): Promise<CheckResult> {
   try {
@@ -269,7 +431,8 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
   const checks: CheckResult[] = [];
 
   // 1. config チェック
-  checks.push(await checkConfig(projectRoot));
+  const { result: configResult, data: config } = await checkConfig(projectRoot);
+  checks.push(configResult);
 
   // 2. tasks.json チェック
   const { result: tasksResult, data: tasksFile } = await checkTasksFile(projectRoot);
@@ -301,7 +464,12 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
     checks.push(checkCycles(tasksFile.tasks));
   }
 
-  // 7. 認証チェック (--offline で省略)
+  // 7. プロジェクトレベルの stale 検出
+  if (tasksFile && config) {
+    checks.push(...checkProjectStaleState(tasksFile.tasks, config));
+  }
+
+  // 8. 認証チェック (--offline で省略)
   if (!opts.offline) {
     checks.push(await checkGitHubAuth());
   }

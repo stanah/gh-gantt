@@ -78,6 +78,7 @@ function makeConfig(): Config {
     },
     type_hierarchy: {},
     statuses: { field_name: "Status", values: { Done: { color: "#0f0", done: true } } },
+    doctor: { stale_in_progress_days: 7 },
     gantt: {
       default_view: "week",
       working_days: [1, 2, 3, 4, 5],
@@ -330,6 +331,99 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
       const cycleCheck = output.checks.find((c) => c.name === "dependency-cycles");
       expect(cycleCheck?.status).toBe("FAIL");
       expect(cycleCheck?.details?.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("[NFR-STABILITY-009-AC1] [Issue #140] project-level stale 検出", () => {
+    it("in-progress の stale / PR 未紐付け / closed blocker / 孤立を WARN として返す", async () => {
+      const config = makeConfig();
+      config.statuses.values["In Progress"] = {
+        color: "#00f",
+        done: false,
+        starts_work: true,
+      };
+      const closedBlocker = makeTask("o/r#1", {
+        github_issue: 1,
+        state: "closed",
+        closed_at: "2026-01-02T00:00:00Z",
+        custom_fields: { Status: "Done" },
+      });
+      const target = makeTask("o/r#2", {
+        github_issue: 2,
+        parent: null,
+        updated_at: "2000-01-01T00:00:00Z",
+        custom_fields: { Status: "In Progress" },
+        blocked_by: [{ task: "o/r#1", type: "finish-to-start", lag: 0 }],
+      });
+      const healthy = makeTask("o/r#3", {
+        github_issue: 3,
+        parent: "o/r#99",
+        updated_at: new Date().toISOString(),
+        custom_fields: { Status: "In Progress" },
+        linked_prs: [{ number: 10, title: "作業中", state: "open", url: null }],
+      });
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile([closedBlocker, target, healthy]),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+            "o/r#2": { issue_number: 2, issue_node_id: "I_2", project_item_id: "PI_2" },
+            "o/r#3": { issue_number: 3, issue_node_id: "I_3", project_item_id: "PI_3" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+
+      const staleCheck = output.checks.find((c) => c.name === "project-stale-in-progress");
+      expect(staleCheck?.status).toBe("WARN");
+      expect(staleCheck?.details).toEqual([expect.stringContaining("o/r#2")]);
+
+      const prCheck = output.checks.find((c) => c.name === "project-in-progress-pr");
+      expect(prCheck?.status).toBe("WARN");
+      expect(prCheck?.details).toEqual([expect.stringContaining("o/r#2")]);
+
+      const blockerCheck = output.checks.find((c) => c.name === "project-closed-blockers");
+      expect(blockerCheck?.status).toBe("WARN");
+      expect(blockerCheck?.details).toEqual([expect.stringContaining("o/r#2")]);
+
+      const orphanCheck = output.checks.find((c) => c.name === "project-orphan-in-progress");
+      expect(orphanCheck?.status).toBe("WARN");
+      expect(orphanCheck?.details).toEqual([expect.stringContaining("o/r#2")]);
+    });
+
+    it("stale 判定の閾値は gantt.config.json で変更できる", async () => {
+      const config = makeConfig();
+      config.doctor = { stale_in_progress_days: 999_999 };
+      config.statuses.values["In Progress"] = {
+        color: "#00f",
+        done: false,
+        category: "in_progress",
+      };
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        parent: "o/r#99",
+        updated_at: "2000-01-01T00:00:00Z",
+        custom_fields: { Status: "In Progress" },
+        linked_prs: [{ number: 10, title: "作業中", state: "open", url: null }],
+      });
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile([task]),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const staleCheck = output.checks.find((c) => c.name === "project-stale-in-progress");
+
+      expect(staleCheck?.status).toBe("PASS");
     });
   });
 

@@ -528,6 +528,11 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-STORE-001-AC3
+            description: gantt.config.json で doctor.stale_in_progress_days を設定できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
       - id: FR-STORE-002
         summary: タスクファイルの読み書き
         acceptance_criteria:
@@ -738,3 +743,14 @@ areas:
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts
+      - id: NFR-STABILITY-009
+        summary: doctor によるプロジェクトレベル stale 検出
+        acceptance_criteria:
+          - id: NFR-STABILITY-009-AC1
+            description: |
+              gh-gantt doctor が in-progress タスクの stale、linked PR 未紐付け、
+              closed blocker、孤立状態を検出し、閾値を gantt.config.json で
+              設定できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/doctor.test.ts
