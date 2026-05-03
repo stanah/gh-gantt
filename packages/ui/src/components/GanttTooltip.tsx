@@ -1,5 +1,6 @@
 import React from "react";
 import type { Task, TaskType } from "../types/index.js";
+import type { CriticalPathTaskTiming } from "../lib/dependency-graph.js";
 import { parseDate } from "../lib/date-utils.js";
 
 interface GanttTooltipProps {
@@ -9,6 +10,7 @@ interface GanttTooltipProps {
   y: number;
   /** Summary date range from parent calculation (for summary bars) */
   summaryDates?: { start: string; end: string } | null;
+  criticalPathTiming?: CriticalPathTaskTiming;
 }
 
 export function calcDurationDays(startStr: string, endStr: string): number {
@@ -24,7 +26,14 @@ export function formatDateLabel(dateStr: string): string {
   return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}`;
 }
 
-export function GanttTooltip({ task, taskType, x, y, summaryDates }: GanttTooltipProps) {
+export function GanttTooltip({
+  task,
+  taskType,
+  x,
+  y,
+  summaryDates,
+  criticalPathTiming,
+}: GanttTooltipProps) {
   const display = taskType?.display ?? "bar";
   const progress = task._progress ?? 0;
 
@@ -132,6 +141,17 @@ export function GanttTooltip({ task, taskType, x, y, summaryDates }: GanttToolti
           <span style={{ fontSize: 10, color: "var(--color-text-muted)", minWidth: 28 }}>
             {progress}%
           </span>
+        </div>
+      )}
+
+      {/* Critical path */}
+      {display !== "milestone" && criticalPathTiming && (
+        <div style={{ marginTop: 4, fontSize: 10, color: "var(--color-text-muted)" }}>
+          {criticalPathTiming.isCritical && (
+            <span style={{ color: "var(--color-danger)", fontWeight: 600 }}>Critical path</span>
+          )}
+          {criticalPathTiming.isCritical && <span style={{ margin: "0 4px" }}>·</span>}
+          <span>Float: {criticalPathTiming.totalFloat}d</span>
         </div>
       )}
 

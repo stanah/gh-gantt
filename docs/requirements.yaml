@@ -487,6 +487,30 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/label-grouping.test.tsx
+      - id: FR-VIS-014
+        summary: クリティカルパス表示
+        acceptance_criteria:
+          - id: FR-VIS-014-AC1
+            description: finish-to-start 依存から CPM の critical task / critical edge / total float を算出する
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/dependency-graph.test.ts
+          - id: FR-VIS-014-AC2
+            description: critical task と blocked_by edge をガントチャート上で赤色強調する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/critical-path-display.test.tsx
+          - id: FR-VIS-014-AC3
+            description: tooltip に total float を表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/critical-path-display.test.tsx
+          - id: FR-VIS-014-AC4
+            description: 循環依存がある場合は critical path 計算を停止し警告を表示する
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/dependency-graph.test.ts
+              - packages/ui/src/__tests__/critical-path-display.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

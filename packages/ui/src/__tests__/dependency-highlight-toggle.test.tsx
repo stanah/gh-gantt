@@ -13,8 +13,16 @@ const dependencyGraphMocks = vi.hoisted(() => ({
       lag: 0,
     },
   ]),
+  dependencyEdgeKey: vi.fn((from: string, to: string) => `${from}->${to}`),
   detectCycles: vi.fn(() => []),
   getEdgeCoordinates: vi.fn(() => ({ path: "M 0 0 L 10 10" })),
+  calculateCriticalPath: vi.fn(() => ({
+    taskTimings: {},
+    criticalTaskIds: [],
+    criticalEdgeKeys: [],
+    projectDurationDays: 0,
+    cycles: [],
+  })),
 }));
 
 vi.mock("../lib/dependency-graph.js", () => dependencyGraphMocks);
