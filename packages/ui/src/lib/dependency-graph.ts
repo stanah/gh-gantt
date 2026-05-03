@@ -1,7 +1,12 @@
-// shared パッケージから re-export（detectCycles, buildDependencyEdges）
+// shared パッケージから re-export（detectCycles, buildDependencyEdges, critical path）
 // UI 固有の getEdgeCoordinates のみこのファイルで定義
-export { detectCycles, buildDependencyEdges } from "@gh-gantt/shared";
-export type { DependencyEdge } from "@gh-gantt/shared";
+export {
+  detectCycles,
+  buildDependencyEdges,
+  calculateCriticalPath,
+  dependencyEdgeKey,
+} from "@gh-gantt/shared";
+export type { DependencyEdge, CriticalPathTaskTiming, CriticalPathResult } from "@gh-gantt/shared";
 import type { DependencyEdge } from "@gh-gantt/shared";
 
 export function getEdgeCoordinates(

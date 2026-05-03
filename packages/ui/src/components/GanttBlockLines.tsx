@@ -2,7 +2,12 @@ import React, { useMemo } from "react";
 import type { ScaleTime } from "d3-scale";
 import type { Task } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
-import { buildDependencyEdges, detectCycles, getEdgeCoordinates } from "../lib/dependency-graph.js";
+import {
+  buildDependencyEdges,
+  dependencyEdgeKey,
+  detectCycles,
+  getEdgeCoordinates,
+} from "../lib/dependency-graph.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
 
@@ -13,6 +18,8 @@ interface GanttBlockLinesProps {
   totalWidth: number;
   totalHeight: number;
   hoveredTaskId: string | null;
+  criticalEdgeKeys?: Set<string>;
+  criticalPathColor?: string;
 }
 
 export function GanttBlockLines({
@@ -22,6 +29,8 @@ export function GanttBlockLines({
   totalWidth,
   totalHeight,
   hoveredTaskId,
+  criticalEdgeKeys,
+  criticalPathColor = "var(--color-danger)",
 }: GanttBlockLinesProps) {
   const edges = useMemo(() => buildDependencyEdges(tasks), [tasks]);
   const cycles = useMemo(() => {
@@ -45,11 +54,14 @@ export function GanttBlockLines({
     return map;
   }, [flatList, xScale]);
 
-  // Only show arrows when hovering a task; filter to edges involving the hovered task
+  // ホバー対象の依存線に加え、critical path 上の依存線は常時表示する。
   const visibleEdges = useMemo(() => {
-    if (!hoveredTaskId) return [];
-    return edges.filter((edge) => edge.from === hoveredTaskId || edge.to === hoveredTaskId);
-  }, [edges, hoveredTaskId]);
+    return edges.filter((edge) => {
+      const isCriticalEdge = criticalEdgeKeys?.has(dependencyEdgeKey(edge.from, edge.to)) ?? false;
+      if (isCriticalEdge) return true;
+      return hoveredTaskId != null && (edge.from === hoveredTaskId || edge.to === hoveredTaskId);
+    });
+  }, [criticalEdgeKeys, edges, hoveredTaskId]);
 
   if (visibleEdges.length === 0) return null;
 
@@ -67,23 +79,48 @@ export function GanttBlockLines({
         <marker id="arrowhead-red" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
           <polygon points="0 0, 8 3, 0 6" fill="var(--color-danger)" />
         </marker>
+        <marker
+          id="arrowhead-critical"
+          markerWidth="8"
+          markerHeight="6"
+          refX="7"
+          refY="3"
+          orient="auto"
+        >
+          <polygon points="0 0, 8 3, 0 6" fill={criticalPathColor} />
+        </marker>
       </defs>
       {visibleEdges.map((edge, i) => {
         const coords = getEdgeCoordinates(edge, taskPositions, ROW_HEIGHT);
         if (!coords) return null;
 
         const isCycleEdge = cycles.has(edge.from) && cycles.has(edge.to);
+        const isCriticalEdge =
+          criticalEdgeKeys?.has(dependencyEdgeKey(edge.from, edge.to)) ?? false;
 
         return (
           <path
             key={i}
+            data-critical-path={isCriticalEdge ? "true" : undefined}
             d={coords.path}
             fill="none"
-            stroke={isCycleEdge ? "var(--color-danger)" : "var(--color-text-secondary)"}
-            strokeWidth={1.5}
+            stroke={
+              isCycleEdge
+                ? "var(--color-danger)"
+                : isCriticalEdge
+                  ? criticalPathColor
+                  : "var(--color-text-secondary)"
+            }
+            strokeWidth={isCriticalEdge ? 2.5 : 1.5}
             strokeDasharray={edge.lag > 0 ? "4 2" : undefined}
-            markerEnd={isCycleEdge ? "url(#arrowhead-red)" : "url(#arrowhead)"}
-            opacity={0.7}
+            markerEnd={
+              isCycleEdge
+                ? "url(#arrowhead-red)"
+                : isCriticalEdge
+                  ? "url(#arrowhead-critical)"
+                  : "url(#arrowhead)"
+            }
+            opacity={isCriticalEdge ? 0.95 : 0.7}
           />
         );
       })}

@@ -6,6 +6,7 @@ import React, {
   forwardRef,
   useEffect,
   useLayoutEffect,
+  useMemo,
 } from "react";
 import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
@@ -16,6 +17,7 @@ import { GanttBlockLines } from "./GanttBlockLines.js";
 import { GanttTooltip } from "./GanttTooltip.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
 import type { ViewScale } from "@gh-gantt/shared";
+import { calculateCriticalPath } from "../lib/dependency-graph.js";
 import { useDragResize } from "../hooks/useDragResize.js";
 import { useDrawBar } from "../hooks/useDrawBar.js";
 import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
@@ -135,6 +137,16 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
+  const criticalPath = useMemo(() => calculateCriticalPath(tasks), [tasks]);
+  const criticalTaskIds = useMemo(
+    () => new Set(criticalPath.criticalTaskIds),
+    [criticalPath.criticalTaskIds],
+  );
+  const criticalEdgeKeys = useMemo(
+    () => new Set(criticalPath.criticalEdgeKeys),
+    [criticalPath.criticalEdgeKeys],
+  );
+  const criticalPathColor = config.gantt.colors.critical_path;
 
   const handleDragCommit = useCallback(
     (taskId: string, updates: { start_date?: string; end_date?: string }) => {
@@ -246,6 +258,26 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
       onMouseDown={handleMouseDown}
       style={{ width: totalWidth, height: totalHeight, position: "relative" }}
     >
+      {criticalPath.cycles.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            position: "absolute",
+            top: 8,
+            left: 8,
+            zIndex: 20,
+            padding: "6px 10px",
+            borderRadius: 6,
+            fontSize: 11,
+            color: "var(--color-danger)",
+            background: "var(--color-danger-bg)",
+            border: "1px solid var(--color-danger)",
+            pointerEvents: "none",
+          }}
+        >
+          循環依存があるためクリティカルパスを計算できません
+        </div>
+      )}
       <GanttGrid
         xScale={xScale}
         dateRange={dateRange}
@@ -263,6 +295,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           totalWidth={totalWidth}
           totalHeight={totalHeight}
           hoveredTaskId={hoveredTaskId ?? null}
+          criticalEdgeKeys={criticalEdgeKeys}
+          criticalPathColor={criticalPathColor}
         />
       )}
       <svg
@@ -348,6 +382,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
             : null;
           const isDimmed =
             dependencyHighlightEnabled && hoveredTaskId != null && !isHoveredTask && !highlightType;
+          const criticalPathTiming = criticalPath.taskTimings[task.id];
+          const isCriticalPath = criticalTaskIds.has(task.id);
 
           if (display === "summary") {
             return (
@@ -418,6 +454,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               priorityFieldName={priorityFieldName}
               isDimmed={isDimmed}
               highlightType={highlightType}
+              isCriticalPath={isCriticalPath}
+              criticalPathColor={criticalPathColor}
+              totalFloatDays={criticalPathTiming?.totalFloat}
               onTooltipShow={showTooltip}
               onTooltipHide={hideTooltip}
             />
@@ -451,6 +490,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           x={tooltip.x}
           y={tooltip.y}
           summaryDates={tooltipSummaryDates}
+          criticalPathTiming={criticalPath.taskTimings[tooltip.task.id]}
         />
       )}
     </div>

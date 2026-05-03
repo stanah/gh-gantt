@@ -27,6 +27,9 @@ interface GanttBarProps {
   priorityFieldName?: string;
   isDimmed?: boolean;
   highlightType?: RelationType | null;
+  isCriticalPath?: boolean;
+  criticalPathColor?: string;
+  totalFloatDays?: number;
   onTooltipShow?: (task: Task, e: React.MouseEvent | React.FocusEvent) => void;
   onTooltipHide?: () => void;
 }
@@ -53,6 +56,9 @@ export function GanttBar({
   priorityFieldName,
   isDimmed,
   highlightType,
+  isCriticalPath,
+  criticalPathColor = "var(--color-danger)",
+  totalFloatDays,
   onTooltipShow,
   onTooltipHide,
 }: GanttBarProps) {
@@ -89,11 +95,22 @@ export function GanttBar({
 
   const hl = highlightStroke(highlightType);
   const isDone = task.state === "closed";
+  const stroke = isSelected
+    ? "var(--color-text)"
+    : hl
+      ? hl.stroke
+      : isCriticalPath
+        ? criticalPathColor
+        : scheduleStroke;
+  const strokeWidth = isSelected ? 2 : hl ? hl.strokeWidth : isCriticalPath ? 2.5 : 1;
+  const fill = isCriticalPath && !overdue && !atRisk ? criticalPathColor : backgroundFill;
+  const fillOpacity = isCriticalPath && !overdue && !atRisk ? 0.22 : backgroundOpacity;
 
   return (
     <g
       role="graphics-symbol"
-      aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}${isDone ? ", done" : ""}`}
+      aria-label={`${task.title}, from ${task.start_date} to ${task.end_date}${isCriticalPath ? `, critical path, float ${totalFloatDays ?? 0} days` : ""}${overdue ? `, overdue ${overdueDays} days` : atRisk && daysUntilDue != null ? `, due in ${daysUntilDue} days` : ""}${isDone ? ", done" : ""}`}
+      data-critical-path={isCriticalPath ? "true" : undefined}
       tabIndex={0}
       onClick={onClick}
       onMouseEnter={(e) => onTooltipShow?.(task, e)}
@@ -111,10 +128,10 @@ export function GanttBar({
         width={width}
         height={barHeight}
         rx={3}
-        fill={backgroundFill}
-        fillOpacity={backgroundOpacity}
-        stroke={isSelected ? "var(--color-text)" : hl ? hl.stroke : scheduleStroke}
-        strokeWidth={isSelected ? 2 : hl ? hl.strokeWidth : 1}
+        fill={fill}
+        fillOpacity={fillOpacity}
+        stroke={stroke}
+        strokeWidth={strokeWidth}
         strokeDasharray={!isSelected && !hl && overdue ? "4 2" : undefined}
       />
       {/* Priority indicator (left stripe) */}
