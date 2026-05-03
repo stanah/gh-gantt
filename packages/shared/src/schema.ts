@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type {
+  AcceptanceCriterion,
   Config,
   Dependency,
   DoctorConfig,
@@ -67,6 +68,11 @@ export const LinkedPullRequestSchema: z.ZodType<LinkedPullRequest> = z.object({
 
 const LinkedPullRequestRefSchema = z.union([z.number(), LinkedPullRequestSchema]);
 
+export const AcceptanceCriterionSchema: z.ZodType<AcceptanceCriterion> = z.object({
+  description: z.string().trim().min(1),
+  checked: z.boolean(),
+});
+
 const TaskSchemaObject = z.object({
   id: z.string(),
   type: z.string(),
@@ -85,6 +91,7 @@ const TaskSchemaObject = z.object({
   created_at: z.string(),
   updated_at: z.string(),
   closed_at: z.string().nullable(),
+  acceptance_criteria: z.array(AcceptanceCriterionSchema).default([]),
   custom_fields: z.record(z.unknown()),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
@@ -192,6 +199,7 @@ export const TasksFileWithConflictsSchema: z.ZodType<TasksFile> = z.object({
 export const SyncFieldsSchema: z.ZodType<SyncFields> = z.object({
   title: z.string(),
   body: z.string().nullable(),
+  acceptance_criteria: z.array(AcceptanceCriterionSchema).optional(),
   state: z.enum(["open", "closed"]),
   type: z.string(),
   assignees: z.array(z.string()),

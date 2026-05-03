@@ -31,6 +31,11 @@ export interface LinkedPullRequest {
 
 export type LinkedPullRequestRef = number | LinkedPullRequest;
 
+export interface AcceptanceCriterion {
+  description: string;
+  checked: boolean;
+}
+
 export interface Task {
   id: string;
   type: string;
@@ -40,6 +45,7 @@ export interface Task {
   sub_tasks: string[];
   title: string;
   body: string | null;
+  acceptance_criteria?: AcceptanceCriterion[];
   state: "open" | "closed";
   state_reason: string | null;
   assignees: string[];

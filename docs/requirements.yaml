@@ -232,7 +232,7 @@ areas:
         summary: コマンド体系
         acceptance_criteria:
           - id: FR-CLI-006-AC1
-            description: init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve コマンドが定義されている
+            description: init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている
             status: covered
             tests:
               - packages/cli/src/__tests__/command-structure.test.ts
@@ -288,6 +288,28 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/sprint-command.test.ts
+      - id: FR-CLI-011
+        summary: 受入基準の first-class 操作
+        acceptance_criteria:
+          - id: FR-CLI-011-AC1
+            description: Task.acceptance_criteria を first-class フィールドとして保存形式で扱える
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-CLI-011-AC2
+            description: ac add/check で task の受入基準を追加し完了にできる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/acceptance-criteria-command.test.ts
+          - id: FR-CLI-011-AC3
+            description: show と GitHub Issue body 同期で受入基準を機械可読に維持できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/diff.test.ts
+              - packages/cli/src/__tests__/hash.test.ts
+              - packages/cli/src/__tests__/json-output.test.ts
+              - packages/cli/src/__tests__/three-way-merge.test.ts
+              - packages/shared/src/__tests__/acceptance-criteria.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

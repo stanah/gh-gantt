@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
 import type { Task, SyncFields } from "@gh-gantt/shared";
+import { normalizeAcceptanceCriteria } from "@gh-gantt/shared";
 
 /**
  * Extract the bidirectional sync fields from a task.
  * These are the fields that participate in hash comparison and diff detection.
  */
 export function extractSyncFields(task: Task): SyncFields {
-  return {
+  const acceptanceCriteria = normalizeAcceptanceCriteria(task.acceptance_criteria);
+  const fields: SyncFields = {
     title: task.title,
     body: task.body,
     state: task.state,
@@ -24,6 +26,10 @@ export function extractSyncFields(task: Task): SyncFields {
     date: task.date,
     blocked_by: [...task.blocked_by].sort((a, b) => a.task.localeCompare(b.task)),
   };
+  if (acceptanceCriteria.length > 0) {
+    fields.acceptance_criteria = acceptanceCriteria;
+  }
+  return fields;
 }
 
 /**

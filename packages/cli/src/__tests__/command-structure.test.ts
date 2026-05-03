@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildProgram } from "../program.js";
 
-describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve コマンドが定義されている", () => {
+describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている", () => {
   const program = buildProgram();
   const commandNames = program.commands.map((c) => c.name());
 
@@ -29,6 +29,14 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/co
 
   it("has 'sprint' as a top-level command", () => {
     expect(commandNames).toContain("sprint");
+  });
+
+  it("has 'ac' as a top-level command", () => {
+    expect(commandNames).toContain("ac");
+    const acCmd = program.commands.find((c) => c.name() === "ac")!;
+    const acSubNames = acCmd.commands.map((c) => c.name());
+    expect(acSubNames).toContain("add");
+    expect(acSubNames).toContain("check");
   });
 
   // --- 既存のトップレベルコマンドは維持 ---

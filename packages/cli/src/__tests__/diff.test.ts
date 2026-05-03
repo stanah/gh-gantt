@@ -96,6 +96,20 @@ describe("detectChangedFields", () => {
     const curr = extractSyncFields(makeTask("o/r#1", { start_date: "2026-01-01" }));
     expect(detectChangedFields(curr, prev)).toEqual(["start_date"]);
   });
+
+  it("[FR-CLI-011-AC3] acceptance_criteria の変更を検出する", () => {
+    const prev = extractSyncFields(
+      makeTask("o/r#1", {
+        acceptance_criteria: [{ description: "期待する出力を表示できる", checked: false }],
+      }),
+    );
+    const curr = extractSyncFields(
+      makeTask("o/r#1", {
+        acceptance_criteria: [{ description: "期待する出力を表示できる", checked: true }],
+      }),
+    );
+    expect(detectChangedFields(curr, prev)).toEqual(["acceptance_criteria"]);
+  });
 });
 
 // ---------------------------------------------------------------------------

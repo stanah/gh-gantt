@@ -3,6 +3,7 @@ import type { SyncFields } from "@gh-gantt/shared";
 export const SYNC_FIELD_KEYS: (keyof SyncFields)[] = [
   "title",
   "body",
+  "acceptance_criteria",
   "state",
   "type",
   "assignees",
@@ -40,6 +41,10 @@ function normalizeForCompare(field: keyof SyncFields, value: unknown): string {
   }
 
   if (Array.isArray(value)) {
+    if (field === "acceptance_criteria") {
+      return JSON.stringify(value);
+    }
+
     const sorted = [...value].sort((a, b) => {
       // blocked_by: sort by .task property
       if (typeof a === "object" && a !== null && "task" in a) {

@@ -2,6 +2,7 @@ export * from "./types.js";
 export * from "./schema.js";
 export * from "./constants.js";
 export * from "./comments.js";
+export * from "./acceptance-criteria.js";
 export * from "./status-dates.js";
 export * from "./dependency-graph.js";
 export * from "./adr-schema.js";

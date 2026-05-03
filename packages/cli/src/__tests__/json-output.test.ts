@@ -15,6 +15,7 @@ const mockTask = {
   sub_tasks: [],
   title: "Test task",
   body: null,
+  acceptance_criteria: [{ description: "期待する出力を表示できる", checked: true }],
   state: "open",
   state_reason: null,
   assignees: [],
@@ -120,7 +121,7 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     vi.restoreAllMocks();
   });
 
-  it("outputs task as JSON object", async () => {
+  it("[FR-CLI-011-AC3] outputs task as JSON object", async () => {
     const cmd = createTaskShowCommand();
     await cmd.parseAsync(["show", "1", "--json"], { from: "user" });
 
@@ -128,9 +129,12 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     const raw = logSpy.mock.calls[0][0] as string;
     const parsed = JSON.parse(raw);
     expect(parsed).toMatchObject({ id: "owner/repo#1", title: "Test task", type: "task" });
+    expect(parsed.acceptance_criteria).toEqual([
+      { description: "期待する出力を表示できる", checked: true },
+    ]);
   });
 
-  it("outputs text format without --json", async () => {
+  it("[FR-CLI-011-AC3] outputs text format without --json", async () => {
     const cmd = createTaskShowCommand();
     await cmd.parseAsync(["show", "1"], { from: "user" });
 
@@ -138,6 +142,8 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     const raw = logSpy.mock.calls[0][0] as string;
     expect(raw).toContain("ID:");
     expect(raw).toContain("Title:");
+    expect(raw).toContain("Acceptance Criteria:");
+    expect(raw).toContain("1. [x] 期待する出力を表示できる");
   });
 });
 

@@ -115,6 +115,7 @@ export const createCommand = new Command("create")
       created_at: now,
       updated_at: now,
       closed_at: null,
+      acceptance_criteria: [],
       custom_fields: {},
       start_date: startDate,
       end_date: endDate,
