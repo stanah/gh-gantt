@@ -10,11 +10,49 @@ import { threeWayMerge, type FieldConflict } from "../sync/three-way-merge.js";
 import { formatValue } from "../util/format.js";
 import { mapRemoteItemToTask } from "../sync/mapper.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
-import type { Task } from "@gh-gantt/shared";
+import type { SyncState, Task } from "@gh-gantt/shared";
 
 function extractIssueNumber(id: string): number | undefined {
   const match = id.match(/#(\d+)$/);
   return match ? parseInt(match[1], 10) : undefined;
+}
+
+export function countRemoteChanges(remoteTasks: Task[], syncState: SyncState): number {
+  let remoteChanged = 0;
+  for (const remote of remoteTasks) {
+    const snapshot = syncState.snapshots[remote.id];
+    if (!snapshot) {
+      remoteChanged++;
+      continue;
+    }
+
+    if (remote.updated_at && snapshot.updated_at) {
+      if (
+        isRemoteUpdatedAfterLastSync(
+          remote.updated_at,
+          snapshot.updated_at,
+          syncState.last_synced_at,
+        )
+      ) {
+        remoteChanged++;
+      }
+    } else if (hashTask(remote) !== (snapshot.remoteHash ?? snapshot.hash)) {
+      remoteChanged++;
+    }
+  }
+  return remoteChanged;
+}
+
+function isRemoteUpdatedAfterLastSync(
+  remoteUpdatedAt: string,
+  snapshotUpdatedAt: string | undefined,
+  lastSyncedAt: string,
+): boolean {
+  if (!snapshotUpdatedAt || remoteUpdatedAt === snapshotUpdatedAt) return false;
+  const remoteTime = Date.parse(remoteUpdatedAt);
+  const lastSyncedTime = Date.parse(lastSyncedAt);
+  if (!Number.isFinite(remoteTime) || !Number.isFinite(lastSyncedTime)) return true;
+  return remoteTime > lastSyncedTime;
 }
 
 export const statusCommand = new Command("status")
@@ -45,19 +83,7 @@ export const statusCommand = new Command("status")
     }
 
     // Compute remote changes (aligned with pull's quick check)
-    let remoteChanged = 0;
-    for (const remote of remoteTasks) {
-      const snapshot = syncState.snapshots[remote.id];
-      if (!snapshot) {
-        remoteChanged++;
-      } else if (remote.updated_at && snapshot.updated_at) {
-        if (remote.updated_at !== snapshot.updated_at) {
-          remoteChanged++;
-        }
-      } else if (hashTask(remote) !== (snapshot.remoteHash ?? snapshot.hash)) {
-        remoteChanged++;
-      }
-    }
+    const remoteChanged = countRemoteChanges(remoteTasks, syncState);
 
     // Detect conflicts via 3-way merge
     interface StatusConflict {
