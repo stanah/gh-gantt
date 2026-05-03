@@ -42,6 +42,7 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
     updated_at: c.updatedAt,
     closed_at: c.closedAt,
     acceptance_criteria: parsedBody.acceptance_criteria,
+    acceptance_criteria_slot: parsedBody.has_acceptance_criteria_block,
     custom_fields: customFields,
     start_date: (item.fieldValues[fm.start_date] as string) ?? null,
     end_date: (item.fieldValues[fm.end_date] as string) ?? null,

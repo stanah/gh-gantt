@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   parseAcceptanceCriteriaBody,
   serializeAcceptanceCriteriaBody,
+  renderAcceptanceCriteriaBlock,
 } from "../acceptance-criteria.js";
 
 describe("[FR-CLI-011-AC3] Issue body の受入基準管理ブロック", () => {
@@ -37,5 +38,35 @@ describe("[FR-CLI-011-AC3] Issue body の受入基準管理ブロック", () => 
     expect(body).toContain("- [ ] 追加できる");
     expect(body).toContain("- [x] 完了にできる");
     expect(body).toContain("<!-- gh-gantt:acceptance-criteria:end -->");
+  });
+});
+
+describe("[FR-CLI-012-AC2] 空の受入基準スロット", () => {
+  it("テンプレート用の空ブロックを body から分離できる", () => {
+    const body = ["説明文", "", renderAcceptanceCriteriaBlock([])].join("\n");
+    const parsed = parseAcceptanceCriteriaBody(body);
+
+    expect(body).toContain("## 受入基準");
+    expect(parsed.body).toBe("説明文");
+    expect(parsed.acceptance_criteria).toEqual([]);
+  });
+
+  it("空の管理ブロックを含む body は直列化後も受入基準セクションを保持する", () => {
+    const original = ["説明文", "", renderAcceptanceCriteriaBlock([])].join("\n");
+    const serialized = serializeAcceptanceCriteriaBody(original, []);
+
+    expect(serialized).toContain("説明文");
+    expect(serialized).toContain("## 受入基準");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:start -->");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:end -->");
+  });
+
+  it("slot メタデータがある body は空の受入基準セクションを再生成する", () => {
+    const serialized = serializeAcceptanceCriteriaBody("説明文", [], { includeEmptyBlock: true });
+
+    expect(serialized).toContain("説明文");
+    expect(serialized).toContain("## 受入基準");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:start -->");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:end -->");
   });
 });

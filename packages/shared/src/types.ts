@@ -61,6 +61,7 @@ export interface Task {
   title: string;
   body: string | null;
   acceptance_criteria?: AcceptanceCriterion[];
+  acceptance_criteria_slot?: boolean;
   state: "open" | "closed";
   state_reason: string | null;
   assignees: string[];
@@ -165,6 +166,7 @@ export interface SyncFields {
   title: string;
   body: string | null;
   acceptance_criteria?: AcceptanceCriterion[];
+  acceptance_criteria_slot?: boolean;
   state: "open" | "closed";
   type: string;
   assignees: string[];

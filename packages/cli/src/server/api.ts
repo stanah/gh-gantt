@@ -110,6 +110,7 @@ export function createApiRouter(projectRoot: string): Router {
         updated_at: now,
         closed_at: null,
         acceptance_criteria: [],
+        acceptance_criteria_slot: false,
         custom_fields: {},
         start_date: start_date ?? null,
         end_date: end_date ?? null,

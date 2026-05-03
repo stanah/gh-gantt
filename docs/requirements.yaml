@@ -310,6 +310,28 @@ areas:
               - packages/cli/src/__tests__/json-output.test.ts
               - packages/cli/src/__tests__/three-way-merge.test.ts
               - packages/shared/src/__tests__/acceptance-criteria.test.ts
+      - id: FR-CLI-012
+        summary: タスクテンプレートの受入基準スロット
+        acceptance_criteria:
+          - id: FR-CLI-012-AC1
+            description: create --template は task_templates の mapping からテンプレートファイルを解決できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-template.test.ts
+          - id: FR-CLI-012-AC2
+            description: テンプレート内の AC プレースホルダを空の受入基準セクションとして生成できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-template.test.ts
+              - packages/cli/src/__tests__/hash.test.ts
+              - packages/cli/src/__tests__/mapper.test.ts
+              - packages/shared/src/__tests__/acceptance-criteria.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-CLI-012-AC3
+            description: テンプレート生成後の draft task に ac add で受入基準を追加できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-template.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

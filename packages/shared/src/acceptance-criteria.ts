@@ -18,6 +18,10 @@ function normalizeDescription(description: string): string {
   return description.replace(/\s+/g, " ").trim();
 }
 
+export function hasAcceptanceCriteriaBlock(body: string | null): boolean {
+  return body != null && ACCEPTANCE_CRITERIA_BLOCK_RE.test(body);
+}
+
 export function normalizeAcceptanceCriteria(
   criteria: readonly AcceptanceCriterion[] | undefined,
 ): AcceptanceCriterion[] {
@@ -32,14 +36,15 @@ export function normalizeAcceptanceCriteria(
 export function parseAcceptanceCriteriaBody(body: string | null): {
   body: string | null;
   acceptance_criteria: AcceptanceCriterion[];
+  has_acceptance_criteria_block: boolean;
 } {
   if (body == null) {
-    return { body: null, acceptance_criteria: [] };
+    return { body: null, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
   const match = body.match(ACCEPTANCE_CRITERIA_BLOCK_RE);
   if (!match) {
-    return { body, acceptance_criteria: [] };
+    return { body, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
   const criteria: AcceptanceCriterion[] = [];
@@ -60,20 +65,24 @@ export function parseAcceptanceCriteriaBody(body: string | null): {
   return {
     body: stripped.length > 0 ? stripped : null,
     acceptance_criteria: normalizeAcceptanceCriteria(criteria),
+    has_acceptance_criteria_block: true,
   };
 }
 
-export function serializeAcceptanceCriteriaBody(
-  body: string | null,
-  criteria: readonly AcceptanceCriterion[] | undefined,
-): string | null {
-  const cleanedBody = parseAcceptanceCriteriaBody(body).body;
-  const normalizedCriteria = normalizeAcceptanceCriteria(criteria);
-  if (normalizedCriteria.length === 0) {
-    return cleanedBody;
-  }
+export interface SerializeAcceptanceCriteriaBodyOptions {
+  includeEmptyBlock?: boolean;
+}
 
-  const block = [
+export function renderAcceptanceCriteriaBlock(
+  criteria: readonly AcceptanceCriterion[] | undefined,
+): string {
+  return renderNormalizedAcceptanceCriteriaBlock(normalizeAcceptanceCriteria(criteria));
+}
+
+function renderNormalizedAcceptanceCriteriaBlock(
+  normalizedCriteria: readonly AcceptanceCriterion[],
+): string {
+  return [
     ACCEPTANCE_CRITERIA_START_MARKER,
     "## 受入基準",
     "",
@@ -83,6 +92,24 @@ export function serializeAcceptanceCriteriaBody(
     }),
     ACCEPTANCE_CRITERIA_END_MARKER,
   ].join("\n");
+}
+
+export function serializeAcceptanceCriteriaBody(
+  body: string | null,
+  criteria: readonly AcceptanceCriterion[] | undefined,
+  options: SerializeAcceptanceCriteriaBodyOptions = {},
+): string | null {
+  const cleanedBody = parseAcceptanceCriteriaBody(body).body;
+  const normalizedCriteria = normalizeAcceptanceCriteria(criteria);
+  const shouldIncludeBlock =
+    normalizedCriteria.length > 0 ||
+    options.includeEmptyBlock === true ||
+    hasAcceptanceCriteriaBlock(body);
+  if (!shouldIncludeBlock) {
+    return cleanedBody;
+  }
+
+  const block = renderNormalizedAcceptanceCriteriaBlock(normalizedCriteria);
 
   return cleanedBody ? `${cleanedBody.trim()}\n\n${block}` : block;
 }

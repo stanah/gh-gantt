@@ -3,13 +3,17 @@ import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
+import { normalizeAcceptanceCriteria, parseAcceptanceCriteriaBody } from "@gh-gantt/shared";
 import type { Task } from "@gh-gantt/shared";
 
 function formatTask(task: Task): string {
   if (isMilestoneSyntheticTask(task.id)) {
     return formatMilestone(task);
   }
-  const acceptanceCriteria = task.acceptance_criteria ?? [];
+  const parsedBody = parseAcceptanceCriteriaBody(task.body);
+  const storedAcceptanceCriteria = normalizeAcceptanceCriteria(task.acceptance_criteria);
+  const acceptanceCriteria =
+    storedAcceptanceCriteria.length > 0 ? storedAcceptanceCriteria : parsedBody.acceptance_criteria;
   const lines: string[] = [
     `ID:         ${task.id}`,
     `Title:      ${task.title}`,
@@ -34,8 +38,8 @@ function formatTask(task: Task): string {
     `Created:    ${task.created_at}`,
     `Updated:    ${task.updated_at}`,
   ];
-  if (task.body) {
-    lines.push("", "--- Body ---", task.body);
+  if (parsedBody.body) {
+    lines.push("", "--- Body ---", parsedBody.body);
   }
   return lines.join("\n");
 }
