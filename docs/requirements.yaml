@@ -432,6 +432,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-169-status-false-remote-changes.test.ts
+              - packages/cli/src/__tests__/regressions/issue-197-status-remote-changed-stale-updated-at.test.ts
       - id: NFR-STABILITY-002
         summary: silent failure の禁止
         acceptance_criteria:
