@@ -2,8 +2,8 @@ import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { Config } from "@gh-gantt/shared";
-import { CONFIG_FILE, GANTT_DIR } from "@gh-gantt/shared";
+import type { Config, Task, TasksFile } from "@gh-gantt/shared";
+import { CONFIG_FILE, GANTT_DIR, TASKS_FILE } from "@gh-gantt/shared";
 import { createSprintCommand } from "../commands/sprint.js";
 
 function makeConfig(overrides: Partial<Config> = {}): Config {
@@ -45,6 +45,52 @@ async function writeConfig(root: string, config: Config): Promise<void> {
 async function readConfig(root: string): Promise<Config> {
   const raw = await readFile(join(root, GANTT_DIR, CONFIG_FILE), "utf-8");
   return JSON.parse(raw) as Config;
+}
+
+function makeTask(overrides: Partial<Task> = {}): Task {
+  return {
+    id: "owner/repo#1",
+    type: "task",
+    github_issue: 1,
+    github_repo: "owner/repo",
+    parent: null,
+    sub_tasks: [],
+    title: "Task 1",
+    body: null,
+    state: "open",
+    state_reason: null,
+    assignees: [],
+    labels: [],
+    milestone: null,
+    linked_prs: [],
+    created_at: "2026-05-01T00:00:00Z",
+    updated_at: "2026-05-01T00:00:00Z",
+    closed_at: null,
+    custom_fields: { Status: "Todo" },
+    start_date: null,
+    end_date: null,
+    date: null,
+    blocked_by: [],
+    ...overrides,
+  };
+}
+
+async function writeTasks(root: string, tasks: Task[]): Promise<void> {
+  const configDir = join(root, GANTT_DIR);
+  await mkdir(configDir, { recursive: true });
+  const tasksFile: TasksFile = {
+    tasks,
+    cache: {
+      comments: { "owner/repo#1": [{ author: "bot", body: "cached", created_at: "2026-05-01" }] },
+      reactions: {},
+    },
+  };
+  await writeFile(join(configDir, TASKS_FILE), JSON.stringify(tasksFile, null, 2) + "\n");
+}
+
+async function readTasks(root: string): Promise<TasksFile> {
+  const raw = await readFile(join(root, GANTT_DIR, TASKS_FILE), "utf-8");
+  return JSON.parse(raw) as TasksFile;
 }
 
 async function runSprintCommand(args: string[]): Promise<void> {
@@ -212,5 +258,205 @@ describe("[FR-CLI-009-AC2] sprint CLI は重複 name と不正な日付範囲を
         },
       ],
     });
+  });
+});
+
+describe("[FR-CLI-010-AC1][FR-CLI-010-AC2][FR-CLI-010-AC3] sprint CLI で task を sprint へ移動できる", () => {
+  let tmpRoot: string;
+  let originalCwd: string;
+  let originalExitCode: number | undefined;
+  let logSpy: ReturnType<typeof vi.spyOn>;
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  const sprintConfig = makeConfig({
+    statuses: {
+      field_name: "Status",
+      values: {
+        Todo: { color: "#3498db", done: false },
+        Done: { color: "#2ecc71", done: true },
+      },
+    },
+    sprints: [
+      {
+        name: "Sprint 1",
+        start_date: "2026-05-04",
+        end_date: "2026-05-15",
+        color: "#123abc",
+      },
+      {
+        name: "Sprint 2",
+        start_date: "2026-05-18",
+        end_date: "2026-05-29",
+        color: "#654321",
+      },
+    ],
+  });
+
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "gh-gantt-sprint-move-"));
+    originalCwd = process.cwd();
+    originalExitCode = process.exitCode;
+    process.exitCode = undefined;
+    process.chdir(tmpRoot);
+    logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await writeConfig(tmpRoot, sprintConfig);
+  });
+
+  afterEach(async () => {
+    process.chdir(originalCwd);
+    process.exitCode = originalExitCode;
+    vi.restoreAllMocks();
+    await rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  it("[FR-CLI-010-AC1] assign は指定 task の期間を sprint 期間に更新し JSON を返す", async () => {
+    await writeTasks(tmpRoot, [
+      makeTask({ id: "owner/repo#1", github_issue: 1, title: "Backlog task" }),
+      makeTask({
+        id: "owner/repo#2",
+        github_issue: 2,
+        title: "Scheduled task",
+        start_date: "2026-06-01",
+        end_date: "2026-06-03",
+      }),
+    ]);
+
+    await runSprintCommand(["assign", "Sprint 1", "1", "owner/repo#2", "--json"]);
+
+    const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string) as {
+      sprint: { name: string };
+      updated: Task[];
+    };
+    expect(payload.sprint.name).toBe("Sprint 1");
+    expect(payload.updated.map((task) => task.id)).toEqual(["owner/repo#1", "owner/repo#2"]);
+    expect(payload.updated).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "owner/repo#1",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+        expect.objectContaining({
+          id: "owner/repo#2",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+      ]),
+    );
+
+    const tasksFile = await readTasks(tmpRoot);
+    expect(tasksFile.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "owner/repo#1",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+        expect.objectContaining({
+          id: "owner/repo#2",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+      ]),
+    );
+    expect(tasksFile.cache.comments["owner/repo#1"]?.[0]?.body).toBe("cached");
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("[FR-CLI-010-AC2] carry-over は source sprint 内の未完了 task だけを target sprint へ移す", async () => {
+    await writeTasks(tmpRoot, [
+      makeTask({
+        id: "owner/repo#1",
+        github_issue: 1,
+        title: "Open in sprint",
+        start_date: "2026-05-04",
+        end_date: "2026-05-15",
+      }),
+      makeTask({
+        id: "owner/repo#2",
+        github_issue: 2,
+        title: "Closed in sprint",
+        state: "closed",
+        start_date: "2026-05-04",
+        end_date: "2026-05-15",
+      }),
+      makeTask({
+        id: "owner/repo#3",
+        github_issue: 3,
+        title: "Done in sprint",
+        custom_fields: { Status: "Done" },
+        start_date: "2026-05-04",
+        end_date: "2026-05-15",
+      }),
+      makeTask({
+        id: "owner/repo#4",
+        github_issue: 4,
+        title: "Outside sprint",
+        start_date: "2026-06-01",
+        end_date: "2026-06-03",
+      }),
+    ]);
+
+    await runSprintCommand(["carry-over", "Sprint 1", "Sprint 2", "--json"]);
+
+    const payload = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string) as {
+      from: { name: string };
+      to: { name: string };
+      updated: Task[];
+    };
+    expect(payload.from.name).toBe("Sprint 1");
+    expect(payload.to.name).toBe("Sprint 2");
+    expect(payload.updated.map((task) => task.id)).toEqual(["owner/repo#1"]);
+
+    const tasksFile = await readTasks(tmpRoot);
+    expect(tasksFile.tasks).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "owner/repo#1",
+          start_date: "2026-05-18",
+          end_date: "2026-05-29",
+        }),
+        expect.objectContaining({
+          id: "owner/repo#2",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+        expect.objectContaining({
+          id: "owner/repo#3",
+          start_date: "2026-05-04",
+          end_date: "2026-05-15",
+        }),
+        expect.objectContaining({
+          id: "owner/repo#4",
+          start_date: "2026-06-01",
+          end_date: "2026-06-03",
+        }),
+      ]),
+    );
+  });
+
+  it("[FR-CLI-010-AC3] unknown task と unknown sprint は失敗し task を変更しない", async () => {
+    const originalTask = makeTask({
+      id: "owner/repo#1",
+      github_issue: 1,
+      title: "Stable task",
+      start_date: "2026-06-01",
+      end_date: "2026-06-03",
+    });
+    await writeTasks(tmpRoot, [originalTask]);
+
+    await runSprintCommand(["assign", "Sprint 1", "999"]);
+
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.at(-1)?.[0]).toContain("Task not found");
+    await expect(readTasks(tmpRoot)).resolves.toMatchObject({ tasks: [originalTask] });
+
+    process.exitCode = undefined;
+    await runSprintCommand(["carry-over", "Missing", "Sprint 2"]);
+
+    expect(process.exitCode).toBe(1);
+    expect(errorSpy.mock.calls.at(-1)?.[0]).toContain('Sprint not found: "Missing"');
+    await expect(readTasks(tmpRoot)).resolves.toMatchObject({ tasks: [originalTask] });
   });
 });

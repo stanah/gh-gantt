@@ -257,6 +257,24 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/sprint-command.test.ts
+      - id: FR-CLI-010
+        summary: スプリントへのタスク移動
+        acceptance_criteria:
+          - id: FR-CLI-010-AC1
+            description: sprint assign で指定 task の start_date/end_date を sprint 期間へ更新できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/sprint-command.test.ts
+          - id: FR-CLI-010-AC2
+            description: sprint carry-over で source sprint 内の未完了 task を target sprint へ移動できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/sprint-command.test.ts
+          - id: FR-CLI-010-AC3
+            description: unknown sprint、unknown task、不正な引数では失敗し既存 task を変更しない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/sprint-command.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

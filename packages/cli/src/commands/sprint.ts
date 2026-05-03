@@ -1,7 +1,9 @@
 import { Command } from "commander";
 import Table from "cli-table3";
 import { ConfigStore } from "../store/config.js";
-import type { Config, SprintConfig } from "@gh-gantt/shared";
+import { TasksStore } from "../store/tasks.js";
+import { resolveTaskId } from "../util/task-id.js";
+import type { Config, SprintConfig, Task, TasksFile } from "@gh-gantt/shared";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -23,6 +25,21 @@ export interface SprintMutationResult {
   config: Config;
   sprint?: SprintConfig;
   deleted?: SprintConfig;
+  error?: string;
+}
+
+export interface SprintAssignResult {
+  tasks: Task[];
+  sprint?: SprintConfig;
+  updated?: Task[];
+  error?: string;
+}
+
+export interface SprintCarryOverResult {
+  tasks: Task[];
+  from?: SprintConfig;
+  to?: SprintConfig;
+  updated?: Task[];
   error?: string;
 }
 
@@ -137,6 +154,84 @@ export function deleteSprint(config: Config, name: string): SprintMutationResult
   return { config: withSprints(config, nextSprints), deleted };
 }
 
+function findSprint(config: Config, name: string): SprintConfig | undefined {
+  const sprints = listSprints(config);
+  const index = sprintIndex(sprints, name);
+  return index === -1 ? undefined : sprints[index];
+}
+
+function moveTaskToSprint(task: Task, sprint: SprintConfig): Task {
+  return {
+    ...task,
+    start_date: sprint.start_date,
+    end_date: sprint.end_date,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function isTaskDone(task: Task, config: Config): boolean {
+  if (task.state === "closed") return true;
+  const status = task.custom_fields[config.statuses.field_name];
+  return typeof status === "string" && config.statuses.values[status]?.done === true;
+}
+
+function isTaskWithinSprint(task: Task, sprint: SprintConfig): boolean {
+  return (
+    task.start_date !== null &&
+    task.end_date !== null &&
+    task.start_date >= sprint.start_date &&
+    task.end_date <= sprint.end_date
+  );
+}
+
+export function assignTasksToSprint(
+  config: Config,
+  tasks: Task[],
+  sprintName: string,
+  taskIds: string[],
+): SprintAssignResult {
+  const sprint = findSprint(config, sprintName);
+  if (!sprint) return { tasks, error: `Sprint not found: "${sprintName}".` };
+  if (taskIds.length === 0) return { tasks, error: "Specify at least one task." };
+
+  const taskSet = new Set(taskIds);
+  const missing = taskIds.filter((id) => !tasks.some((task) => task.id === id));
+  if (missing.length > 0) return { tasks, error: `Task not found: ${missing.join(", ")}` };
+
+  const updated: Task[] = [];
+  const nextTasks = tasks.map((task) => {
+    if (!taskSet.has(task.id)) return task;
+    const moved = moveTaskToSprint(task, sprint);
+    updated.push(moved);
+    return moved;
+  });
+
+  return { tasks: nextTasks, sprint, updated };
+}
+
+export function carryOverSprintTasks(
+  config: Config,
+  tasks: Task[],
+  fromName: string,
+  toName: string,
+): SprintCarryOverResult {
+  const from = findSprint(config, fromName);
+  if (!from) return { tasks, error: `Sprint not found: "${fromName}".` };
+  const to = findSprint(config, toName);
+  if (!to) return { tasks, error: `Sprint not found: "${toName}".` };
+  if (from.name === to.name) return { tasks, error: "Source and target sprint must differ." };
+
+  const updated: Task[] = [];
+  const nextTasks = tasks.map((task) => {
+    if (isTaskDone(task, config) || !isTaskWithinSprint(task, from)) return task;
+    const moved = moveTaskToSprint(task, to);
+    updated.push(moved);
+    return moved;
+  });
+
+  return { tasks: nextTasks, from, to, updated };
+}
+
 function formatSprintTable(sprints: SprintConfig[]): string {
   const table = new Table({
     head: ["Name", "Start", "End", "Color"],
@@ -154,6 +249,22 @@ async function readConfig(): Promise<{ store: ConfigStore; config: Config }> {
   const store = new ConfigStore(process.cwd());
   const config = await store.read();
   return { store, config };
+}
+
+async function readProject(): Promise<{
+  config: Config;
+  tasksStore: TasksStore;
+  tasksFile: TasksFile;
+}> {
+  const projectRoot = process.cwd();
+  const config = await new ConfigStore(projectRoot).read();
+  const tasksStore = new TasksStore(projectRoot);
+  const tasksFile = await tasksStore.read();
+  return { config, tasksStore, tasksFile };
+}
+
+function shortTaskId(task: Task): string {
+  return task.id.includes("#") ? task.id.split("#")[1]! : task.id;
 }
 
 function fail(message: string): void {
@@ -277,6 +388,69 @@ export function createSprintCommand(): Command {
         }
       } catch (err) {
         fail(`Failed to delete sprint: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+  command
+    .command("assign")
+    .description("Move tasks into a sprint date range")
+    .argument("<sprint>", "Sprint name")
+    .argument("<task...>", "Task IDs to assign")
+    .option("--json", "Output updated tasks as JSON")
+    .action(async (sprintName: string, taskIds: string[], opts) => {
+      try {
+        const { config, tasksStore, tasksFile } = await readProject();
+        const resolvedTaskIds = taskIds.map((id) => resolveTaskId(id, config));
+        const result = assignTasksToSprint(config, tasksFile.tasks, sprintName, resolvedTaskIds);
+        if (result.error || !result.sprint || !result.updated) {
+          fail(result.error ?? "Failed to assign tasks to sprint.");
+          return;
+        }
+        await tasksStore.write({ ...tasksFile, tasks: result.tasks });
+        if (opts.json) {
+          console.log(JSON.stringify({ sprint: result.sprint, updated: result.updated }, null, 2));
+        } else {
+          console.log(`Assigned ${result.updated.length} task(s) to sprint: ${result.sprint.name}`);
+          for (const task of result.updated) {
+            console.log(`  ${shortTaskId(task)}: ${task.title}`);
+          }
+        }
+      } catch (err) {
+        fail(`Failed to assign sprint: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    });
+
+  command
+    .command("carry-over")
+    .description("Move unfinished tasks from one sprint to another")
+    .argument("<from>", "Source sprint name")
+    .argument("<to>", "Target sprint name")
+    .option("--json", "Output carried-over tasks as JSON")
+    .action(async (fromName: string, toName: string, opts) => {
+      try {
+        const { config, tasksStore, tasksFile } = await readProject();
+        const result = carryOverSprintTasks(config, tasksFile.tasks, fromName, toName);
+        if (result.error || !result.from || !result.to || !result.updated) {
+          fail(result.error ?? "Failed to carry over sprint tasks.");
+          return;
+        }
+        await tasksStore.write({ ...tasksFile, tasks: result.tasks });
+        if (opts.json) {
+          console.log(
+            JSON.stringify({ from: result.from, to: result.to, updated: result.updated }, null, 2),
+          );
+        } else if (result.updated.length === 0) {
+          console.log(`No unfinished tasks found in sprint: ${result.from.name}`);
+        } else {
+          console.log(
+            `Carried over ${result.updated.length} task(s): ${result.from.name} → ${result.to.name}`,
+          );
+          for (const task of result.updated) {
+            console.log(`  ${shortTaskId(task)}: ${task.title}`);
+          }
+        }
+      } catch (err) {
+        fail(`Failed to carry over sprint: ${err instanceof Error ? err.message : String(err)}`);
       }
     });
 
