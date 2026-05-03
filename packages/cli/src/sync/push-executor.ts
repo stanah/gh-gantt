@@ -1,6 +1,8 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import {
+  DEFAULT_ESTIMATE_HOURS_FIELD,
+  parseEstimateHours,
   serializeAcceptanceCriteriaBody,
   serializeTaskReviewBody,
   serializeTaskRolesBody,
@@ -31,6 +33,7 @@ import {
   updateIssueIssueType,
   setIssueState,
   updateProjectItemField,
+  clearProjectItemField,
   createGithubMilestone,
   addBlockedByIssue,
   removeBlockedByIssue,
@@ -312,23 +315,28 @@ export async function executePush(
       // Add to project
       const projectItemId = await addProjectItem(gql, syncState.project_node_id, issueId);
 
-      // Update project fields (dates)
+      // Update project fields
+      const draftFieldUpdates: Promise<unknown>[] = [];
       if (task.start_date && syncState.field_ids[fm.start_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          projectItemId,
-          syncState.field_ids[fm.start_date],
-          { date: task.start_date },
+        draftFieldUpdates.push(
+          updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.start_date],
+            { date: task.start_date },
+          ),
         );
       }
       if (task.end_date && syncState.field_ids[fm.end_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          projectItemId,
-          syncState.field_ids[fm.end_date],
-          { date: task.end_date },
+        draftFieldUpdates.push(
+          updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.end_date],
+            { date: task.end_date },
+          ),
         );
       }
 
@@ -341,19 +349,32 @@ export async function executePush(
           syncState.option_ids,
         );
         if (typeOptionId) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            projectItemId,
-            syncState.field_ids[fm.type],
-            { singleSelectOptionId: typeOptionId },
+          draftFieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              projectItemId,
+              syncState.field_ids[fm.type],
+              { singleSelectOptionId: typeOptionId },
+            ),
           );
         }
       }
 
       // Set Priority custom field
       const priorityUpdate = buildPriorityFieldUpdate(gql, syncState, fm, projectItemId, task);
-      if (priorityUpdate) await priorityUpdate;
+      if (priorityUpdate) draftFieldUpdates.push(priorityUpdate);
+      const estimateHoursUpdate = buildEstimateHoursFieldUpdate(
+        gql,
+        syncState,
+        fm,
+        projectItemId,
+        task,
+      );
+      if (estimateHoursUpdate) draftFieldUpdates.push(estimateHoursUpdate);
+      if (draftFieldUpdates.length > 0) {
+        await Promise.all(draftFieldUpdates);
+      }
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
@@ -614,6 +635,14 @@ export async function executePush(
           task,
         );
         if (priorityUpdate) fieldUpdates.push(priorityUpdate);
+        const estimateHoursUpdate = buildEstimateHoursFieldUpdate(
+          gql,
+          syncState,
+          fm,
+          idEntry.project_item_id,
+          task,
+        );
+        if (estimateHoursUpdate) fieldUpdates.push(estimateHoursUpdate);
 
         if (fieldUpdates.length > 0) {
           await Promise.all(fieldUpdates);
@@ -955,4 +984,27 @@ function buildPriorityFieldUpdate(
       singleSelectOptionId: optionId,
     },
   );
+}
+
+function buildEstimateHoursFieldUpdate(
+  gql: typeof graphql,
+  syncState: SyncState,
+  fm: Config["sync"]["field_mapping"],
+  projectItemId: string,
+  task: Task,
+): Promise<unknown> | null {
+  const estimateHoursField = fm.estimate_hours ?? DEFAULT_ESTIMATE_HOURS_FIELD;
+  const fieldId = syncState.field_ids[estimateHoursField];
+  if (!fieldId) return null;
+  const estimateHours = parseEstimateHours(task.custom_fields[estimateHoursField]);
+  if (estimateHours === null) {
+    const previousEstimateHours = parseEstimateHours(
+      syncState.snapshots[task.id]?.syncFields?.custom_fields[estimateHoursField],
+    );
+    if (previousEstimateHours === null) return null;
+    return clearProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId);
+  }
+  return updateProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId, {
+    number: estimateHours,
+  });
 }

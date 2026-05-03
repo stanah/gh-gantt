@@ -25,7 +25,12 @@ const mockConfig: Config = {
   project: { name: "test", github: { owner: "owner", repo: "repo", project_number: 1 } },
   sync: {
     auto_create_issues: false,
-    field_mapping: { start_date: "Start", end_date: "End", status: "Status" },
+    field_mapping: {
+      start_date: "Start",
+      end_date: "End",
+      status: "Status",
+      estimate_hours: "Estimate",
+    },
   },
   task_types: {
     task: { label: "Task", display: "bar", color: "#000", github_label: null },
@@ -42,6 +47,7 @@ const mockConfig: Config = {
     path: "templates",
     mapping: { feature: "feature.md" },
   },
+  max_task_size_hours: 8,
 };
 
 function makeTasksFile(tasks: Task[] = []): TasksFile {
@@ -81,6 +87,7 @@ async function writeTemplate(content: string): Promise<void> {
 describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
+  let warnSpy: ReturnType<typeof vi.spyOn>;
   let originalExitCode: number | undefined;
 
   beforeEach(async () => {
@@ -92,6 +99,7 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
     vi.spyOn(process, "cwd").mockReturnValue(tmpRoot);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(async () => {
@@ -178,6 +186,24 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       task: { title: "レビュー必須 task", require_review: true },
     });
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
+  it("[FR-CLI-015-AC2] create --estimate-hours は閾値超過時に分解を促す警告を出す", async () => {
+    const cmd = createCreateCommand();
+    await cmd.parseAsync(
+      ["--title", "大きい task", "--type", "feature", "--estimate-hours", "13", "--json"],
+      { from: "user" },
+    );
+
+    const task = writtenTasksFile?.tasks[0];
+    expect(task?.custom_fields).toMatchObject({ Estimate: 13 });
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
+      task: { title: "大きい task", custom_fields: { Estimate: 13 } },
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      "警告: タスク見積もり 13h は閾値 8h を超えています。gh-gantt-decompose で分解してください。",
+    );
     expect(errorSpy).not.toHaveBeenCalled();
   });
 

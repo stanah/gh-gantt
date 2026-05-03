@@ -88,7 +88,13 @@ export interface Config {
   };
   sync: {
     auto_create_issues: boolean;
-    field_mapping: { start_date: string; end_date: string; status: string; priority?: string };
+    field_mapping: {
+      start_date: string;
+      end_date: string;
+      status: string;
+      priority?: string;
+      estimate_hours?: string;
+    };
   };
   task_types: Record<string, TaskType>;
   type_hierarchy: Record<string, string[]>;
@@ -104,6 +110,7 @@ export interface Config {
   grouping?: GroupingConfig;
   sprints?: SprintConfig[];
   require_review_for_types?: string[];
+  max_task_size_hours?: number;
 }
 
 export interface TasksResponse {

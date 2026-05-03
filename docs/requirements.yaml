@@ -383,6 +383,26 @@ areas:
               - packages/cli/src/__tests__/task-commands.test.ts
               - packages/cli/src/__tests__/three-way-merge.test.ts
               - packages/shared/src/__tests__/task-review.test.ts
+      - id: FR-CLI-015
+        summary: タスクサイズ閾値の超過警告
+        acceptance_criteria:
+          - id: FR-CLI-015-AC1
+            description: gantt.config.json で max_task_size_hours と estimate_hours field mapping を設定できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
+              - packages/shared/src/__tests__/task-size.test.ts
+          - id: FR-CLI-015-AC2
+            description: create --estimate-hours は閾値超過時に JSON 出力を壊さず分解を促す警告を出す
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-template.test.ts
+          - id: FR-CLI-015-AC3
+            description: doctor と push 同期は estimate_hours の閾値超過を検出し、number custom field として維持できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/doctor.test.ts
+              - packages/cli/src/__tests__/push-executor.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

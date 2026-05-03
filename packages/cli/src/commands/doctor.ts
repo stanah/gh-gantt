@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
-import { detectCycles } from "@gh-gantt/shared";
+import { detectCycles, getTaskSizeExcess } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -242,6 +242,7 @@ function checkProjectStaleState(tasks: Task[], config: Config, now = new Date())
     checkInProgressTasksWithoutPullRequest(tasks, config),
     checkOpenTasksWithClosedBlockers(tasks),
     checkOrphanInProgressTasks(tasks, config),
+    checkOversizedTasks(tasks, config),
   ];
 }
 
@@ -365,6 +366,41 @@ function checkOrphanInProgressTasks(tasks: Task[], config: Config): CheckResult 
     name: "project-orphan-in-progress",
     status: "WARN",
     message: `${details.length} 件の孤立した in-progress タスクがあります`,
+    details,
+  };
+}
+
+function checkOversizedTasks(tasks: Task[], config: Config): CheckResult {
+  if (config.max_task_size_hours === undefined) {
+    return {
+      name: "project-task-size",
+      status: "PASS",
+      message: "タスクサイズ閾値は未設定です",
+    };
+  }
+
+  const details = tasks
+    .filter((task) => task.state === "open")
+    .flatMap((task) => {
+      const excess = getTaskSizeExcess(task, config);
+      if (!excess) return [];
+      return [
+        `${task.id}: 見積もり ${excess.estimate_hours}h が閾値 ${excess.max_task_size_hours}h を超えています。gh-gantt-decompose で分解してください`,
+      ];
+    });
+
+  if (details.length === 0) {
+    return {
+      name: "project-task-size",
+      status: "PASS",
+      message: "閾値を超過した open タスクはありません",
+    };
+  }
+
+  return {
+    name: "project-task-size",
+    status: "WARN",
+    message: `${details.length} 件の task size 閾値超過があります`,
     details,
   };
 }
