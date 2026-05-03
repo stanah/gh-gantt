@@ -2,7 +2,7 @@ import { Command } from "commander";
 import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
-import type { Config, Task, TasksFile } from "@gh-gantt/shared";
+import type { Task } from "@gh-gantt/shared";
 
 export function addDependency(task: Task, blockerTaskId: string): { task: Task; error?: string } {
   if (blockerTaskId === task.id) {

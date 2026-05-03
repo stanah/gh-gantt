@@ -27,7 +27,7 @@ jobs:
           cache: true
 
       - run: vp install
-      - run: vp check
+      - run: vp run lint
       - run: vp run build
 
       - run: vp run test:json

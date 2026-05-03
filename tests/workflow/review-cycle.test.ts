@@ -171,3 +171,18 @@ describe("[NFR-STABILITY-005-AC2] PR レビュー対応投稿 workflow", () => {
     expect(commandNames).not.toContain("review-cycle");
   });
 });
+
+describe("[NFR-STABILITY-007-AC1] lint gate は未追跡 worktree を検査対象に含めない", () => {
+  it("pnpm lint を tracked file 限定の vp check として定義し hook と CI から使う", async () => {
+    const packageJsonRaw = await readRepoFile("package.json");
+    const packageJson = JSON.parse(packageJsonRaw) as { scripts: Record<string, string> };
+    const lefthook = await readRepoFile("lefthook.yml");
+    const ci = await readRepoFile(".github/workflows/ci.yml");
+
+    expect(packageJson.scripts.lint).toBe("git ls-files -z | xargs -0 vp check");
+    expect(lefthook).toContain("run: pnpm lint < /dev/null");
+    expect(lefthook).not.toContain("run: vp check < /dev/null");
+    expect(ci).toContain("vp run lint");
+    expect(ci).not.toContain("run: vp check");
+  });
+});

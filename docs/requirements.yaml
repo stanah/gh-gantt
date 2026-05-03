@@ -531,6 +531,16 @@ areas:
             status: covered
             tests:
               - tests/workflow/requirements-coverage.test.ts
+      - id: NFR-STABILITY-007
+        summary: ローカル品質ゲートの作業ディレクトリ分離
+        acceptance_criteria:
+          - id: NFR-STABILITY-007-AC1
+            description: |
+              lint gate は git tracked file だけを検査し、.claude/worktrees などの
+              未追跡一時 worktree を検査対象に含めない
+            status: covered
+            tests:
+              - tests/workflow/review-cycle.test.ts
           - id: NFR-STABILITY-006-AC2
             description: |
               要件網羅レポートは生成時刻などの非決定的な値を含まず、
