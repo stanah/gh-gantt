@@ -188,6 +188,7 @@ export function TaskTreeBody({
         onDragLeave={dragState?.handleDragLeave}
         onDrop={dragState ? (e) => dragState.handleDrop(e, node.task.id) : undefined}
         onDragEnd={dragState?.handleDragEnd}
+        scheduleState={node.scheduleState}
       />
     );
   };

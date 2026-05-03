@@ -361,6 +361,43 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           );
         })}
         {flatList.map((node, i) => {
+          if (node.kind === "group" || node.scheduleState !== "unscheduled_child") return null;
+          const nodeKey = node.renderKey ?? node.task.id;
+          const y = i * ROW_HEIGHT;
+          const placeholderWidth = Math.min(140, Math.max(0, totalWidth - 16));
+          if (placeholderWidth <= 0) return null;
+          return (
+            <g
+              key={`unscheduled-${nodeKey}`}
+              data-unscheduled-placeholder={node.task.id}
+              pointerEvents="none"
+            >
+              <rect
+                x={8}
+                y={y + 7}
+                width={placeholderWidth}
+                height={ROW_HEIGHT - 14}
+                rx={3}
+                fill="rgba(120, 120, 120, 0.08)"
+                stroke="var(--color-border)"
+                strokeWidth={1}
+                strokeDasharray="4 3"
+              />
+              {placeholderWidth >= 92 && (
+                <text
+                  x={16}
+                  y={y + 18}
+                  fontSize={10}
+                  fill="var(--color-text-muted)"
+                  style={{ userSelect: "none" }}
+                >
+                  未スケジュール
+                </text>
+              )}
+            </g>
+          );
+        })}
+        {flatList.map((node, i) => {
           if (node.kind === "group") return null;
           const nodeKey = node.renderKey ?? node.task.id;
           const rawTask = node.task;

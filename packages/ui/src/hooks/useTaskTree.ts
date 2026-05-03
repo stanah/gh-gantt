@@ -6,6 +6,7 @@ export interface TreeNode {
   task: Task;
   children: TreeNode[];
   depth: number;
+  scheduleState?: ScheduleState;
   renderKey?: string;
   kind?: "task" | "group";
   group?: {
@@ -15,6 +16,7 @@ export interface TreeNode {
 }
 
 export type TaskSortMode = "default" | "updated_at_asc" | "updated_at_desc";
+export type ScheduleState = "scheduled" | "unscheduled_child" | "unscheduled_root";
 
 export interface LabelGroupingOptions {
   enabled: boolean;
@@ -131,6 +133,15 @@ function countTaskNodes(nodes: TreeNode[]): number {
   };
   for (const node of nodes) visit(node);
   return count;
+}
+
+function hasSchedule(task: Task): boolean {
+  return Boolean(task.start_date || task.end_date || task.date);
+}
+
+function getScheduleState(task: Task, taskById: Map<string, Task>): ScheduleState {
+  if (hasSchedule(task)) return "scheduled";
+  return task.parent && taskById.has(task.parent) ? "unscheduled_child" : "unscheduled_root";
 }
 
 function cloneForGroup(
@@ -358,6 +369,7 @@ export function useTaskTree(
     const buildNode = (task: Task, depth: number): TreeNode => ({
       task,
       renderKey: task.id,
+      scheduleState: getScheduleState(task, taskById),
       children: sortTaskList(
         task.sub_tasks
           .map((id) => taskMap.get(id))
