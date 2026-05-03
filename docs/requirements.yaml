@@ -652,6 +652,19 @@ areas:
             tests:
               - packages/shared/src/__tests__/dependency-graph.test.ts
               - packages/ui/src/__tests__/critical-path-display.test.tsx
+      - id: FR-VIS-015
+        summary: 未スケジュール子タスクのツリー表示
+        acceptance_criteria:
+          - id: FR-VIS-015-AC1
+            description: スケジュール済み親タスク配下の未スケジュール子タスクを親ツリーに残し、親を持たない未スケジュールタスクと区別できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/unscheduled-tree-display.test.tsx
+          - id: FR-VIS-015-AC2
+            description: ツリー内の未スケジュール子タスクをタスク行とガントチャート領域で視覚的に識別できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/unscheduled-tree-display.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

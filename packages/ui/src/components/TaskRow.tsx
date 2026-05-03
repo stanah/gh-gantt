@@ -4,6 +4,7 @@ import { StatusBadge } from "./StatusBadge.js";
 import { PriorityBadge } from "./PriorityBadge.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { isFriendlyRelation, type RelationType } from "../hooks/useRelatedTasks.js";
+import type { ScheduleState } from "../hooks/useTaskTree.js";
 import type { DropIndicator } from "../hooks/useTreeDragDrop.js";
 import {
   isOverdue,
@@ -36,6 +37,7 @@ interface TaskRowProps {
   draggable?: boolean;
   isDragging?: boolean;
   dropIndicator?: DropIndicator | null;
+  scheduleState?: ScheduleState;
   onDragStart?: (e: React.DragEvent) => void;
   onDragOver?: (e: React.DragEvent) => void;
   onDragLeave?: (e: React.DragEvent) => void;
@@ -105,6 +107,7 @@ export function TaskRow({
   draggable: isDraggable,
   isDragging,
   dropIndicator,
+  scheduleState,
   onDragStart,
   onDragOver,
   onDragLeave,
@@ -123,6 +126,7 @@ export function TaskRow({
   const bodyPreview = isHovered && !isDragging ? getBodyPreview(task.body) : null;
   const showHoverTooltip = Boolean(isHovered && !isDragging);
   const updatedAt = showHoverTooltip ? formatUpdatedAt(task.updated_at) : null;
+  const isUnscheduledChild = scheduleState === "unscheduled_child";
 
   const isBlockRelation = highlightType === "blocker" || highlightType === "blocked";
   const isFriendlyHighlight = isFriendlyRelation(highlightType);
@@ -165,6 +169,7 @@ export function TaskRow({
   return (
     <div
       data-task-id={task.id}
+      data-schedule-state={scheduleState}
       draggable={isDraggable}
       tabIndex={0}
       onClick={(e) => {
@@ -194,6 +199,7 @@ export function TaskRow({
         height: 28,
         minWidth: 0,
         opacity: isDragging ? 0.3 : isDimmed ? 0.4 : 1,
+        color: isUnscheduledChild ? "var(--color-text-secondary)" : undefined,
       }}
     >
       {!isMilestone && progress > 0 && (
@@ -242,7 +248,9 @@ export function TaskRow({
             width: 4,
             height: 14,
             borderRadius: 2,
-            background: taskType.color,
+            background: isUnscheduledChild ? "transparent" : taskType.color,
+            border: isUnscheduledChild ? `1px dashed ${taskType.color}` : undefined,
+            boxSizing: "border-box",
             flexShrink: 0,
           }}
         />
@@ -268,10 +276,28 @@ export function TaskRow({
           textOverflow: "ellipsis",
           whiteSpace: "nowrap",
           fontSize: 12,
+          fontStyle: isUnscheduledChild ? "italic" : undefined,
         }}
       >
         <HighlightedText text={task.title} query={searchQuery?.trim() ?? ""} />
       </span>
+
+      {isUnscheduledChild && (
+        <span
+          title="親ツリー内の未スケジュールタスク"
+          style={{
+            fontSize: 10,
+            color: "var(--color-text-muted)",
+            border: "1px dashed var(--color-border)",
+            borderRadius: 10,
+            padding: "1px 6px",
+            flexShrink: 0,
+            whiteSpace: "nowrap",
+          }}
+        >
+          未スケジュール
+        </span>
+      )}
 
       {!isMilestone && showAssignees && task.assignees.length > 0 && (
         <span
