@@ -64,6 +64,14 @@ const PROJECT_V2_FRAGMENT = `
                 createdAt
                 updatedAt
                 closedAt
+                closedByPullRequestsReferences(first: 20) {
+                  nodes {
+                    number
+                    title
+                    state
+                    url
+                  }
+                }
                 repository { nameWithOwner }
               }
             }

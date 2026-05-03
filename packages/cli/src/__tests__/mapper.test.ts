@@ -31,6 +31,7 @@ function makeItem(overrides: Record<string, unknown> = {}) {
       assignees: ["alice"],
       labels: ["bug"],
       milestone: "v1.0",
+      linkedPullRequests: [],
       createdAt: "2026-01-01T00:00:00Z",
       updatedAt: "2026-01-02T00:00:00Z",
       closedAt: null,
@@ -85,6 +86,7 @@ describe("[FR-SYNC-004-AC1] GitHub Project Item をローカル Task 形式に�
         assignees: [],
         labels: [],
         milestone: null,
+        linkedPullRequests: [],
         createdAt: "2026-01-01T00:00:00Z",
         updatedAt: "2026-01-01T00:00:00Z",
         closedAt: null,
@@ -161,6 +163,33 @@ describe("[FR-SYNC-004-AC1] GitHub Project Item をローカル Task 形式に�
       Status: "In Progress",
       Priority: "High",
     });
+  });
+
+  it("[FR-SYNC-007-AC2] linked PR メタデータを Task にマッピングする", () => {
+    const item = makeItem({
+      content: {
+        ...makeItem().content,
+        linkedPullRequests: [
+          {
+            number: 100,
+            title: "Show linked PR title",
+            state: "merged",
+            url: "https://github.com/owner/repo/pull/100",
+          },
+        ],
+      },
+    });
+
+    const task = mapRemoteItemToTask(item, makeConfig());
+
+    expect(task!.linked_prs).toEqual([
+      {
+        number: 100,
+        title: "Show linked PR title",
+        state: "merged",
+        url: "https://github.com/owner/repo/pull/100",
+      },
+    ]);
   });
 
   it("defaults type to 'task' when no label or field value matches", () => {
