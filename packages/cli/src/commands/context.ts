@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Command } from "commander";
+import { z } from "zod";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
@@ -16,6 +17,23 @@ const PRIORITY_RANKS = new Map([
   ["medium", 2],
   ["low", 3],
 ]);
+const GhPullRequestSchema = z.object({
+  number: z.number().int(),
+  title: z.string().optional().default(""),
+  url: z.string().nullable().optional(),
+  headRefName: z.string().nullable().optional(),
+  updatedAt: z.string().nullable().optional(),
+  reviewDecision: z.string().nullable().optional(),
+  closingIssuesReferences: z
+    .array(
+      z.object({
+        number: z.number().int(),
+      }),
+    )
+    .optional()
+    .default([]),
+});
+const GhPullRequestListSchema = z.array(GhPullRequestSchema);
 
 export interface OpenPullRequestSummary {
   number: number;
@@ -253,23 +271,19 @@ async function fetchOpenPullRequests(
     ],
     { timeout: 15000, maxBuffer: OPEN_PULL_REQUESTS_MAX_BUFFER },
   );
-  const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
+  return parseOpenPullRequestsJson(stdout);
+}
+
+export function parseOpenPullRequestsJson(stdout: string): OpenPullRequestSummary[] {
+  const parsed = GhPullRequestListSchema.parse(JSON.parse(stdout));
   return parsed.map((pr) => ({
-    number: Number(pr.number),
-    title: String(pr.title ?? ""),
-    url: typeof pr.url === "string" ? pr.url : null,
-    head_ref_name: typeof pr.headRefName === "string" ? pr.headRefName : null,
-    updated_at: typeof pr.updatedAt === "string" ? pr.updatedAt : null,
-    review_decision: typeof pr.reviewDecision === "string" ? pr.reviewDecision : null,
-    closing_issues: Array.isArray(pr.closingIssuesReferences)
-      ? pr.closingIssuesReferences
-          .map((issue) =>
-            issue && typeof issue === "object" && "number" in issue
-              ? Number((issue as { number: unknown }).number)
-              : null,
-          )
-          .filter((issue): issue is number => Number.isInteger(issue))
-      : [],
+    number: pr.number,
+    title: pr.title,
+    url: pr.url ?? null,
+    head_ref_name: pr.headRefName ?? null,
+    updated_at: pr.updatedAt ?? null,
+    review_decision: pr.reviewDecision ?? null,
+    closing_issues: pr.closingIssuesReferences.map((issue) => issue.number),
   }));
 }
 
@@ -391,7 +405,7 @@ function isInProgressTask(task: Task, config: Config): boolean {
   if (!statusName) return false;
   const status = config.statuses.values[statusName];
   if (!status) return isKnownWorkStatusName(statusName);
-  return isWorkStatus(status) || isKnownWorkStatusName(statusName);
+  return isWorkStatus(status);
 }
 
 function isWorkStatus(status: StatusValue): boolean {
