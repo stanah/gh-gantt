@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildProgram } from "../program.js";
 
-describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/context/serve/conflicts/resolve コマンドが定義されている", () => {
+describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve コマンドが定義されている", () => {
   const program = buildProgram();
   const commandNames = program.commands.map((c) => c.name());
 
@@ -25,6 +25,10 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/co
 
   it("has 'context' as a top-level command", () => {
     expect(commandNames).toContain("context");
+  });
+
+  it("has 'sprint' as a top-level command", () => {
+    expect(commandNames).toContain("sprint");
   });
 
   // --- 既存のトップレベルコマンドは維持 ---
