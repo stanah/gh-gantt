@@ -1,7 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { scaleTime } from "d3-scale";
 import { GanttChart } from "../components/GanttChart.js";
+import { GanttGrid } from "../components/GanttGrid.js";
+import { GanttTimeline } from "../components/GanttTimeline.js";
 import { TaskTreeHeader } from "../components/TaskTree.js";
 import type { Config, Task } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
@@ -98,9 +101,13 @@ const flatList: TreeNode[] = [
 ];
 
 const originalConsoleError = console.error.bind(console);
+const dateRange: [Date, Date] = [new Date(2026, 3, 1), new Date(2026, 3, 30)];
+const xScale = scaleTime().domain(dateRange).range([0, 300]);
 
 describe("Sprint display integration", () => {
   beforeAll(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(2026, 3, 7));
     vi.spyOn(console, "error").mockImplementation((message: unknown, ...args: unknown[]) => {
       if (
         typeof message === "string" &&
@@ -113,10 +120,31 @@ describe("Sprint display integration", () => {
   });
 
   afterAll(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
-  it("passes sprint config into the gantt grid rendering", () => {
+  it("[FR-VIS-010-AC1][FR-VIS-010-AC2] sprint config をヘッダーとグリッド背景に表示し、現在 sprint を強調する", () => {
+    const headerHtml = renderToStaticMarkup(
+      <GanttTimeline
+        xScale={xScale}
+        dateRange={dateRange}
+        viewScale="month"
+        totalWidth={300}
+        sprints={config.sprints}
+      />,
+    );
+    const gridHtml = renderToStaticMarkup(
+      <GanttGrid
+        xScale={xScale}
+        dateRange={dateRange}
+        totalWidth={300}
+        totalHeight={84}
+        workingDays={config.gantt.working_days}
+        pixelsPerDay={10}
+        sprints={config.sprints}
+      />,
+    );
     const html = renderToStaticMarkup(
       <GanttChart
         tasks={[task]}
@@ -128,13 +156,49 @@ describe("Sprint display integration", () => {
       />,
     );
 
+    expect(headerHtml).toContain("Sprint 1");
+    expect(headerHtml).toContain("#123456");
+    expect(headerHtml).toContain('fill-opacity="0.34"');
+    expect(gridHtml).toContain("#123456");
+    expect(gridHtml).toContain('fill-opacity="0.09"');
     expect(html).toContain("#123456");
   });
 
-  it("reserves extra task tree header height when sprint bands are enabled", () => {
+  it("[FR-VIS-010-AC1] sprint band 有効時はタスクツリーヘッダーに同じ高さを確保する", () => {
     const html = renderToStaticMarkup(<TaskTreeHeader config={config} />);
 
     expect(html).toContain("height:52px");
     expect(html).toContain("padding-top:20px");
+  });
+
+  it("[FR-VIS-010-AC3] sprint 未設定時は sprint band と追加ヘッダー余白を出さない", () => {
+    const configWithoutSprints: Config = { ...config, sprints: undefined };
+    const headerHtml = renderToStaticMarkup(
+      <GanttTimeline
+        xScale={xScale}
+        dateRange={dateRange}
+        viewScale="month"
+        totalWidth={300}
+        sprints={configWithoutSprints.sprints}
+      />,
+    );
+    const gridHtml = renderToStaticMarkup(
+      <GanttGrid
+        xScale={xScale}
+        dateRange={dateRange}
+        totalWidth={300}
+        totalHeight={84}
+        workingDays={config.gantt.working_days}
+        pixelsPerDay={10}
+        sprints={configWithoutSprints.sprints}
+      />,
+    );
+    const treeHeaderHtml = renderToStaticMarkup(<TaskTreeHeader config={configWithoutSprints} />);
+
+    expect(headerHtml).not.toContain("Sprint 1");
+    expect(headerHtml).not.toContain("#123456");
+    expect(gridHtml).not.toContain("#123456");
+    expect(treeHeaderHtml).toContain("height:32px");
+    expect(treeHeaderHtml).not.toContain("padding-top:20px");
   });
 });

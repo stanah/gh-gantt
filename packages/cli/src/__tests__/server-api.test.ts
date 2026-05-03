@@ -18,6 +18,70 @@ describe("createApiRouter", () => {
     await rm(dir, { recursive: true, force: true });
   });
 
+  it("[FR-API-004-AC1] GET /api/config は sprint 設定を返す", async () => {
+    const configStore = new ConfigStore(dir);
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: null },
+      },
+      type_hierarchy: { task: [] },
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+      sprints: [
+        {
+          name: "Sprint 1",
+          start_date: "2026-04-01",
+          end_date: "2026-04-14",
+          color: "#123456",
+        },
+      ],
+    });
+
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find((layer: any) => layer.route?.path === "/api/config");
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("GET /api/config handler not found");
+
+    let statusCode = 200;
+    let jsonPayload: unknown;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+
+    await handler({}, res);
+
+    expect(statusCode).toBe(200);
+    expect(jsonPayload).toMatchObject({
+      sprints: [
+        {
+          name: "Sprint 1",
+          start_date: "2026-04-01",
+          end_date: "2026-04-14",
+          color: "#123456",
+        },
+      ],
+    });
+  });
+
   it("builds the progress task map only once per GET /api/tasks request", async () => {
     const configStore = new ConfigStore(dir);
     const tasksStore = new TasksStore(dir);
