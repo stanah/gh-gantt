@@ -6,9 +6,21 @@ export interface TreeNode {
   task: Task;
   children: TreeNode[];
   depth: number;
+  renderKey?: string;
+  kind?: "task" | "group";
+  group?: {
+    label: string;
+    taskCount: number;
+  };
 }
 
 export type TaskSortMode = "default" | "updated_at_asc" | "updated_at_desc";
+
+export interface LabelGroupingOptions {
+  enabled: boolean;
+  labelPrefix?: string;
+  otherLabel?: string;
+}
 
 export interface TaskFilterOptions {
   hideClosed?: boolean;
@@ -19,9 +31,12 @@ export interface TaskFilterOptions {
   selectedLabels?: string[];
   searchQuery?: string;
   taskSortMode?: TaskSortMode;
+  labelGrouping?: LabelGroupingOptions;
 }
 
 const CONTAINER_TYPES = new Set(["epic", "summary"]);
+const GROUP_NODE_TYPE = "__label_group__";
+const DEFAULT_OTHER_GROUP_LABEL = "その他";
 
 function compareUpdatedAt(
   a: Task,
@@ -60,6 +75,110 @@ function matchesSearch(task: Task, query: string): boolean {
   return false;
 }
 
+function makeGroupTask(label: string, taskCount: number): Task {
+  return {
+    id: `${GROUP_NODE_TYPE}:${label}`,
+    type: GROUP_NODE_TYPE,
+    github_issue: null,
+    github_repo: "",
+    parent: null,
+    sub_tasks: [],
+    title: label,
+    body: null,
+    state: "open",
+    state_reason: null,
+    assignees: [],
+    labels: label === DEFAULT_OTHER_GROUP_LABEL ? [] : [label],
+    milestone: null,
+    linked_prs: [],
+    created_at: "",
+    updated_at: "",
+    closed_at: null,
+    custom_fields: { taskCount },
+    start_date: null,
+    end_date: null,
+    date: null,
+    blocked_by: [],
+  };
+}
+
+function getGroupingLabels(task: Task, labelPrefix: string, otherLabel: string): string[] {
+  const matchingLabels = task.labels.filter((label) => label.startsWith(labelPrefix)).sort();
+  return matchingLabels.length > 0 ? matchingLabels : [otherLabel];
+}
+
+function collectGroupLabels(nodes: TreeNode[], labelPrefix: string, otherLabel: string): string[] {
+  const labels = new Set<string>();
+  const visit = (node: TreeNode) => {
+    for (const label of getGroupingLabels(node.task, labelPrefix, otherLabel)) {
+      labels.add(label);
+    }
+    for (const child of node.children) visit(child);
+  };
+  for (const node of nodes) visit(node);
+  return [...labels].sort((a, b) => {
+    if (a === otherLabel && b !== otherLabel) return 1;
+    if (b === otherLabel && a !== otherLabel) return -1;
+    return a.localeCompare(b);
+  });
+}
+
+function countTaskNodes(nodes: TreeNode[]): number {
+  let count = 0;
+  const visit = (node: TreeNode) => {
+    if (node.kind !== "group") count++;
+    for (const child of node.children) visit(child);
+  };
+  for (const node of nodes) visit(node);
+  return count;
+}
+
+function cloneForGroup(
+  node: TreeNode,
+  groupLabel: string,
+  labelPrefix: string,
+  otherLabel: string,
+  depth: number,
+): TreeNode | null {
+  const ownLabels = getGroupingLabels(node.task, labelPrefix, otherLabel);
+  const childClones = node.children
+    .map((child) => cloneForGroup(child, groupLabel, labelPrefix, otherLabel, depth + 1))
+    .filter((child): child is TreeNode => child != null);
+  if (!ownLabels.includes(groupLabel) && childClones.length === 0) return null;
+
+  return {
+    ...node,
+    depth,
+    renderKey: `${groupLabel}:${node.task.id}`,
+    children: childClones,
+  };
+}
+
+function groupTreeByLabel(
+  roots: TreeNode[],
+  labelPrefix: string,
+  otherLabel = DEFAULT_OTHER_GROUP_LABEL,
+): TreeNode[] {
+  const labels = collectGroupLabels(roots, labelPrefix, otherLabel);
+  return labels.flatMap((label) => {
+    const children = roots
+      .map((root) => cloneForGroup(root, label, labelPrefix, otherLabel, 1))
+      .filter((node): node is TreeNode => node != null);
+    if (children.length === 0) return [];
+    const taskCount = countTaskNodes(children);
+    return [
+      {
+        task: makeGroupTask(label, taskCount),
+        children,
+        depth: 0,
+        renderKey: `${GROUP_NODE_TYPE}:${label}`,
+        kind: "group" as const,
+        group: { label, taskCount },
+      },
+    ];
+  });
+}
+
 export function useTaskTree(
   tasks: Task[],
   enabledTypes: Set<string>,
@@ -84,6 +203,7 @@ export function useTaskTree(
     selectedLabels = [],
     searchQuery = "",
     taskSortMode = "default",
+    labelGrouping,
   } = filterOptions;
 
   const tree = useMemo(() => {
@@ -237,6 +357,7 @@ export function useTaskTree(
 
     const buildNode = (task: Task, depth: number): TreeNode => ({
       task,
+      renderKey: task.id,
       children: sortTaskList(
         task.sub_tasks
           .map((id) => taskMap.get(id))
@@ -253,7 +374,12 @@ export function useTaskTree(
       if (milestoneCmp !== 0) return milestoneCmp;
       return compareUpdatedAt(a, b, taskSortMode, updatedAtTimestamps);
     });
-    return roots.map((t) => buildNode(t, 0));
+    const baseRoots = roots.map((t) => buildNode(t, 0));
+    const labelPrefix = labelGrouping?.labelPrefix?.trim();
+    if (labelGrouping?.enabled && labelPrefix) {
+      return groupTreeByLabel(baseRoots, labelPrefix, labelGrouping.otherLabel);
+    }
+    return baseRoots;
   }, [
     tasks,
     enabledTypes,
@@ -265,6 +391,7 @@ export function useTaskTree(
     selectedLabels,
     searchQuery,
     taskSortMode,
+    labelGrouping,
   ]);
 
   const flatList = useMemo(() => {

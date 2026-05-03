@@ -64,6 +64,10 @@ export interface SprintConfig {
   color: string;
 }
 
+export interface GroupingConfig {
+  label_prefix: string;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -85,6 +89,7 @@ export interface Config {
     working_days: number[];
     colors: { critical_path: string; on_track: string; at_risk: string; overdue: string };
   };
+  grouping?: GroupingConfig;
   sprints?: SprintConfig[];
 }
 

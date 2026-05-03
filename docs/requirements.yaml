@@ -464,6 +464,29 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/detail-relations.test.tsx
+      - id: FR-VIS-013
+        summary: ラベルグルーピング表示
+        acceptance_criteria:
+          - id: FR-VIS-013-AC1
+            description: Toolbar からラベルグルーピングのオンオフを切り替えできる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/label-grouping.test.tsx
+          - id: FR-VIS-013-AC2
+            description: 指定 prefix のラベルでタスクがグループ化され、グループヘッダーが表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/label-grouping.test.tsx
+          - id: FR-VIS-013-AC3
+            description: グループヘッダーを折りたたみ可能にする
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/label-grouping.test.tsx
+          - id: FR-VIS-013-AC4
+            description: 複数グループラベルを持つタスクは各グループに表示され、対象 prefix のラベルがないタスクはその他グループに入る
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/label-grouping.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
@@ -476,6 +499,11 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/store.test.ts
+          - id: FR-STORE-001-AC2
+            description: gantt.config.json で grouping.label_prefix を設定できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
       - id: FR-STORE-002
         summary: タスクファイルの読み書き
         acceptance_criteria:

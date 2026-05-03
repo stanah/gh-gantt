@@ -1,6 +1,6 @@
 // packages/ui/src/components/toolbar/FilterGroup.tsx
 import React from "react";
-import { Eye, EyeOff } from "lucide-react";
+import { Eye, EyeOff, Tags } from "lucide-react";
 import type { TaskType } from "../../types/index.js";
 import { ToolbarGroup } from "./ToolbarGroup.js";
 import { IconButton } from "./IconButton.js";
@@ -23,6 +23,9 @@ interface FilterGroupProps {
   allLabels?: string[];
   selectedLabels?: string[];
   onSelectLabels?: (values: string[]) => void;
+  labelGroupingPrefix?: string;
+  labelGroupingEnabled?: boolean;
+  onToggleLabelGrouping?: () => void;
 }
 
 export function FilterGroup(props: FilterGroupProps) {
@@ -40,6 +43,9 @@ export function FilterGroup(props: FilterGroupProps) {
     allLabels,
     selectedLabels,
     onSelectLabels,
+    labelGroupingPrefix,
+    labelGroupingEnabled = false,
+    onToggleLabelGrouping,
   } = props;
 
   const selectedAssignees = selectedAssignee
@@ -72,6 +78,14 @@ export function FilterGroup(props: FilterGroupProps) {
       )}
       {allLabels && selectedLabels && onSelectLabels && (
         <LabelFilter labels={allLabels} selectedValues={selectedLabels} onChange={onSelectLabels} />
+      )}
+      {labelGroupingPrefix && onToggleLabelGrouping && (
+        <IconButton
+          icon={<Tags size={14} />}
+          title={`Label Grouping: ${labelGroupingPrefix}`}
+          onClick={onToggleLabelGrouping}
+          active={labelGroupingEnabled}
+        />
       )}
     </ToolbarGroup>
   );
