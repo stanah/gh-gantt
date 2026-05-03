@@ -17,7 +17,7 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. リポジトリのオープン PR 全件を確認する（`gh pr list --state open`）
+3. リポジトリのオープン PR 全件を確認する。手動一覧が必要なら `gh api --paginate "repos/OWNER/REPO/pulls?state=open&per_page=100" --jq '.[].number'` を使い、デフォルト page に依存しない
 4. オープン PR があれば `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行する
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。

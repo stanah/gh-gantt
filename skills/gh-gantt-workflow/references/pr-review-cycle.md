@@ -17,7 +17,8 @@ PR 作成後のレビュー対応は gh-gantt の製品 CLI ではなく、GitHu
 - 完了報告前: `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait`
 - ユーザーが PR 番号を指定したとき: `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --pr <number>`
 
-`--all-open` は現在ユーザーや現在ブランチではなく、リポジトリのオープン PR 全件を確認する。
+`--all-open` は現在ユーザーや現在ブランチではなく、`gh api --paginate` で
+リポジトリのオープン PR 全件を確認する。
 ユーザーが「#195 だけ」のように明示した場合を除き、オープン PR が残っているなら全て確認対象にする。
 
 script は PR が open かつ draft でない場合、以下を `gh` で確認する。

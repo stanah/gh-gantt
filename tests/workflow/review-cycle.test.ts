@@ -74,6 +74,12 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
     const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+    const basicTemplate = await readRepoFile(
+      "skills/gh-gantt-workflow/templates/workflow.basic.md",
+    );
+    const superpowersTemplate = await readRepoFile(
+      "skills/gh-gantt-workflow/templates/workflow.superpowers.md",
+    );
     const allOpenBlock = extractCaseBlock(script, "all-open");
 
     expect(workflow).toContain("リポジトリのオープン PR 全件");
@@ -85,7 +91,13 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(reference).toContain("`NONE`");
     expect(reference).toContain("API 取得失敗を示す `UNKNOWN`");
     expect(script).toContain("failed to list open PRs for repository");
+    expect(allOpenBlock).toContain("gh api --paginate");
+    expect(allOpenBlock).toContain("pulls?state=open&per_page=100");
     expect(allOpenBlock).not.toContain("--author @me");
+    expect(basicTemplate).toContain("gh api --paginate");
+    expect(superpowersTemplate).toContain("gh api --paginate");
+    expect(basicTemplate).not.toContain("gh pr list --state open");
+    expect(superpowersTemplate).not.toContain("gh pr list --state open");
   });
 
   it("ADR-010 は PR 後レビューサイクルの正本を ADR-013 に委譲する", async () => {

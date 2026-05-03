@@ -388,7 +388,7 @@ case "$mode" in
     ;;
   all-open)
     found=0
-    pr_numbers=$(gh pr list --state open --json number --jq '.[].number') || {
+    pr_numbers=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" --jq '.[].number') || {
       echo "[gh-gantt workflow] failed to list open PRs for repository" >&2
       exit 1
     }
