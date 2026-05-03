@@ -1,6 +1,9 @@
+// @vitest-environment jsdom
 import { describe, it, expect } from "vitest";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import { cleanup, fireEvent, render } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 import { TaskDetailPanel } from "../components/TaskDetailPanel.js";
 import type { Task, Config } from "../types/index.js";
 
@@ -67,7 +70,29 @@ const config: Config = {
   },
 };
 
+const sprintConfig: Config = {
+  ...config,
+  sprints: [
+    {
+      name: "Sprint 1",
+      start_date: "2026-01-01",
+      end_date: "2026-01-14",
+      color: "#2563eb",
+    },
+    {
+      name: "Sprint 2",
+      start_date: "2026-02-01",
+      end_date: "2026-02-14",
+      color: "#16a34a",
+    },
+  ],
+};
+
 describe("TaskDetailPanel", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
   it("renders title and issue number", () => {
     const task = makeTask();
     const html = renderToStaticMarkup(
@@ -119,5 +144,72 @@ describe("TaskDetailPanel", () => {
     );
 
     expect(html).toContain("Child Task Title");
+  });
+
+  it("[FR-VIS-011-AC1][FR-VIS-011-AC2] sprint 選択で task の期間を sprint 期間へ更新する", () => {
+    const task = makeTask({
+      start_date: null,
+      end_date: null,
+    });
+    const onUpdate = vi.fn();
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={sprintConfig}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={onUpdate}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
+    );
+
+    const select = getByLabelText("Sprint") as HTMLSelectElement;
+    expect(select.value).toBe("");
+
+    fireEvent.change(select, { target: { value: "Sprint 2" } });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      start_date: "2026-02-01",
+      end_date: "2026-02-14",
+    });
+  });
+
+  it("[FR-VIS-011-AC1] task の期間が sprint 内にある場合は現在 sprint として表示する", () => {
+    const task = makeTask({
+      start_date: "2026-01-02",
+      end_date: "2026-01-10",
+    });
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={sprintConfig}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
+    );
+
+    const select = getByLabelText("Sprint") as HTMLSelectElement;
+    expect(select.value).toBe("Sprint 1");
+  });
+
+  it("[FR-VIS-011-AC3] sprint 未設定では sprint 選択を表示しない", () => {
+    const task = makeTask();
+    const { queryByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={config}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
+    );
+
+    expect(queryByLabelText("Sprint")).toBeNull();
   });
 });

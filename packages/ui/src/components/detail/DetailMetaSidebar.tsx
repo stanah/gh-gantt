@@ -1,6 +1,7 @@
 import React from "react";
 import type { Task, Config } from "../../types/index.js";
 import { formatUpdatedAt } from "../../lib/date-utils.js";
+import { DetailSprintControl } from "./DetailSprintControl.js";
 
 interface DetailMetaSidebarProps {
   task: Task;
@@ -119,6 +120,8 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
           </select>
         </div>
       )}
+
+      {!isMilestone && <DetailSprintControl task={task} config={config} onUpdate={onUpdate} />}
 
       {/* Dates (with separator) */}
       <div style={separatorStyle}>
