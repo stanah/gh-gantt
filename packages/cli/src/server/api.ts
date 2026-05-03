@@ -111,6 +111,8 @@ export function createApiRouter(projectRoot: string): Router {
         closed_at: null,
         acceptance_criteria: [],
         acceptance_criteria_slot: false,
+        implementer: null,
+        reviewer: null,
         custom_fields: {},
         start_date: start_date ?? null,
         end_date: end_date ?? null,
@@ -157,6 +159,8 @@ export function createApiRouter(projectRoot: string): Router {
         "state",
         "state_reason",
         "assignees",
+        "implementer",
+        "reviewer",
         "labels",
         "milestone",
         "custom_fields",
@@ -184,6 +188,16 @@ export function createApiRouter(projectRoot: string): Router {
           return;
         }
       }
+      for (const roleField of ["implementer", "reviewer"] as const) {
+        if (
+          roleField in updates &&
+          updates[roleField] !== null &&
+          typeof updates[roleField] !== "string"
+        ) {
+          res.status(400).json({ error: `${roleField} must be a string or null` });
+          return;
+        }
+      }
 
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
@@ -192,6 +206,15 @@ export function createApiRouter(projectRoot: string): Router {
         }
       }
       const updatedTask = { ...oldTask, ...safeUpdates };
+
+      if (
+        updatedTask.implementer &&
+        updatedTask.reviewer &&
+        updatedTask.implementer.toLowerCase() === updatedTask.reviewer.toLowerCase()
+      ) {
+        res.status(400).json({ error: "reviewer must be different from implementer" });
+        return;
+      }
 
       if (safeUpdates.type && safeUpdates.type !== oldTask.type) {
         const oldTypeDef = config.task_types[oldTask.type];

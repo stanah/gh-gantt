@@ -26,7 +26,12 @@ function makeSyncFields(overrides: Partial<SyncFields> = {}): SyncFields {
 describe("SYNC_FIELD_KEYS", () => {
   it("exports all SyncFields keys", () => {
     const fields = makeSyncFields();
-    const objectKeys = Object.keys(fields).sort();
+    const objectKeys = [
+      ...Object.keys(fields),
+      "acceptance_criteria_slot",
+      "implementer",
+      "reviewer",
+    ].sort();
     const exportedKeys = [...SYNC_FIELD_KEYS].sort();
     expect(exportedKeys).toEqual(objectKeys);
   });
@@ -243,6 +248,20 @@ describe("[FR-SYNC-001-AC1] ローカル・リモート両方が変更した場�
 
       expect(result.conflicts).toEqual([]);
       expect(result.merged.acceptance_criteria).toEqual(reversed);
+    });
+  });
+
+  describe("task roles", () => {
+    it("[FR-CLI-013-AC3] remote-only の implementer/reviewer 変更を採用する", () => {
+      const result = threeWayMerge(
+        makeSyncFields({ implementer: "alice", reviewer: "bob" }),
+        makeSyncFields({ implementer: "alice", reviewer: "bob" }),
+        makeSyncFields({ implementer: "carol", reviewer: "dave" }),
+      );
+
+      expect(result.conflicts).toEqual([]);
+      expect(result.merged.implementer).toBe("carol");
+      expect(result.merged.reviewer).toBe("dave");
     });
   });
 });

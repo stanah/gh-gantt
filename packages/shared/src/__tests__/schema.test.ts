@@ -289,6 +289,8 @@ describe("TasksFileSchema", () => {
     const parsed = TasksFileSchema.parse(data);
     expect(parsed.tasks[0].acceptance_criteria).toEqual([]);
     expect(parsed.tasks[0].acceptance_criteria_slot).toBe(false);
+    expect(parsed.tasks[0].implementer).toBeNull();
+    expect(parsed.tasks[0].reviewer).toBeNull();
   });
 
   it("[FR-CLI-011-AC1] acceptance_criteria を task の first-class フィールドとして受理する", () => {
@@ -314,6 +316,16 @@ describe("TasksFileSchema", () => {
     };
     const parsed = TasksFileSchema.parse(data);
     expect(parsed.tasks[0].acceptance_criteria_slot).toBe(true);
+  });
+
+  it("[FR-CLI-013-AC1] implementer/reviewer を task の first-class フィールドとして受理する", () => {
+    const data = {
+      tasks: [{ ...validTask, implementer: "alice", reviewer: "bob" }],
+      cache: { comments: {}, reactions: {} },
+    };
+    const parsed = TasksFileSchema.parse(data);
+    expect(parsed.tasks[0].implementer).toBe("alice");
+    expect(parsed.tasks[0].reviewer).toBe("bob");
   });
 
   it("should accept valid tasks file", () => {

@@ -3,14 +3,21 @@ import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
-import { normalizeAcceptanceCriteria, parseAcceptanceCriteriaBody } from "@gh-gantt/shared";
+import {
+  normalizeAcceptanceCriteria,
+  parseAcceptanceCriteriaBody,
+  parseTaskRolesBody,
+} from "@gh-gantt/shared";
 import type { Task } from "@gh-gantt/shared";
 
 function formatTask(task: Task): string {
   if (isMilestoneSyntheticTask(task.id)) {
     return formatMilestone(task);
   }
-  const parsedBody = parseAcceptanceCriteriaBody(task.body);
+  const parsedRoles = parseTaskRolesBody(task.body);
+  const parsedBody = parseAcceptanceCriteriaBody(parsedRoles.body);
+  const implementer = task.implementer ?? parsedRoles.implementer;
+  const reviewer = task.reviewer ?? parsedRoles.reviewer;
   const storedAcceptanceCriteria = normalizeAcceptanceCriteria(task.acceptance_criteria);
   const acceptanceCriteria =
     storedAcceptanceCriteria.length > 0 ? storedAcceptanceCriteria : parsedBody.acceptance_criteria;
@@ -20,6 +27,8 @@ function formatTask(task: Task): string {
     `Type:       ${task.type}`,
     `State:      ${task.state}`,
     `Assignees:  ${task.assignees.length > 0 ? task.assignees.join(", ") : "-"}`,
+    `Implementer:${implementer ? ` ${implementer}` : " -"}`,
+    `Reviewer:   ${reviewer ? reviewer : "-"}`,
     `Labels:     ${task.labels.length > 0 ? task.labels.join(", ") : "-"}`,
     `Milestone:  ${task.milestone ?? "-"}`,
     `Start:      ${task.start_date ?? "-"}`,

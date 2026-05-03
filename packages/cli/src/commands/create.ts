@@ -245,6 +245,8 @@ export function createCreateCommand(): Command {
         closed_at: null,
         acceptance_criteria: [],
         acceptance_criteria_slot: body?.includes(ACCEPTANCE_CRITERIA_START_MARKER) === true,
+        implementer: null,
+        reviewer: null,
         custom_fields: {},
         start_date: startDate,
         end_date: endDate,

@@ -33,6 +33,8 @@ const TaskUpdateRequestSchema = z.object({
   state: z.enum(["open", "closed"]).optional(),
   state_reason: z.string().nullable().optional(),
   assignees: z.array(z.string()).optional(),
+  implementer: z.string().nullable().optional(),
+  reviewer: z.string().nullable().optional(),
   labels: z.array(z.string()).optional(),
   milestone: z.string().nullable().optional(),
   custom_fields: z.record(z.unknown()).optional(),

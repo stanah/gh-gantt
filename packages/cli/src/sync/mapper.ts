@@ -1,5 +1,5 @@
 import type { Task, Config } from "@gh-gantt/shared";
-import { parseAcceptanceCriteriaBody } from "@gh-gantt/shared";
+import { parseAcceptanceCriteriaBody, parseTaskRolesBody } from "@gh-gantt/shared";
 import type { RawProjectItem } from "../github/projects.js";
 import { resolveTaskType } from "./type-resolver.js";
 import { buildTaskId } from "../github/issues.js";
@@ -21,7 +21,8 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
   for (const [key, value] of Object.entries(item.fieldValues)) {
     customFields[key] = value;
   }
-  const parsedBody = parseAcceptanceCriteriaBody(c.body);
+  const parsedRoles = parseTaskRolesBody(c.body);
+  const parsedBody = parseAcceptanceCriteriaBody(parsedRoles.body);
 
   return {
     id,
@@ -43,6 +44,8 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
     closed_at: c.closedAt,
     acceptance_criteria: parsedBody.acceptance_criteria,
     acceptance_criteria_slot: parsedBody.has_acceptance_criteria_block,
+    implementer: parsedRoles.implementer,
+    reviewer: parsedRoles.reviewer,
     custom_fields: customFields,
     start_date: (item.fieldValues[fm.start_date] as string) ?? null,
     end_date: (item.fieldValues[fm.end_date] as string) ?? null,

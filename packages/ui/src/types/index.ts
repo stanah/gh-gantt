@@ -47,6 +47,8 @@ export interface Task {
   body: string | null;
   acceptance_criteria?: AcceptanceCriterion[];
   acceptance_criteria_slot?: boolean;
+  implementer?: string | null;
+  reviewer?: string | null;
   state: "open" | "closed";
   state_reason: string | null;
   assignees: string[];
