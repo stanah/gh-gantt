@@ -138,9 +138,7 @@ describe("fetchAllComments", () => {
   });
 
   it("continues on individual issue error", async () => {
-    let callCount = 0;
     const gql = async (_query: string, vars: any) => {
-      callCount++;
       if (vars.number === 2) throw new Error("Not found");
       return {
         repository: {
@@ -213,7 +211,7 @@ describe("fetchAllComments", () => {
 describe("fetchIssueComments", () => {
   it("handles pagination across multiple pages", async () => {
     let callCount = 0;
-    const gql = async (_query: string, vars: any) => {
+    const gql = async (_query: string, _vars: any) => {
       callCount++;
       if (callCount === 1) {
         return {

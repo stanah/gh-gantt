@@ -25,7 +25,7 @@ pre-commit:
           fi
         fi
     - name: lint
-      run: vp check < /dev/null
+      run: pnpm lint < /dev/null
     - name: betterleaks
       # staged 差分に秘密情報が含まれていないか検査する (ADR-011)。
       # docker が利用不可 (未インストール / daemon 停止) の環境では skip し、
