@@ -8,6 +8,14 @@ import type { Config, SyncState, Task, StatusValue } from "@gh-gantt/shared";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_RECENT_DAYS = 7;
+const DEFAULT_PR_LIMIT = 100;
+const OPEN_PULL_REQUESTS_MAX_BUFFER = 10 * 1024 * 1024;
+const PRIORITY_RANKS = new Map([
+  ["critical", 0],
+  ["high", 1],
+  ["medium", 2],
+  ["low", 3],
+]);
 
 export interface OpenPullRequestSummary {
   number: number;
@@ -86,7 +94,10 @@ interface BuildContextSummaryInput {
 
 interface ContextCommandDeps {
   now?: () => Date;
-  fetchOpenPullRequests?: (config: Config) => Promise<OpenPullRequestSummary[]>;
+  fetchOpenPullRequests?: (
+    config: Config,
+    options: { limit: number },
+  ) => Promise<OpenPullRequestSummary[]>;
 }
 
 export function buildContextSummary(input: BuildContextSummaryInput): ContextSummary {
@@ -117,13 +128,17 @@ export function buildContextSummary(input: BuildContextSummaryInput): ContextSum
     .map((task) => summarizeBlockedTask(task, input.config, taskMap))
     .filter((task): task is BlockedTaskSummary => task.blocked_by.length > 0)
     .sort(compareSummaryEndDateThenUpdated);
+  const blockedTaskIds = new Set(blockedTasks.map((task) => task.id));
 
   const nextStartTask = input.tasks
     .filter((task) => task.state === "open")
     .filter((task) => !isInProgressTask(task, input.config))
     .filter((task) => task.type !== "epic" && task.type !== "milestone")
-    .filter((task) => summarizeBlockedTask(task, input.config, taskMap).blocked_by.length === 0)
-    .sort((a, b) => compareCandidateTasks(a, b, input.config))[0];
+    .filter((task) => !blockedTaskIds.has(task.id))
+    .reduce<Task | null>((best, task) => {
+      if (!best) return task;
+      return compareCandidateTasks(task, best, input.config) < 0 ? task : best;
+    }, null);
 
   const actions = buildRecommendedActions({
     inProgressTasks,
@@ -163,6 +178,7 @@ export function createContextCommand(deps: ContextCommandDeps = {}): Command {
     .description("Show a session-restoring project context summary")
     .option("--json", "Output as JSON")
     .option("--offline", "Skip live GitHub PR lookup")
+    .option("--pr-limit <count>", "Maximum number of open PRs to fetch", String(DEFAULT_PR_LIMIT))
     .option(
       "--recent-days <days>",
       "Number of days for recent task activity",
@@ -179,13 +195,16 @@ export function createContextCommand(deps: ContextCommandDeps = {}): Command {
       const syncState = await stateStore.read();
       const warnings: string[] = [];
       const recentDays = parseRecentDays(opts.recentDays);
+      const prLimit = parsePrLimit(opts.prLimit);
 
       let openPullRequests: OpenPullRequestSummary[] = [];
       if (opts.offline) {
         warnings.push("open PR の取得を --offline でスキップしました");
       } else {
         try {
-          openPullRequests = await (deps.fetchOpenPullRequests ?? fetchOpenPullRequests)(config);
+          openPullRequests = await (deps.fetchOpenPullRequests ?? fetchOpenPullRequests)(config, {
+            limit: prLimit,
+          });
         } catch (err) {
           warnings.push(
             `open PR の取得に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
@@ -213,7 +232,10 @@ export function createContextCommand(deps: ContextCommandDeps = {}): Command {
 
 export const contextCommand = createContextCommand();
 
-async function fetchOpenPullRequests(config: Config): Promise<OpenPullRequestSummary[]> {
+async function fetchOpenPullRequests(
+  config: Config,
+  options: { limit: number },
+): Promise<OpenPullRequestSummary[]> {
   const { owner, repo } = config.project.github;
   const { stdout } = await execFileAsync(
     "gh",
@@ -224,10 +246,12 @@ async function fetchOpenPullRequests(config: Config): Promise<OpenPullRequestSum
       `${owner}/${repo}`,
       "--state",
       "open",
+      "--limit",
+      String(options.limit),
       "--json",
       "number,title,url,headRefName,updatedAt,closingIssuesReferences,reviewDecision",
     ],
-    { timeout: 15000 },
+    { timeout: 15000, maxBuffer: OPEN_PULL_REQUESTS_MAX_BUFFER },
   );
   const parsed = JSON.parse(stdout) as Array<Record<string, unknown>>;
   return parsed.map((pr) => ({
@@ -252,6 +276,12 @@ async function fetchOpenPullRequests(config: Config): Promise<OpenPullRequestSum
 function parseRecentDays(value: string | undefined): number {
   const parsed = Number(value ?? DEFAULT_RECENT_DAYS);
   if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_RECENT_DAYS;
+  return parsed;
+}
+
+function parsePrLimit(value: string | undefined): number {
+  const parsed = Number(value ?? DEFAULT_PR_LIMIT);
+  if (!Number.isInteger(parsed) || parsed < 1) return DEFAULT_PR_LIMIT;
   return parsed;
 }
 
@@ -422,14 +452,10 @@ function compareTimestampDesc(a: string, b: string): number {
 function comparePriority(a: Task, b: Task, config: Config): number {
   const priorityField = config.sync.field_mapping.priority;
   if (!priorityField) return 0;
-  const ranks = new Map([
-    ["critical", 0],
-    ["high", 1],
-    ["medium", 2],
-    ["low", 3],
-  ]);
-  const aRank = ranks.get(String(a.custom_fields[priorityField] ?? "").toLowerCase()) ?? 99;
-  const bRank = ranks.get(String(b.custom_fields[priorityField] ?? "").toLowerCase()) ?? 99;
+  const aRank =
+    PRIORITY_RANKS.get(String(a.custom_fields[priorityField] ?? "").toLowerCase()) ?? 99;
+  const bRank =
+    PRIORITY_RANKS.get(String(b.custom_fields[priorityField] ?? "").toLowerCase()) ?? 99;
   return aRank - bRank;
 }
 
