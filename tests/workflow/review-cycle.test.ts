@@ -57,15 +57,17 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(reference).toContain("--all-open --no-wait");
   });
 
-  it("完了判定前に repository の open PR 全件 sweep を必須にする", async () => {
+  it("完了判定前にリポジトリのオープン PR 全件 sweep を必須にする", async () => {
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
     const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
 
-    expect(workflow).toContain("open PR 全件");
+    expect(workflow).toContain("リポジトリのオープン PR 全件");
     expect(workflow).toContain("--all-open --no-wait");
+    expect(workflow).toContain("`CHANGES_REQUESTED`");
+    expect(workflow).toContain("追対応条件が 0 件");
     expect(reference).toContain("完了報告前");
-    expect(reference).toContain("repository の open PR 全件");
+    expect(reference).toContain("リポジトリのオープン PR 全件");
     expect(script).toContain("failed to list open PRs for repository");
     expect(script).not.toContain("--author @me");
   });

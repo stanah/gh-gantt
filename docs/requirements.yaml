@@ -479,8 +479,8 @@ areas:
               review thread / changes requested review / pending または blocking
               checks / PR activity の quiet window を gh で検出し、対応を促す
               gh-gantt-workflow skill 付属 script と workflow が定義されている。
-              セッション開始時と完了報告前は repository の open PR 全件を確認し、
-              current branch の PR だけで完了扱いしない
+              セッション開始時と完了報告前はリポジトリのオープン PR 全件を確認し、
+              現在ブランチの PR だけで完了扱いしない
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts

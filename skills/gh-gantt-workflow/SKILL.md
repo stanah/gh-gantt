@@ -58,9 +58,9 @@ Evidence: コマンド出力をそのまま提示する。
 
 0. **★`on_session_start`** — workflow.md の該当セクションを実行。作業開始時に
    `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、
-   repository の open PR 全件について未解決 review thread / blocking check /
+   リポジトリのオープン PR 全件について未解決 review thread / blocking check /
    changes requested が残っていないか確認する。ユーザーが特定 PR だけを明示した場合を除き、
-   current branch の PR だけで確認済み扱いしてはならない
+   現在ブランチの PR だけで確認済み扱いしてはならない
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-progress` でタスクの状態を確認
 3. タスク確認 — `gh-gantt list --state open` を実行する。
@@ -82,9 +82,11 @@ Evidence: コマンド出力をそのまま提示する。
 14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で CI と非同期レビューコメントの安定を待つ。PR 作成は完了ではなく、レビュー監視の開始である
 15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応後は push し、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
 16. 完了報告前 hard gate — `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait`
-    を実行し、repository の open PR 全件を列挙する。各 PR について未解決件数と check 状態を
-    確認し、未解決 0 件を確認した PR 番号だけを「確認済み」と報告する。open PR が残っている
-    状況で current branch の PR だけを確認して完了扱いしてはならない
+    を実行し、リポジトリのオープン PR 全件を列挙する。各 PR について `CHANGES_REQUESTED`、
+    未 resolve thread、未観測 check、pending/blocking check、CodeRabbit rate limit、
+    API 取得失敗による UNKNOWN 判定を確認し、追対応条件が 0 件の PR 番号だけを
+    「確認済み」と報告する。オープン PR が残っている状況で現在ブランチの PR だけを確認して
+    完了扱いしてはならない
 17. **★`on_session_end`** — workflow.md の該当セクションを実行
 18. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
@@ -101,7 +103,7 @@ Evidence: コマンド出力をそのまま提示する。
 | PR 作成で作業完了扱いする                                      | PR 後の非同期レビューサイクルが始まっている                      |
 | PR review 操作を gh-gantt CLI に追加する                       | GitHub PR の責務であり、`gh` / GraphQL workflow で扱う           |
 | `.claude/hooks` をレビューサイクルの正本にする                 | Codex など hook を自動実行できない環境では保証にならない         |
-| current branch の PR だけを確認して完了報告する                | 別の open PR の未解決レビューを見落とす                          |
+| 現在ブランチの PR だけを確認して完了報告する                   | 別のオープン PR の未解決レビューを見落とす                       |
 | レビュー返信を個別投稿する                                     | pending review にまとめて submit し、通知を 1 回に抑える         |
 | PR マージ前に手動で Issue を close する                        | `Closes #N` で自動クローズに任せる                               |
 | 振る舞い変更なのに要件ファイルを更新しない (Living Doc 採用時) | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |

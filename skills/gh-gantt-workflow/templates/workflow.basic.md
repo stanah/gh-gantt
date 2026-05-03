@@ -17,8 +17,8 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. repository の open PR 全件を確認する（`gh pr list --state open`）
-4. open PR があれば `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行する
+3. リポジトリのオープン PR 全件を確認する（`gh pr list --state open`）
+4. オープン PR があれば `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行する
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。
 
@@ -124,7 +124,7 @@
 
 1. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を実行する
 2. script は CI/checks の完了、review thread pagination、PR comments/reviews の quiet window をまとめて待つ
-3. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、repository の open PR 全件を確認する
+3. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、リポジトリのオープン PR 全件を確認する
 4. 完了条件は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 
 ## on_review_received
@@ -136,7 +136,7 @@
 5. 対応結果は GitHub GraphQL の pending review に返信を積み、submit で 1 回だけ通知する
 6. 対応済み thread は GraphQL alias mutation で一括 resolve する
 7. push 後に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する
-8. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、repository の open PR 全件を確認する
+8. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、リポジトリのオープン PR 全件を確認する
 9. 詳細は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 10. **対応後の再検証**（修正規模により段階的）:
 
@@ -148,7 +148,7 @@
 **目的**: セッション終了時のクリーンアップと同期。
 
 1. 未コミットの変更があれば確認してユーザーに提示する
-2. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` で repository の open PR 全件を確認する
+2. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` でリポジトリのオープン PR 全件を確認する
 3. `gh-gantt push` でリモートと同期する（drafts があれば GitHub Issue 化）
 4. 次セッションへのハンドオフ情報を `.gantt-sync/` 配下や Issue コメントに残すことを検討する
 
@@ -165,7 +165,7 @@
 | PR 作成で作業完了扱いする              | 非同期レビューサイクルが始まっている               |
 | PR review 操作を gh-gantt CLI に入れる | GitHub PR は `gh` / GraphQL workflow で扱う        |
 | `.claude/hooks` を完了保証に使う       | Codex では自動実行されない。skill script を使う    |
-| current branch の PR だけ確認する      | 別の open PR に残ったレビューを見落とす            |
+| 現在ブランチの PR だけ確認する         | 別のオープン PR に残ったレビューを見落とす         |
 | レビュー返信を個別投稿する             | pending review にまとめて submit する              |
 | before_commit のレビューを省略する     | 手戻りが発生する                                   |
 | ユーザー承認前にコミット・プッシュする | レビュー指摘を取りこぼす                           |
