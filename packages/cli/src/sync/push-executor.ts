@@ -1,5 +1,6 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
+import { serializeAcceptanceCriteriaBody } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, hashSyncFields, extractSyncFields } from "./hash.js";
 import {
@@ -204,7 +205,8 @@ export async function executePush(
 
       const { number: milestoneNumber } = await createGithubMilestone(token, owner, repo, {
         title: task.title,
-        description: task.body ?? undefined,
+        description:
+          serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
         dueOn: task.date ?? undefined,
       });
 
@@ -276,7 +278,7 @@ export async function executePush(
       // Create GitHub issue
       const { issueId, issueNumber } = await createIssue(gql, repositoryId, {
         title: task.title,
-        body: task.body ?? undefined,
+        body: serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
         labelIds,
         milestoneId,
         assigneeIds,
@@ -516,7 +518,7 @@ export async function executePush(
         const issueMutations: Promise<unknown>[] = [
           updateIssue(gql, idEntry.issue_node_id, {
             title: task.title,
-            body: task.body ?? undefined,
+            body: serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
           }),
           setIssueState(gql, idEntry.issue_node_id, task.state),
         ];

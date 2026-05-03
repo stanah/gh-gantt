@@ -1,5 +1,5 @@
 import type { Task } from "@gh-gantt/shared";
-import { DRAFT_PREFIX } from "@gh-gantt/shared";
+import { DRAFT_PREFIX, parseAcceptanceCriteriaBody } from "@gh-gantt/shared";
 import type { RawProjectItem, RawMilestone } from "./projects.js";
 import type { SubIssueLink, BlockedByLink } from "./sub-issues.js";
 
@@ -36,6 +36,7 @@ export function milestoneToTask(m: RawMilestone, repo: string): Task {
     created_at: "",
     updated_at: "",
     closed_at: m.closedAt ?? null,
+    acceptance_criteria: [],
     custom_fields: {},
     start_date: null,
     end_date: null,
@@ -77,6 +78,7 @@ export function mapProjectItemToTask(
   if (!item.content) return null;
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
+  const parsedBody = parseAcceptanceCriteriaBody(c.body);
 
   const mappedFields = new Set([fieldMapping.start_date, fieldMapping.end_date, "Title"]);
   const customFields: Record<string, unknown> = {};
@@ -94,7 +96,7 @@ export function mapProjectItemToTask(
     parent: null,
     sub_tasks: [],
     title: c.title,
-    body: c.body,
+    body: parsedBody.body,
     state: c.state as "open" | "closed",
     state_reason: c.stateReason,
     assignees: c.assignees,
@@ -104,6 +106,7 @@ export function mapProjectItemToTask(
     created_at: c.createdAt,
     updated_at: c.updatedAt,
     closed_at: c.closedAt,
+    acceptance_criteria: parsedBody.acceptance_criteria,
     custom_fields: customFields,
     start_date: (item.fieldValues[fieldMapping.start_date] as string) ?? null,
     end_date: (item.fieldValues[fieldMapping.end_date] as string) ?? null,

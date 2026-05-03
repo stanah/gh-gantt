@@ -6,6 +6,7 @@ function makeSyncFields(overrides: Partial<SyncFields> = {}): SyncFields {
   return {
     title: "Test task",
     body: null,
+    acceptance_criteria: [],
     state: "open",
     type: "task",
     assignees: [],
@@ -224,6 +225,24 @@ describe("[FR-SYNC-001-AC1] ローカル・リモート両方が変更した場�
       const result = threeWayMerge(base, current, incoming);
       expect(result.conflicts).toHaveLength(1);
       expect(result.conflicts[0].field).toBe("custom_fields");
+    });
+  });
+
+  describe("acceptance_criteria order", () => {
+    it("[FR-CLI-011-AC3] acceptance_criteria の順序を保持して比較する", () => {
+      const criteria = [
+        { description: "先に確認する", checked: false },
+        { description: "次に確認する", checked: false },
+      ];
+      const reversed = [...criteria].reverse();
+      const result = threeWayMerge(
+        makeSyncFields({ acceptance_criteria: criteria }),
+        makeSyncFields({ acceptance_criteria: criteria }),
+        makeSyncFields({ acceptance_criteria: reversed }),
+      );
+
+      expect(result.conflicts).toEqual([]);
+      expect(result.merged.acceptance_criteria).toEqual(reversed);
     });
   });
 });

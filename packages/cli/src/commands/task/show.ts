@@ -9,6 +9,7 @@ function formatTask(task: Task): string {
   if (isMilestoneSyntheticTask(task.id)) {
     return formatMilestone(task);
   }
+  const acceptanceCriteria = task.acceptance_criteria ?? [];
   const lines: string[] = [
     `ID:         ${task.id}`,
     `Title:      ${task.title}`,
@@ -23,6 +24,13 @@ function formatTask(task: Task): string {
     `Parent:     ${task.parent ?? "-"}`,
     `Sub-tasks:  ${task.sub_tasks.length > 0 ? task.sub_tasks.join(", ") : "-"}`,
     `Blocked by: ${task.blocked_by.length > 0 ? task.blocked_by.map((d) => d.task).join(", ") : "-"}`,
+    `Acceptance Criteria:`,
+    ...(acceptanceCriteria.length > 0
+      ? acceptanceCriteria.map((criterion, index) => {
+          const marker = criterion.checked ? "x" : " ";
+          return `  ${index + 1}. [${marker}] ${criterion.description}`;
+        })
+      : ["  -"]),
     `Created:    ${task.created_at}`,
     `Updated:    ${task.updated_at}`,
   ];
