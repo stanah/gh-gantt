@@ -388,8 +388,8 @@ case "$mode" in
     ;;
   all-open)
     found=0
-    pr_numbers=$(gh pr list --author @me --state open --json number --jq '.[].number') || {
-      echo "[gh-gantt workflow] failed to list open PRs for current user" >&2
+    pr_numbers=$(gh pr list --state open --json number --jq '.[].number') || {
+      echo "[gh-gantt workflow] failed to list open PRs for repository" >&2
       exit 1
     }
     while IFS= read -r number; do
@@ -398,7 +398,7 @@ case "$mode" in
       wait_for_pr "$number" || status=$?
     done <<<"$pr_numbers"
     if [ "$found" -eq 0 ]; then
-      echo "[gh-gantt workflow] no open PRs for current user"
+      echo "[gh-gantt workflow] no open PRs in repository"
     fi
     ;;
   pr)
