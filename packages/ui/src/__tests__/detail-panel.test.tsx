@@ -88,6 +88,14 @@ const sprintConfig: Config = {
   ],
 };
 
+const priorityConfig: Config = {
+  ...config,
+  sync: {
+    ...config.sync,
+    field_mapping: { ...config.sync.field_mapping, priority: "Priority" },
+  },
+};
+
 describe("TaskDetailPanel", () => {
   afterEach(() => {
     cleanup();
@@ -211,5 +219,120 @@ describe("TaskDetailPanel", () => {
     );
 
     expect(queryByLabelText("Sprint")).toBeNull();
+  });
+});
+
+describe("[FR-VIS-006-AC3] 1カラムレイアウトでもタスクの Status、Priority、Type、日付を編集できる", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("1カラムで Status、Priority、Type、Start Date、End Date を変更できる", () => {
+    const task = makeTask({ custom_fields: { Status: "In Progress", Priority: "medium" } });
+    const onUpdate = vi.fn();
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={priorityConfig}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={onUpdate}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+        width={400}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("Status"), { target: { value: "Done" } });
+    fireEvent.change(getByLabelText("Priority"), { target: { value: "high" } });
+    fireEvent.change(getByLabelText("Type"), { target: { value: "epic" } });
+    fireEvent.change(getByLabelText("Start Date"), { target: { value: "2026-02-01" } });
+    fireEvent.change(getByLabelText("End Date"), { target: { value: "2026-02-14" } });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      custom_fields: { Status: "Done", Priority: "medium" },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({
+      custom_fields: { Status: "In Progress", Priority: "high" },
+    });
+    expect(onUpdate).toHaveBeenCalledWith({ type: "epic" });
+    expect(onUpdate).toHaveBeenCalledWith({ start_date: "2026-02-01" });
+    expect(onUpdate).toHaveBeenCalledWith({ end_date: "2026-02-14" });
+  });
+
+  it("1カラムで milestone の Due Date を変更できる", () => {
+    const milestone = makeTask({
+      type: "milestone",
+      id: "stanah/gh-gantt#7",
+      github_issue: null,
+      title: "Milestone",
+      date: "2026-03-01",
+      start_date: null,
+      end_date: null,
+    });
+    const onUpdate = vi.fn();
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={milestone}
+        config={priorityConfig}
+        comments={[]}
+        allTasks={[milestone]}
+        onUpdate={onUpdate}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+        width={400}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("Due Date"), { target: { value: "2026-03-15" } });
+
+    expect(onUpdate).toHaveBeenCalledWith({ date: "2026-03-15" });
+  });
+
+  it("2カラムの既存メタ編集も維持する", () => {
+    const task = makeTask({ custom_fields: { Status: "In Progress", Priority: "medium" } });
+    const onUpdate = vi.fn();
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={priorityConfig}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={onUpdate}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+        width={640}
+      />,
+    );
+
+    fireEvent.change(getByLabelText("Status"), { target: { value: "Done" } });
+
+    expect(onUpdate).toHaveBeenCalledWith({
+      custom_fields: { Status: "Done", Priority: "medium" },
+    });
+  });
+});
+
+describe("[FR-VIS-006-AC4] 1カラムレイアウトで Open/Closed の state を重複表示しない", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("1カラムでは state badge を DetailHeader の1件だけ表示する", () => {
+    const task = makeTask();
+    const { getAllByText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={priorityConfig}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+        width={400}
+      />,
+    );
+
+    expect(getAllByText("Open")).toHaveLength(1);
   });
 });

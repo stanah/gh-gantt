@@ -59,6 +59,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Status</label>
           <select
+            aria-label="Status"
             value={currentStatus ?? ""}
             onChange={(e) =>
               onUpdate({
@@ -81,6 +82,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Priority</label>
           <select
+            aria-label="Priority"
             value={currentPriority}
             onChange={(e) =>
               onUpdate({
@@ -106,6 +108,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Type</label>
           <select
+            aria-label="Type"
             value={task.type}
             onChange={(e) => onUpdate({ type: e.target.value })}
             style={selectStyle}
@@ -129,6 +132,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Due Date</label>
             <input
+              aria-label="Due Date"
               type="date"
               value={(task.date ?? "").slice(0, 10)}
               onChange={(e) => onUpdate({ date: e.target.value || null })}
@@ -140,6 +144,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Start Date</label>
               <input
+                aria-label="Start Date"
                 type="date"
                 value={(task.start_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ start_date: e.target.value || null })}
@@ -149,6 +154,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>End Date</label>
               <input
+                aria-label="End Date"
                 type="date"
                 value={(task.end_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ end_date: e.target.value || null })}
