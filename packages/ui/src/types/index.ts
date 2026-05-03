@@ -110,6 +110,7 @@ export interface Config {
   grouping?: GroupingConfig;
   sprints?: SprintConfig[];
   require_review_for_types?: string[];
+  require_close_evidence?: boolean;
   max_task_size_hours?: number;
 }
 

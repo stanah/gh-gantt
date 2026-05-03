@@ -403,6 +403,31 @@ areas:
             tests:
               - packages/cli/src/__tests__/doctor.test.ts
               - packages/cli/src/__tests__/push-executor.test.ts
+      - id: FR-CLI-016
+        summary: エビデンスベースのタスク close
+        acceptance_criteria:
+          - id: FR-CLI-016-AC1
+            description: close --evidence は close 時の証跡を Issue body に記録できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-structure.test.ts
+              - packages/cli/src/__tests__/task-commands.test.ts
+          - id: FR-CLI-016-AC2
+            description: require_close_evidence 設定が有効な場合は evidence なし close を拒否できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-commands.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-CLI-016-AC3
+            description: acceptance criteria が first-class field として存在する場合、未完了 AC がある task close を拒否できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-commands.test.ts
+          - id: FR-CLI-016-AC4
+            description: close evidence block は GitHub Issue body 往復で保持できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/task-close-evidence.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

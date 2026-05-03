@@ -161,6 +161,7 @@ export interface Config {
   task_templates?: TaskTemplates;
   doctor?: DoctorConfig;
   require_review_for_types?: string[];
+  require_close_evidence?: boolean;
   max_task_size_hours?: number;
 }
 

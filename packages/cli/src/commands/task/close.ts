@@ -9,6 +9,7 @@ export function createTaskCloseCommand(): Command {
     .description("Close a task after review checks")
     .argument("<id>", "Task ID (e.g. 6, #6, owner/repo#6)")
     .option("--approve-review <login>", "Mark review as approved by the assigned reviewer")
+    .option("--evidence <summary>", "Record close evidence in the issue body")
     .option("--json", "Output closed task as JSON")
     .action(async (id: string, opts) => {
       try {
@@ -30,6 +31,7 @@ export function createTaskCloseCommand(): Command {
         const updateOpts: TaskUpdateOptions = {
           state: "closed",
           approveReview: opts.approveReview,
+          evidence: opts.evidence,
         };
         const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
         if (result.error) {
@@ -40,6 +42,10 @@ export function createTaskCloseCommand(): Command {
 
         tasksFile.tasks[taskIndex] = result.task;
         await tasksStore.write(tasksFile);
+
+        if (!opts.evidence && config.require_close_evidence !== true) {
+          console.warn('Warning: closing without evidence. Use --evidence "<summary>".');
+        }
 
         if (opts.json) {
           console.log(JSON.stringify(result.task, null, 2));

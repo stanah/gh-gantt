@@ -27,6 +27,11 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/cl
     expect(commandNames).toContain("close");
   });
 
+  it("[FR-CLI-016-AC1] close command exposes --evidence", () => {
+    const closeCommand = program.commands.find((c) => c.name() === "close")!;
+    expect(closeCommand.options.map((option) => option.long)).toContain("--evidence");
+  });
+
   it("has 'context' as a top-level command", () => {
     expect(commandNames).toContain("context");
   });

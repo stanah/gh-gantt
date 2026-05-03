@@ -319,6 +319,23 @@ describe("[FR-CLI-015-AC1] タスクサイズ閾値と見積もり field mapping
   });
 });
 
+describe("[FR-CLI-016-AC2] close evidence requirement の設定検証", () => {
+  it("require_close_evidence を設定として受理する", () => {
+    const parsed = ConfigSchema.parse({
+      ...validConfig,
+      require_close_evidence: true,
+    });
+
+    expect(parsed.require_close_evidence).toBe(true);
+  });
+
+  it("require_close_evidence 未指定時は false として扱う", () => {
+    const parsed = ConfigSchema.parse(validConfig);
+
+    expect(parsed.require_close_evidence).toBe(false);
+  });
+});
+
 describe("TasksFileSchema", () => {
   it("[FR-CLI-011-AC1] acceptance_criteria 未指定の既存 task を空配列として受理する", () => {
     const data = {

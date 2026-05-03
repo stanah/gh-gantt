@@ -3,7 +3,12 @@ import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Config, Task } from "@gh-gantt/shared";
-import { computeStatusDateUpdates, normalizeTaskRoleLogin } from "@gh-gantt/shared";
+import {
+  computeStatusDateUpdates,
+  normalizeAcceptanceCriteria,
+  normalizeTaskRoleLogin,
+  serializeTaskCloseEvidenceBody,
+} from "@gh-gantt/shared";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -23,6 +28,7 @@ export interface TaskUpdateOptions {
   requireReview?: boolean;
   approveReview?: string;
   clearReviewApproval?: boolean;
+  evidence?: string;
   milestone?: string;
   label?: string;
   removeLabel?: string;
@@ -48,6 +54,10 @@ export function applyTaskUpdate(
 
   if (opts.state && opts.state !== "open" && opts.state !== "closed") {
     return { task, error: `Invalid state: "${opts.state}". Must be "open" or "closed".` };
+  }
+
+  if (opts.evidence !== undefined && opts.state !== "closed") {
+    return { task, error: "--evidence can only be used when closing a task." };
   }
 
   if (opts.startDate && opts.startDate !== "none" && !DATE_RE.test(opts.startDate)) {
@@ -210,6 +220,23 @@ export function applyTaskUpdate(
     if (reviewError) {
       return { task, error: reviewError };
     }
+
+    const acceptanceCriteriaError = validateTaskCloseAcceptanceCriteria(updated);
+    if (acceptanceCriteriaError) {
+      return { task, error: acceptanceCriteriaError };
+    }
+
+    const evidence = opts.evidence?.trim() ?? "";
+    if (config.require_close_evidence === true && evidence.length === 0) {
+      return { task, error: 'Close evidence is required. Provide --evidence "<summary>".' };
+    }
+    if (evidence.length > 0) {
+      updated.body = serializeTaskCloseEvidenceBody(
+        updated.body,
+        evidence,
+        new Date().toISOString(),
+      );
+    }
   }
 
   updated.updated_at = new Date().toISOString();
@@ -261,6 +288,18 @@ export function validateTaskCloseReview(task: Task, config: Config): string | un
     return `Review must be approved by assigned reviewer "${task.reviewer}".`;
   }
   return undefined;
+}
+
+export function validateTaskCloseAcceptanceCriteria(task: Task): string | undefined {
+  const unchecked = normalizeAcceptanceCriteria(task.acceptance_criteria).filter(
+    (criterion) => !criterion.checked,
+  );
+  if (unchecked.length === 0) {
+    return undefined;
+  }
+  return `Acceptance criteria must be checked before closing: ${unchecked
+    .map((criterion) => criterion.description)
+    .join(", ")}`;
 }
 
 export interface BulkFilterOptions {
@@ -346,6 +385,7 @@ export function createTaskUpdateCommand(): Command {
           requireReview: opts.requireReview,
           approveReview: opts.approveReview,
           clearReviewApproval: opts.clearReviewApproval,
+          evidence: undefined,
           milestone: opts.milestone,
           label: opts.label,
           removeLabel: opts.removeLabel,
