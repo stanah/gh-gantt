@@ -119,6 +119,11 @@ function makeMockGql(handlers?: Partial<Record<string, (query: string, vars?: an
         return handlers["updateProjectV2ItemFieldValue"](query, vars);
       return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
     }
+    if (query.includes("clearProjectV2ItemFieldValue")) {
+      if (handlers?.["clearProjectV2ItemFieldValue"])
+        return handlers["clearProjectV2ItemFieldValue"](query, vars);
+      return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+    }
     if (query.includes("addSubIssue")) {
       if (handlers?.["addSubIssue"]) return handlers["addSubIssue"](query, vars);
       return { addSubIssue: { issue: { id: "ISSUE_1" } } };
@@ -1310,6 +1315,53 @@ describe("executePush", () => {
         expect.objectContaining({
           fieldId: "FIELD_ESTIMATE",
           value: { number: 13 },
+        }),
+      );
+    });
+
+    it("[FR-CLI-015-AC3] estimate_hours が削除された場合は number custom field を clear する", async () => {
+      const clearedFields: any[] = [];
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: {},
+      });
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: { estimate_hours: 13 },
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { estimate_hours: "FIELD_ESTIMATE" },
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const mockGql = makeMockGql({
+        clearProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          clearedFields.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      expect(clearedFields).toContainEqual(
+        expect.objectContaining({
+          fieldId: "FIELD_ESTIMATE",
         }),
       );
     });

@@ -647,7 +647,7 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
 
       expect(taskSizeCheck?.status).toBe("WARN");
       expect(taskSizeCheck?.details).toEqual([
-        expect.stringContaining("gh-gantt decompose で分解してください"),
+        expect.stringContaining("gh-gantt-decompose で分解してください"),
       ]);
     });
   });

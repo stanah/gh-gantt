@@ -33,6 +33,7 @@ import {
   updateIssueIssueType,
   setIssueState,
   updateProjectItemField,
+  clearProjectItemField,
   createGithubMilestone,
   addBlockedByIssue,
   removeBlockedByIssue,
@@ -983,16 +984,17 @@ function buildEstimateHoursFieldUpdate(
   task: Task,
 ): Promise<unknown> | null {
   const estimateHoursField = fm.estimate_hours ?? DEFAULT_ESTIMATE_HOURS_FIELD;
-  if (!syncState.field_ids[estimateHoursField]) return null;
+  const fieldId = syncState.field_ids[estimateHoursField];
+  if (!fieldId) return null;
   const estimateHours = parseEstimateHours(task.custom_fields[estimateHoursField]);
-  if (estimateHours === null) return null;
-  return updateProjectItemField(
-    gql,
-    syncState.project_node_id,
-    projectItemId,
-    syncState.field_ids[estimateHoursField],
-    {
-      number: estimateHours,
-    },
-  );
+  if (estimateHours === null) {
+    const previousEstimateHours = parseEstimateHours(
+      syncState.snapshots[task.id]?.syncFields?.custom_fields[estimateHoursField],
+    );
+    if (previousEstimateHours === null) return null;
+    return clearProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId);
+  }
+  return updateProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId, {
+    number: estimateHours,
+  });
 }

@@ -279,7 +279,7 @@ export function createCreateCommand(): Command {
       const taskSizeExcess = getTaskSizeExcess(task, config);
       if (taskSizeExcess) {
         console.warn(
-          `警告: タスク見積もり ${taskSizeExcess.estimate_hours}h は閾値 ${taskSizeExcess.max_task_size_hours}h を超えています。gh-gantt decompose で分解してください。`,
+          `警告: タスク見積もり ${taskSizeExcess.estimate_hours}h は閾値 ${taskSizeExcess.max_task_size_hours}h を超えています。gh-gantt-decompose で分解してください。`,
         );
       }
 

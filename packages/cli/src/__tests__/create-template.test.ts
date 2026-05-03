@@ -202,7 +202,7 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
       task: { title: "大きい task", custom_fields: { Estimate: 13 } },
     });
     expect(warnSpy).toHaveBeenCalledWith(
-      "警告: タスク見積もり 13h は閾値 8h を超えています。gh-gantt decompose で分解してください。",
+      "警告: タスク見積もり 13h は閾値 8h を超えています。gh-gantt-decompose で分解してください。",
     );
     expect(errorSpy).not.toHaveBeenCalled();
   });

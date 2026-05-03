@@ -385,7 +385,7 @@ function checkOversizedTasks(tasks: Task[], config: Config): CheckResult {
       const excess = getTaskSizeExcess(task, config);
       if (!excess) return [];
       return [
-        `${task.id}: 見積もり ${excess.estimate_hours}h が閾値 ${excess.max_task_size_hours}h を超えています。gh-gantt decompose で分解してください`,
+        `${task.id}: 見積もり ${excess.estimate_hours}h が閾値 ${excess.max_task_size_hours}h を超えています。gh-gantt-decompose で分解してください`,
       ];
     });
 

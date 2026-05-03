@@ -63,6 +63,16 @@ const UPDATE_PROJECT_ITEM_FIELD = `
   }
 `;
 
+const CLEAR_PROJECT_ITEM_FIELD = `
+  mutation($projectId: ID!, $itemId: ID!, $fieldId: ID!) {
+    clearProjectV2ItemFieldValue(
+      input: { projectId: $projectId, itemId: $itemId, fieldId: $fieldId }
+    ) {
+      projectV2Item { id }
+    }
+  }
+`;
+
 export async function updateIssue(
   gql: typeof graphql,
   issueNodeId: string,
@@ -230,6 +240,19 @@ export async function updateProjectItemField(
     itemId,
     fieldId,
     value,
+  });
+}
+
+export async function clearProjectItemField(
+  gql: typeof graphql,
+  projectId: string,
+  itemId: string,
+  fieldId: string,
+): Promise<void> {
+  await gql(CLEAR_PROJECT_ITEM_FIELD, {
+    projectId,
+    itemId,
+    fieldId,
   });
 }
 
