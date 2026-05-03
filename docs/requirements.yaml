@@ -531,6 +531,13 @@ areas:
             status: covered
             tests:
               - tests/workflow/requirements-coverage.test.ts
+          - id: NFR-STABILITY-006-AC2
+            description: |
+              要件網羅レポートは生成時刻などの非決定的な値を含まず、
+              Living Documentation の原則に従って手編集ではなく再生成で更新される
+            status: covered
+            tests:
+              - tests/workflow/requirements-coverage.test.ts
       - id: NFR-STABILITY-007
         summary: ローカル品質ゲートの作業ディレクトリ分離
         acceptance_criteria:
@@ -541,10 +548,3 @@ areas:
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts
-          - id: NFR-STABILITY-006-AC2
-            description: |
-              要件網羅レポートは生成時刻などの非決定的な値を含まず、
-              Living Documentation の原則に従って手編集ではなく再生成で更新される
-            status: covered
-            tests:
-              - tests/workflow/requirements-coverage.test.ts
