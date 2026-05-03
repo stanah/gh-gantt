@@ -711,7 +711,13 @@ export async function executePush(
     }
   }
 
-  const freshUpdatedAt = await fetchFreshUpdatedAt(gql, owner, repo, tasksFile, pushedTaskIds);
+  const freshIssueMetadata = await fetchFreshIssueMetadata(
+    gql,
+    owner,
+    repo,
+    tasksFile,
+    pushedTaskIds,
+  );
 
   // Update snapshots — only for tasks that were actually pushed
   const newSnapshots: SyncState["snapshots"] = { ...syncState.snapshots };
@@ -726,6 +732,12 @@ export async function executePush(
     const task = tasksFile.tasks.find((t) => t.id === id);
     if (task) {
       const existing = newSnapshots[id];
+      const freshMetadata = freshIssueMetadata.get(id);
+      if (freshMetadata) {
+        task.updated_at = freshMetadata.updatedAt;
+        task.state_reason = freshMetadata.stateReason;
+        task.closed_at = freshMetadata.closedAt;
+      }
       let syncFields = extractSyncFields(task);
 
       const issueTypeFailure = failedIssueTypes.get(id);
@@ -737,7 +749,7 @@ export async function executePush(
             newSnapshots[id] = {
               ...existing,
               synced_at: new Date().toISOString(),
-              updated_at: freshUpdatedAt.get(id) ?? existing.updated_at,
+              updated_at: freshMetadata?.updatedAt ?? existing.updated_at,
             };
           } else {
             delete newSnapshots[id];
@@ -769,7 +781,7 @@ export async function executePush(
         hash: snapshotHash,
         synced_at: new Date().toISOString(),
         syncFields,
-        updated_at: freshUpdatedAt.get(id) ?? existing?.updated_at,
+        updated_at: freshMetadata?.updatedAt ?? existing?.updated_at,
         remoteHash: snapshotHash,
       };
     }
@@ -813,13 +825,19 @@ function resolvePriorityOptionId(
 
 const BATCH_SIZE = 100;
 
-async function fetchBatchUpdatedAt(
+interface FreshIssueMetadata {
+  updatedAt: string;
+  stateReason: string | null;
+  closedAt: string | null;
+}
+
+async function fetchBatchIssueMetadata(
   gql: typeof graphql,
   owner: string,
   repo: string,
   issueNumbers: number[],
-): Promise<Map<number, string>> {
-  const result = new Map<number, string>();
+): Promise<Map<number, FreshIssueMetadata>> {
+  const result = new Map<number, FreshIssueMetadata>();
   if (issueNumbers.length === 0) return result;
 
   for (let i = 0; i < issueNumbers.length; i += BATCH_SIZE) {
@@ -827,12 +845,24 @@ async function fetchBatchUpdatedAt(
     try {
       const query = buildIssueUpdatedAtQuery(owner, repo, batch);
       const data = await gql<{
-        repository: Record<string, { number: number; updatedAt: string } | null>;
+        repository: Record<
+          string,
+          {
+            number: number;
+            updatedAt: string;
+            stateReason?: string | null;
+            closedAt?: string | null;
+          } | null
+        >;
       }>(query);
       for (let j = 0; j < batch.length; j++) {
         const issue = data.repository[`i${j}`];
         if (issue?.updatedAt) {
-          result.set(issue.number, issue.updatedAt);
+          result.set(issue.number, {
+            updatedAt: issue.updatedAt,
+            stateReason: issue.stateReason ?? null,
+            closedAt: issue.closedAt ?? null,
+          });
         }
       }
     } catch (err) {
@@ -844,14 +874,24 @@ async function fetchBatchUpdatedAt(
   return result;
 }
 
-async function fetchFreshUpdatedAt(
+async function fetchBatchUpdatedAt(
+  gql: typeof graphql,
+  owner: string,
+  repo: string,
+  issueNumbers: number[],
+): Promise<Map<number, string>> {
+  const metadata = await fetchBatchIssueMetadata(gql, owner, repo, issueNumbers);
+  return new Map([...metadata].map(([number, issue]) => [number, issue.updatedAt]));
+}
+
+async function fetchFreshIssueMetadata(
   gql: typeof graphql,
   owner: string,
   repo: string,
   tasksFile: TasksFile,
   pushedTaskIds: Set<string>,
-): Promise<Map<string, string>> {
-  const result = new Map<string, string>();
+): Promise<Map<string, FreshIssueMetadata>> {
+  const result = new Map<string, FreshIssueMetadata>();
   const taskById = new Map(tasksFile.tasks.map((t) => [t.id, t]));
   const ids = [...pushedTaskIds].filter((id) => !isDraftTask(id) && !isMilestoneSyntheticTask(id));
   const numberToId = new Map<number, string>();
@@ -860,10 +900,10 @@ async function fetchFreshUpdatedAt(
     if (task?.github_issue) numberToId.set(task.github_issue, id);
   }
 
-  const updatedAtByNumber = await fetchBatchUpdatedAt(gql, owner, repo, [...numberToId.keys()]);
-  for (const [number, ts] of updatedAtByNumber) {
+  const metadataByNumber = await fetchBatchIssueMetadata(gql, owner, repo, [...numberToId.keys()]);
+  for (const [number, metadata] of metadataByNumber) {
     const id = numberToId.get(number);
-    if (id) result.set(id, ts);
+    if (id) result.set(id, metadata);
   }
   return result;
 }

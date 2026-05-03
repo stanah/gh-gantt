@@ -67,7 +67,12 @@ function makeBatchIssueResponse(
   if (handler) return handler("batch", undefined);
   const repo: Record<string, any> = {};
   issueNumbers.forEach((n, i) => {
-    repo[`i${i}`] = { number: n, updatedAt: "2026-01-01T00:00:00Z" };
+    repo[`i${i}`] = {
+      number: n,
+      updatedAt: "2026-01-01T00:00:00Z",
+      stateReason: null,
+      closedAt: null,
+    };
   });
   return { repository: repo };
 }
@@ -493,6 +498,79 @@ describe("executePush", () => {
       );
 
       expect(newSyncState.snapshots["o/r#1"]?.updated_at).toBe("2026-04-01T00:00:00Z");
+    });
+
+    it("[Issue #213] close push 後に state_reason と closed_at をローカルへ反映する", async () => {
+      const oldUpdatedAt = "2026-01-01T00:00:00Z";
+      const freshUpdatedAt = "2026-05-03T17:48:29Z";
+      const closedAt = "2026-05-03T17:48:29Z";
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        state: "closed",
+        state_reason: null,
+        closed_at: null,
+        updated_at: oldUpdatedAt,
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(makeTask("o/r#1", { github_issue: 1, updated_at: oldUpdatedAt })),
+            synced_at: "",
+            syncFields: extractSyncFields(
+              makeTask("o/r#1", { github_issue: 1, updated_at: oldUpdatedAt }),
+            ),
+            updated_at: oldUpdatedAt,
+          },
+        },
+      };
+
+      let batchCallCount = 0;
+      const mockGql = makeMockGql({
+        batchUpdatedAt: () => {
+          batchCallCount++;
+          if (batchCallCount === 1) {
+            return {
+              repository: {
+                i0: { number: 1, updatedAt: oldUpdatedAt, stateReason: null, closedAt: null },
+              },
+            };
+          }
+          return {
+            repository: {
+              i0: {
+                number: 1,
+                updatedAt: freshUpdatedAt,
+                stateReason: "COMPLETED",
+                closedAt,
+              },
+            },
+          };
+        },
+      });
+
+      const { tasksFile: newTasksFile, syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      expect(newTasksFile.tasks[0]?.state_reason).toBe("COMPLETED");
+      expect(newTasksFile.tasks[0]?.closed_at).toBe(closedAt);
+      expect(newTasksFile.tasks[0]?.updated_at).toBe(freshUpdatedAt);
+      expect(newSyncState.snapshots["o/r#1"]?.updated_at).toBe(freshUpdatedAt);
+      expect(newSyncState.snapshots["o/r#1"]?.syncFields?.state).toBe("closed");
+      expect(computeLocalDiff(newTasksFile.tasks, newSyncState)).toEqual([]);
     });
 
     it("field updates skipped when project_item_id is missing (Fix 1-3)", async () => {

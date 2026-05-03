@@ -125,7 +125,7 @@ export function buildIssueUpdatedAtQuery(
   issueNumbers: number[],
 ): string {
   const fields = issueNumbers
-    .map((n, i) => `i${i}: issue(number: ${n}) { number updatedAt }`)
+    .map((n, i) => `i${i}: issue(number: ${n}) { number updatedAt stateReason closedAt }`)
     .join("\n      ");
   return `query {
     repository(owner: "${owner}", name: "${repo}") {
