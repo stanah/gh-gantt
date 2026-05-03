@@ -5,7 +5,7 @@ const TASK_CLOSE_EVIDENCE_BLOCK_RE = new RegExp(
   `\\n*${escapeRegExp(TASK_CLOSE_EVIDENCE_START_MARKER)}[\\s\\S]*?${escapeRegExp(
     TASK_CLOSE_EVIDENCE_END_MARKER,
   )}\\n*`,
-  "m",
+  "im",
 );
 
 function escapeRegExp(value: string): string {
@@ -40,18 +40,20 @@ export function parseTaskCloseEvidenceBody(body: string | null): {
   let recordedAt: string | null = null;
   let collectingEvidence = false;
   const evidenceLines: string[] = [];
+  const endMarker = TASK_CLOSE_EVIDENCE_END_MARKER.toLowerCase();
   for (const line of match[0].split(/\r?\n/)) {
-    if (line.trim() === TASK_CLOSE_EVIDENCE_END_MARKER) break;
+    const trimmedLine = line.trim();
+    if (trimmedLine.toLowerCase() === endMarker) break;
     if (collectingEvidence) {
       evidenceLines.push(line);
       continue;
     }
-    const recordedAtLine = line.match(/^Recorded-At:\s*(.*)$/);
+    const recordedAtLine = line.match(/^Recorded-At:\s*(.*)$/i);
     if (recordedAtLine) {
       recordedAt = recordedAtLine[1].trim() || null;
       continue;
     }
-    if (line.trim() === "Evidence:") {
+    if (/^Evidence:\s*$/i.test(trimmedLine)) {
       collectingEvidence = true;
     }
   }
