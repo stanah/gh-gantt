@@ -276,13 +276,26 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
       >
         {/* Row hover backgrounds */}
         {flatList.map((node, i) => {
+          const nodeKey = node.renderKey ?? node.task.id;
           const y = i * ROW_HEIGHT;
+          if (node.kind === "group") {
+            return (
+              <rect
+                key={`group-${nodeKey}`}
+                x={0}
+                y={y}
+                width={totalWidth}
+                height={ROW_HEIGHT}
+                fill="var(--color-bg)"
+              />
+            );
+          }
           const isHovered = hoveredTaskId === node.task.id;
           const isSelected = selectedTaskId === node.task.id;
           const isUnscheduled = !node.task.start_date && !node.task.end_date && !node.task.date;
           return (
             <rect
-              key={`hover-${node.task.id}`}
+              key={`hover-${nodeKey}`}
               x={0}
               y={y}
               width={totalWidth}
@@ -314,6 +327,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           );
         })}
         {flatList.map((node, i) => {
+          if (node.kind === "group") return null;
+          const nodeKey = node.renderKey ?? node.task.id;
           const rawTask = node.task;
           // Apply drag preview to override dates during drag
           const task =
@@ -337,7 +352,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           if (display === "summary") {
             return (
               <GanttSummaryBar
-                key={task.id}
+                key={nodeKey}
                 task={task}
                 allTasks={tasks}
                 taskType={taskType}
@@ -356,7 +371,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           if (display === "milestone") {
             return (
               <GanttMilestone
-                key={task.id}
+                key={nodeKey}
                 task={task}
                 taskType={taskType}
                 xScale={xScale}
@@ -375,7 +390,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
           return (
             <GanttBar
-              key={task.id}
+              key={nodeKey}
               task={task}
               taskType={taskType}
               xScale={xScale}

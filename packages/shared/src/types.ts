@@ -119,6 +119,10 @@ export interface SprintConfig {
   color: string;
 }
 
+export interface GroupingConfig {
+  label_prefix: string;
+}
+
 export interface TaskTemplates {
   path: string;
   mapping?: Record<string, string>;
@@ -135,6 +139,7 @@ export interface Config {
   type_hierarchy: Record<string, string[]>;
   statuses: Statuses;
   gantt: GanttConfig;
+  grouping?: GroupingConfig;
   sprints?: SprintConfig[];
   task_templates?: TaskTemplates;
 }

@@ -100,6 +100,10 @@ export const SprintSchema: z.ZodType<SprintConfig> = z.object({
   color: z.string(),
 });
 
+const GroupingSchema = z.object({
+  label_prefix: z.string().trim().min(1),
+});
+
 const TaskTemplatesSchema = z.object({
   path: z.string().trim().min(1),
   mapping: z.record(z.string().trim().min(1)).optional(),
@@ -140,6 +144,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
       overdue: z.string(),
     }),
   }),
+  grouping: GroupingSchema.optional(),
   sprints: z.array(SprintSchema).optional(),
   task_templates: TaskTemplatesSchema.optional(),
 });

@@ -42,6 +42,9 @@ interface ToolbarProps {
   allLabels?: string[];
   selectedLabels?: string[];
   onSelectLabels?: (values: string[]) => void;
+  labelGroupingPrefix?: string;
+  labelGroupingEnabled?: boolean;
+  onToggleLabelGrouping?: () => void;
   searchQuery: string;
   onSearchChange: (query: string) => void;
   taskSortMode: TaskSortMode;
@@ -107,6 +110,9 @@ export function Toolbar(props: ToolbarProps) {
         allLabels={props.allLabels}
         selectedLabels={props.selectedLabels}
         onSelectLabels={props.onSelectLabels}
+        labelGroupingPrefix={props.labelGroupingPrefix}
+        labelGroupingEnabled={props.labelGroupingEnabled}
+        onToggleLabelGrouping={props.onToggleLabelGrouping}
       />
       <SearchBox
         searchQuery={props.searchQuery}

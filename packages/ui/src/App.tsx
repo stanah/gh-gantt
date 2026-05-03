@@ -71,6 +71,7 @@ export function App() {
   const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
   const [taskSortMode, setTaskSortMode] = useState<TaskSortMode>("default");
+  const [labelGroupingEnabled, setLabelGroupingEnabled] = useState(false);
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
   const ganttRef = useRef<GanttChartHandle>(null);
   const hasScrolledToToday = useRef(false);
@@ -151,6 +152,14 @@ export function App() {
     setSearchQuery,
   } = useTaskFilter(tasks);
   const priorityFieldName = config?.sync?.field_mapping?.priority;
+  const labelGroupingPrefix = config?.grouping?.label_prefix;
+  const labelGrouping = useMemo(
+    () => ({
+      enabled: labelGroupingEnabled,
+      labelPrefix: labelGroupingPrefix,
+    }),
+    [labelGroupingEnabled, labelGroupingPrefix],
+  );
   const {
     flatList,
     collapsed,
@@ -164,13 +173,22 @@ export function App() {
     selectedLabels,
     searchQuery,
     taskSortMode,
+    labelGrouping,
   });
 
-  const visibleTaskIds = useMemo(() => flatList.map((node) => node.task.id), [flatList]);
+  const visibleTaskNodes = useMemo(
+    () => flatList.filter((node) => node.kind !== "group"),
+    [flatList],
+  );
+
+  const visibleTaskIds = useMemo(
+    () => visibleTaskNodes.map((node) => node.task.id),
+    [visibleTaskNodes],
+  );
 
   const visibleTaskMap = useMemo(
-    () => new Map(flatList.map((node) => [node.task.id, node])),
-    [flatList],
+    () => new Map(visibleTaskNodes.map((node) => [node.task.id, node])),
+    [visibleTaskNodes],
   );
 
   const toggleSelectedCollapse = useCallback(
@@ -571,6 +589,9 @@ export function App() {
             allLabels={allLabels}
             selectedLabels={selectedLabels}
             onSelectLabels={setSelectedLabels}
+            labelGroupingPrefix={labelGroupingPrefix}
+            labelGroupingEnabled={labelGroupingEnabled}
+            onToggleLabelGrouping={() => setLabelGroupingEnabled((prev) => !prev)}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             taskSortMode={taskSortMode}
