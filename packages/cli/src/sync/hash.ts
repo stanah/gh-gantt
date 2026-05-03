@@ -38,6 +38,15 @@ export function extractSyncFields(task: Task): SyncFields {
   if (task.reviewer != null) {
     fields.reviewer = task.reviewer;
   }
+  if (task.require_review === true) {
+    fields.require_review = true;
+  }
+  if (task.review_approved_by != null) {
+    fields.review_approved_by = task.review_approved_by;
+  }
+  if (task.review_approved_at != null) {
+    fields.review_approved_at = task.review_approved_at;
+  }
   return fields;
 }
 

@@ -9,6 +9,7 @@ import { createTaskListCommand } from "./commands/task/list.js";
 import { createTaskShowCommand } from "./commands/task/show.js";
 import { createTaskUpdateCommand } from "./commands/task/update.js";
 import { createTaskLinkCommand } from "./commands/task/link.js";
+import { createTaskCloseCommand } from "./commands/task/close.js";
 import { conflictsCommand } from "./commands/conflicts.js";
 import { resolveCommand } from "./commands/resolve.js";
 import { doctorCommand } from "./commands/doctor.js";
@@ -39,6 +40,7 @@ export function buildProgram(): Command {
   program.addCommand(createTaskShowCommand());
   program.addCommand(createTaskUpdateCommand());
   program.addCommand(createTaskLinkCommand());
+  program.addCommand(createTaskCloseCommand());
 
   // Backward-compat: `task` subcommand group
   const taskAlias = new Command("task").description(
@@ -48,6 +50,7 @@ export function buildProgram(): Command {
   taskAlias.addCommand(createTaskShowCommand());
   taskAlias.addCommand(createTaskUpdateCommand());
   taskAlias.addCommand(createTaskLinkCommand());
+  taskAlias.addCommand(createTaskCloseCommand());
   program.addCommand(taskAlias);
 
   return program;

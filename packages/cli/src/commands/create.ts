@@ -124,6 +124,7 @@ export function createCreateCommand(): Command {
     .option("--start-date <date>", "Start date (YYYY-MM-DD)")
     .option("--end-date <date>", "End date (YYYY-MM-DD)")
     .option("--parent <id>", "Parent task ID")
+    .option("--require-review", "Require reviewer approval before close")
     .option("--json", "Output as JSON")
     .action(async (opts) => {
       const projectRoot = process.cwd();
@@ -247,6 +248,9 @@ export function createCreateCommand(): Command {
         acceptance_criteria_slot: body?.includes(ACCEPTANCE_CRITERIA_START_MARKER) === true,
         implementer: null,
         reviewer: null,
+        require_review: opts.requireReview === true,
+        review_approved_by: null,
+        review_approved_at: null,
         custom_fields: {},
         start_date: startDate,
         end_date: endDate,

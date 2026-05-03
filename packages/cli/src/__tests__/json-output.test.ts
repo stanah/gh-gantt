@@ -18,6 +18,9 @@ const mockTask = {
   acceptance_criteria: [{ description: "期待する出力を表示できる", checked: true }],
   implementer: "alice",
   reviewer: "bob",
+  require_review: true,
+  review_approved_by: "bob",
+  review_approved_at: "2026-05-03T21:00:00.000Z",
   state: "open",
   state_reason: null,
   assignees: [],
@@ -123,7 +126,7 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     vi.restoreAllMocks();
   });
 
-  it("[FR-CLI-011-AC3] [FR-CLI-013-AC1] outputs task as JSON object", async () => {
+  it("[FR-CLI-011-AC3] [FR-CLI-013-AC1] [FR-CLI-014-AC1] outputs task as JSON object", async () => {
     const cmd = createTaskShowCommand();
     await cmd.parseAsync(["show", "1", "--json"], { from: "user" });
 
@@ -136,6 +139,9 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     ]);
     expect(parsed.implementer).toBe("alice");
     expect(parsed.reviewer).toBe("bob");
+    expect(parsed.require_review).toBe(true);
+    expect(parsed.review_approved_by).toBe("bob");
+    expect(parsed.review_approved_at).toBe("2026-05-03T21:00:00.000Z");
   });
 
   it("[FR-CLI-011-AC3] outputs text format without --json", async () => {

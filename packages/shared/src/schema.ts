@@ -95,6 +95,9 @@ const TaskSchemaObject = z.object({
   acceptance_criteria_slot: z.boolean().default(false),
   implementer: z.string().nullable().default(null),
   reviewer: z.string().nullable().default(null),
+  require_review: z.boolean().default(false),
+  review_approved_by: z.string().nullable().default(null),
+  review_approved_at: z.string().nullable().default(null),
   custom_fields: z.record(z.unknown()),
   start_date: z.string().nullable(),
   end_date: z.string().nullable(),
@@ -163,6 +166,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
   sprints: z.array(SprintSchema).optional(),
   task_templates: TaskTemplatesSchema.optional(),
   doctor: DoctorConfigSchema.optional(),
+  require_review_for_types: z.array(z.string().trim().min(1)).default([]),
 });
 
 export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
@@ -206,6 +210,9 @@ export const SyncFieldsSchema: z.ZodType<SyncFields> = z.object({
   acceptance_criteria_slot: z.boolean().optional(),
   implementer: z.string().nullable().optional(),
   reviewer: z.string().nullable().optional(),
+  require_review: z.boolean().optional(),
+  review_approved_by: z.string().nullable().optional(),
+  review_approved_at: z.string().nullable().optional(),
   state: z.enum(["open", "closed"]),
   type: z.string(),
   assignees: z.array(z.string()),

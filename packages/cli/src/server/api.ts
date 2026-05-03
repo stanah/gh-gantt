@@ -4,6 +4,7 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { CommentsStore } from "../store/comments.js";
 import { setParent, removeParent } from "../commands/task/link.js";
+import { validateTaskCloseReview } from "../commands/task/update.js";
 import { hashTask } from "../sync/hash.js";
 import { computeLocalDiff, formatDiffPreview } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
@@ -113,6 +114,9 @@ export function createApiRouter(projectRoot: string): Router {
         acceptance_criteria_slot: false,
         implementer: null,
         reviewer: null,
+        require_review: false,
+        review_approved_by: null,
+        review_approved_at: null,
         custom_fields: {},
         start_date: start_date ?? null,
         end_date: end_date ?? null,
@@ -161,6 +165,9 @@ export function createApiRouter(projectRoot: string): Router {
         "assignees",
         "implementer",
         "reviewer",
+        "require_review",
+        "review_approved_by",
+        "review_approved_at",
         "labels",
         "milestone",
         "custom_fields",
@@ -198,6 +205,20 @@ export function createApiRouter(projectRoot: string): Router {
           return;
         }
       }
+      if ("require_review" in updates && typeof updates.require_review !== "boolean") {
+        res.status(400).json({ error: "require_review must be a boolean" });
+        return;
+      }
+      for (const reviewField of ["review_approved_by", "review_approved_at"] as const) {
+        if (
+          reviewField in updates &&
+          updates[reviewField] !== null &&
+          typeof updates[reviewField] !== "string"
+        ) {
+          res.status(400).json({ error: `${reviewField} must be a string or null` });
+          return;
+        }
+      }
 
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
@@ -214,6 +235,13 @@ export function createApiRouter(projectRoot: string): Router {
       ) {
         res.status(400).json({ error: "reviewer must be different from implementer" });
         return;
+      }
+      if (updates.state === "closed") {
+        const reviewError = validateTaskCloseReview(updatedTask, config);
+        if (reviewError) {
+          res.status(400).json({ error: reviewError });
+          return;
+        }
       }
 
       if (safeUpdates.type && safeUpdates.type !== oldTask.type) {

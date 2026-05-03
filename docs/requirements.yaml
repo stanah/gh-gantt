@@ -356,6 +356,33 @@ areas:
               - packages/cli/src/__tests__/push-executor.test.ts
               - packages/cli/src/__tests__/three-way-merge.test.ts
               - packages/shared/src/__tests__/task-roles.test.ts
+      - id: FR-CLI-014
+        summary: レビュー必須フラグ
+        acceptance_criteria:
+          - id: FR-CLI-014-AC1
+            description: require_review_for_types と Task.require_review / review_approved_* を保存形式と JSON 出力で扱える
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/json-output.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-CLI-014-AC2
+            description: create/update コマンドで task 単位の review requirement と reviewer approval を設定できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-template.test.ts
+              - packages/cli/src/__tests__/task-commands.test.ts
+          - id: FR-CLI-014-AC3
+            description: review required な task の close は reviewer approval を要求し、同期ハッシュ・3-way merge・GitHub Issue body 往復で維持できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-structure.test.ts
+              - packages/cli/src/__tests__/diff.test.ts
+              - packages/cli/src/__tests__/hash.test.ts
+              - packages/cli/src/__tests__/mapper.test.ts
+              - packages/cli/src/__tests__/push-executor.test.ts
+              - packages/cli/src/__tests__/task-commands.test.ts
+              - packages/cli/src/__tests__/three-way-merge.test.ts
+              - packages/shared/src/__tests__/task-review.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層
