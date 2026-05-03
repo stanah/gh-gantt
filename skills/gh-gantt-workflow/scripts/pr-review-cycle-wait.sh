@@ -217,7 +217,7 @@ check_counts() {
   local number="$1"
   gh pr checks "$number" \
     --json name,bucket \
-    --jq '[length, ([.[] | select(.bucket == "pending")] | length), ([.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending")] | length)] | @tsv' \
+    --jq '[length, ([.[] | select(.bucket == "pending")] | length), ([.[] | select(.bucket != "pass" and .bucket != "skipping" and .bucket != "pending")] | length), ([.[] | select((.name | ascii_downcase | contains("coderabbit")) and .bucket == "pass")] | length)] | @tsv' \
     2>/dev/null
 }
 
@@ -243,10 +243,10 @@ collect_snapshot() {
 
   IFS=$'\t' read -r number_value url state is_draft head_sha review_decision updated_at <<<"$metadata"
 
-  local unresolved_count checks_seen pending_checks blocking_checks counts check_total activity_state latest_activity rate_limit
+  local unresolved_count checks_seen pending_checks blocking_checks counts check_total coderabbit_pass activity_state latest_activity rate_limit
   unresolved_count=$(count_unresolved_threads "$number" || printf 'UNKNOWN\n')
-  counts=$(check_counts "$number" || printf 'UNKNOWN\tUNKNOWN\tUNKNOWN\n')
-  IFS=$'\t' read -r check_total pending_checks blocking_checks <<<"$counts"
+  counts=$(check_counts "$number" || printf 'UNKNOWN\tUNKNOWN\tUNKNOWN\tUNKNOWN\n')
+  IFS=$'\t' read -r check_total pending_checks blocking_checks coderabbit_pass <<<"$counts"
   if ! [[ "${check_total:-}" =~ ^[0-9]+$ ]]; then
     checks_seen="UNKNOWN"
   elif [ "$check_total" -eq 0 ]; then
@@ -260,9 +260,15 @@ collect_snapshot() {
   if ! [[ "${blocking_checks:-}" =~ ^[0-9]+$ ]]; then
     blocking_checks="UNKNOWN"
   fi
+  if ! [[ "${coderabbit_pass:-}" =~ ^[0-9]+$ ]]; then
+    coderabbit_pass=0
+  fi
   activity_state=$(collect_activity_state "$number" "$updated_at")
   latest_activity="${activity_state%%|*}"
   rate_limit="${activity_state#*|}"
+  if [ "$rate_limit" = "1" ] && [ "$coderabbit_pass" -gt 0 ]; then
+    rate_limit="0"
+  fi
 
   printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
     "$number_value" "$url" "$state" "$is_draft" "$head_sha" "$review_decision" \

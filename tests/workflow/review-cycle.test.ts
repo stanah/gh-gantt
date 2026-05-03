@@ -1,9 +1,13 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { tmpdir } from "node:os";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
 import { buildProgram } from "../../packages/cli/src/program.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
+const execFileAsync = promisify(execFile);
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");
@@ -33,6 +37,74 @@ function extractMarkdownSection(content: string, heading: string): string {
   expect(start).toBeGreaterThanOrEqual(0);
   const nextHeading = content.indexOf("\n## ", start + heading.length);
   return content.slice(start, nextHeading === -1 ? undefined : nextHeading);
+}
+
+async function runReviewCycleWithMockGh(
+  coderabbitPass: boolean,
+): Promise<{ stdout: string; stderr: string }> {
+  const tempDir = await mkdtemp(join(tmpdir(), "gh-gantt-review-cycle-"));
+  const mockGhPath = join(tempDir, "gh");
+  const mockGh = `#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" = "auth" ] && [ "$2" = "status" ]; then
+  exit 0
+fi
+
+if [ "$1" = "repo" ] && [ "$2" = "view" ]; then
+  printf 'stanah/gh-gantt\\n'
+  exit 0
+fi
+
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  printf '222\\thttps://github.com/stanah/gh-gantt/pull/222\\tOPEN\\tfalse\\thead-sha\\tNONE\\t2026-05-03T22:00:00Z\\n'
+  exit 0
+fi
+
+if [ "$1" = "pr" ] && [ "$2" = "checks" ]; then
+  if [ "\${MOCK_CODERABBIT_PASS:-0}" = "1" ]; then
+    printf '4\\t0\\t0\\t1\\n'
+  else
+    printf '4\\t0\\t0\\t0\\n'
+  fi
+  exit 0
+fi
+
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  args="$*"
+  if [[ "$args" == *"reviewThreads(first: 100"* ]]; then
+    printf '0\\tfalse\\t\\n'
+    exit 0
+  fi
+  if [[ "$args" == *"comments(last: 20)"* ]]; then
+    printf '2026-05-03T22:00:00Z\\tfalse\\n'
+    printf '2026-05-03T22:01:00Z\\ttrue\\n'
+    exit 0
+  fi
+fi
+
+printf 'unexpected gh invocation: %s\\n' "$*" >&2
+exit 1
+`;
+
+  try {
+    await writeFile(mockGhPath, mockGh);
+    await chmod(mockGhPath, 0o755);
+    return await execFileAsync(
+      "bash",
+      ["skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh", "--pr", "222", "--no-wait"],
+      {
+        cwd: repoRoot,
+        env: {
+          ...process.env,
+          MOCK_CODERABBIT_PASS: coderabbitPass ? "1" : "0",
+          PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+        },
+      },
+    );
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
 }
 
 describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow", () => {
@@ -79,6 +151,38 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("stable_samples=3");
     expect(script).toContain("timeout_seconds=900");
     expect(script).toContain("usage: $0 --pr <number>");
+  });
+
+  it("CodeRabbit status が成功済みなら rate-limit コメントだけで追対応扱いにしない", async () => {
+    const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+    const checkCounts = extractBetween(script, "check_counts() {", "\n}\n\ncollect_snapshot()");
+    const collectSnapshot = extractBetween(
+      script,
+      "collect_snapshot() {",
+      "\n}\n\nsnapshot_needs_followup()",
+    );
+
+    expect(checkCounts).toContain('contains("coderabbit")');
+    expect(checkCounts).toContain('.bucket == "pass"');
+    expect(collectSnapshot).toContain("coderabbit_pass");
+    expect(collectSnapshot).toContain('[ "$rate_limit" = "1" ] && [ "$coderabbit_pass" -gt 0 ]');
+    expect(collectSnapshot).toContain('rate_limit="0"');
+    expect(collectSnapshot).toContain("UNKNOWN\\tUNKNOWN\\tUNKNOWN\\tUNKNOWN");
+  });
+
+  it("mock gh で CodeRabbit pass 時だけ rate-limit コメントを解除する", async () => {
+    const passResult = await runReviewCycleWithMockGh(true);
+    expect(passResult.stdout).toContain("- active CodeRabbit rate limit: 0");
+
+    let failure: (Error & { code?: number; stdout?: string }) | undefined;
+    try {
+      await runReviewCycleWithMockGh(false);
+    } catch (error) {
+      failure = error as Error & { code?: number; stdout?: string };
+    }
+
+    expect(failure?.code).toBe(1);
+    expect(failure?.stdout).toContain("- active CodeRabbit rate limit: 1");
   });
 
   it("セッションをまたぐ入口として all-open sweep を固定する", async () => {
