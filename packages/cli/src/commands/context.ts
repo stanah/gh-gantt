@@ -64,7 +64,7 @@ export interface BlockedTaskSummary extends ContextTaskSummary {
     id: string;
     issue: number | null;
     title: string | null;
-    state: "open" | "closed" | "missing";
+    state: "open" | "missing";
   }>;
 }
 
@@ -123,7 +123,7 @@ export function buildContextSummary(input: BuildContextSummaryInput): ContextSum
   const recentDays = input.recentDays ?? DEFAULT_RECENT_DAYS;
   const generatedAt = now.toISOString();
   const taskMap = new Map(input.tasks.map((task) => [task.id, task]));
-  const openPullRequests = input.openPullRequests ?? [];
+  const openPullRequests = [...(input.openPullRequests ?? [])].sort(comparePullRequestUpdatedDesc);
   const warnings = [...(input.warnings ?? [])];
 
   const inProgressTasks = input.tasks
@@ -461,6 +461,20 @@ function compareTimestampDesc(a: string, b: string): number {
   if (!aValid) return 1;
   if (!bValid) return -1;
   return bTime - aTime;
+}
+
+function comparePullRequestUpdatedDesc(
+  a: OpenPullRequestSummary,
+  b: OpenPullRequestSummary,
+): number {
+  return compareNullableTimestampDesc(a.updated_at, b.updated_at);
+}
+
+function compareNullableTimestampDesc(a: string | null, b: string | null): number {
+  if (a === null && b === null) return 0;
+  if (a === null) return 1;
+  if (b === null) return -1;
+  return compareTimestampDesc(a, b);
 }
 
 function comparePriority(a: Task, b: Task, config: Config): number {

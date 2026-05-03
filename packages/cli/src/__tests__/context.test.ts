@@ -208,6 +208,46 @@ describe("[FR-CLI-008-AC1] context コマンドがプロジェクト文脈を復
       expect.objectContaining({ kind: "continue_task" }),
     );
   });
+
+  it("open PR は更新日時の降順で安定して推奨アクションに使う", () => {
+    const summary = buildContextSummary({
+      config: mockConfig,
+      tasks: [],
+      syncState: mockSyncState,
+      openPullRequests: [
+        {
+          number: 10,
+          title: "古い PR",
+          url: "https://github.com/owner/repo/pull/10",
+          head_ref_name: "feat/old",
+          updated_at: "2026-05-01T00:00:00Z",
+          closing_issues: [],
+        },
+        {
+          number: 20,
+          title: "新しい PR",
+          url: "https://github.com/owner/repo/pull/20",
+          head_ref_name: "feat/new",
+          updated_at: "2026-05-03T00:00:00Z",
+          closing_issues: [],
+        },
+        {
+          number: 30,
+          title: "更新日時なし PR",
+          url: "https://github.com/owner/repo/pull/30",
+          head_ref_name: "feat/null",
+          updated_at: null,
+          closing_issues: [],
+        },
+      ],
+      now: new Date("2026-05-03T00:00:00Z"),
+    });
+
+    expect(summary.open_pull_requests.map((pr) => pr.number)).toEqual([20, 10, 30]);
+    expect(summary.recommended_next_actions[0]).toEqual(
+      expect.objectContaining({ kind: "review_pr", pr_number: 20 }),
+    );
+  });
 });
 
 describe("[FR-CLI-008-AC2] context --json が機械可読な JSON を出力する", () => {
