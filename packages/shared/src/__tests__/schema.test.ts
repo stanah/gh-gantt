@@ -288,6 +288,7 @@ describe("TasksFileSchema", () => {
     };
     const parsed = TasksFileSchema.parse(data);
     expect(parsed.tasks[0].acceptance_criteria).toEqual([]);
+    expect(parsed.tasks[0].acceptance_criteria_slot).toBe(false);
   });
 
   it("[FR-CLI-011-AC1] acceptance_criteria を task の first-class フィールドとして受理する", () => {
@@ -304,6 +305,15 @@ describe("TasksFileSchema", () => {
     expect(parsed.tasks[0].acceptance_criteria).toEqual([
       { description: "期待する出力を表示できる", checked: false },
     ]);
+  });
+
+  it("[FR-CLI-012-AC2] acceptance_criteria_slot を task の同期メタデータとして受理する", () => {
+    const data = {
+      tasks: [{ ...validTask, acceptance_criteria_slot: true }],
+      cache: { comments: {}, reactions: {} },
+    };
+    const parsed = TasksFileSchema.parse(data);
+    expect(parsed.tasks[0].acceptance_criteria_slot).toBe(true);
   });
 
   it("should accept valid tasks file", () => {

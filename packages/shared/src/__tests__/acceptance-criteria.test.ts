@@ -60,4 +60,13 @@ describe("[FR-CLI-012-AC2] 空の受入基準スロット", () => {
     expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:start -->");
     expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:end -->");
   });
+
+  it("slot メタデータがある body は空の受入基準セクションを再生成する", () => {
+    const serialized = serializeAcceptanceCriteriaBody("説明文", [], { includeEmptyBlock: true });
+
+    expect(serialized).toContain("説明文");
+    expect(serialized).toContain("## 受入基準");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:start -->");
+    expect(serialized).toContain("<!-- gh-gantt:acceptance-criteria:end -->");
+  });
 });

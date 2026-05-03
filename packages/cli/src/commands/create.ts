@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { ConfigStore } from "../store/config.js";
@@ -25,7 +25,7 @@ export interface TaskTemplateValues {
 }
 
 export type TaskTemplatePathResolution =
-  | { ok: true; templatePath: string }
+  | { ok: true; templatePath: string; templateRoot: string; projectRoot: string }
   | { ok: false; message: string };
 
 function isPathInside(basePath: string, candidatePath: string): boolean {
@@ -62,7 +62,41 @@ export function resolveTaskTemplatePath(
     return { ok: false, message: "Template path must stay within task_templates.path." };
   }
 
-  return { ok: true, templatePath };
+  return { ok: true, templatePath, templateRoot, projectRoot: resolvedProjectRoot };
+}
+
+export async function resolveExistingTaskTemplatePath(
+  projectRoot: string,
+  taskTemplates: TaskTemplates | undefined,
+  templateName: string,
+): Promise<TaskTemplatePathResolution> {
+  const resolved = resolveTaskTemplatePath(projectRoot, taskTemplates, templateName);
+  if (!resolved.ok) {
+    return resolved;
+  }
+
+  let realProjectRoot: string;
+  let realTemplateRoot: string;
+  let realTemplatePath: string;
+  try {
+    [realProjectRoot, realTemplateRoot, realTemplatePath] = await Promise.all([
+      realpath(resolved.projectRoot),
+      realpath(resolved.templateRoot),
+      realpath(resolved.templatePath),
+    ]);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ok: false, message: `Failed to resolve template path: ${message}` };
+  }
+
+  if (!isPathInside(realProjectRoot, realTemplateRoot)) {
+    return { ok: false, message: "task_templates.path must stay within the project root." };
+  }
+  if (!isPathInside(realTemplateRoot, realTemplatePath)) {
+    return { ok: false, message: "Template path must stay within task_templates.path." };
+  }
+
+  return resolved;
 }
 
 export function renderTaskTemplate(template: string, values: TaskTemplateValues): string {
@@ -118,6 +152,7 @@ export function createCreateCommand(): Command {
             title = await prompt(rl, "Title");
             if (!title) {
               console.error("Title is required.");
+              process.exitCode = 1;
               return;
             }
           }
@@ -150,11 +185,12 @@ export function createCreateCommand(): Command {
       // Validate type
       if (!config.task_types[type]) {
         console.error(`Unknown task type: "${type}". Available: ${typeKeys.join(", ")}`);
+        process.exitCode = 1;
         return;
       }
 
       if (opts.template) {
-        const resolution = resolveTaskTemplatePath(
+        const resolution = await resolveExistingTaskTemplatePath(
           projectRoot,
           config.task_templates,
           opts.template,
@@ -208,6 +244,7 @@ export function createCreateCommand(): Command {
         updated_at: now,
         closed_at: null,
         acceptance_criteria: [],
+        acceptance_criteria_slot: body?.includes(ACCEPTANCE_CRITERIA_START_MARKER) === true,
         custom_fields: {},
         start_date: startDate,
         end_date: endDate,

@@ -1,4 +1,6 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   createCreateCommand,
@@ -48,10 +50,7 @@ function makeTasksFile(tasks: Task[] = []): TasksFile {
 
 let currentTasksFile = makeTasksFile();
 let writtenTasksFile: TasksFile | null = null;
-
-vi.mock("node:fs/promises", () => ({
-  readFile: vi.fn(),
-}));
+let tmpRoot = "";
 
 vi.mock("../store/config.js", () => ({
   ConfigStore: class {
@@ -74,30 +73,37 @@ vi.mock("../store/tasks.js", () => ({
   },
 }));
 
+async function writeTemplate(content: string): Promise<void> {
+  await mkdir(join(tmpRoot, "templates"), { recursive: true });
+  await writeFile(join(tmpRoot, "templates", "feature.md"), content);
+}
+
 describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
   let originalExitCode: number | undefined;
 
-  beforeEach(() => {
+  beforeEach(async () => {
+    tmpRoot = await mkdtemp(join(tmpdir(), "gh-gantt-create-template-"));
     currentTasksFile = makeTasksFile();
     writtenTasksFile = null;
     originalExitCode = process.exitCode;
     process.exitCode = undefined;
-    vi.mocked(readFile).mockReset();
+    vi.spyOn(process, "cwd").mockReturnValue(tmpRoot);
     logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     process.exitCode = originalExitCode;
     vi.restoreAllMocks();
+    await rm(tmpRoot, { recursive: true, force: true });
   });
 
   it("mapping されたテンプレートファイルを project root 配下に解決する", () => {
     const result = resolveTaskTemplatePath("/repo", mockConfig.task_templates, "feature");
 
-    expect(result).toEqual({ ok: true, templatePath: "/repo/templates/feature.md" });
+    expect(result).toMatchObject({ ok: true, templatePath: "/repo/templates/feature.md" });
   });
 
   it("task_templates.path の外へ出る mapping を拒否する", () => {
@@ -129,9 +135,7 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
   });
 
   it("[FR-CLI-012-AC2] create --template は生成 draft body に AC スロットを含める", async () => {
-    vi.mocked(readFile).mockResolvedValue(
-      ["## {{title}}", "", "{{body}}", "", "{{acceptance_criteria}}"].join("\n"),
-    );
+    await writeTemplate(["## {{title}}", "", "{{body}}", "", "{{acceptance_criteria}}"].join("\n"));
 
     const cmd = createCreateCommand();
     await cmd.parseAsync(
@@ -150,13 +154,10 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
     );
 
     const task = writtenTasksFile?.tasks[0];
-    expect(readFile).toHaveBeenCalledWith(
-      expect.stringContaining("/templates/feature.md"),
-      "utf-8",
-    );
     expect(task?.body).toContain("## テンプレート task");
     expect(task?.body).toContain("## 受入基準");
     expect(task?.acceptance_criteria).toEqual([]);
+    expect(task?.acceptance_criteria_slot).toBe(true);
     expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
       task: { title: "テンプレート task", type: "feature" },
     });
@@ -164,7 +165,7 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
   });
 
   it("[FR-CLI-012-AC3] テンプレート生成後に ac add で受入基準を追加できる", async () => {
-    vi.mocked(readFile).mockResolvedValue("説明\n\n{{acceptance_criteria}}");
+    await writeTemplate("説明\n\n{{acceptance_criteria}}");
 
     await createCreateCommand().parseAsync(
       ["--title", "テンプレート task", "--type", "feature", "--template", "feature", "--json"],
@@ -180,9 +181,31 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
       { description: "テンプレートから追加できる", checked: false },
     ]);
 
-    const body = serializeAcceptanceCriteriaBody(task?.body ?? null, task?.acceptance_criteria);
+    const body = serializeAcceptanceCriteriaBody(task?.body ?? null, task?.acceptance_criteria, {
+      includeEmptyBlock: task?.acceptance_criteria_slot === true,
+    });
     expect(body).toContain("## 受入基準");
     expect(body).toContain("- [ ] テンプレートから追加できる");
     expect(body?.match(/## 受入基準/g)).toHaveLength(1);
+  });
+
+  it("[FR-CLI-012-AC1] symlink で task_templates.path 外へ出るテンプレートを拒否する", async () => {
+    const externalRoot = await mkdtemp(join(tmpdir(), "gh-gantt-external-template-"));
+    try {
+      await mkdir(join(tmpRoot, "templates"), { recursive: true });
+      await writeFile(join(externalRoot, "feature.md"), "外部テンプレート");
+      await symlink(join(externalRoot, "feature.md"), join(tmpRoot, "templates", "feature.md"));
+
+      await createCreateCommand().parseAsync(
+        ["--title", "外部 template", "--type", "feature", "--template", "feature"],
+        { from: "user" },
+      );
+
+      expect(process.exitCode).toBe(1);
+      expect(writtenTasksFile).toBeNull();
+      expect(errorSpy).toHaveBeenCalledWith("Template path must stay within task_templates.path.");
+    } finally {
+      await rm(externalRoot, { recursive: true, force: true });
+    }
   });
 });

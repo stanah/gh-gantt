@@ -323,7 +323,10 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/create-template.test.ts
+              - packages/cli/src/__tests__/hash.test.ts
+              - packages/cli/src/__tests__/mapper.test.ts
               - packages/shared/src/__tests__/acceptance-criteria.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
           - id: FR-CLI-012-AC3
             description: テンプレート生成後の draft task に ac add で受入基準を追加できる
             status: covered

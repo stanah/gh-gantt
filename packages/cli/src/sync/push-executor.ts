@@ -39,6 +39,14 @@ export interface PushResult {
   skipped: number;
 }
 
+function serializeTaskBodyForGithub(task: Task): string | undefined {
+  return (
+    serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria, {
+      includeEmptyBlock: task.acceptance_criteria_slot === true,
+    }) ?? undefined
+  );
+}
+
 /**
  * addSubIssue を指数バックオフでリトライする。
  *
@@ -205,8 +213,7 @@ export async function executePush(
 
       const { number: milestoneNumber } = await createGithubMilestone(token, owner, repo, {
         title: task.title,
-        description:
-          serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
+        description: serializeTaskBodyForGithub(task),
         dueOn: task.date ?? undefined,
       });
 
@@ -278,7 +285,7 @@ export async function executePush(
       // Create GitHub issue
       const { issueId, issueNumber } = await createIssue(gql, repositoryId, {
         title: task.title,
-        body: serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
+        body: serializeTaskBodyForGithub(task),
         labelIds,
         milestoneId,
         assigneeIds,
@@ -518,7 +525,7 @@ export async function executePush(
         const issueMutations: Promise<unknown>[] = [
           updateIssue(gql, idEntry.issue_node_id, {
             title: task.title,
-            body: serializeAcceptanceCriteriaBody(task.body, task.acceptance_criteria) ?? undefined,
+            body: serializeTaskBodyForGithub(task),
           }),
           setIssueState(gql, idEntry.issue_node_id, task.state),
         ];

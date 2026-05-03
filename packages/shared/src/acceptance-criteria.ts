@@ -36,14 +36,15 @@ export function normalizeAcceptanceCriteria(
 export function parseAcceptanceCriteriaBody(body: string | null): {
   body: string | null;
   acceptance_criteria: AcceptanceCriterion[];
+  has_acceptance_criteria_block: boolean;
 } {
   if (body == null) {
-    return { body: null, acceptance_criteria: [] };
+    return { body: null, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
   const match = body.match(ACCEPTANCE_CRITERIA_BLOCK_RE);
   if (!match) {
-    return { body, acceptance_criteria: [] };
+    return { body, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
   const criteria: AcceptanceCriterion[] = [];
@@ -64,6 +65,7 @@ export function parseAcceptanceCriteriaBody(body: string | null): {
   return {
     body: stripped.length > 0 ? stripped : null,
     acceptance_criteria: normalizeAcceptanceCriteria(criteria),
+    has_acceptance_criteria_block: true,
   };
 }
 
@@ -74,7 +76,12 @@ export interface SerializeAcceptanceCriteriaBodyOptions {
 export function renderAcceptanceCriteriaBlock(
   criteria: readonly AcceptanceCriterion[] | undefined,
 ): string {
-  const normalizedCriteria = normalizeAcceptanceCriteria(criteria);
+  return renderNormalizedAcceptanceCriteriaBlock(normalizeAcceptanceCriteria(criteria));
+}
+
+function renderNormalizedAcceptanceCriteriaBlock(
+  normalizedCriteria: readonly AcceptanceCriterion[],
+): string {
   return [
     ACCEPTANCE_CRITERIA_START_MARKER,
     "## 受入基準",
@@ -102,7 +109,7 @@ export function serializeAcceptanceCriteriaBody(
     return cleanedBody;
   }
 
-  const block = renderAcceptanceCriteriaBlock(normalizedCriteria);
+  const block = renderNormalizedAcceptanceCriteriaBlock(normalizedCriteria);
 
   return cleanedBody ? `${cleanedBody.trim()}\n\n${block}` : block;
 }

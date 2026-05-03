@@ -29,6 +29,9 @@ export function extractSyncFields(task: Task): SyncFields {
   if (acceptanceCriteria.length > 0) {
     fields.acceptance_criteria = acceptanceCriteria;
   }
+  if (task.acceptance_criteria_slot === true) {
+    fields.acceptance_criteria_slot = true;
+  }
   return fields;
 }
 
