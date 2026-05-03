@@ -124,7 +124,7 @@
 
 1. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を実行する
 2. script は CI/checks の完了、review thread pagination、PR comments/reviews の quiet window をまとめて待つ
-3. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、リポジトリのオープン PR 全件を確認する
+3. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open` を実行し、リポジトリのオープン PR 全件が安定するまで待つ
 4. 完了条件は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 
 ## on_review_received
@@ -136,21 +136,19 @@
 5. 対応結果は GitHub GraphQL の pending review に返信を積み、submit で 1 回だけ通知する
 6. 対応済み thread は GraphQL alias mutation で一括 resolve する
 7. push 後に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する
-8. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、リポジトリのオープン PR 全件を確認する
+8. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open` を実行し、リポジトリのオープン PR 全件が安定するまで待つ
 9. 詳細は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 10. **対応後の再検証**（修正規模により段階的）:
-
-- **軽微な修正**（typo、コメント、フォーマット、変数名変更、lint 対応のみ）: 基準 1〜3（lint / typecheck / test）の再実行 + 基準 5（ユーザー承認）のみでよい。基準 4（外部レビュー）は省略可。**Living Doc 採用時**: 要件ファイル / テスト名に触れた場合は基準 6 も再実行
-- **実質的な変更**（ロジック修正、設計変更、新規コード追加）: `before_commit` の全基準を再度通す
+    - **軽微な修正**（typo、コメント、フォーマット、変数名変更、lint 対応のみ）: 基準 1〜3（lint / typecheck / test）の再実行 + 基準 5（ユーザー承認）のみでよい。基準 4（外部レビュー）は省略可。**Living Doc 採用時**: 要件ファイル / テスト名に触れた場合は基準 6 も再実行
+    - **実質的な変更**（ロジック修正、設計変更、新規コード追加）: `before_commit` の全基準を再度通す
 
 ## on_session_end
 
 **目的**: セッション終了時のクリーンアップと同期。
 
 1. 未コミットの変更があれば確認してユーザーに提示する
-2. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` でリポジトリのオープン PR 全件を確認する
-3. `gh-gantt push` でリモートと同期する（drafts があれば GitHub Issue 化）
-4. 次セッションへのハンドオフ情報を `.gantt-sync/` 配下や Issue コメントに残すことを検討する
+2. `gh-gantt push` でリモートと同期する（drafts があれば GitHub Issue 化）
+3. 次セッションへのハンドオフ情報を `.gantt-sync/` 配下や Issue コメントに残すことを検討する
 
 ## Red Flags
 

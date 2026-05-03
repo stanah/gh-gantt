@@ -56,11 +56,9 @@ Evidence: コマンド出力をそのまま提示する。
 
 各ステップの **★フック** は `.gantt-sync/workflow.md` の対応セクションを実行するタイミング。
 
-0. **★`on_session_start`** — workflow.md の該当セクションを実行。作業開始時に
-   `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行し、
-   リポジトリのオープン PR 全件について未解決 review thread / blocking check /
-   changes requested が残っていないか確認する。ユーザーが特定 PR だけを明示した場合を除き、
-   現在ブランチの PR だけで確認済み扱いしてはならない
+0. **★`on_session_start`** — workflow.md の該当セクションを実行。セッション開始確認は
+   workflow.md 側に一元化し、ここで同じ確認を重ねて実行してはならない。ユーザーが特定 PR だけを
+   明示した場合を除き、現在ブランチの PR だけで確認済み扱いしてはならない
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-progress` でタスクの状態を確認
 3. タスク確認 — `gh-gantt list --state open` を実行する。
@@ -81,12 +79,13 @@ Evidence: コマンド出力をそのまま提示する。
 13. `gh pr create` — PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
 14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で CI と非同期レビューコメントの安定を待つ。PR 作成は完了ではなく、レビュー監視の開始である
 15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応後は push し、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
-16. 完了報告前 hard gate — `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait`
+16. 完了報告前 hard gate — `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open`
     を実行し、リポジトリのオープン PR 全件を列挙する。各 PR について `CHANGES_REQUESTED`、
     未 resolve thread、未観測 check、pending/blocking check、CodeRabbit rate limit、
     API 取得失敗による UNKNOWN 判定を確認し、追対応条件が 0 件の PR 番号だけを
-    「確認済み」と報告する。オープン PR が残っている状況で現在ブランチの PR だけを確認して
-    完了扱いしてはならない
+    「確認済み」と報告する。完了報告前は `--no-wait` を使わず、quiet window と stable samples を
+    満たすまで待つ。オープン PR が残っている状況で現在ブランチの PR だけを確認して完了扱いしては
+    ならない
 17. **★`on_session_end`** — workflow.md の該当セクションを実行
 18. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 

@@ -231,7 +231,14 @@ collect_snapshot() {
       2>/dev/null || true
   )
   if [ -z "$metadata" ]; then
-    return 1
+    # metadata 取得失敗時も PR 単位の UNKNOWN snapshot を出し、完了扱いにしない。
+    local fallback_url fallback_epoch
+    fallback_url="https://github.com/$repo/pull/$number"
+    fallback_epoch=$(now_epoch)
+    review_decision="UNKNOWN"
+    printf '%s\t%s\tOPEN\tfalse\tUNKNOWN\t%s\tUNKNOWN\tUNKNOWN\tUNKNOWN\tUNKNOWN\t%s|UNKNOWN\n' \
+      "$number" "$fallback_url" "$review_decision" "$fallback_epoch"
+    return 0
   fi
 
   IFS=$'\t' read -r number_value url state is_draft head_sha review_decision updated_at <<<"$metadata"
@@ -271,6 +278,7 @@ snapshot_needs_followup() {
   local rate_limit="$6"
 
   [ "$review_decision" = "CHANGES_REQUESTED" ] && return 0
+  [ "$review_decision" = "UNKNOWN" ] && return 0
   [ "$unresolved_count" = "UNKNOWN" ] && return 0
   [ "$checks_seen" = "UNKNOWN" ] && return 0
   [ "$checks_seen" = "0" ] && return 0
