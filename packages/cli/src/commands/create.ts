@@ -5,7 +5,13 @@ import { createInterface } from "node:readline/promises";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
-import { ACCEPTANCE_CRITERIA_END_MARKER, ACCEPTANCE_CRITERIA_START_MARKER } from "@gh-gantt/shared";
+import {
+  ACCEPTANCE_CRITERIA_END_MARKER,
+  ACCEPTANCE_CRITERIA_START_MARKER,
+  getEstimateHoursField,
+  getTaskSizeExcess,
+  parseEstimateHours,
+} from "@gh-gantt/shared";
 import type { Task, TaskTemplates } from "@gh-gantt/shared";
 
 async function prompt(
@@ -124,6 +130,7 @@ export function createCreateCommand(): Command {
     .option("--start-date <date>", "Start date (YYYY-MM-DD)")
     .option("--end-date <date>", "End date (YYYY-MM-DD)")
     .option("--parent <id>", "Parent task ID")
+    .option("--estimate-hours <hours>", "Estimated task size in hours")
     .option("--require-review", "Require reviewer approval before close")
     .option("--json", "Output as JSON")
     .action(async (opts) => {
@@ -144,6 +151,16 @@ export function createCreateCommand(): Command {
       let startDate = opts.startDate ?? null;
       let endDate = opts.endDate ?? null;
       let parent = opts.parent ?? null;
+      const estimateHours =
+        opts.estimateHours === undefined ? null : parseEstimateHours(opts.estimateHours);
+
+      if (opts.estimateHours !== undefined && estimateHours === null) {
+        console.error(
+          `Invalid estimate hours: "${opts.estimateHours}". Use a non-negative number.`,
+        );
+        process.exitCode = 1;
+        return;
+      }
 
       // Interactive prompt for missing required fields
       if (!title || !type) {
@@ -251,12 +268,20 @@ export function createCreateCommand(): Command {
         require_review: opts.requireReview === true,
         review_approved_by: null,
         review_approved_at: null,
-        custom_fields: {},
+        custom_fields:
+          estimateHours === null ? {} : { [getEstimateHoursField(config)]: estimateHours },
         start_date: startDate,
         end_date: endDate,
         date: null,
         blocked_by: [],
       };
+
+      const taskSizeExcess = getTaskSizeExcess(task, config);
+      if (taskSizeExcess) {
+        console.warn(
+          `警告: タスク見積もり ${taskSizeExcess.estimate_hours}h は閾値 ${taskSizeExcess.max_task_size_hours}h を超えています。gh-gantt decompose で分解してください。`,
+        );
+      }
 
       // Update parent's sub_tasks if parent specified
       if (parent) {

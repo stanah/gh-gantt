@@ -5,6 +5,7 @@ export * from "./comments.js";
 export * from "./acceptance-criteria.js";
 export * from "./task-roles.js";
 export * from "./task-review.js";
+export * from "./task-size.js";
 export * from "./status-dates.js";
 export * from "./dependency-graph.js";
 export * from "./adr-schema.js";

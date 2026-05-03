@@ -2,6 +2,7 @@ import type { graphql } from "@octokit/graphql";
 import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import {
   serializeAcceptanceCriteriaBody,
+  parseEstimateHours,
   serializeTaskReviewBody,
   serializeTaskRolesBody,
 } from "@gh-gantt/shared";
@@ -354,6 +355,14 @@ export async function executePush(
       // Set Priority custom field
       const priorityUpdate = buildPriorityFieldUpdate(gql, syncState, fm, projectItemId, task);
       if (priorityUpdate) await priorityUpdate;
+      const estimateHoursUpdate = buildEstimateHoursFieldUpdate(
+        gql,
+        syncState,
+        fm,
+        projectItemId,
+        task,
+      );
+      if (estimateHoursUpdate) await estimateHoursUpdate;
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
@@ -614,6 +623,14 @@ export async function executePush(
           task,
         );
         if (priorityUpdate) fieldUpdates.push(priorityUpdate);
+        const estimateHoursUpdate = buildEstimateHoursFieldUpdate(
+          gql,
+          syncState,
+          fm,
+          idEntry.project_item_id,
+          task,
+        );
+        if (estimateHoursUpdate) fieldUpdates.push(estimateHoursUpdate);
 
         if (fieldUpdates.length > 0) {
           await Promise.all(fieldUpdates);
@@ -953,6 +970,27 @@ function buildPriorityFieldUpdate(
     syncState.field_ids[fm.priority],
     {
       singleSelectOptionId: optionId,
+    },
+  );
+}
+
+function buildEstimateHoursFieldUpdate(
+  gql: typeof graphql,
+  syncState: SyncState,
+  fm: Config["sync"]["field_mapping"],
+  projectItemId: string,
+  task: Task,
+): Promise<unknown> | null {
+  if (!fm.estimate_hours || !syncState.field_ids[fm.estimate_hours]) return null;
+  const estimateHours = parseEstimateHours(task.custom_fields[fm.estimate_hours]);
+  if (estimateHours === null) return null;
+  return updateProjectItemField(
+    gql,
+    syncState.project_node_id,
+    projectItemId,
+    syncState.field_ids[fm.estimate_hours],
+    {
+      number: estimateHours,
     },
   );
 }

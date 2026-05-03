@@ -620,4 +620,35 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
       expect(output.summary.fail).toBeGreaterThan(0);
     });
   });
+
+  describe("[FR-CLI-015-AC3] doctor のタスクサイズ閾値チェック", () => {
+    it("見積もりが max_task_size_hours を超えた open task を WARN として返す", async () => {
+      const config = makeConfig();
+      config.max_task_size_hours = 8;
+      config.sync.field_mapping.estimate_hours = "Estimate";
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        updated_at: "2026-01-01T00:00:00Z",
+        custom_fields: { Estimate: 13 },
+      });
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile([task]),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const taskSizeCheck = output.checks.find((c) => c.name === "project-task-size");
+
+      expect(taskSizeCheck?.status).toBe("WARN");
+      expect(taskSizeCheck?.details).toEqual([
+        expect.stringContaining("gh-gantt decompose で分解してください"),
+      ]);
+    });
+  });
 });

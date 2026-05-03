@@ -108,6 +108,7 @@ export interface SyncConfig {
     status: string;
     type?: string | null;
     priority?: string;
+    estimate_hours?: string;
   };
 }
 
@@ -160,6 +161,7 @@ export interface Config {
   task_templates?: TaskTemplates;
   doctor?: DoctorConfig;
   require_review_for_types?: string[];
+  max_task_size_hours?: number;
 }
 
 export interface IdMapping {

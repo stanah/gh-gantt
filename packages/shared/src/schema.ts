@@ -146,6 +146,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
         status: z.string(),
         type: z.string().nullable().optional(),
         priority: z.string().optional(),
+        estimate_hours: z.string().optional(),
       }),
     })
     .passthrough(),
@@ -167,6 +168,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
   task_templates: TaskTemplatesSchema.optional(),
   doctor: DoctorConfigSchema.optional(),
   require_review_for_types: z.array(z.string().trim().min(1)).default([]),
+  max_task_size_hours: z.number().positive().optional(),
 });
 
 export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
