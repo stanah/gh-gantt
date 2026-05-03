@@ -32,6 +32,12 @@ export function extractSyncFields(task: Task): SyncFields {
   if (task.acceptance_criteria_slot === true) {
     fields.acceptance_criteria_slot = true;
   }
+  if (task.implementer != null) {
+    fields.implementer = task.implementer;
+  }
+  if (task.reviewer != null) {
+    fields.reviewer = task.reviewer;
+  }
   return fields;
 }
 

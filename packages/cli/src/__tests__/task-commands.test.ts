@@ -482,6 +482,41 @@ describe("applyTaskUpdate", () => {
     expect(result.task.assignees).toEqual(["bob"]);
   });
 
+  it("[FR-CLI-013-AC2] implementer と reviewer を assignees とは独立して設定する", () => {
+    const task = makeTask({ assignees: ["alice"] });
+    const result = applyTaskUpdate(
+      task,
+      { assignImplementer: "bob", assignReviewer: "@carol" },
+      config,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.implementer).toBe("bob");
+    expect(result.task.reviewer).toBe("carol");
+    expect(result.task.assignees).toEqual(["alice"]);
+  });
+
+  it("[FR-CLI-013-AC2] reviewer と implementer が同一なら拒否する", () => {
+    const task = makeTask({ implementer: "alice" });
+    const result = applyTaskUpdate(task, { assignReviewer: "alice" }, config);
+
+    expect(result.error).toContain("Reviewer must be different from implementer");
+    expect(result.task).toBe(task);
+  });
+
+  it("[FR-CLI-013-AC2] none で implementer/reviewer を解除する", () => {
+    const task = makeTask({ implementer: "alice", reviewer: "bob" });
+    const result = applyTaskUpdate(
+      task,
+      { assignImplementer: "none", assignReviewer: "none" },
+      config,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.implementer).toBeNull();
+    expect(result.task.reviewer).toBeNull();
+  });
+
   it("updates updated_at", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { title: "Changed" }, config);

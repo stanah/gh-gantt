@@ -16,6 +16,8 @@ const mockTask = {
   title: "Test task",
   body: null,
   acceptance_criteria: [{ description: "期待する出力を表示できる", checked: true }],
+  implementer: "alice",
+  reviewer: "bob",
   state: "open",
   state_reason: null,
   assignees: [],
@@ -121,7 +123,7 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     vi.restoreAllMocks();
   });
 
-  it("[FR-CLI-011-AC3] outputs task as JSON object", async () => {
+  it("[FR-CLI-011-AC3] [FR-CLI-013-AC1] outputs task as JSON object", async () => {
     const cmd = createTaskShowCommand();
     await cmd.parseAsync(["show", "1", "--json"], { from: "user" });
 
@@ -132,6 +134,8 @@ describe("[Issue #E-1] show --json が機械可読な JSON を出力する", () 
     expect(parsed.acceptance_criteria).toEqual([
       { description: "期待する出力を表示できる", checked: true },
     ]);
+    expect(parsed.implementer).toBe("alice");
+    expect(parsed.reviewer).toBe("bob");
   });
 
   it("[FR-CLI-011-AC3] outputs text format without --json", async () => {

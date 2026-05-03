@@ -3,7 +3,7 @@ import { ConfigStore } from "../../store/config.js";
 import { TasksStore } from "../../store/tasks.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Config, Task } from "@gh-gantt/shared";
-import { computeStatusDateUpdates } from "@gh-gantt/shared";
+import { computeStatusDateUpdates, normalizeTaskRoleLogin } from "@gh-gantt/shared";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -18,6 +18,8 @@ export interface TaskUpdateOptions {
   endDate?: string;
   assignee?: string;
   removeAssignee?: string;
+  assignImplementer?: string;
+  assignReviewer?: string;
   milestone?: string;
   label?: string;
   removeLabel?: string;
@@ -94,6 +96,27 @@ export function applyTaskUpdate(
     updated.assignees = updated.assignees.filter((a) => a !== opts.removeAssignee);
   }
 
+  if (opts.assignImplementer !== undefined) {
+    const parsed = parseRoleOption("--assign-implementer", opts.assignImplementer);
+    if (parsed.error) return { task, error: parsed.error };
+    updated.implementer = parsed.value;
+  }
+  if (opts.assignReviewer !== undefined) {
+    const parsed = parseRoleOption("--assign-reviewer", opts.assignReviewer);
+    if (parsed.error) return { task, error: parsed.error };
+    updated.reviewer = parsed.value;
+  }
+  if (
+    updated.implementer &&
+    updated.reviewer &&
+    updated.implementer.toLowerCase() === updated.reviewer.toLowerCase()
+  ) {
+    return {
+      task,
+      error: `Reviewer must be different from implementer: "${updated.reviewer}".`,
+    };
+  }
+
   if (opts.milestone !== undefined) {
     updated.milestone = opts.milestone === "none" ? null : opts.milestone;
   }
@@ -156,6 +179,24 @@ export function applyTaskUpdate(
   return { task: updated };
 }
 
+function parseRoleOption(
+  optionName: "--assign-implementer" | "--assign-reviewer",
+  value: string,
+): { value: string | null; error?: string } {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return { value: null, error: `${optionName} requires a GitHub login or "none".` };
+  }
+  if (trimmed.toLowerCase() === "none") {
+    return { value: null };
+  }
+  const normalized = normalizeTaskRoleLogin(trimmed);
+  if (!normalized) {
+    return { value: null, error: `${optionName} requires a GitHub login or "none".` };
+  }
+  return { value: normalized };
+}
+
 export interface BulkFilterOptions {
   filterState?: string;
   filterType?: string;
@@ -198,6 +239,8 @@ export function createTaskUpdateCommand(): Command {
     .option("--end-date <date>", "Set end date (YYYY-MM-DD or 'none' to clear)")
     .option("--assignee <login>", "Add assignee")
     .option("--remove-assignee <login>", "Remove assignee")
+    .option("--assign-implementer <login>", "Set implementer ('none' to clear)")
+    .option("--assign-reviewer <login>", "Set reviewer ('none' to clear)")
     .option("--milestone <name>", "Set milestone ('none' to clear)")
     .option("--label <name>", "Add label")
     .option("--status <status>", "Set status (auto-updates dates based on transition)")
@@ -228,6 +271,8 @@ export function createTaskUpdateCommand(): Command {
           endDate: opts.endDate,
           assignee: opts.assignee,
           removeAssignee: opts.removeAssignee,
+          assignImplementer: opts.assignImplementer,
+          assignReviewer: opts.assignReviewer,
           milestone: opts.milestone,
           label: opts.label,
           removeLabel: opts.removeLabel,

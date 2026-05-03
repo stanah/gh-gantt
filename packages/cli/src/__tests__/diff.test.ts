@@ -110,6 +110,12 @@ describe("detectChangedFields", () => {
     );
     expect(detectChangedFields(curr, prev)).toEqual(["acceptance_criteria"]);
   });
+
+  it("[FR-CLI-013-AC3] implementer/reviewer の追加と解除を検出する", () => {
+    const prev = extractSyncFields(makeTask("o/r#1", { implementer: "alice", reviewer: "bob" }));
+    const curr = extractSyncFields(makeTask("o/r#1", { implementer: null, reviewer: "carol" }));
+    expect(detectChangedFields(curr, prev).sort()).toEqual(["implementer", "reviewer"]);
+  });
 });
 
 // ---------------------------------------------------------------------------
