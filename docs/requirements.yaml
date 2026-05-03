@@ -286,6 +286,14 @@ areas:
             description: 自己参照・循環・階層違反を API レベルで拒否する
             status: uncovered
             tests: []
+      - id: FR-API-004
+        summary: Sprint 設定取得
+        acceptance_criteria:
+          - id: FR-API-004-AC1
+            description: GET /api/config が gantt.config.json の sprints 設定を返す
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
   - id: VIS
     name: Visualization
     description: ガントチャートによるプロジェクト可視化
@@ -368,6 +376,24 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/useUndoRedo.test.ts
+      - id: FR-VIS-010
+        summary: スプリント期間バンド表示
+        acceptance_criteria:
+          - id: FR-VIS-010-AC1
+            description: config.sprints の期間をガントヘッダーとグリッド背景に表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/sprint-display.test.tsx
+          - id: FR-VIS-010-AC2
+            description: 現在日を含む sprint を他の sprint より強調表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/sprint-display.test.tsx
+          - id: FR-VIS-010-AC3
+            description: sprint が未設定の場合は既存ヘッダー高さとグリッド表示を維持する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/sprint-display.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
