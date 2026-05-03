@@ -64,6 +64,9 @@ export interface Task {
   acceptance_criteria_slot?: boolean;
   implementer?: string | null;
   reviewer?: string | null;
+  require_review?: boolean;
+  review_approved_by?: string | null;
+  review_approved_at?: string | null;
   state: "open" | "closed";
   state_reason: string | null;
   assignees: string[];
@@ -156,6 +159,7 @@ export interface Config {
   sprints?: SprintConfig[];
   task_templates?: TaskTemplates;
   doctor?: DoctorConfig;
+  require_review_for_types?: string[];
 }
 
 export interface IdMapping {
@@ -171,6 +175,9 @@ export interface SyncFields {
   acceptance_criteria_slot?: boolean;
   implementer?: string | null;
   reviewer?: string | null;
+  require_review?: boolean;
+  review_approved_by?: string | null;
+  review_approved_at?: string | null;
   state: "open" | "closed";
   type: string;
   assignees: string[];

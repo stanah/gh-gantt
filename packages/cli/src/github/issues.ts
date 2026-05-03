@@ -1,5 +1,10 @@
 import type { Task } from "@gh-gantt/shared";
-import { DRAFT_PREFIX, parseAcceptanceCriteriaBody, parseTaskRolesBody } from "@gh-gantt/shared";
+import {
+  DRAFT_PREFIX,
+  parseAcceptanceCriteriaBody,
+  parseTaskReviewBody,
+  parseTaskRolesBody,
+} from "@gh-gantt/shared";
 import type { RawProjectItem, RawMilestone } from "./projects.js";
 import type { SubIssueLink, BlockedByLink } from "./sub-issues.js";
 
@@ -40,6 +45,9 @@ export function milestoneToTask(m: RawMilestone, repo: string): Task {
     acceptance_criteria_slot: false,
     implementer: null,
     reviewer: null,
+    require_review: false,
+    review_approved_by: null,
+    review_approved_at: null,
     custom_fields: {},
     start_date: null,
     end_date: null,
@@ -82,7 +90,8 @@ export function mapProjectItemToTask(
   const c = item.content;
   const id = buildTaskId(c.repository, c.number);
   const parsedRoles = parseTaskRolesBody(c.body);
-  const parsedBody = parseAcceptanceCriteriaBody(parsedRoles.body);
+  const parsedReview = parseTaskReviewBody(parsedRoles.body);
+  const parsedBody = parseAcceptanceCriteriaBody(parsedReview.body);
 
   const mappedFields = new Set([fieldMapping.start_date, fieldMapping.end_date, "Title"]);
   const customFields: Record<string, unknown> = {};
@@ -114,6 +123,9 @@ export function mapProjectItemToTask(
     acceptance_criteria_slot: parsedBody.has_acceptance_criteria_block,
     implementer: parsedRoles.implementer,
     reviewer: parsedRoles.reviewer,
+    require_review: parsedReview.require_review,
+    review_approved_by: parsedReview.review_approved_by,
+    review_approved_at: parsedReview.review_approved_at,
     custom_fields: customFields,
     start_date: (item.fieldValues[fieldMapping.start_date] as string) ?? null,
     end_date: (item.fieldValues[fieldMapping.end_date] as string) ?? null,

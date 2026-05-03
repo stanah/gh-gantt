@@ -1,6 +1,10 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
-import { serializeAcceptanceCriteriaBody, serializeTaskRolesBody } from "@gh-gantt/shared";
+import {
+  serializeAcceptanceCriteriaBody,
+  serializeTaskReviewBody,
+  serializeTaskRolesBody,
+} from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, hashSyncFields, extractSyncFields } from "./hash.js";
 import {
@@ -47,10 +51,15 @@ function serializeTaskBodyForGithub(task: Task): string | undefined {
       includeEmptyBlock: task.acceptance_criteria_slot === true,
     },
   );
+  const bodyWithRoles = serializeTaskRolesBody(bodyWithAcceptanceCriteria, {
+    implementer: task.implementer,
+    reviewer: task.reviewer,
+  });
   return (
-    serializeTaskRolesBody(bodyWithAcceptanceCriteria, {
-      implementer: task.implementer,
-      reviewer: task.reviewer,
+    serializeTaskReviewBody(bodyWithRoles, {
+      require_review: task.require_review,
+      review_approved_by: task.review_approved_by,
+      review_approved_at: task.review_approved_at,
     }) ?? undefined
   );
 }

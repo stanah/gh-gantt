@@ -517,6 +517,60 @@ describe("applyTaskUpdate", () => {
     expect(result.task.reviewer).toBeNull();
   });
 
+  it("[FR-CLI-014-AC2] --require-review で task 単位のレビュー必須フラグを設定する", () => {
+    const task = makeTask();
+    const result = applyTaskUpdate(task, { requireReview: true }, config);
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.require_review).toBe(true);
+  });
+
+  it("[FR-CLI-014-AC3] config でレビュー必須な type は未承認 close を拒否する", () => {
+    const configWithReview = makeConfig({ require_review_for_types: ["epic"] });
+    const task = makeTask({ type: "epic", reviewer: "alice" });
+    const result = applyTaskUpdate(task, { state: "closed" }, configWithReview);
+
+    expect(result.error).toContain("Approve with --approve-review alice");
+    expect(result.task).toBe(task);
+  });
+
+  it("[FR-CLI-014-AC3] assigned reviewer の承認付きなら close できる", () => {
+    const configWithReview = makeConfig({ require_review_for_types: ["epic"] });
+    const task = makeTask({ type: "epic", reviewer: "alice" });
+    const result = applyTaskUpdate(
+      task,
+      { state: "closed", approveReview: "alice" },
+      configWithReview,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.state).toBe("closed");
+    expect(result.task.review_approved_by).toBe("alice");
+    expect(result.task.review_approved_at).toBeTruthy();
+  });
+
+  it("[FR-CLI-014-AC3] reviewer 以外による承認を拒否する", () => {
+    const task = makeTask({ reviewer: "alice" });
+    const result = applyTaskUpdate(task, { approveReview: "bob" }, config);
+
+    expect(result.error).toContain('assigned reviewer "alice"');
+    expect(result.task).toBe(task);
+  });
+
+  it("[FR-CLI-014-AC3] reviewer 変更時に既存 approval を解除する", () => {
+    const task = makeTask({
+      reviewer: "alice",
+      review_approved_by: "alice",
+      review_approved_at: "2026-05-03T21:00:00.000Z",
+    });
+    const result = applyTaskUpdate(task, { assignReviewer: "bob" }, config);
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.reviewer).toBe("bob");
+    expect(result.task.review_approved_by).toBeNull();
+    expect(result.task.review_approved_at).toBeNull();
+  });
+
   it("updates updated_at", () => {
     const task = makeTask();
     const result = applyTaskUpdate(task, { title: "Changed" }, config);

@@ -4,6 +4,7 @@ export * from "./constants.js";
 export * from "./comments.js";
 export * from "./acceptance-criteria.js";
 export * from "./task-roles.js";
+export * from "./task-review.js";
 export * from "./status-dates.js";
 export * from "./dependency-graph.js";
 export * from "./adr-schema.js";

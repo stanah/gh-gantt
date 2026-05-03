@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildProgram } from "../program.js";
 
-describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている", () => {
+describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/close/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている", () => {
   const program = buildProgram();
   const commandNames = program.commands.map((c) => c.name());
 
@@ -21,6 +21,10 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/co
 
   it("has 'link' as a top-level command", () => {
     expect(commandNames).toContain("link");
+  });
+
+  it("[FR-CLI-014-AC3] has 'close' as a top-level command", () => {
+    expect(commandNames).toContain("close");
   });
 
   it("has 'context' as a top-level command", () => {
@@ -66,6 +70,7 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/co
     expect(taskSubNames).toContain("show");
     expect(taskSubNames).toContain("update");
     expect(taskSubNames).toContain("link");
+    expect(taskSubNames).toContain("close");
   });
 
   // --- milestone サブコマンドは廃止 ---
@@ -78,7 +83,7 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/co
 
   it("top-level and task-alias commands are distinct instances", () => {
     const taskCmd = program.commands.find((c) => c.name() === "task")!;
-    for (const name of ["list", "show", "update", "link"]) {
+    for (const name of ["list", "show", "update", "link", "close"]) {
       const topLevel = program.commands.find((c) => c.name() === name);
       const alias = taskCmd.commands.find((c) => c.name() === name);
       expect(topLevel).not.toBe(alias);

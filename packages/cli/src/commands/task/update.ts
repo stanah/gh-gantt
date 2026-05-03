@@ -20,6 +20,9 @@ export interface TaskUpdateOptions {
   removeAssignee?: string;
   assignImplementer?: string;
   assignReviewer?: string;
+  requireReview?: boolean;
+  approveReview?: string;
+  clearReviewApproval?: boolean;
   milestone?: string;
   label?: string;
   removeLabel?: string;
@@ -56,6 +59,7 @@ export function applyTaskUpdate(
   }
 
   const updated = { ...task };
+  const oldReviewer = task.reviewer ?? null;
 
   if (opts.title) updated.title = opts.title;
   if (opts.body !== undefined) updated.body = opts.body;
@@ -105,6 +109,10 @@ export function applyTaskUpdate(
     const parsed = parseRoleOption("--assign-reviewer", opts.assignReviewer);
     if (parsed.error) return { task, error: parsed.error };
     updated.reviewer = parsed.value;
+    if (!isSameLogin(oldReviewer, updated.reviewer)) {
+      updated.review_approved_by = null;
+      updated.review_approved_at = null;
+    }
   }
   if (
     updated.implementer &&
@@ -115,6 +123,29 @@ export function applyTaskUpdate(
       task,
       error: `Reviewer must be different from implementer: "${updated.reviewer}".`,
     };
+  }
+
+  if (opts.requireReview !== undefined) {
+    updated.require_review = opts.requireReview;
+  }
+  if (opts.clearReviewApproval) {
+    updated.review_approved_by = null;
+    updated.review_approved_at = null;
+  }
+  if (opts.approveReview !== undefined) {
+    const parsed = parseRoleOption("--approve-review", opts.approveReview);
+    if (parsed.error) return { task, error: parsed.error };
+    if (!updated.reviewer) {
+      return { task, error: "Cannot approve review before assigning a reviewer." };
+    }
+    if (!isSameLogin(parsed.value, updated.reviewer)) {
+      return {
+        task,
+        error: `Review must be approved by assigned reviewer "${updated.reviewer}".`,
+      };
+    }
+    updated.review_approved_by = updated.reviewer;
+    updated.review_approved_at = new Date().toISOString();
   }
 
   if (opts.milestone !== undefined) {
@@ -174,13 +205,20 @@ export function applyTaskUpdate(
     updated.labels = updated.labels.filter((l) => l !== opts.removeLabel);
   }
 
+  if (opts.state === "closed") {
+    const reviewError = validateTaskCloseReview(updated, config);
+    if (reviewError) {
+      return { task, error: reviewError };
+    }
+  }
+
   updated.updated_at = new Date().toISOString();
 
   return { task: updated };
 }
 
 function parseRoleOption(
-  optionName: "--assign-implementer" | "--assign-reviewer",
+  optionName: "--assign-implementer" | "--assign-reviewer" | "--approve-review",
   value: string,
 ): { value: string | null; error?: string } {
   const trimmed = value.trim();
@@ -195,6 +233,34 @@ function parseRoleOption(
     return { value: null, error: `${optionName} requires a GitHub login or "none".` };
   }
   return { value: normalized };
+}
+
+function isSameLogin(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return a == null && b == null;
+  return a.toLowerCase() === b.toLowerCase();
+}
+
+export function isReviewRequired(task: Task, config: Config): boolean {
+  return (
+    task.require_review === true ||
+    (config.require_review_for_types ?? []).some((type) => type === task.type)
+  );
+}
+
+export function validateTaskCloseReview(task: Task, config: Config): string | undefined {
+  if (!isReviewRequired(task, config)) {
+    return undefined;
+  }
+  if (!task.reviewer) {
+    return "Review is required before closing. Assign a reviewer first.";
+  }
+  if (!task.review_approved_by) {
+    return `Review is required before closing. Approve with --approve-review ${task.reviewer}.`;
+  }
+  if (!isSameLogin(task.review_approved_by, task.reviewer)) {
+    return `Review must be approved by assigned reviewer "${task.reviewer}".`;
+  }
+  return undefined;
 }
 
 export interface BulkFilterOptions {
@@ -241,6 +307,10 @@ export function createTaskUpdateCommand(): Command {
     .option("--remove-assignee <login>", "Remove assignee")
     .option("--assign-implementer <login>", "Set implementer ('none' to clear)")
     .option("--assign-reviewer <login>", "Set reviewer ('none' to clear)")
+    .option("--require-review", "Require reviewer approval before close")
+    .option("--no-require-review", "Clear per-task review requirement")
+    .option("--approve-review <login>", "Mark review as approved by the assigned reviewer")
+    .option("--clear-review-approval", "Clear stored review approval")
     .option("--milestone <name>", "Set milestone ('none' to clear)")
     .option("--label <name>", "Add label")
     .option("--status <status>", "Set status (auto-updates dates based on transition)")
@@ -273,6 +343,9 @@ export function createTaskUpdateCommand(): Command {
           removeAssignee: opts.removeAssignee,
           assignImplementer: opts.assignImplementer,
           assignReviewer: opts.assignReviewer,
+          requireReview: opts.requireReview,
+          approveReview: opts.approveReview,
+          clearReviewApproval: opts.clearReviewApproval,
           milestone: opts.milestone,
           label: opts.label,
           removeLabel: opts.removeLabel,

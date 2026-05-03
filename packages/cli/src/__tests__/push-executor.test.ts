@@ -254,6 +254,52 @@ describe("executePush", () => {
       expect(updateIssueVars.body).toContain("Reviewer: @bob");
     });
 
+    it("[FR-CLI-014-AC3] 既存 task の review requirement と approval を Issue body に同期する", async () => {
+      const baseTask = makeTask("o/r#1", { github_issue: 1, body: "説明文" });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        body: "説明文",
+        require_review: true,
+        review_approved_by: "alice",
+        review_approved_at: "2026-05-03T21:00:00.000Z",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(baseTask),
+            synced_at: "",
+            syncFields: extractSyncFields(baseTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+      let updateIssueVars: any;
+      const mockGql = makeMockGql({
+        updateIssue: (_query, vars) => {
+          updateIssueVars = vars;
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      const { result } = await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      expect(result.updated).toBe(1);
+      expect(updateIssueVars.body).toContain("<!-- gh-gantt:review:start -->");
+      expect(updateIssueVars.body).toContain("Require-Review: true");
+      expect(updateIssueVars.body).toContain("Review-Approved-By: @alice");
+      expect(updateIssueVars.body).toContain("Review-Approved-At: 2026-05-03T21:00:00.000Z");
+    });
+
     it("Organization Issue Type が設定された draft task は createIssue に issueTypeId を渡す", async () => {
       const draft = makeTask("o/r#draft-1", {
         type: "feature",

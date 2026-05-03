@@ -164,6 +164,23 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it("[FR-CLI-014-AC2] create --require-review は draft task にレビュー必須フラグを設定する", async () => {
+    const cmd = createCreateCommand();
+    await cmd.parseAsync(
+      ["--title", "レビュー必須 task", "--type", "feature", "--require-review", "--json"],
+      { from: "user" },
+    );
+
+    const task = writtenTasksFile?.tasks[0];
+    expect(task?.require_review).toBe(true);
+    expect(task?.review_approved_by).toBeNull();
+    expect(task?.review_approved_at).toBeNull();
+    expect(JSON.parse(logSpy.mock.calls[0][0] as string)).toMatchObject({
+      task: { title: "レビュー必須 task", require_review: true },
+    });
+    expect(errorSpy).not.toHaveBeenCalled();
+  });
+
   it("[FR-CLI-012-AC3] テンプレート生成後に ac add で受入基準を追加できる", async () => {
     await writeTemplate("説明\n\n{{acceptance_criteria}}");
 

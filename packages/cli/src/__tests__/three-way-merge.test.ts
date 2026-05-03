@@ -31,6 +31,9 @@ describe("SYNC_FIELD_KEYS", () => {
       "acceptance_criteria_slot",
       "implementer",
       "reviewer",
+      "require_review",
+      "review_approved_by",
+      "review_approved_at",
     ].sort();
     const exportedKeys = [...SYNC_FIELD_KEYS].sort();
     expect(exportedKeys).toEqual(objectKeys);
@@ -262,6 +265,24 @@ describe("[FR-SYNC-001-AC1] ローカル・リモート両方が変更した場�
       expect(result.conflicts).toEqual([]);
       expect(result.merged.implementer).toBe("carol");
       expect(result.merged.reviewer).toBe("dave");
+    });
+  });
+
+  describe("task review", () => {
+    it("[FR-CLI-014-AC3] remote-only の review approval 変更を採用する", () => {
+      const result = threeWayMerge(
+        makeSyncFields({ require_review: true }),
+        makeSyncFields({ require_review: true }),
+        makeSyncFields({
+          require_review: true,
+          review_approved_by: "alice",
+          review_approved_at: "2026-05-03T21:00:00.000Z",
+        }),
+      );
+
+      expect(result.conflicts).toEqual([]);
+      expect(result.merged.review_approved_by).toBe("alice");
+      expect(result.merged.review_approved_at).toBe("2026-05-03T21:00:00.000Z");
     });
   });
 });

@@ -116,6 +116,21 @@ describe("detectChangedFields", () => {
     const curr = extractSyncFields(makeTask("o/r#1", { implementer: null, reviewer: "carol" }));
     expect(detectChangedFields(curr, prev).sort()).toEqual(["implementer", "reviewer"]);
   });
+
+  it("[FR-CLI-014-AC3] review requirement と approval の変更を検出する", () => {
+    const prev = extractSyncFields(makeTask("o/r#1", { require_review: true }));
+    const curr = extractSyncFields(
+      makeTask("o/r#1", {
+        require_review: true,
+        review_approved_by: "alice",
+        review_approved_at: "2026-05-03T21:00:00.000Z",
+      }),
+    );
+    expect(detectChangedFields(curr, prev).sort()).toEqual([
+      "review_approved_at",
+      "review_approved_by",
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

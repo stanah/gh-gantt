@@ -29,6 +29,8 @@ function formatTask(task: Task): string {
     `Assignees:  ${task.assignees.length > 0 ? task.assignees.join(", ") : "-"}`,
     `Implementer:${implementer ? ` ${implementer}` : " -"}`,
     `Reviewer:   ${reviewer ? reviewer : "-"}`,
+    `Review required: ${task.require_review === true ? "yes" : "no"}`,
+    `Review approved: ${task.review_approved_by ? `${task.review_approved_by} (${task.review_approved_at ?? "-"})` : "-"}`,
     `Labels:     ${task.labels.length > 0 ? task.labels.join(", ") : "-"}`,
     `Milestone:  ${task.milestone ?? "-"}`,
     `Start:      ${task.start_date ?? "-"}`,
