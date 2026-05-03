@@ -549,6 +549,53 @@ describe("applyTaskUpdate", () => {
     expect(result.task.review_approved_at).toBeTruthy();
   });
 
+  it("[FR-CLI-016-AC1] close evidence を Issue body に記録する", () => {
+    const task = makeTask({ body: "実装メモ" });
+    const result = applyTaskUpdate(
+      task,
+      { state: "closed", evidence: "pnpm test:json pass" },
+      config,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.state).toBe("closed");
+    expect(result.task.body).toContain("<!-- gh-gantt:close-evidence:start -->");
+    expect(result.task.body).toContain("Evidence:\npnpm test:json pass");
+  });
+
+  it("[FR-CLI-016-AC2] require_close_evidence が true なら evidence なし close を拒否する", () => {
+    const configWithEvidence = makeConfig({ require_close_evidence: true });
+    const task = makeTask();
+    const result = applyTaskUpdate(task, { state: "closed" }, configWithEvidence);
+
+    expect(result.error).toContain("Close evidence is required");
+    expect(result.task).toBe(task);
+  });
+
+  it("[FR-CLI-016-AC3] 未完了の acceptance criteria があれば close を拒否する", () => {
+    const task = makeTask({
+      acceptance_criteria: [
+        { description: "テストが通る", checked: true },
+        { description: "PR が merge 済み", checked: false },
+      ],
+    });
+    const result = applyTaskUpdate(task, { state: "closed", evidence: "テストのみ確認" }, config);
+
+    expect(result.error).toContain("Acceptance criteria must be checked");
+    expect(result.error).toContain("PR が merge 済み");
+    expect(result.task).toBe(task);
+  });
+
+  it("[FR-CLI-016-AC3] acceptance criteria がすべて checked なら close できる", () => {
+    const task = makeTask({
+      acceptance_criteria: [{ description: "テストが通る", checked: true }],
+    });
+    const result = applyTaskUpdate(task, { state: "closed", evidence: "AC checked" }, config);
+
+    expect(result.error).toBeUndefined();
+    expect(result.task.state).toBe("closed");
+  });
+
   it("[FR-CLI-014-AC3] reviewer 以外による承認を拒否する", () => {
     const task = makeTask({ reviewer: "alice" });
     const result = applyTaskUpdate(task, { approveReview: "bob" }, config);
