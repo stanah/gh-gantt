@@ -81,6 +81,23 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     expect(script).toContain("usage: $0 --pr <number>");
   });
 
+  it("CodeRabbit status が成功済みなら rate-limit コメントだけで追対応扱いにしない", async () => {
+    const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+    const checkCounts = extractBetween(script, "check_counts() {", "\n}\n\ncollect_snapshot()");
+    const collectSnapshot = extractBetween(
+      script,
+      "collect_snapshot() {",
+      "\n}\n\nsnapshot_needs_followup()",
+    );
+
+    expect(checkCounts).toContain('contains("coderabbit")');
+    expect(checkCounts).toContain('.bucket == "pass"');
+    expect(collectSnapshot).toContain("coderabbit_pass");
+    expect(collectSnapshot).toContain('[ "$rate_limit" = "1" ] && [ "$coderabbit_pass" -gt 0 ]');
+    expect(collectSnapshot).toContain('rate_limit="0"');
+    expect(collectSnapshot).toContain("UNKNOWN\\tUNKNOWN\\tUNKNOWN\\tUNKNOWN");
+  });
+
   it("セッションをまたぐ入口として all-open sweep を固定する", async () => {
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
 
