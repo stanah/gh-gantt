@@ -652,3 +652,37 @@ areas:
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts
+      - id: NFR-STABILITY-008
+        summary: gh-gantt-pr skill による PR 作成ワークフロー標準化
+        acceptance_criteria:
+          - id: NFR-STABILITY-008-AC1
+            description: |
+              gh-gantt-pr skill は Issue 番号、Issue タイプ、Issue タイトルから
+              task / feature → feat、bug → fix、epic → epic、milestone → milestone
+              の prefix を使った branch 名を定義している
+            status: covered
+            tests:
+              - tests/workflow/pr-skill.test.ts
+          - id: NFR-STABILITY-008-AC2
+            description: |
+              gh-gantt-pr skill は Summary、Closes/Fixes の Issue link、Test Plan を
+              含む PR description と --body-file を使う gh pr create の実行手順を
+              定義している
+            status: covered
+            tests:
+              - tests/workflow/pr-skill.test.ts
+          - id: NFR-STABILITY-008-AC3
+            description: |
+              gh-gantt-pr skill はビルド、テスト、lint、typecheck、hook、
+              レビュー監視、言語やパッケージマネージャ選択を扱わないことを
+              明記している
+            status: covered
+            tests:
+              - tests/workflow/pr-skill.test.ts
+          - id: NFR-STABILITY-008-AC4
+            description: |
+              gh-gantt-workflow skill と AGENTS.md は PR 作成部分の標準化先として
+              gh-gantt-pr skill を参照している
+            status: covered
+            tests:
+              - tests/workflow/pr-skill.test.ts
