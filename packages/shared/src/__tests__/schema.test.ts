@@ -252,6 +252,28 @@ describe("TasksFileSchema", () => {
     expect(() => TasksFileSchema.parse(data)).not.toThrow();
   });
 
+  it("[FR-STORE-003-AC1] linked_prs はメタデータ付き PR と legacy number の両方を受理する", () => {
+    const data = {
+      tasks: [
+        {
+          ...validTask,
+          linked_prs: [
+            42,
+            {
+              number: 100,
+              title: "Show linked PR title",
+              state: "merged",
+              url: "https://github.com/owner/repo/pull/100",
+            },
+          ],
+        },
+      ],
+      cache: { comments: {}, reactions: {} },
+    };
+
+    expect(() => TasksFileSchema.parse(data)).not.toThrow();
+  });
+
   it("should strip unknown keys from tasks (strict mode)", () => {
     const taskWithMarkers = {
       ...validTask,

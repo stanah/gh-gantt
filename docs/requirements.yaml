@@ -82,6 +82,19 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/rebase.test.ts
+      - id: FR-SYNC-007
+        summary: Linked PR メタデータ同期
+        acceptance_criteria:
+          - id: FR-SYNC-007-AC1
+            description: GitHub Issue に紐づく PR の number/title/state/url を取得できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/fetch-project.test.ts
+          - id: FR-SYNC-007-AC2
+            description: 取得した linked PR メタデータを Task.linked_prs にマッピングできる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/mapper.test.ts
       - id: NFR-SYNC-001
         summary: push 中の障害耐性
         acceptance_criteria:
@@ -438,6 +451,19 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/detail-panel.test.tsx
+      - id: FR-VIS-012
+        summary: Linked PR のタイトル表示
+        acceptance_criteria:
+          - id: FR-VIS-012-AC1
+            description: TaskDetailPanel の Linked PRs セクションで PR タイトルを表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-relations.test.tsx
+          - id: FR-VIS-012-AC2
+            description: Linked PRs セクションで PR state をバッジとして表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-relations.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
@@ -458,6 +484,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/store.test.ts
+      - id: FR-STORE-003
+        summary: Linked PR メタデータの保存形式
+        acceptance_criteria:
+          - id: FR-STORE-003-AC1
+            description: Task.linked_prs は legacy number と metadata object の両方を受理できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
       - id: NFR-STORE-001
         summary: スキーマバリデーション
         acceptance_criteria:

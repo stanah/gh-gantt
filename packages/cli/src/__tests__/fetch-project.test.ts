@@ -36,6 +36,7 @@ function makeIssueItem(overrides: Partial<Record<string, unknown>> = {}) {
       createdAt: "2026-01-01",
       updatedAt: "2026-01-01",
       closedAt: null,
+      closedByPullRequestsReferences: { nodes: [] },
       repository: { nameWithOwner: "owner/repo" },
       ...overrides,
     },
@@ -97,5 +98,35 @@ describe("fetchProject", () => {
     const result = await fetchProject(gql, "stanah", 5, "user");
     expect(result.items).toHaveLength(0);
     expect(result.projectTitle).toBe("Test Project");
+  });
+
+  it("[FR-SYNC-007-AC1] Issue に紐づく PR の番号・タイトル・状態を取得する", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(
+      makeProjectResponse([
+        makeIssueItem({
+          closedByPullRequestsReferences: {
+            nodes: [
+              {
+                number: 100,
+                title: "Fix task detail relation display",
+                state: "MERGED",
+                url: "https://github.com/owner/repo/pull/100",
+              },
+            ],
+          },
+        }),
+      ]),
+    ) as any;
+
+    const result = await fetchProject(gql, "stanah", 5, "user");
+
+    expect(result.items[0].content?.linkedPullRequests).toEqual([
+      {
+        number: 100,
+        title: "Fix task detail relation display",
+        state: "merged",
+        url: "https://github.com/owner/repo/pull/100",
+      },
+    ]);
   });
 });

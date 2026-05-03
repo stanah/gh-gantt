@@ -28,6 +28,12 @@ export interface RawProjectItem {
     closedAt: string | null;
     issueType: string | null;
     repository: string;
+    linkedPullRequests: Array<{
+      number: number;
+      title: string;
+      state: string;
+      url: string | null;
+    }>;
   } | null;
 }
 
@@ -104,6 +110,14 @@ export async function fetchProject(
           closedAt: content.closedAt,
           issueType: content.issueType?.name ?? null,
           repository: content.repository.nameWithOwner,
+          linkedPullRequests: (content.closedByPullRequestsReferences?.nodes ?? []).map(
+            (pr: any) => ({
+              number: pr.number,
+              title: pr.title,
+              state: String(pr.state).toLowerCase(),
+              url: pr.url ?? null,
+            }),
+          ),
         },
       });
     }

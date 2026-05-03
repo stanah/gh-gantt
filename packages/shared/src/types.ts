@@ -36,6 +36,15 @@ export interface Dependency {
   lag: number;
 }
 
+export interface LinkedPullRequest {
+  number: number;
+  title: string;
+  state: string;
+  url: string | null;
+}
+
+export type LinkedPullRequestRef = number | LinkedPullRequest;
+
 export interface Task {
   id: string;
   type: string;
@@ -51,7 +60,7 @@ export interface Task {
   assignees: string[];
   labels: string[];
   milestone: string | null;
-  linked_prs: number[];
+  linked_prs: LinkedPullRequestRef[];
   created_at: string;
   updated_at: string;
   closed_at: string | null;

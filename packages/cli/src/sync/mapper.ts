@@ -35,7 +35,7 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
     assignees: c.assignees,
     labels: c.labels,
     milestone: c.milestone,
-    linked_prs: [],
+    linked_prs: c.linkedPullRequests,
     created_at: c.createdAt,
     updated_at: c.updatedAt,
     closed_at: c.closedAt,

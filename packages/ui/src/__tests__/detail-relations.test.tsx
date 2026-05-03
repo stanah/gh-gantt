@@ -62,7 +62,7 @@ describe("DetailRelations", () => {
     expect(html).toContain("#10");
   });
 
-  it("renders Linked PRs with correct links", () => {
+  it("renders legacy numeric Linked PRs with correct links", () => {
     const html = renderToStaticMarkup(
       <DetailRelations
         blockedBy={[]}
@@ -77,5 +77,37 @@ describe("DetailRelations", () => {
     expect(html).toContain("https://github.com/stanah/gh-gantt/pull/99");
     expect(html).toContain("#42");
     expect(html).toContain("#99");
+  });
+
+  it("[FR-VIS-012-AC1][FR-VIS-012-AC2] Linked PRs にタイトルと状態バッジを表示する", () => {
+    const html = renderToStaticMarkup(
+      <DetailRelations
+        blockedBy={[]}
+        linkedPrs={[
+          {
+            number: 100,
+            title: "Fix relation details",
+            state: "merged",
+            url: "https://github.com/stanah/gh-gantt/pull/100",
+          },
+          {
+            number: 101,
+            title: "Open follow-up",
+            state: "open",
+            url: null,
+          },
+        ]}
+        allTasks={[]}
+        onSelectTask={vi.fn()}
+        githubRepo="stanah/gh-gantt"
+      />,
+    );
+
+    expect(html).toContain("Fix relation details");
+    expect(html).toContain("Open follow-up");
+    expect(html).toContain("Merged");
+    expect(html).toContain("Open");
+    expect(html).toContain("https://github.com/stanah/gh-gantt/pull/100");
+    expect(html).toContain("https://github.com/stanah/gh-gantt/pull/101");
   });
 });

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   Config,
   Dependency,
+  LinkedPullRequest,
   SprintConfig,
   Statuses,
   SyncFields,
@@ -56,6 +57,15 @@ export const DependencySchema: z.ZodType<Dependency> = z.object({
   lag: z.number(),
 });
 
+export const LinkedPullRequestSchema: z.ZodType<LinkedPullRequest> = z.object({
+  number: z.number(),
+  title: z.string(),
+  state: z.string(),
+  url: z.string().nullable(),
+});
+
+const LinkedPullRequestRefSchema = z.union([z.number(), LinkedPullRequestSchema]);
+
 const TaskSchemaObject = z.object({
   id: z.string(),
   type: z.string(),
@@ -70,7 +80,7 @@ const TaskSchemaObject = z.object({
   assignees: z.array(z.string()),
   labels: z.array(z.string()),
   milestone: z.string().nullable(),
-  linked_prs: z.array(z.number()),
+  linked_prs: z.array(LinkedPullRequestRefSchema),
   created_at: z.string(),
   updated_at: z.string(),
   closed_at: z.string().nullable(),
