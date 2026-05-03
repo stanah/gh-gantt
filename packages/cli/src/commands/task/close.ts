@@ -43,7 +43,8 @@ export function createTaskCloseCommand(): Command {
         tasksFile.tasks[taskIndex] = result.task;
         await tasksStore.write(tasksFile);
 
-        if (!opts.evidence && config.require_close_evidence !== true) {
+        const evidence = typeof opts.evidence === "string" ? opts.evidence.trim() : "";
+        if (evidence.length === 0 && config.require_close_evidence !== true) {
           console.warn('Warning: closing without evidence. Use --evidence "<summary>".');
         }
 

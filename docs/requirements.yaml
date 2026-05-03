@@ -411,6 +411,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/command-structure.test.ts
+              - packages/cli/src/__tests__/task-close-command.test.ts
               - packages/cli/src/__tests__/task-commands.test.ts
           - id: FR-CLI-016-AC2
             description: require_close_evidence 設定が有効な場合は evidence なし close を拒否できる
