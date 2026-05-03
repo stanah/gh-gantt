@@ -128,6 +128,10 @@ export interface TaskTemplates {
   mapping?: Record<string, string>;
 }
 
+export interface DoctorConfig {
+  stale_in_progress_days?: number;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -142,6 +146,7 @@ export interface Config {
   grouping?: GroupingConfig;
   sprints?: SprintConfig[];
   task_templates?: TaskTemplates;
+  doctor?: DoctorConfig;
 }
 
 export interface IdMapping {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type {
   Config,
   Dependency,
+  DoctorConfig,
   LinkedPullRequest,
   SprintConfig,
   Statuses,
@@ -109,6 +110,10 @@ const TaskTemplatesSchema = z.object({
   mapping: z.record(z.string().trim().min(1)).optional(),
 });
 
+const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
+  stale_in_progress_days: z.number().int().positive().optional(),
+});
+
 export const ConfigSchema: z.ZodType<Config> = z.object({
   version: z.string(),
   project: z.object({
@@ -147,6 +152,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
   grouping: GroupingSchema.optional(),
   sprints: z.array(SprintSchema).optional(),
   task_templates: TaskTemplatesSchema.optional(),
+  doctor: DoctorConfigSchema.optional(),
 });
 
 export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
