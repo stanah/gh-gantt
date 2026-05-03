@@ -430,4 +430,103 @@ describe("createApiRouter", () => {
     expect(written.tasks[0].type).toBe("task");
     expect(written.tasks[0].labels).toEqual(["task", "keep"]);
   });
+
+  it("[FR-API-005-AC1] PATCH /api/tasks/:id は sprint 期間への日付更新を保存する", async () => {
+    const configStore = new ConfigStore(dir);
+    const tasksStore = new TasksStore(dir);
+
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
+      },
+      type_hierarchy: {},
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+      sprints: [
+        {
+          name: "Sprint 2",
+          start_date: "2026-04-15",
+          end_date: "2026-04-28",
+          color: "#123456",
+        },
+      ],
+    });
+    await tasksStore.write({
+      tasks: [
+        {
+          id: "o/r#1",
+          type: "task",
+          github_issue: 1,
+          github_repo: "o/r",
+          parent: null,
+          sub_tasks: [],
+          title: "Task",
+          body: null,
+          state: "open" as const,
+          state_reason: null,
+          assignees: [],
+          labels: ["task"],
+          milestone: null,
+          linked_prs: [],
+          created_at: "2026-01-01T00:00:00Z",
+          updated_at: "2026-01-01T00:00:00Z",
+          closed_at: null,
+          custom_fields: {},
+          start_date: null,
+          end_date: null,
+          date: null,
+          blocked_by: [],
+        },
+      ],
+      cache: { comments: {}, reactions: {} },
+    });
+
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === "/api/tasks/:id" && layer.route?.methods?.patch,
+    );
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("PATCH /api/tasks/:id handler not found");
+
+    let statusCode = 200;
+    let jsonPayload: any;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+
+    await handler(
+      {
+        params: { id: encodeURIComponent("o/r#1") },
+        body: { start_date: "2026-04-15", end_date: "2026-04-28" },
+      },
+      res,
+    );
+
+    const written = await tasksStore.read();
+
+    expect(statusCode).toBe(200);
+    expect(jsonPayload.start_date).toBe("2026-04-15");
+    expect(jsonPayload.end_date).toBe("2026-04-28");
+    expect(written.tasks[0].start_date).toBe("2026-04-15");
+    expect(written.tasks[0].end_date).toBe("2026-04-28");
+  });
 });

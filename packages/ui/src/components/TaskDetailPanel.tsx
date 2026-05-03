@@ -6,6 +6,7 @@ import { DetailHeader } from "./detail/DetailHeader.js";
 import { DetailMetaSidebar } from "./detail/DetailMetaSidebar.js";
 import { DetailSubTasks } from "./detail/DetailSubTasks.js";
 import { DetailRelations } from "./detail/DetailRelations.js";
+import { DetailSprintControl } from "./detail/DetailSprintControl.js";
 import { formatUpdatedAt } from "../lib/date-utils.js";
 
 const MIN_PANEL_WIDTH = 320;
@@ -504,6 +505,8 @@ export function TaskDetailPanel({
               </span>
             ))}
           </div>
+
+          {!isMilestone && <DetailSprintControl task={task} config={config} onUpdate={onUpdate} />}
 
           {/* Description */}
           <div>

@@ -312,6 +312,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/server-api.test.ts
+      - id: FR-API-005
+        summary: スプリント期間へのタスク日付更新
+        acceptance_criteria:
+          - id: FR-API-005-AC1
+            description: PATCH /api/tasks/:id が sprint 期間として渡された start_date/end_date を保存できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
   - id: VIS
     name: Visualization
     description: ガントチャートによるプロジェクト可視化
@@ -412,6 +420,24 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/sprint-display.test.tsx
+      - id: FR-VIS-011
+        summary: スプリントへのタスク移動 UI
+        acceptance_criteria:
+          - id: FR-VIS-011-AC1
+            description: タスク詳細パネルで選択タスクの現在 sprint を表示し、configured sprint を選択できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
+          - id: FR-VIS-011-AC2
+            description: sprint を選択すると task の start_date/end_date を sprint 期間へ更新する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
+          - id: FR-VIS-011-AC3
+            description: sprint 未設定時は既存の詳細パネル表示を維持する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
