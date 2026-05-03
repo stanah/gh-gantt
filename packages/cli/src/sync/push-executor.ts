@@ -1,8 +1,9 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
 import {
-  serializeAcceptanceCriteriaBody,
+  DEFAULT_ESTIMATE_HOURS_FIELD,
   parseEstimateHours,
+  serializeAcceptanceCriteriaBody,
   serializeTaskReviewBody,
   serializeTaskRolesBody,
 } from "@gh-gantt/shared";
@@ -981,14 +982,15 @@ function buildEstimateHoursFieldUpdate(
   projectItemId: string,
   task: Task,
 ): Promise<unknown> | null {
-  if (!fm.estimate_hours || !syncState.field_ids[fm.estimate_hours]) return null;
-  const estimateHours = parseEstimateHours(task.custom_fields[fm.estimate_hours]);
+  const estimateHoursField = fm.estimate_hours ?? DEFAULT_ESTIMATE_HOURS_FIELD;
+  if (!syncState.field_ids[estimateHoursField]) return null;
+  const estimateHours = parseEstimateHours(task.custom_fields[estimateHoursField]);
   if (estimateHours === null) return null;
   return updateProjectItemField(
     gql,
     syncState.project_node_id,
     projectItemId,
-    syncState.field_ids[fm.estimate_hours],
+    syncState.field_ids[estimateHoursField],
     {
       number: estimateHours,
     },

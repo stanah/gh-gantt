@@ -1269,11 +1269,11 @@ describe("executePush", () => {
       expect(Math.max(startIdx, endStartIdx)).toBeLessThan(Math.min(startEndIdx, endEndIdx));
     });
 
-    it("[FR-CLI-015-AC3] estimate_hours field mapping がある場合は number custom field を同期する", async () => {
+    it("[FR-CLI-015-AC3] estimate_hours は既定 field key でも number custom field を同期する", async () => {
       const fieldUpdates: any[] = [];
       const task = makeTask("o/r#1", {
         github_issue: 1,
-        custom_fields: { Estimate: 13 },
+        custom_fields: { estimate_hours: 13 },
       });
       const tasksFile: TasksFile = {
         tasks: [task],
@@ -1285,7 +1285,7 @@ describe("executePush", () => {
         id_map: {
           "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
         },
-        field_ids: { Estimate: "FIELD_ESTIMATE" },
+        field_ids: { estimate_hours: "FIELD_ESTIMATE" },
         snapshots: {
           "o/r#1": {
             hash: "stale-hash",
@@ -1295,17 +1295,7 @@ describe("executePush", () => {
           },
         },
       };
-      const config = makeConfig({
-        sync: {
-          auto_create_issues: true,
-          field_mapping: {
-            start_date: "Start Date",
-            end_date: "End Date",
-            status: "Status",
-            estimate_hours: "Estimate",
-          },
-        },
-      });
+      const config = makeConfig();
 
       const mockGql = makeMockGql({
         updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
