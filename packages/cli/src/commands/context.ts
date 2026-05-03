@@ -5,7 +5,8 @@ import { z } from "zod";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import type { Config, SyncState, Task, StatusValue } from "@gh-gantt/shared";
+import type { Config, SyncState, Task } from "@gh-gantt/shared";
+import { isInProgressTask, readStatus } from "../utils/status.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_RECENT_DAYS = 7;
@@ -398,33 +399,6 @@ function buildRecommendedActions(input: {
   }
 
   return actions;
-}
-
-function isInProgressTask(task: Task, config: Config): boolean {
-  const statusName = readStatus(task, config);
-  if (!statusName) return false;
-  const status = config.statuses.values[statusName];
-  if (!status) return isKnownWorkStatusName(statusName);
-  return isWorkStatus(status);
-}
-
-function isWorkStatus(status: StatusValue): boolean {
-  if (status.done) return false;
-  return (
-    status.starts_work === true ||
-    status.category === "in_progress" ||
-    status.category === "in_review"
-  );
-}
-
-function isKnownWorkStatusName(statusName: string): boolean {
-  const normalized = statusName.toLowerCase();
-  return normalized === "in progress" || normalized === "in review" || normalized === "active";
-}
-
-function readStatus(task: Task, config: Config): string | null {
-  const value = task.custom_fields[config.statuses.field_name];
-  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function compareTaskUpdatedDesc(a: Task, b: Task): number {

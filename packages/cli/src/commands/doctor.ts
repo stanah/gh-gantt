@@ -1,13 +1,14 @@
 import { Command } from "commander";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import type { Config, StatusValue, Task, SyncState, TasksFile } from "@gh-gantt/shared";
+import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
 import { detectCycles } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { hashTask } from "../sync/hash.js";
 import { validateSyncState, type SyncStateFinding } from "../sync/validate-sync-state.js";
+import { isInProgressTask } from "../utils/status.js";
 
 const execFileAsync = promisify(execFile);
 const DEFAULT_STALE_IN_PROGRESS_DAYS = 7;
@@ -236,6 +237,7 @@ function checkCycles(tasks: Task[]): CheckResult {
 
 function checkProjectStaleState(tasks: Task[], config: Config, now = new Date()): CheckResult[] {
   return [
+    checkInvalidInProgressUpdatedAt(tasks, config),
     checkStaleInProgressTasks(tasks, config, now),
     checkInProgressTasksWithoutPullRequest(tasks, config),
     checkOpenTasksWithClosedBlockers(tasks),
@@ -249,9 +251,7 @@ function checkStaleInProgressTasks(tasks: Task[], config: Config, now: Date): Ch
     .filter((task) => task.state === "open" && isInProgressTask(task, config))
     .flatMap((task) => {
       const ageDays = calculateAgeDays(task.updated_at, now);
-      if (ageDays === null) {
-        return [`${task.id}: updated_at が不正です (${task.updated_at})`];
-      }
+      if (ageDays === null) return [];
       if (ageDays < thresholdDays) return [];
       return [
         `${task.id}: ${ageDays} 日更新がありません (updated_at: ${task.updated_at}, threshold: ${thresholdDays} 日)`,
@@ -271,6 +271,28 @@ function checkStaleInProgressTasks(tasks: Task[], config: Config, now: Date): Ch
     status: "WARN",
     message: `${staleTasks.length} 件の stale な in-progress タスクがあります`,
     details: staleTasks,
+  };
+}
+
+function checkInvalidInProgressUpdatedAt(tasks: Task[], config: Config): CheckResult {
+  const invalidTasks = tasks
+    .filter((task) => task.state === "open" && isInProgressTask(task, config))
+    .filter((task) => calculateAgeDays(task.updated_at, new Date()) === null)
+    .map((task) => `${task.id}: updated_at が不正です (${task.updated_at})`);
+
+  if (invalidTasks.length === 0) {
+    return {
+      name: "project-invalid-updated-at",
+      status: "PASS",
+      message: "updated_at が不正な in-progress タスクはありません",
+    };
+  }
+
+  return {
+    name: "project-invalid-updated-at",
+    status: "WARN",
+    message: `${invalidTasks.length} 件の in-progress タスクで updated_at が不正です`,
+    details: invalidTasks,
   };
 }
 
@@ -325,9 +347,10 @@ function checkOpenTasksWithClosedBlockers(tasks: Task[]): CheckResult {
 }
 
 function checkOrphanInProgressTasks(tasks: Task[], config: Config): CheckResult {
+  const taskMap = new Map(tasks.map((task) => [task.id, task]));
   const details = tasks
     .filter((task) => task.state === "open" && isInProgressTask(task, config))
-    .filter((task) => task.parent === null && !isEpicLikeTask(task))
+    .filter((task) => !hasEpicAncestorOrSelf(task, taskMap))
     .map((task) => `${task.id}: in-progress ですが Epic に属していません`);
 
   if (details.length === 0) {
@@ -346,35 +369,26 @@ function checkOrphanInProgressTasks(tasks: Task[], config: Config): CheckResult 
   };
 }
 
-function isInProgressTask(task: Task, config: Config): boolean {
-  const statusName = readStatus(task, config);
-  if (!statusName) return false;
-  const status = config.statuses.values[statusName];
-  if (!status) return isKnownWorkStatusName(statusName);
-  return isWorkStatus(status);
-}
+function hasEpicAncestorOrSelf(task: Task, taskMap: Map<string, Task>): boolean {
+  let current: Task | undefined = task;
+  const visited = new Set<string>();
 
-function isWorkStatus(status: StatusValue): boolean {
-  if (status.done) return false;
-  return (
-    status.starts_work === true ||
-    status.category === "in_progress" ||
-    status.category === "in_review"
-  );
-}
+  while (current) {
+    if (isEpicLikeTask(current)) return true;
+    if (!current.parent) return false;
+    if (visited.has(current.id)) return false;
+    visited.add(current.id);
+    current = taskMap.get(current.parent);
+  }
 
-function isKnownWorkStatusName(statusName: string): boolean {
-  const normalized = statusName.toLowerCase();
-  return normalized === "in progress" || normalized === "in review" || normalized === "active";
-}
-
-function readStatus(task: Task, config: Config): string | null {
-  const value = task.custom_fields[config.statuses.field_name];
-  return typeof value === "string" && value.length > 0 ? value : null;
+  return false;
 }
 
 function isEpicLikeTask(task: Task): boolean {
-  return task.type === "epic" || task.labels.includes("epic");
+  return (
+    task.type.toLowerCase() === "epic" ||
+    task.labels.some((label) => label.trim().toLowerCase() === "epic")
+  );
 }
 
 function calculateAgeDays(updatedAt: string, now: Date): number | null {

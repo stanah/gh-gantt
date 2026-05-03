@@ -362,15 +362,21 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
         custom_fields: { Status: "In Progress" },
         linked_prs: [{ number: 10, title: "作業中", state: "open", url: null }],
       });
+      const epicParent = makeTask("o/r#99", {
+        github_issue: 99,
+        type: "epic",
+        custom_fields: { Status: "Todo" },
+      });
 
       testDir = await setupProjectDir({
         config,
-        tasksFile: makeTasksFile([closedBlocker, target, healthy]),
+        tasksFile: makeTasksFile([closedBlocker, target, healthy, epicParent]),
         syncState: makeSyncState({
           id_map: {
             "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
             "o/r#2": { issue_number: 2, issue_node_id: "I_2", project_item_id: "PI_2" },
             "o/r#3": { issue_number: 3, issue_node_id: "I_3", project_item_id: "PI_3" },
+            "o/r#99": { issue_number: 99, issue_node_id: "I_99", project_item_id: "PI_99" },
           },
         }),
       });
@@ -423,6 +429,136 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
       const output = await runDoctorJson(testDir);
       const staleCheck = output.checks.find((c) => c.name === "project-stale-in-progress");
 
+      expect(staleCheck?.status).toBe("PASS");
+    });
+
+    it("Epic ancestor を持たない nested task を孤立として検出する", async () => {
+      const config = makeConfig();
+      config.statuses.values["In Progress"] = {
+        color: "#00f",
+        done: false,
+        starts_work: true,
+      };
+      const topLevelEpicLabel = makeTask("o/r#1", {
+        github_issue: 1,
+        labels: ["Epic"],
+        custom_fields: { Status: "In Progress" },
+      });
+      const epic = makeTask("o/r#2", {
+        github_issue: 2,
+        type: "epic",
+        custom_fields: { Status: "Todo" },
+      });
+      const featureUnderEpic = makeTask("o/r#3", {
+        github_issue: 3,
+        parent: "o/r#2",
+        custom_fields: { Status: "Todo" },
+      });
+      const childUnderEpic = makeTask("o/r#4", {
+        github_issue: 4,
+        parent: "o/r#3",
+        custom_fields: { Status: "In Progress" },
+      });
+      const orphanParent = makeTask("o/r#5", {
+        github_issue: 5,
+        custom_fields: { Status: "Todo" },
+      });
+      const orphanChild = makeTask("o/r#6", {
+        github_issue: 6,
+        parent: "o/r#5",
+        custom_fields: { Status: "In Progress" },
+      });
+      const tasks = [
+        topLevelEpicLabel,
+        epic,
+        featureUnderEpic,
+        childUnderEpic,
+        orphanParent,
+        orphanChild,
+      ];
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile(tasks),
+        syncState: makeSyncState({
+          id_map: Object.fromEntries(
+            tasks.map((task) => [
+              task.id,
+              {
+                issue_number: task.github_issue ?? 0,
+                issue_node_id: `I_${task.github_issue}`,
+                project_item_id: `PI_${task.github_issue}`,
+              },
+            ]),
+          ),
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const orphanCheck = output.checks.find((c) => c.name === "project-orphan-in-progress");
+
+      expect(orphanCheck?.status).toBe("WARN");
+      expect(orphanCheck?.details).toEqual([expect.stringContaining("o/r#6")]);
+    });
+
+    it("未知 status の Working も in-progress として扱う", async () => {
+      const config = makeConfig();
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        parent: "o/r#99",
+        updated_at: "2000-01-01T00:00:00Z",
+        custom_fields: { Status: "Working" },
+        linked_prs: [{ number: 10, title: "作業中", state: "open", url: null }],
+      });
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile([task]),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const staleCheck = output.checks.find((c) => c.name === "project-stale-in-progress");
+
+      expect(staleCheck?.status).toBe("WARN");
+      expect(staleCheck?.details).toEqual([expect.stringContaining("o/r#1")]);
+    });
+
+    it("updated_at 不正は stale 件数と分けて WARN にする", async () => {
+      const config = makeConfig();
+      config.statuses.values["In Progress"] = {
+        color: "#00f",
+        done: false,
+        starts_work: true,
+      };
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        parent: "o/r#99",
+        updated_at: "not-a-date",
+        custom_fields: { Status: "In Progress" },
+        linked_prs: [{ number: 10, title: "作業中", state: "open", url: null }],
+      });
+
+      testDir = await setupProjectDir({
+        config,
+        tasksFile: makeTasksFile([task]),
+        syncState: makeSyncState({
+          id_map: {
+            "o/r#1": { issue_number: 1, issue_node_id: "I_1", project_item_id: "PI_1" },
+          },
+        }),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const invalidCheck = output.checks.find((c) => c.name === "project-invalid-updated-at");
+      const staleCheck = output.checks.find((c) => c.name === "project-stale-in-progress");
+
+      expect(invalidCheck?.status).toBe("WARN");
+      expect(invalidCheck?.details).toEqual([expect.stringContaining("o/r#1")]);
       expect(staleCheck?.status).toBe("PASS");
     });
   });
