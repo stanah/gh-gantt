@@ -25,9 +25,11 @@ describe("[NFR-STABILITY-008-AC1] gh-gantt-pr skill は Issue から branch 名�
     expect(skill).toContain("| `feature`");
     expect(skill).toContain("| `bug`");
     expect(skill).toContain("| `epic`");
+    expect(skill).toContain("| `milestone`");
     expect(skill).toContain("`chore`");
     expect(skill).toContain("fix/issue-52-undo-drag-bug");
     expect(skill).toContain("feat/issue-44-label-filter");
+    expect(skill).toContain("milestone/issue-60-phase-1-release");
   });
 });
 
@@ -40,8 +42,9 @@ describe("[NFR-STABILITY-008-AC2] gh-gantt-pr skill は PR body と gh pr create
     expect(skill).toContain("Fixes #<issue-number>");
     expect(skill).toContain("## Test Plan");
     expect(skill).toContain(
-      "gh pr create --base <base> --head <branch> --title <title> --body <body>",
+      "gh pr create --base <base> --head <branch> --title <title> --body-file <body-file>",
     );
+    expect(skill).not.toContain("--body <body>");
   });
 });
 

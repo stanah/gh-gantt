@@ -658,15 +658,16 @@ areas:
           - id: NFR-STABILITY-008-AC1
             description: |
               gh-gantt-pr skill は Issue 番号、Issue タイプ、Issue タイトルから
-              task / feature → feat、bug → fix、epic → epic の prefix を使った
-              branch 名を定義している
+              task / feature → feat、bug → fix、epic → epic、milestone → milestone
+              の prefix を使った branch 名を定義している
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts
           - id: NFR-STABILITY-008-AC2
             description: |
               gh-gantt-pr skill は Summary、Closes/Fixes の Issue link、Test Plan を
-              含む PR description と gh pr create の実行手順を定義している
+              含む PR description と --body-file を使う gh pr create の実行手順を
+              定義している
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts
