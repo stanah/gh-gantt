@@ -85,6 +85,27 @@ describe("[FR-CLI-015-AC1] タスクサイズ見積もりの設定解決", () =>
     });
   });
 
+  it("max_task_size_hours が未設定なら超過なしとして扱う", () => {
+    const config = makeConfig();
+    const task = makeTask({ custom_fields: { estimate_hours: 13 } });
+
+    expect(getTaskEstimateHours(task, config)).toBe(13);
+    expect(getTaskSizeExcess(task, config)).toBeNull();
+  });
+
+  it("見積もり工数が閾値と等しい場合は超過なしとして扱う", () => {
+    const config = makeConfig({ max_task_size_hours: 8 });
+    const task = makeTask({ custom_fields: { estimate_hours: "8" } });
+
+    expect(getTaskEstimateHours(task, config)).toBe(8);
+    expect(getTaskSizeExcess(task, config)).toBeNull();
+  });
+
+  it("数値文字列と数値を見積もり工数として受理する", () => {
+    expect(parseEstimateHours("8")).toBe(8);
+    expect(parseEstimateHours(8)).toBe(8);
+  });
+
   it("数値でない estimate_hours は無視する", () => {
     expect(parseEstimateHours("not-a-number")).toBeNull();
     expect(parseEstimateHours(-1)).toBeNull();

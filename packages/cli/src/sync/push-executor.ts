@@ -315,23 +315,28 @@ export async function executePush(
       // Add to project
       const projectItemId = await addProjectItem(gql, syncState.project_node_id, issueId);
 
-      // Update project fields (dates)
+      // Update project fields
+      const draftFieldUpdates: Promise<unknown>[] = [];
       if (task.start_date && syncState.field_ids[fm.start_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          projectItemId,
-          syncState.field_ids[fm.start_date],
-          { date: task.start_date },
+        draftFieldUpdates.push(
+          updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.start_date],
+            { date: task.start_date },
+          ),
         );
       }
       if (task.end_date && syncState.field_ids[fm.end_date]) {
-        await updateProjectItemField(
-          gql,
-          syncState.project_node_id,
-          projectItemId,
-          syncState.field_ids[fm.end_date],
-          { date: task.end_date },
+        draftFieldUpdates.push(
+          updateProjectItemField(
+            gql,
+            syncState.project_node_id,
+            projectItemId,
+            syncState.field_ids[fm.end_date],
+            { date: task.end_date },
+          ),
         );
       }
 
@@ -344,19 +349,21 @@ export async function executePush(
           syncState.option_ids,
         );
         if (typeOptionId) {
-          await updateProjectItemField(
-            gql,
-            syncState.project_node_id,
-            projectItemId,
-            syncState.field_ids[fm.type],
-            { singleSelectOptionId: typeOptionId },
+          draftFieldUpdates.push(
+            updateProjectItemField(
+              gql,
+              syncState.project_node_id,
+              projectItemId,
+              syncState.field_ids[fm.type],
+              { singleSelectOptionId: typeOptionId },
+            ),
           );
         }
       }
 
       // Set Priority custom field
       const priorityUpdate = buildPriorityFieldUpdate(gql, syncState, fm, projectItemId, task);
-      if (priorityUpdate) await priorityUpdate;
+      if (priorityUpdate) draftFieldUpdates.push(priorityUpdate);
       const estimateHoursUpdate = buildEstimateHoursFieldUpdate(
         gql,
         syncState,
@@ -364,7 +371,10 @@ export async function executePush(
         projectItemId,
         task,
       );
-      if (estimateHoursUpdate) await estimateHoursUpdate;
+      if (estimateHoursUpdate) draftFieldUpdates.push(estimateHoursUpdate);
+      if (draftFieldUpdates.length > 0) {
+        await Promise.all(draftFieldUpdates);
+      }
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
