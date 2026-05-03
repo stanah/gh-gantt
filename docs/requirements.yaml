@@ -219,7 +219,7 @@ areas:
         summary: コマンド体系
         acceptance_criteria:
           - id: FR-CLI-006-AC1
-            description: init/pull/push/status/create/list/show/update/link/serve/conflicts/resolve コマンドが定義されている
+            description: init/pull/push/status/create/list/show/update/link/context/serve/conflicts/resolve コマンドが定義されている
             status: covered
             tests:
               - packages/cli/src/__tests__/command-structure.test.ts
@@ -231,6 +231,19 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/task-id.test.ts
+      - id: FR-CLI-008
+        summary: セッション文脈の復元
+        acceptance_criteria:
+          - id: FR-CLI-008-AC1
+            description: context コマンドが作業中タスク・open PR・直近更新タスク・ブロッカー・推奨次アクションを集約できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/context.test.ts
+          - id: FR-CLI-008-AC2
+            description: context --json が機械可読な JSON を出力できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/context.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層
