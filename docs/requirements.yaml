@@ -478,7 +478,10 @@ areas:
               PR 作成後・push 後・次セッション開始時に、Bot と人間の未解決
               review thread / changes requested review / pending または blocking
               checks / PR activity の quiet window を gh で検出し、対応を促す
-              gh-gantt-workflow skill 付属 script と workflow が定義されている
+              gh-gantt-workflow skill 付属 script と workflow が定義されている。
+              セッション開始時と完了報告前はリポジトリのオープン PR 全件を確認し、
+              完了報告前は quiet window と stable samples を満たすまで待つ。
+              現在ブランチの PR だけで完了扱いしない
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts

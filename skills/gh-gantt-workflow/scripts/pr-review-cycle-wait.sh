@@ -227,11 +227,18 @@ collect_snapshot() {
   metadata=$(
     gh pr view "$number" \
       --json number,url,state,isDraft,headRefOid,reviewDecision,updatedAt \
-      --jq '[.number, .url, .state, (.isDraft | tostring), .headRefOid, (if .reviewDecision == null or .reviewDecision == "" then "UNKNOWN" else .reviewDecision end), .updatedAt] | @tsv' \
+      --jq '[.number, .url, .state, (.isDraft | tostring), .headRefOid, (if .reviewDecision == null or .reviewDecision == "" then "NONE" else .reviewDecision end), .updatedAt] | @tsv' \
       2>/dev/null || true
   )
   if [ -z "$metadata" ]; then
-    return 1
+    # metadata 取得失敗時も PR 単位の UNKNOWN snapshot を出し、完了扱いにしない。
+    local fallback_url fallback_epoch
+    fallback_url="https://github.com/$repo/pull/$number"
+    fallback_epoch=$(now_epoch)
+    review_decision="UNKNOWN"
+    printf '%s\t%s\tOPEN\tfalse\tUNKNOWN\t%s\tUNKNOWN\tUNKNOWN\tUNKNOWN\tUNKNOWN\t%s|UNKNOWN\n' \
+      "$number" "$fallback_url" "$review_decision" "$fallback_epoch"
+    return 0
   fi
 
   IFS=$'\t' read -r number_value url state is_draft head_sha review_decision updated_at <<<"$metadata"
@@ -271,6 +278,7 @@ snapshot_needs_followup() {
   local rate_limit="$6"
 
   [ "$review_decision" = "CHANGES_REQUESTED" ] && return 0
+  [ "$review_decision" = "UNKNOWN" ] && return 0
   [ "$unresolved_count" = "UNKNOWN" ] && return 0
   [ "$checks_seen" = "UNKNOWN" ] && return 0
   [ "$checks_seen" = "0" ] && return 0
@@ -388,8 +396,8 @@ case "$mode" in
     ;;
   all-open)
     found=0
-    pr_numbers=$(gh pr list --author @me --state open --json number --jq '.[].number') || {
-      echo "[gh-gantt workflow] failed to list open PRs for current user" >&2
+    pr_numbers=$(gh api --paginate "repos/$repo/pulls?state=open&per_page=100" --jq '.[].number') || {
+      echo "[gh-gantt workflow] failed to list open PRs for repository" >&2
       exit 1
     }
     while IFS= read -r number; do
@@ -398,7 +406,7 @@ case "$mode" in
       wait_for_pr "$number" || status=$?
     done <<<"$pr_numbers"
     if [ "$found" -eq 0 ]; then
-      echo "[gh-gantt workflow] no open PRs for current user"
+      echo "[gh-gantt workflow] no open PRs in repository"
     fi
     ;;
   pr)
