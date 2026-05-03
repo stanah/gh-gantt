@@ -219,7 +219,7 @@ areas:
         summary: コマンド体系
         acceptance_criteria:
           - id: FR-CLI-006-AC1
-            description: init/pull/push/status/create/list/show/update/link/context/serve/conflicts/resolve コマンドが定義されている
+            description: init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve コマンドが定義されている
             status: covered
             tests:
               - packages/cli/src/__tests__/command-structure.test.ts
@@ -244,6 +244,19 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/context.test.ts
+      - id: FR-CLI-009
+        summary: スプリント設定 CRUD
+        acceptance_criteria:
+          - id: FR-CLI-009-AC1
+            description: sprint CLI で config の sprints を list/create/update/delete できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/sprint-command.test.ts
+          - id: FR-CLI-009-AC2
+            description: sprint CLI は重複 name と不正な日付範囲を拒否する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/sprint-command.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層
