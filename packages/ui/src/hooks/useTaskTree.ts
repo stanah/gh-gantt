@@ -139,9 +139,9 @@ function hasSchedule(task: Task): boolean {
   return Boolean(task.start_date || task.end_date || task.date);
 }
 
-function getScheduleState(task: Task, taskById: Map<string, Task>): ScheduleState {
+function getScheduleState(task: Task, visibleTaskById: Map<string, Task>): ScheduleState {
   if (hasSchedule(task)) return "scheduled";
-  return task.parent && taskById.has(task.parent) ? "unscheduled_child" : "unscheduled_root";
+  return task.parent && visibleTaskById.has(task.parent) ? "unscheduled_child" : "unscheduled_root";
 }
 
 function cloneForGroup(
@@ -369,7 +369,7 @@ export function useTaskTree(
     const buildNode = (task: Task, depth: number): TreeNode => ({
       task,
       renderKey: task.id,
-      scheduleState: getScheduleState(task, taskById),
+      scheduleState: getScheduleState(task, taskMap),
       children: sortTaskList(
         task.sub_tasks
           .map((id) => taskMap.get(id))

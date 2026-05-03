@@ -250,6 +250,7 @@ export function TaskRow({
             borderRadius: 2,
             background: isUnscheduledChild ? "transparent" : taskType.color,
             border: isUnscheduledChild ? `1px dashed ${taskType.color}` : undefined,
+            boxSizing: "border-box",
             flexShrink: 0,
           }}
         />
