@@ -119,9 +119,15 @@ export interface GanttColors {
   overdue: string;
 }
 
+export interface CalendarHoliday {
+  date: string;
+  name?: string;
+}
+
 export interface GanttConfig {
   default_view: ViewScale;
   working_days: number[];
+  holidays?: CalendarHoliday[];
   colors: GanttColors;
 }
 

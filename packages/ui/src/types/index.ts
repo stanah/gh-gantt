@@ -80,6 +80,11 @@ export interface GroupingConfig {
   label_prefix: string;
 }
 
+export interface CalendarHoliday {
+  date: string;
+  name?: string;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -105,6 +110,7 @@ export interface Config {
   gantt: {
     default_view: ViewScale;
     working_days: number[];
+    holidays?: CalendarHoliday[];
     colors: { critical_path: string; on_track: string; at_risk: string; overdue: string };
   };
   grouping?: GroupingConfig;

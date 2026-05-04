@@ -18,6 +18,7 @@ import type { Task } from "./types/index.js";
 import { useUndoRedo } from "./hooks/useUndoRedo.js";
 import { SkeletonLoader } from "./components/SkeletonLoader.js";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
+import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
 
 const EMPTY_TASK_TYPES: Record<string, never> = {};
 
@@ -82,6 +83,7 @@ export function App() {
     type: "success" | "error" | "info";
   } | null>(null);
   const [syncing, setSyncing] = useState<"pull" | "push" | null>(null);
+  const { customDaysOff, addCustomDayOff, removeCustomDayOff } = useCustomNonWorkingDays();
   const {
     canUndo,
     canRedo,
@@ -613,6 +615,10 @@ export function App() {
             sprints={config?.sprints}
             enabledTypes={enabled}
             onToggleType={toggleType}
+            configuredHolidays={config.gantt.holidays ?? []}
+            customDaysOff={customDaysOff}
+            onAddCustomDayOff={addCustomDayOff}
+            onRemoveCustomDayOff={removeCustomDayOff}
           />
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
             <div
@@ -667,6 +673,7 @@ export function App() {
                     onHoverTask={setHoveredTaskId}
                     dependencyHighlightEnabled={dependencyHighlightEnabled}
                     highlightRelationMap={highlightRelationMap}
+                    customDaysOff={customDaysOff}
                   />
                 }
               />

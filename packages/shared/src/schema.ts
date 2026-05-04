@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type {
   AcceptanceCriterion,
+  CalendarHoliday,
   Config,
   Dependency,
   DoctorConfig,
@@ -123,6 +124,11 @@ const TaskTemplatesSchema = z.object({
   mapping: z.record(z.string().trim().min(1)).optional(),
 });
 
+const CalendarHolidaySchema: z.ZodType<CalendarHoliday> = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  name: z.string().trim().min(1).optional(),
+});
+
 const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
   stale_in_progress_days: z.number().int().positive().optional(),
 });
@@ -156,6 +162,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
   gantt: z.object({
     default_view: z.preprocess((v) => (v === "day" ? "week" : v), ViewScaleSchema),
     working_days: z.array(z.number()),
+    holidays: z.array(CalendarHolidaySchema).optional(),
     colors: z.object({
       critical_path: z.string(),
       on_track: z.string(),

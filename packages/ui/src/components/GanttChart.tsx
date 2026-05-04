@@ -23,7 +23,7 @@ import { useDrawBar } from "../hooks/useDrawBar.js";
 import { useGanttTooltip } from "../hooks/useGanttTooltip.js";
 import { parseDate } from "../lib/date-utils.js";
 import { ROW_HEIGHT } from "./TaskTree.js";
-import type { Task, Config } from "../types/index.js";
+import type { CalendarHoliday, Config, Task } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
 import type { RelationType } from "../hooks/useRelatedTasks.js";
@@ -49,6 +49,7 @@ interface GanttChartProps {
   onHoverTask?: (taskId: string | null) => void;
   dependencyHighlightEnabled?: boolean;
   highlightRelationMap?: Map<string, RelationType>;
+  customDaysOff?: CalendarHoliday[];
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
@@ -67,6 +68,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     onHoverTask,
     dependencyHighlightEnabled = true,
     highlightRelationMap,
+    customDaysOff = [],
   },
   ref,
 ) {
@@ -137,6 +139,10 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
   }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
+  const holidays = useMemo(
+    () => [...(config.gantt.holidays ?? []), ...customDaysOff],
+    [config.gantt.holidays, customDaysOff],
+  );
   const criticalPath = useMemo(() => calculateCriticalPath(tasks), [tasks]);
   const criticalTaskIds = useMemo(
     () => new Set(criticalPath.criticalTaskIds),
@@ -284,6 +290,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         totalWidth={totalWidth}
         totalHeight={totalHeight}
         workingDays={config.gantt.working_days}
+        holidays={holidays}
         pixelsPerDay={pixelsPerDay}
         sprints={config.sprints}
       />
