@@ -163,6 +163,7 @@ export const ConfigSchema: z.ZodType<Config> = z.object({
     default_view: z.preprocess((v) => (v === "day" ? "week" : v), ViewScaleSchema),
     working_days: z.array(z.number()),
     holidays: z.array(CalendarHolidaySchema).optional(),
+    at_risk_threshold_days: z.number().int().positive().optional(),
     colors: z.object({
       critical_path: z.string(),
       on_track: z.string(),

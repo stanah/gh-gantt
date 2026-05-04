@@ -12,6 +12,7 @@ import {
   getOverdueDays,
   getDaysUntilDue,
   formatUpdatedAt,
+  normalizeAtRiskThresholdDays,
 } from "../lib/date-utils.js";
 
 interface TaskRowProps {
@@ -34,6 +35,7 @@ interface TaskRowProps {
   highlightType?: RelationType | null;
   isDimmed?: boolean;
   searchQuery?: string;
+  atRiskThresholdDays?: number;
   draggable?: boolean;
   isDragging?: boolean;
   dropIndicator?: DropIndicator | null;
@@ -104,6 +106,7 @@ export function TaskRow({
   highlightType,
   isDimmed,
   searchQuery,
+  atRiskThresholdDays,
   draggable: isDraggable,
   isDragging,
   dropIndicator,
@@ -118,9 +121,9 @@ export function TaskRow({
   const progress = task._progress ?? 0;
   const status = task.custom_fields[statusFieldName] as string | undefined;
   const isMilestone = task.type === "milestone";
-  const atRiskThresholdDays = 3;
+  const resolvedAtRiskThresholdDays = normalizeAtRiskThresholdDays(atRiskThresholdDays);
   const overdue = !isMilestone && isOverdue(task);
-  const atRisk = !isMilestone && !overdue && isAtRisk(task, atRiskThresholdDays);
+  const atRisk = !isMilestone && !overdue && isAtRisk(task, resolvedAtRiskThresholdDays);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const bodyPreview = isHovered && !isDragging ? getBodyPreview(task.body) : null;

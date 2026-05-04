@@ -716,6 +716,26 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/working-calendar.test.tsx
+      - id: FR-VIS-018
+        summary: 遅延タスクの自動ハイライト
+        acceptance_criteria:
+          - id: FR-VIS-018-AC1
+            description: end_date を超過した open task を Gantt bar 上で overdue 色・遅延日数付きで表示し、closed task は除外する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/overdue-highlight.test.tsx
+          - id: FR-VIS-018-AC2
+            description: ツリー側タスク行に遅延日数バッジを表示する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/overdue-highlight.test.tsx
+          - id: FR-VIS-018-AC3
+            description: gantt.at_risk_threshold_days で at_risk 警告の閾値を設定できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
+              - packages/ui/src/__tests__/date-utils.test.ts
+              - packages/ui/src/__tests__/overdue-highlight.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

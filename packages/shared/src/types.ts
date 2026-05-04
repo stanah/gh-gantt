@@ -128,6 +128,7 @@ export interface GanttConfig {
   default_view: ViewScale;
   working_days: number[];
   holidays?: CalendarHoliday[];
+  at_risk_threshold_days?: number;
   colors: GanttColors;
 }
 
