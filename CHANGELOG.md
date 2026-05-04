@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1-alpha](https://github.com/stanah/gh-gantt/compare/v0.2.0-alpha...v0.2.1-alpha) (2026-05-04)
+
+
+### Bug Fixes
+
+* **release:** リリース生成物を単一化しCHANGELOGをlint除外 ([5dd3532](https://github.com/stanah/gh-gantt/commit/5dd3532117d3f07c6614d4cb6423f4fb6d663a4c))
+
 ## [0.2.0-alpha](https://github.com/stanah/gh-gantt/compare/v0.1.0-alpha...v0.2.0-alpha) (2026-05-04)
 
 
