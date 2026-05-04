@@ -675,6 +675,29 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/unscheduled-tree-display.test.tsx
+      - id: FR-VIS-016
+        summary: 稼働カレンダーの非稼働日基盤
+        acceptance_criteria:
+          - id: FR-VIS-016-AC1
+            description: 休日・休暇日を営業日計算から除外する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/date-utils.test.ts
+          - id: FR-VIS-016-AC2
+            description: gantt.holidays を設定として検証できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-VIS-016-AC3
+            description: Gantt grid が休日・休暇日を週末とは別の非稼働日として描画する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/working-calendar.test.tsx
+          - id: FR-VIS-016-AC4
+            description: UI からカスタム休暇日を追加・削除し localStorage に保存できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/working-calendar.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

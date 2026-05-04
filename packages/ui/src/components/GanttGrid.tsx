@@ -1,7 +1,8 @@
 import React, { useMemo } from "react";
 import type { ScaleTime } from "d3-scale";
 import { timeDay } from "d3-time";
-import { isWorkingDay, parseDate } from "../lib/date-utils.js";
+import { findCalendarHoliday, formatDate, isWorkingDay, parseDate } from "../lib/date-utils.js";
+import type { CalendarHoliday } from "../types/index.js";
 
 interface SprintGridItem {
   name: string;
@@ -16,6 +17,7 @@ interface GanttGridProps {
   totalWidth: number;
   totalHeight: number;
   workingDays: number[];
+  holidays?: CalendarHoliday[];
   pixelsPerDay: number;
   sprints?: SprintGridItem[];
 }
@@ -30,6 +32,7 @@ export function GanttGrid({
   totalWidth,
   totalHeight,
   workingDays,
+  holidays = [],
   pixelsPerDay,
   sprints,
 }: GanttGridProps) {
@@ -93,7 +96,8 @@ export function GanttGrid({
       {/* Non-working day shading */}
       {pixelsPerDay >= 4 &&
         days.map((day, i) => {
-          if (isWorkingDay(day, workingDays)) return null;
+          const holiday = findCalendarHoliday(day, holidays);
+          if (isWorkingDay(day, workingDays, holidays)) return null;
           const x = xScale(day);
           const nextDay = new Date(day);
           nextDay.setDate(nextDay.getDate() + 1);
@@ -101,12 +105,20 @@ export function GanttGrid({
           return (
             <rect
               key={i}
+              data-calendar-day={holiday ? "holiday" : "weekend"}
+              data-date={formatDate(day)}
               x={x}
               y={0}
               width={w}
               height={totalHeight}
-              fill="var(--color-border-light)"
-            />
+              fill={
+                holiday
+                  ? "var(--color-warning-bg, rgba(243, 156, 18, 0.14))"
+                  : "var(--color-border-light)"
+              }
+            >
+              {holiday && <title>{holiday.name ?? holiday.date}</title>}
+            </rect>
           );
         })}
 

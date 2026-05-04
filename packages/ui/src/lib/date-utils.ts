@@ -1,15 +1,39 @@
-import type { Task } from "../types/index.js";
+import type { CalendarHoliday, Task } from "../types/index.js";
 
-export function isWorkingDay(date: Date, workingDays: number[]): boolean {
-  return workingDays.includes(date.getDay());
+function dateKey(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
 }
 
-export function addWorkingDays(start: Date, days: number, workingDays: number[]): Date {
+export function findCalendarHoliday(
+  date: Date,
+  holidays: readonly CalendarHoliday[] = [],
+): CalendarHoliday | null {
+  const key = dateKey(date);
+  return holidays.find((holiday) => holiday.date.slice(0, 10) === key) ?? null;
+}
+
+export function isWorkingDay(
+  date: Date,
+  workingDays: number[],
+  holidays: readonly CalendarHoliday[] = [],
+): boolean {
+  return workingDays.includes(date.getDay()) && findCalendarHoliday(date, holidays) == null;
+}
+
+export function addWorkingDays(
+  start: Date,
+  days: number,
+  workingDays: number[],
+  holidays: readonly CalendarHoliday[] = [],
+): Date {
   const result = new Date(start);
   let added = 0;
   while (added < days) {
     result.setDate(result.getDate() + 1);
-    if (isWorkingDay(result, workingDays)) {
+    if (isWorkingDay(result, workingDays, holidays)) {
       added++;
     }
   }
@@ -86,10 +110,7 @@ export function getDateRange(tasks: Task[]): [Date, Date] {
 }
 
 export function formatDate(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, "0");
-  const d = String(date.getDate()).padStart(2, "0");
-  return `${y}-${m}-${d}`;
+  return dateKey(date);
 }
 
 export function formatUpdatedAt(updatedAt: string): string {

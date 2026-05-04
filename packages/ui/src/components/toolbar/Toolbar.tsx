@@ -13,6 +13,8 @@ import { SyncGroup } from "./SyncGroup.js";
 import { MoreMenu } from "./MoreMenu.js";
 import { ThemeToggle } from "./ThemeToggle.js";
 import { IconButton } from "./IconButton.js";
+import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
+import type { CalendarHoliday } from "../../types/index.js";
 
 interface ToolbarProps {
   projectName: string;
@@ -58,6 +60,10 @@ interface ToolbarProps {
   undoCount?: number;
   redoCount?: number;
   undoRedoBusy?: boolean;
+  configuredHolidays?: CalendarHoliday[];
+  customDaysOff?: CalendarHoliday[];
+  onAddCustomDayOff?: (day: CalendarHoliday) => void;
+  onRemoveCustomDayOff?: (date: string) => void;
 }
 
 const taskSortOptions: Array<{ value: TaskSortMode; label: string }> = [
@@ -167,6 +173,14 @@ export function Toolbar(props: ToolbarProps) {
         onClick={props.onToggleDependencyHighlight}
         active={props.dependencyHighlightEnabled}
       />
+      {props.onAddCustomDayOff && props.onRemoveCustomDayOff && (
+        <CalendarSettingsMenu
+          configuredHolidays={props.configuredHolidays ?? []}
+          customDaysOff={props.customDaysOff ?? []}
+          onAddCustomDayOff={props.onAddCustomDayOff}
+          onRemoveCustomDayOff={props.onRemoveCustomDayOff}
+        />
+      )}
       <MoreMenu
         displayOptions={props.displayOptions}
         onToggleDisplayOption={props.onToggleDisplayOption}
