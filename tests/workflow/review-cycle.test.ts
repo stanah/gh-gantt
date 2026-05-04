@@ -4,10 +4,29 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildProgram } from "../../packages/cli/src/program.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const execFileAsync = promisify(execFile);
+
+const ReleasePleaseExtraFileSchema = z.object({
+  type: z.literal("json"),
+  path: z.string(),
+  jsonpath: z.string(),
+});
+const ReleasePleasePackageConfigSchema = z
+  .object({
+    component: z.string().optional(),
+    "extra-files": z.array(ReleasePleaseExtraFileSchema).optional(),
+  })
+  .passthrough();
+const ReleasePleaseConfigSchema = z
+  .object({
+    packages: z.record(ReleasePleasePackageConfigSchema),
+  })
+  .passthrough();
+const ReleasePleaseManifestSchema = z.record(z.string());
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");
@@ -276,17 +295,51 @@ describe("[NFR-STABILITY-005-AC2] PR レビュー対応投稿 workflow", () => {
   });
 });
 
-describe("[NFR-STABILITY-007-AC1] lint gate は未追跡 worktree を検査対象に含めない", () => {
-  it("pnpm lint を tracked file 限定の vp check として定義し hook と CI から使う", async () => {
+describe("[NFR-STABILITY-007-AC1] lint gate は未追跡 worktree と生成 CHANGELOG を検査対象に含めない", () => {
+  it("pnpm lint を tracked file 限定かつ生成 CHANGELOG 除外の vp check として定義し hook と CI から使う", async () => {
     const packageJsonRaw = await readRepoFile("package.json");
     const packageJson = JSON.parse(packageJsonRaw) as { scripts: Record<string, string> };
     const lefthook = await readRepoFile("lefthook.yml");
     const ci = await readRepoFile(".github/workflows/ci.yml");
 
-    expect(packageJson.scripts.lint).toBe("git ls-files -z | xargs -0 vp check");
+    expect(packageJson.scripts.lint).toBe(
+      "git ls-files -z -- . ':(exclude)CHANGELOG.md' ':(exclude)packages/*/CHANGELOG.md' | xargs -0 vp check",
+    );
     expect(lefthook).toContain("run: pnpm lint < /dev/null");
     expect(lefthook).not.toContain("run: vp check < /dev/null");
     expect(ci).toContain("vp run lint");
     expect(ci).not.toContain("run: vp check");
+  });
+});
+
+describe("[NFR-STABILITY-007-AC1] Release Please 設定", () => {
+  it("GitHub Release と CHANGELOG を root component に統合し package version だけ同期する", async () => {
+    const configRaw = await readRepoFile("release-please-config.json");
+    const manifestRaw = await readRepoFile(".release-please-manifest.json");
+    const config = ReleasePleaseConfigSchema.parse(JSON.parse(configRaw));
+    const manifest = ReleasePleaseManifestSchema.parse(JSON.parse(manifestRaw));
+
+    expect(config["linked-versions"]).toBeUndefined();
+    expect(config["group-pull-request-title-pattern"]).toBeUndefined();
+    expect(Object.keys(config.packages)).toEqual(["."]);
+    expect(Object.keys(manifest)).toEqual(["."]);
+    expect(config.packages["."]?.component).toBe("gh-gantt");
+    expect(config.packages["."]?.["extra-files"]).toEqual([
+      {
+        type: "json",
+        path: "packages/cli/package.json",
+        jsonpath: "$.version",
+      },
+      {
+        type: "json",
+        path: "packages/shared/package.json",
+        jsonpath: "$.version",
+      },
+      {
+        type: "json",
+        path: "packages/ui/package.json",
+        jsonpath: "$.version",
+      },
+    ]);
   });
 });

@@ -1,32 +1,31 @@
 {
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "release-type": "node",
-  "group-pull-request-title-pattern": "chore: リリース ${version}",
   "pull-request-title-pattern": "chore: リリース ${version}",
   "include-component-in-tag": false,
-  "linked-versions": {
-    "gh-gantt": {
-      "components": ["gh-gantt", "@gh-gantt/cli", "@gh-gantt/shared", "@gh-gantt/ui"]
-    }
-  },
   "prerelease": true,
   "prerelease-type": "alpha",
   "packages": {
     ".": {
       "component": "gh-gantt",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/cli": {
-      "component": "@gh-gantt/cli",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/shared": {
-      "component": "@gh-gantt/shared",
-      "changelog-path": "CHANGELOG.md"
-    },
-    "packages/ui": {
-      "component": "@gh-gantt/ui",
-      "changelog-path": "CHANGELOG.md"
+      "changelog-path": "CHANGELOG.md",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "packages/cli/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/shared/package.json",
+          "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "packages/ui/package.json",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
