@@ -1,24 +1,40 @@
 import type { Config, Task, ViewScale } from "./types.js";
 
+/** ガントビューのエクスポート形式。 */
 export type GanttExportFormat = "svg" | "png";
+
+/** エクスポート対象の範囲。 */
 export type GanttExportScope = "current" | "project";
 
+/** エクスポート対象タスクとツリー上の階層深度。 */
 export interface GanttExportTaskNode {
+  /** 描画対象のタスク。 */
   task: Task;
+  /** ツリー上の深度。ルートタスクは 0。 */
   depth: number;
 }
 
+/** SVG エクスポートのレンダリング入力。 */
 export interface RenderGanttExportSvgOptions {
+  /** 描画順に並べたタスクノード。 */
   nodes: GanttExportTaskNode[];
+  /** 色・タスク種別・プロジェクト名を解決する設定。 */
   config: Config;
+  /** SVG に記録するエクスポート範囲。 */
   scope: GanttExportScope;
+  /** ガント列の日幅を決める表示スケール。 */
   viewScale?: ViewScale;
+  /** メタ情報に記録する生成日時。 */
   generatedAt?: Date;
 }
 
+/** SVG エクスポートのレンダリング結果。 */
 export interface RenderedGanttExport {
+  /** 生成された SVG 文字列。 */
   svg: string;
+  /** SVG の幅。 */
   width: number;
+  /** SVG の高さ。 */
   height: number;
 }
 
@@ -67,10 +83,6 @@ function escapeXml(value: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function escapeAttr(value: string): string {
-  return escapeXml(value);
-}
-
 function dateRangeForTask(task: Task): { start: Date; end: Date } | null {
   const start = parseDate(task.start_date ?? task.date ?? task.end_date);
   const end = parseDate(task.end_date ?? task.date ?? task.start_date);
@@ -104,6 +116,12 @@ function childrenForTask(task: Task, byParent: Map<string, Task[]>): Task[] {
   return [...ordered, ...rest];
 }
 
+/**
+ * タスクリストを親子階層順のエクスポートノード列へ変換する。
+ *
+ * @param tasks エクスポート対象のタスク配列。
+ * @returns 親子関係と深度を保持したタスクノード列。
+ */
 export function buildExportTaskNodes(tasks: Task[]): GanttExportTaskNode[] {
   const byId = new Map(tasks.map((task) => [task.id, task]));
   const byParent = new Map<string, Task[]>();
@@ -268,17 +286,17 @@ function renderTaskRow(
   if (taskType?.display === "milestone") {
     const size = 14;
     elements.push(
-      `<polygon points="${barX + size / 2},${barY} ${barX + size},${barY + size / 2} ${barX + size / 2},${barY + size} ${barX},${barY + size / 2}" fill="${escapeAttr(color)}" opacity="${opacity}"><title>${escapeXml(title)}</title></polygon>`,
+      `<polygon points="${barX + size / 2},${barY} ${barX + size},${barY + size / 2} ${barX + size / 2},${barY + size} ${barX},${barY + size / 2}" fill="${escapeXml(color)}" opacity="${opacity}"><title>${escapeXml(title)}</title></polygon>`,
     );
   } else {
     const rx = taskType?.display === "summary" ? 2 : 4;
     elements.push(
-      `<rect x="${barX}" y="${barY}" width="${barWidth}" height="14" rx="${rx}" fill="${escapeAttr(color)}" opacity="${opacity}"><title>${escapeXml(title)}</title></rect>`,
+      `<rect x="${barX}" y="${barY}" width="${barWidth}" height="14" rx="${rx}" fill="${escapeXml(color)}" opacity="${opacity}"><title>${escapeXml(title)}</title></rect>`,
     );
     if (taskType?.display === "summary") {
       elements.push(
-        `<rect x="${barX}" y="${barY - 3}" width="6" height="20" fill="${escapeAttr(color)}" opacity="${opacity}" />`,
-        `<rect x="${barX + barWidth - 6}" y="${barY - 3}" width="6" height="20" fill="${escapeAttr(color)}" opacity="${opacity}" />`,
+        `<rect x="${barX}" y="${barY - 3}" width="6" height="20" fill="${escapeXml(color)}" opacity="${opacity}" />`,
+        `<rect x="${barX + barWidth - 6}" y="${barY - 3}" width="6" height="20" fill="${escapeXml(color)}" opacity="${opacity}" />`,
       );
     }
   }
@@ -288,6 +306,12 @@ function renderTaskRow(
   return elements.join("");
 }
 
+/**
+ * タスクツリー列とガント列を 1 つの SVG として描画する。
+ *
+ * @param options エクスポート対象ノード、設定、範囲、表示スケール。
+ * @returns SVG 文字列と画像寸法。
+ */
 export function renderGanttExportSvg({
   nodes,
   config,

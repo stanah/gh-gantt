@@ -76,7 +76,7 @@ async function writeProject(): Promise<string> {
   return root;
 }
 
-describe("[FR-VIS-019-AC5] CLI export command", () => {
+describe("[FR-VIS-019-AC5] CLI エクスポートコマンド", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
   });

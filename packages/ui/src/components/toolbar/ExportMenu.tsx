@@ -3,13 +3,19 @@ import { Download } from "lucide-react";
 import type { GanttExportFormat, GanttExportScope } from "@gh-gantt/shared";
 import { IconButton } from "./IconButton.js";
 
+/** エクスポート実行時に UI から渡す選択内容。 */
 export interface ExportRequest {
+  /** 出力形式。 */
   format: GanttExportFormat;
+  /** 出力範囲。 */
   scope: GanttExportScope;
+  /** PNG 変換時の解像度倍率。 */
   scaleFactor: 1 | 2;
 }
 
+/** エクスポートメニューの props。 */
 interface ExportMenuProps {
+  /** 選択内容でエクスポートを実行するハンドラ。 */
   onExport: (request: ExportRequest) => void;
 }
 
@@ -45,6 +51,12 @@ const inputStyle: React.CSSProperties = {
   padding: "3px 6px",
 };
 
+/**
+ * ガントビューの形式・範囲・解像度を選ぶエクスポートメニュー。
+ *
+ * @param props エクスポート実行ハンドラを含む props。
+ * @returns ツールバー内に表示するエクスポート操作 UI。
+ */
 export function ExportMenu({ onExport }: ExportMenuProps) {
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<GanttExportFormat>("svg");
@@ -82,11 +94,11 @@ export function ExportMenu({ onExport }: ExportMenuProps) {
         title="Export"
         onClick={() => setOpen((prev) => !prev)}
         active={open}
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
       />
       {open && (
-        <div role="menu" style={panelStyle}>
+        <div role="dialog" aria-label="エクスポート設定" style={panelStyle}>
           <div style={sectionLabel}>Export</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
             <select
