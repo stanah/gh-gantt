@@ -15,7 +15,7 @@ import { ThemeToggle } from "./ThemeToggle.js";
 import { IconButton } from "./IconButton.js";
 import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
 import type { CalendarHoliday } from "../../types/index.js";
-import type { HolidayPreset } from "../../lib/holiday-presets.js";
+import type { HolidayPreset, HolidayPresetId } from "../../lib/holiday-presets.js";
 
 interface ToolbarProps {
   projectName: string;
@@ -63,9 +63,9 @@ interface ToolbarProps {
   undoRedoBusy?: boolean;
   configuredHolidays?: CalendarHoliday[];
   holidayPresetOptions?: HolidayPreset[];
-  selectedHolidayPresetId?: string;
+  selectedHolidayPresetId?: HolidayPresetId;
   presetHolidays?: CalendarHoliday[];
-  onSelectHolidayPreset?: (presetId: string) => void;
+  onSelectHolidayPreset?: (presetId: HolidayPresetId) => void;
   customDaysOff?: CalendarHoliday[];
   onAddCustomDayOff?: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff?: (date: string) => void;

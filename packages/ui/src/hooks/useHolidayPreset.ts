@@ -10,24 +10,31 @@ export const HOLIDAY_PRESET_STORAGE_KEY = "gh-gantt:holiday-preset";
 
 function readStoredHolidayPresetId(): HolidayPresetId {
   if (typeof window === "undefined") return "none";
-  const stored = window.localStorage.getItem(HOLIDAY_PRESET_STORAGE_KEY);
-  if (!stored || !isHolidayPresetId(stored)) return "none";
-  return stored;
+  try {
+    const stored = window.localStorage.getItem(HOLIDAY_PRESET_STORAGE_KEY);
+    if (!stored || !isHolidayPresetId(stored)) return "none";
+    return stored;
+  } catch {
+    return "none";
+  }
 }
 
 function writeStoredHolidayPresetId(presetId: HolidayPresetId): void {
   if (typeof window === "undefined") return;
-  window.localStorage.setItem(HOLIDAY_PRESET_STORAGE_KEY, presetId);
+  try {
+    window.localStorage.setItem(HOLIDAY_PRESET_STORAGE_KEY, presetId);
+  } catch {
+    // 永続化できない環境では、メモリ上の選択状態だけを維持する。
+  }
 }
 
 export function useHolidayPreset() {
   const [selectedHolidayPresetId, setSelectedHolidayPresetId] =
     useState<HolidayPresetId>(readStoredHolidayPresetId);
 
-  const selectHolidayPreset = useCallback((presetId: string) => {
-    const nextPresetId = isHolidayPresetId(presetId) ? presetId : "none";
-    setSelectedHolidayPresetId(nextPresetId);
-    writeStoredHolidayPresetId(nextPresetId);
+  const selectHolidayPreset = useCallback((presetId: HolidayPresetId) => {
+    setSelectedHolidayPresetId(presetId);
+    writeStoredHolidayPresetId(presetId);
   }, []);
 
   const selectedHolidayPreset = useMemo(

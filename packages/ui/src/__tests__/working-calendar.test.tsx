@@ -9,7 +9,11 @@ import { GanttGrid } from "../components/GanttGrid.js";
 import { CalendarSettingsMenu } from "../components/toolbar/CalendarSettingsMenu.js";
 import { useCustomNonWorkingDays } from "../hooks/useCustomNonWorkingDays.js";
 import { useHolidayPreset, HOLIDAY_PRESET_STORAGE_KEY } from "../hooks/useHolidayPreset.js";
-import { HOLIDAY_PRESETS, getHolidayPresetHolidays } from "../lib/holiday-presets.js";
+import {
+  HOLIDAY_PRESETS,
+  getHolidayPresetHolidays,
+  type HolidayPresetId,
+} from "../lib/holiday-presets.js";
 import type { Config, Task } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 
@@ -59,6 +63,24 @@ function HolidayPresetHarness() {
       selectedHolidayPresetId={selectedHolidayPresetId}
       presetHolidays={presetHolidays}
       onSelectHolidayPreset={selectHolidayPreset}
+      customDaysOff={[]}
+      onAddCustomDayOff={() => {}}
+      onRemoveCustomDayOff={() => {}}
+    />
+  );
+}
+
+function ControlledHolidayPresetHarness() {
+  const [selectedHolidayPresetId, setSelectedHolidayPresetId] =
+    React.useState<HolidayPresetId>("jp-2026");
+
+  return (
+    <CalendarSettingsMenu
+      configuredHolidays={[]}
+      holidayPresetOptions={HOLIDAY_PRESETS}
+      selectedHolidayPresetId={selectedHolidayPresetId}
+      presetHolidays={getHolidayPresetHolidays(selectedHolidayPresetId)}
+      onSelectHolidayPreset={setSelectedHolidayPresetId}
       customDaysOff={[]}
       onAddCustomDayOff={() => {}}
       onRemoveCustomDayOff={() => {}}
@@ -184,32 +206,16 @@ describe("[FR-VIS-017-AC1] 国別祝日プリセット選択", () => {
   });
 
   it("Calendar Settings で祝日プリセットを選択しプリセット休日を表示できる", () => {
-    const onSelectHolidayPreset = vi.fn();
-    const { getByTitle, getByLabelText, getByText } = render(
-      <CalendarSettingsMenu
-        configuredHolidays={[]}
-        customDaysOff={[]}
-        onAddCustomDayOff={() => {}}
-        onRemoveCustomDayOff={() => {}}
-        holidayPresetOptions={[
-          { id: "none", label: "None", holidays: [] },
-          {
-            id: "jp-2026",
-            label: "Japan 2026",
-            holidays: [{ date: "2026-01-12", name: "成人の日" }],
-          },
-        ]}
-        selectedHolidayPresetId="jp-2026"
-        presetHolidays={[{ date: "2026-01-12", name: "成人の日" }]}
-        onSelectHolidayPreset={onSelectHolidayPreset}
-      />,
+    const { getByTitle, getByLabelText, getByText, queryByText } = render(
+      <ControlledHolidayPresetHarness />,
     );
 
     fireEvent.click(getByTitle("Calendar Settings"));
+    expect(getByText("2026-01-12 成人の日")).toBeTruthy();
+
     fireEvent.change(getByLabelText("Holiday preset"), { target: { value: "none" } });
 
-    expect(onSelectHolidayPreset).toHaveBeenCalledWith("none");
-    expect(getByText("2026-01-12 成人の日")).toBeTruthy();
+    expect(queryByText("2026-01-12 成人の日")).toBeNull();
   });
 });
 
@@ -255,6 +261,40 @@ describe("[FR-VIS-017-AC3] 祝日プリセットの localStorage 管理とグリ
 
     expect(localStorage.getItem(HOLIDAY_PRESET_STORAGE_KEY)).toBe("us-federal-2026");
     expect(getByText("2026-07-03 Independence Day")).toBeTruthy();
+  });
+
+  it("localStorage 読み取り失敗時は none で初期化する", () => {
+    const getItemSpy = vi.spyOn(Storage.prototype, "getItem").mockImplementation(() => {
+      throw new DOMException("blocked");
+    });
+
+    try {
+      const { getByTitle, getByLabelText } = render(<HolidayPresetHarness />);
+
+      fireEvent.click(getByTitle("Calendar Settings"));
+      expect((getByLabelText("Holiday preset") as HTMLSelectElement).value).toBe("none");
+    } finally {
+      getItemSpy.mockRestore();
+    }
+  });
+
+  it("localStorage 書き込み失敗時も画面上の選択状態を更新する", () => {
+    const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("quota exceeded");
+    });
+
+    try {
+      const { getByTitle, getByLabelText, getByText } = render(<HolidayPresetHarness />);
+
+      fireEvent.click(getByTitle("Calendar Settings"));
+      fireEvent.change(getByLabelText("Holiday preset"), {
+        target: { value: "us-federal-2026" },
+      });
+
+      expect(getByText("2026-07-03 Independence Day")).toBeTruthy();
+    } finally {
+      setItemSpy.mockRestore();
+    }
   });
 
   it("選択プリセット休日を GanttChart の非稼働日表示に反映する", () => {

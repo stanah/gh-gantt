@@ -1,20 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CalendarDays, Plus, X } from "lucide-react";
 import type { CalendarHoliday } from "../../types/index.js";
+import {
+  isHolidayPresetId,
+  type HolidayPreset,
+  type HolidayPresetId,
+} from "../../lib/holiday-presets.js";
 import { IconButton } from "./IconButton.js";
-
-export interface HolidayPresetOption {
-  id: string;
-  label: string;
-  holidays: CalendarHoliday[];
-}
 
 interface CalendarSettingsMenuProps {
   configuredHolidays: CalendarHoliday[];
-  holidayPresetOptions?: HolidayPresetOption[];
-  selectedHolidayPresetId?: string;
+  holidayPresetOptions?: HolidayPreset[];
+  selectedHolidayPresetId?: HolidayPresetId;
   presetHolidays?: CalendarHoliday[];
-  onSelectHolidayPreset?: (presetId: string) => void;
+  onSelectHolidayPreset?: (presetId: HolidayPresetId) => void;
   customDaysOff: CalendarHoliday[];
   onAddCustomDayOff: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff: (date: string) => void;
@@ -111,6 +110,12 @@ export function CalendarSettingsMenu({
     setName("");
   };
 
+  const handlePresetChange = (presetId: string) => {
+    if (isHolidayPresetId(presetId)) {
+      onSelectHolidayPreset?.(presetId);
+    }
+  };
+
   return (
     <div ref={wrapperRef} style={{ position: "relative" }}>
       <IconButton
@@ -129,7 +134,7 @@ export function CalendarSettingsMenu({
               <select
                 aria-label="Holiday preset"
                 value={selectedHolidayPresetId}
-                onChange={(e) => onSelectHolidayPreset(e.target.value)}
+                onChange={(e) => handlePresetChange(e.target.value)}
                 style={inputStyle}
               >
                 {holidayPresetOptions.map((preset) => (
