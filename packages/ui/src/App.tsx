@@ -21,6 +21,7 @@ import { ThemeProvider } from "./contexts/ThemeContext.js";
 import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
 import { useHolidayPreset } from "./hooks/useHolidayPreset.js";
 import { useFilterPresets, type FilterPresetState } from "./hooks/useFilterPresets.js";
+import { useTaskDeepLink } from "./hooks/useTaskDeepLink.js";
 import { downloadGanttExport } from "./lib/export-download.js";
 import type { ExportRequest } from "./components/toolbar/ExportMenu.js";
 
@@ -71,7 +72,7 @@ function buildTaskHistoryPatches(
 
 export function App() {
   const { config, tasks, cache, loading, error, updateTask, refresh, reparentTask } = useApi();
-  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
+  const { selectedTaskId, setSelectedTaskId } = useTaskDeepLink(tasks, { enabled: !loading });
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");

@@ -777,6 +777,24 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/filter-presets.test.tsx
+      - id: FR-VIS-021
+        summary: 選択中タスクの URL deep link
+        acceptance_criteria:
+          - id: FR-VIS-021-AC1
+            description: task query を初期選択として復元できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/task-deeplink.test.tsx
+          - id: FR-VIS-021-AC2
+            description: タスク選択を task query に反映し、既存の filter query を維持できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/task-deeplink.test.tsx
+          - id: FR-VIS-021-AC3
+            description: 選択解除または存在しない task query では task query を削除できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/task-deeplink.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
