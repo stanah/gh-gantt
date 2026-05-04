@@ -49,6 +49,7 @@ interface GanttChartProps {
   onHoverTask?: (taskId: string | null) => void;
   dependencyHighlightEnabled?: boolean;
   highlightRelationMap?: Map<string, RelationType>;
+  presetHolidays?: CalendarHoliday[];
   customDaysOff?: CalendarHoliday[];
 }
 
@@ -68,6 +69,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     onHoverTask,
     dependencyHighlightEnabled = true,
     highlightRelationMap,
+    presetHolidays = [],
     customDaysOff = [],
   },
   ref,
@@ -140,8 +142,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
 
   const totalHeight = flatList.length * ROW_HEIGHT;
   const holidays = useMemo(
-    () => [...(config.gantt.holidays ?? []), ...customDaysOff],
-    [config.gantt.holidays, customDaysOff],
+    () => [...(config.gantt.holidays ?? []), ...presetHolidays, ...customDaysOff],
+    [config.gantt.holidays, presetHolidays, customDaysOff],
   );
   const criticalPath = useMemo(() => calculateCriticalPath(tasks), [tasks]);
   const criticalTaskIds = useMemo(

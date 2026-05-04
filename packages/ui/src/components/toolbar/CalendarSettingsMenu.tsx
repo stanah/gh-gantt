@@ -3,8 +3,18 @@ import { CalendarDays, Plus, X } from "lucide-react";
 import type { CalendarHoliday } from "../../types/index.js";
 import { IconButton } from "./IconButton.js";
 
+export interface HolidayPresetOption {
+  id: string;
+  label: string;
+  holidays: CalendarHoliday[];
+}
+
 interface CalendarSettingsMenuProps {
   configuredHolidays: CalendarHoliday[];
+  holidayPresetOptions?: HolidayPresetOption[];
+  selectedHolidayPresetId?: string;
+  presetHolidays?: CalendarHoliday[];
+  onSelectHolidayPreset?: (presetId: string) => void;
   customDaysOff: CalendarHoliday[];
   onAddCustomDayOff: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff: (date: string) => void;
@@ -62,6 +72,10 @@ function holidayLabel(day: CalendarHoliday): string {
 
 export function CalendarSettingsMenu({
   configuredHolidays,
+  holidayPresetOptions = [],
+  selectedHolidayPresetId = "none",
+  presetHolidays = [],
+  onSelectHolidayPreset,
   customDaysOff,
   onAddCustomDayOff,
   onRemoveCustomDayOff,
@@ -111,6 +125,20 @@ export function CalendarSettingsMenu({
         <div role="menu" style={panelStyle}>
           <div style={sectionLabel}>Calendar</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+            {holidayPresetOptions.length > 0 && onSelectHolidayPreset && (
+              <select
+                aria-label="Holiday preset"
+                value={selectedHolidayPresetId}
+                onChange={(e) => onSelectHolidayPreset(e.target.value)}
+                style={inputStyle}
+              >
+                {holidayPresetOptions.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               aria-label="Custom day off date"
               type="date"
@@ -143,6 +171,22 @@ export function CalendarSettingsMenu({
               Add
             </button>
           </div>
+
+          {holidayPresetOptions.length > 0 && (
+            <>
+              <div style={separator} />
+              <div style={sectionLabel}>Preset holidays</div>
+              {presetHolidays.length === 0 ? (
+                <div style={rowStyle}>None</div>
+              ) : (
+                presetHolidays.map((day) => (
+                  <div key={day.date} style={rowStyle}>
+                    <span>{holidayLabel(day)}</span>
+                  </div>
+                ))
+              )}
+            </>
+          )}
 
           <div style={separator} />
           <div style={sectionLabel}>Configured</div>
