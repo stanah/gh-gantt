@@ -6,5 +6,16 @@ export default defineConfig({
     format: ["esm"],
     dts: false,
     fixedExtension: false,
+    deps: {
+      neverBundle: [
+        /^@playwright\/test$/,
+        /^playwright$/,
+        /^playwright-core$/,
+        /^playwright\//,
+        /^playwright-core\//,
+        /^chromium-bidi\//,
+        /^fsevents$/,
+      ],
+    },
   },
 });

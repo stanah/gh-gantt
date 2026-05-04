@@ -20,6 +20,8 @@ import { SkeletonLoader } from "./components/SkeletonLoader.js";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
 import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
 import { useHolidayPreset } from "./hooks/useHolidayPreset.js";
+import { downloadGanttExport } from "./lib/export-download.js";
+import type { ExportRequest } from "./components/toolbar/ExportMenu.js";
 
 const EMPTY_TASK_TYPES: Record<string, never> = {};
 
@@ -193,6 +195,11 @@ export function App() {
 
   const visibleTaskMap = useMemo(
     () => new Map(visibleTaskNodes.map((node) => [node.task.id, node])),
+    [visibleTaskNodes],
+  );
+
+  const exportVisibleNodes = useMemo(
+    () => visibleTaskNodes.map((node) => ({ task: node.task, depth: node.depth })),
     [visibleTaskNodes],
   );
 
@@ -475,6 +482,25 @@ export function App() {
     }
   }, [clearHistory, refresh, showToast]);
 
+  const handleExport = useCallback(
+    async (request: ExportRequest) => {
+      if (!config) return;
+      try {
+        await downloadGanttExport({
+          tasks,
+          visibleNodes: exportVisibleNodes,
+          config,
+          request,
+          viewScale,
+        });
+        showToast(`Exported ${request.format.toUpperCase()}`, "success");
+      } catch (err) {
+        showToast(`Export failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      }
+    },
+    [config, exportVisibleNodes, showToast, tasks, viewScale],
+  );
+
   const hasActiveFilters = useMemo(() => {
     const allTypeCount = Object.keys(config?.task_types ?? {}).length;
     return (
@@ -626,6 +652,9 @@ export function App() {
             customDaysOff={customDaysOff}
             onAddCustomDayOff={addCustomDayOff}
             onRemoveCustomDayOff={removeCustomDayOff}
+            onExport={(request) => {
+              void handleExport(request);
+            }}
           />
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
             <div

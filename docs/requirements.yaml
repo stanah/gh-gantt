@@ -736,6 +736,34 @@ areas:
               - packages/shared/src/__tests__/schema.test.ts
               - packages/ui/src/__tests__/date-utils.test.ts
               - packages/ui/src/__tests__/overdue-highlight.test.tsx
+      - id: FR-VIS-019
+        summary: SVG/PNG エクスポート
+        acceptance_criteria:
+          - id: FR-VIS-019-AC1
+            description: export 用タスク列は親子階層を depth 付きで並べられる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/export-renderer.test.ts
+          - id: FR-VIS-019-AC2
+            description: SVG export はツリー列とガント列を 1 つの SVG に含める
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/export-renderer.test.ts
+          - id: FR-VIS-019-AC3
+            description: current scope は表示中ノードだけを export 対象にできる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/export-renderer.test.ts
+          - id: FR-VIS-019-AC4
+            description: Toolbar から SVG/PNG、current/project、2x を選んで export を実行できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/export-menu.test.tsx
+          - id: FR-VIS-019-AC5
+            description: CLI export command は SVG と PNG をファイルへ書き出し、PNG では 2x 指定を渡せる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/export-command.test.ts
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
