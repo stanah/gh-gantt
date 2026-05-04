@@ -27,6 +27,6 @@
   "devDependencies": {
     "@types/express": "^4.17.0",
     "typescript": "^5.5.0",
-    "vite-plus": "^0.1.13"
+    "vite-plus": "^0.1.17"
   }
 }
