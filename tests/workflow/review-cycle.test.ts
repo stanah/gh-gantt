@@ -4,10 +4,29 @@ import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 import { buildProgram } from "../../packages/cli/src/program.js";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
 const execFileAsync = promisify(execFile);
+
+const ReleasePleaseExtraFileSchema = z.object({
+  type: z.literal("json"),
+  path: z.string(),
+  jsonpath: z.string(),
+});
+const ReleasePleasePackageConfigSchema = z
+  .object({
+    component: z.string().optional(),
+    "extra-files": z.array(ReleasePleaseExtraFileSchema).optional(),
+  })
+  .passthrough();
+const ReleasePleaseConfigSchema = z
+  .object({
+    packages: z.record(ReleasePleasePackageConfigSchema),
+  })
+  .passthrough();
+const ReleasePleaseManifestSchema = z.record(z.string());
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");
@@ -297,10 +316,8 @@ describe("Release Please 設定", () => {
   it("GitHub Release と CHANGELOG を root component に統合し package version だけ同期する", async () => {
     const configRaw = await readRepoFile("release-please-config.json");
     const manifestRaw = await readRepoFile(".release-please-manifest.json");
-    const config = JSON.parse(configRaw) as {
-      packages: Record<string, { component?: string; "extra-files"?: unknown[] }>;
-    } & Record<string, unknown>;
-    const manifest = JSON.parse(manifestRaw) as Record<string, string>;
+    const config = ReleasePleaseConfigSchema.parse(JSON.parse(configRaw));
+    const manifest = ReleasePleaseManifestSchema.parse(JSON.parse(manifestRaw));
 
     expect(config["linked-versions"]).toBeUndefined();
     expect(config["group-pull-request-title-pattern"]).toBeUndefined();
