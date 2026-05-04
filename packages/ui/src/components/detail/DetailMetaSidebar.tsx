@@ -44,13 +44,27 @@ const separatorStyle: React.CSSProperties = {
 };
 
 export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: DetailMetaSidebarProps) {
+  const [customFieldsDraft, setCustomFieldsDraft] = React.useState(task.custom_fields);
+  const customFieldsDraftRef = React.useRef(task.custom_fields);
   const statusFieldName = config.statuses.field_name;
-  const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
+  const currentStatus = customFieldsDraft[statusFieldName] as string | undefined;
   const statusOptions = Object.keys(config.statuses.values);
   const priorityFieldName = config.sync?.field_mapping?.priority;
-  const rawPriority = priorityFieldName ? task.custom_fields[priorityFieldName] : undefined;
+  const rawPriority = priorityFieldName ? customFieldsDraft[priorityFieldName] : undefined;
   const currentPriority = typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
   const updatedAt = formatUpdatedAt(task.updated_at);
+
+  React.useEffect(() => {
+    customFieldsDraftRef.current = task.custom_fields;
+    setCustomFieldsDraft(task.custom_fields);
+  }, [task.id, task.custom_fields]);
+
+  const updateCustomField = (fieldName: string, value: unknown) => {
+    const nextCustomFields = { ...customFieldsDraftRef.current, [fieldName]: value };
+    customFieldsDraftRef.current = nextCustomFields;
+    setCustomFieldsDraft(nextCustomFields);
+    onUpdate({ custom_fields: nextCustomFields });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -59,12 +73,9 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Status</label>
           <select
+            aria-label="Status"
             value={currentStatus ?? ""}
-            onChange={(e) =>
-              onUpdate({
-                custom_fields: { ...task.custom_fields, [statusFieldName]: e.target.value },
-              })
-            }
+            onChange={(e) => updateCustomField(statusFieldName, e.target.value)}
             style={selectStyle}
           >
             {statusOptions.map((s) => (
@@ -81,15 +92,9 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Priority</label>
           <select
+            aria-label="Priority"
             value={currentPriority}
-            onChange={(e) =>
-              onUpdate({
-                custom_fields: {
-                  ...task.custom_fields,
-                  [priorityFieldName]: e.target.value || undefined,
-                },
-              })
-            }
+            onChange={(e) => updateCustomField(priorityFieldName, e.target.value || undefined)}
             style={selectStyle}
           >
             <option value="">None</option>
@@ -106,6 +111,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
         <div style={{ marginBottom: 14 }}>
           <label style={labelStyle}>Type</label>
           <select
+            aria-label="Type"
             value={task.type}
             onChange={(e) => onUpdate({ type: e.target.value })}
             style={selectStyle}
@@ -129,6 +135,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
           <div style={{ marginBottom: 14 }}>
             <label style={labelStyle}>Due Date</label>
             <input
+              aria-label="Due Date"
               type="date"
               value={(task.date ?? "").slice(0, 10)}
               onChange={(e) => onUpdate({ date: e.target.value || null })}
@@ -140,6 +147,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>Start Date</label>
               <input
+                aria-label="Start Date"
                 type="date"
                 value={(task.start_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ start_date: e.target.value || null })}
@@ -149,6 +157,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
             <div style={{ marginBottom: 14 }}>
               <label style={labelStyle}>End Date</label>
               <input
+                aria-label="End Date"
                 type="date"
                 value={(task.end_date ?? "").slice(0, 10)}
                 onChange={(e) => onUpdate({ end_date: e.target.value || null })}

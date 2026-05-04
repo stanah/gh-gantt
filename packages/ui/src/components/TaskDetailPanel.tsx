@@ -6,8 +6,6 @@ import { DetailHeader } from "./detail/DetailHeader.js";
 import { DetailMetaSidebar } from "./detail/DetailMetaSidebar.js";
 import { DetailSubTasks } from "./detail/DetailSubTasks.js";
 import { DetailRelations } from "./detail/DetailRelations.js";
-import { DetailSprintControl } from "./detail/DetailSprintControl.js";
-import { formatUpdatedAt } from "../lib/date-utils.js";
 
 const MIN_PANEL_WIDTH = 320;
 const MAX_PANEL_WIDTH = 800;
@@ -46,7 +44,6 @@ export function TaskDetailPanel({
   const taskType = config.task_types[task.type];
   const isMilestone = task.type === "milestone";
   const isTwoColumn = width >= TWO_COLUMN_THRESHOLD;
-  const updatedAt = formatUpdatedAt(task.updated_at);
   const renderPreview =
     renderMarkdownPreview ?? ((value: string) => <MarkdownRenderer markdown={value} />);
 
@@ -136,23 +133,6 @@ export function TaskDetailPanel({
       }
     };
   }, []);
-
-  // Priority for inline badges (1-column)
-  const priorityFieldName = config.sync?.field_mapping?.priority;
-  const rawPriority = priorityFieldName ? task.custom_fields[priorityFieldName] : undefined;
-  const currentPriority = typeof rawPriority === "string" ? rawPriority : "";
-
-  const dateRange = isMilestone
-    ? task.date
-      ? task.date.slice(0, 10)
-      : null
-    : task.start_date && task.end_date
-      ? `${task.start_date.slice(0, 10)} \u2013 ${task.end_date.slice(0, 10)}`
-      : task.start_date
-        ? task.start_date.slice(0, 10)
-        : task.end_date
-          ? task.end_date.slice(0, 10)
-          : null;
 
   return (
     <div
@@ -414,99 +394,19 @@ export function TaskDetailPanel({
             taskTypeColor={taskType?.color}
           />
 
-          {/* Inline badges */}
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-            <span
-              style={{
-                padding: "2px 8px",
-                fontSize: 10,
-                background:
-                  task.state === "open"
-                    ? "var(--color-success-bg)"
-                    : "var(--color-complete-bg, var(--color-border-light))",
-                color:
-                  task.state === "open"
-                    ? "var(--color-success)"
-                    : "var(--color-complete, var(--color-text-muted))",
-                borderRadius: 12,
-              }}
-            >
-              ● {task.state === "open" ? "Open" : "Closed"}
-            </span>
-            {currentStatus && (
-              <span
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 10,
-                  background: "var(--color-border-light)",
-                  borderRadius: 12,
-                }}
-              >
-                {currentStatus}
-              </span>
-            )}
-            {currentPriority && (
-              <span
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 10,
-                  background: "var(--color-border-light)",
-                  borderRadius: 12,
-                }}
-              >
-                {currentPriority}
-              </span>
-            )}
-            {!isMilestone && taskType && (
-              <span
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 10,
-                  background: "var(--color-border-light)",
-                  borderRadius: 12,
-                }}
-              >
-                {taskType.label}
-              </span>
-            )}
-            {dateRange && (
-              <span
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 10,
-                  background: "var(--color-border-light)",
-                  borderRadius: 12,
-                }}
-              >
-                {dateRange}
-              </span>
-            )}
-            <span
-              style={{
-                padding: "2px 8px",
-                fontSize: 10,
-                background: "var(--color-border-light)",
-                borderRadius: 12,
-              }}
-            >
-              Updated {updatedAt}
-            </span>
-            {task.assignees.map((a) => (
-              <span
-                key={a}
-                style={{
-                  padding: "2px 8px",
-                  fontSize: 10,
-                  background: "var(--color-selected-bg)",
-                  borderRadius: 12,
-                }}
-              >
-                {a}
-              </span>
-            ))}
+          <div
+            style={{
+              borderTop: "1px solid var(--color-border-light)",
+              paddingTop: 12,
+            }}
+          >
+            <DetailMetaSidebar
+              task={task}
+              config={config}
+              onUpdate={onUpdate}
+              isMilestone={isMilestone}
+            />
           </div>
-
-          {!isMilestone && <DetailSprintControl task={task} config={config} onUpdate={onUpdate} />}
 
           {/* Description */}
           <div>

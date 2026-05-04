@@ -532,6 +532,16 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/updated-at-display.test.tsx
+          - id: FR-VIS-006-AC3
+            description: 1カラムレイアウトでもタスクの Status、Priority、Type、日付を編集できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
+          - id: FR-VIS-006-AC4
+            description: 1カラムレイアウトで Open/Closed の state を重複表示しない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
       - id: FR-VIS-007
         summary: 日付計算ユーティリティ
         acceptance_criteria:
