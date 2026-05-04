@@ -111,6 +111,7 @@ export interface Config {
     default_view: ViewScale;
     working_days: number[];
     holidays?: CalendarHoliday[];
+    at_risk_threshold_days?: number;
     colors: { critical_path: string; on_track: string; at_risk: string; overdue: string };
   };
   grouping?: GroupingConfig;

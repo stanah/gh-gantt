@@ -7,6 +7,7 @@ import {
   isAtRisk,
   getOverdueDays,
   getDaysUntilDue,
+  normalizeAtRiskThresholdDays,
 } from "../lib/date-utils.js";
 import { formatIssueId } from "../hooks/useDisplayOptions.js";
 import { getPriorityColor } from "./PriorityBadge.js";
@@ -30,6 +31,7 @@ interface GanttBarProps {
   isCriticalPath?: boolean;
   criticalPathColor?: string;
   totalFloatDays?: number;
+  atRiskThresholdDays?: number;
   onTooltipShow?: (task: Task, e: React.MouseEvent | React.FocusEvent) => void;
   onTooltipHide?: () => void;
 }
@@ -59,6 +61,7 @@ export function GanttBar({
   isCriticalPath,
   criticalPathColor = "var(--color-danger)",
   totalFloatDays,
+  atRiskThresholdDays,
   onTooltipShow,
   onTooltipHide,
 }: GanttBarProps) {
@@ -73,9 +76,9 @@ export function GanttBar({
   const barHeight = height - 8;
   const barY = y + 4;
   const handleWidth = 6;
-  const atRiskThresholdDays = 3;
+  const resolvedAtRiskThresholdDays = normalizeAtRiskThresholdDays(atRiskThresholdDays);
   const overdue = isOverdue(task);
-  const atRisk = !overdue && isAtRisk(task, atRiskThresholdDays);
+  const atRisk = !overdue && isAtRisk(task, resolvedAtRiskThresholdDays);
   const overdueDays = overdue ? getOverdueDays(task) : 0;
   const daysUntilDue = atRisk ? getDaysUntilDue(task) : null;
   const dangerColor = "var(--color-danger)";

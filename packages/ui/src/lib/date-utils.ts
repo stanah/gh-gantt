@@ -50,6 +50,15 @@ function startOfDay(date: Date): Date {
 }
 
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+export const DEFAULT_AT_RISK_THRESHOLD_DAYS = 3;
+
+export function normalizeAtRiskThresholdDays(thresholdDays: number | undefined): number {
+  if (thresholdDays == null) return DEFAULT_AT_RISK_THRESHOLD_DAYS;
+  if (!Number.isFinite(thresholdDays) || thresholdDays <= 0) {
+    return DEFAULT_AT_RISK_THRESHOLD_DAYS;
+  }
+  return thresholdDays;
+}
 
 export function getDaysUntilDue(task: Task, today: Date = new Date()): number | null {
   if (!task.end_date) return null;

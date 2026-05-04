@@ -503,6 +503,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               isCriticalPath={isCriticalPath}
               criticalPathColor={criticalPathColor}
               totalFloatDays={criticalPathTiming?.totalFloat}
+              atRiskThresholdDays={config.gantt.at_risk_threshold_days}
               onTooltipShow={showTooltip}
               onTooltipHide={hideTooltip}
             />

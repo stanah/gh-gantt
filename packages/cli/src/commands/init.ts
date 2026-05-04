@@ -195,6 +195,7 @@ export const initCommand = new Command("init")
       gantt: {
         default_view: "month",
         working_days: [1, 2, 3, 4, 5],
+        at_risk_threshold_days: 3,
         colors: {
           critical_path: "#E74C3C",
           on_track: "#2ECC71",

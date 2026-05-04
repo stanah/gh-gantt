@@ -168,6 +168,7 @@ export function TaskTreeBody({
         showAssignees={displayOptions?.has("assignees")}
         showPriority={displayOptions?.has("priority")}
         priorityFieldName={config.sync?.field_mapping?.priority}
+        atRiskThresholdDays={config.gantt.at_risk_threshold_days}
         highlightType={
           dependencyHighlightEnabled ? (highlightRelationMap?.get(node.task.id) ?? null) : null
         }
