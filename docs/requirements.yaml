@@ -795,6 +795,14 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/task-deeplink.test.tsx
+      - id: FR-VIS-022
+        summary: 詳細パネル操作ボタンのアクセシブルラベル
+        acceptance_criteria:
+          - id: FR-VIS-022-AC1
+            description: 詳細パネルの copy / close 操作ボタンに aria-label と title を付与し、copy 結果をライブリージョンで通知する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
