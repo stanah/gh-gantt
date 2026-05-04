@@ -44,13 +44,27 @@ const separatorStyle: React.CSSProperties = {
 };
 
 export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: DetailMetaSidebarProps) {
+  const [customFieldsDraft, setCustomFieldsDraft] = React.useState(task.custom_fields);
+  const customFieldsDraftRef = React.useRef(task.custom_fields);
   const statusFieldName = config.statuses.field_name;
-  const currentStatus = task.custom_fields[statusFieldName] as string | undefined;
+  const currentStatus = customFieldsDraft[statusFieldName] as string | undefined;
   const statusOptions = Object.keys(config.statuses.values);
   const priorityFieldName = config.sync?.field_mapping?.priority;
-  const rawPriority = priorityFieldName ? task.custom_fields[priorityFieldName] : undefined;
+  const rawPriority = priorityFieldName ? customFieldsDraft[priorityFieldName] : undefined;
   const currentPriority = typeof rawPriority === "string" ? rawPriority.toLowerCase() : "";
   const updatedAt = formatUpdatedAt(task.updated_at);
+
+  React.useEffect(() => {
+    customFieldsDraftRef.current = task.custom_fields;
+    setCustomFieldsDraft(task.custom_fields);
+  }, [task.id, task.custom_fields]);
+
+  const updateCustomField = (fieldName: string, value: unknown) => {
+    const nextCustomFields = { ...customFieldsDraftRef.current, [fieldName]: value };
+    customFieldsDraftRef.current = nextCustomFields;
+    setCustomFieldsDraft(nextCustomFields);
+    onUpdate({ custom_fields: nextCustomFields });
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column" }}>
@@ -61,11 +75,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
           <select
             aria-label="Status"
             value={currentStatus ?? ""}
-            onChange={(e) =>
-              onUpdate({
-                custom_fields: { ...task.custom_fields, [statusFieldName]: e.target.value },
-              })
-            }
+            onChange={(e) => updateCustomField(statusFieldName, e.target.value)}
             style={selectStyle}
           >
             {statusOptions.map((s) => (
@@ -84,14 +94,7 @@ export function DetailMetaSidebar({ task, config, onUpdate, isMilestone }: Detai
           <select
             aria-label="Priority"
             value={currentPriority}
-            onChange={(e) =>
-              onUpdate({
-                custom_fields: {
-                  ...task.custom_fields,
-                  [priorityFieldName]: e.target.value || undefined,
-                },
-              })
-            }
+            onChange={(e) => updateCustomField(priorityFieldName, e.target.value || undefined)}
             style={selectStyle}
           >
             <option value="">None</option>

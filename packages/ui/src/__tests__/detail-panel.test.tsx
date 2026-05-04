@@ -253,7 +253,7 @@ describe("[FR-VIS-006-AC3] 1カラムレイアウトでもタスクの Status、
       custom_fields: { Status: "Done", Priority: "medium" },
     });
     expect(onUpdate).toHaveBeenCalledWith({
-      custom_fields: { Status: "In Progress", Priority: "high" },
+      custom_fields: { Status: "Done", Priority: "high" },
     });
     expect(onUpdate).toHaveBeenCalledWith({ type: "epic" });
     expect(onUpdate).toHaveBeenCalledWith({ start_date: "2026-02-01" });
