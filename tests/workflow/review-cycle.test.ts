@@ -312,7 +312,7 @@ describe("[NFR-STABILITY-007-AC1] lint gate は未追跡 worktree と生成 CHAN
   });
 });
 
-describe("Release Please 設定", () => {
+describe("[NFR-STABILITY-007-AC1] Release Please 設定", () => {
   it("GitHub Release と CHANGELOG を root component に統合し package version だけ同期する", async () => {
     const configRaw = await readRepoFile("release-please-config.json");
     const manifestRaw = await readRepoFile(".release-please-manifest.json");
