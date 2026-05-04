@@ -19,6 +19,7 @@ import { useUndoRedo } from "./hooks/useUndoRedo.js";
 import { SkeletonLoader } from "./components/SkeletonLoader.js";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
 import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
+import { useHolidayPreset } from "./hooks/useHolidayPreset.js";
 
 const EMPTY_TASK_TYPES: Record<string, never> = {};
 
@@ -84,6 +85,8 @@ export function App() {
   } | null>(null);
   const [syncing, setSyncing] = useState<"pull" | "push" | null>(null);
   const { customDaysOff, addCustomDayOff, removeCustomDayOff } = useCustomNonWorkingDays();
+  const { holidayPresetOptions, selectedHolidayPresetId, presetHolidays, selectHolidayPreset } =
+    useHolidayPreset();
   const {
     canUndo,
     canRedo,
@@ -616,6 +619,10 @@ export function App() {
             enabledTypes={enabled}
             onToggleType={toggleType}
             configuredHolidays={config.gantt.holidays ?? []}
+            holidayPresetOptions={holidayPresetOptions}
+            selectedHolidayPresetId={selectedHolidayPresetId}
+            presetHolidays={presetHolidays}
+            onSelectHolidayPreset={selectHolidayPreset}
             customDaysOff={customDaysOff}
             onAddCustomDayOff={addCustomDayOff}
             onRemoveCustomDayOff={removeCustomDayOff}
@@ -673,6 +680,7 @@ export function App() {
                     onHoverTask={setHoveredTaskId}
                     dependencyHighlightEnabled={dependencyHighlightEnabled}
                     highlightRelationMap={highlightRelationMap}
+                    presetHolidays={presetHolidays}
                     customDaysOff={customDaysOff}
                   />
                 }

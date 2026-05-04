@@ -1,10 +1,19 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CalendarDays, Plus, X } from "lucide-react";
 import type { CalendarHoliday } from "../../types/index.js";
+import {
+  isHolidayPresetId,
+  type HolidayPreset,
+  type HolidayPresetId,
+} from "../../lib/holiday-presets.js";
 import { IconButton } from "./IconButton.js";
 
 interface CalendarSettingsMenuProps {
   configuredHolidays: CalendarHoliday[];
+  holidayPresetOptions?: HolidayPreset[];
+  selectedHolidayPresetId?: HolidayPresetId;
+  presetHolidays?: CalendarHoliday[];
+  onSelectHolidayPreset?: (presetId: HolidayPresetId) => void;
   customDaysOff: CalendarHoliday[];
   onAddCustomDayOff: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff: (date: string) => void;
@@ -62,6 +71,10 @@ function holidayLabel(day: CalendarHoliday): string {
 
 export function CalendarSettingsMenu({
   configuredHolidays,
+  holidayPresetOptions = [],
+  selectedHolidayPresetId = "none",
+  presetHolidays = [],
+  onSelectHolidayPreset,
   customDaysOff,
   onAddCustomDayOff,
   onRemoveCustomDayOff,
@@ -97,6 +110,12 @@ export function CalendarSettingsMenu({
     setName("");
   };
 
+  const handlePresetChange = (presetId: string) => {
+    if (isHolidayPresetId(presetId)) {
+      onSelectHolidayPreset?.(presetId);
+    }
+  };
+
   return (
     <div ref={wrapperRef} style={{ position: "relative" }}>
       <IconButton
@@ -111,6 +130,20 @@ export function CalendarSettingsMenu({
         <div role="menu" style={panelStyle}>
           <div style={sectionLabel}>Calendar</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 6 }}>
+            {holidayPresetOptions.length > 0 && onSelectHolidayPreset && (
+              <select
+                aria-label="Holiday preset"
+                value={selectedHolidayPresetId}
+                onChange={(e) => handlePresetChange(e.target.value)}
+                style={inputStyle}
+              >
+                {holidayPresetOptions.map((preset) => (
+                  <option key={preset.id} value={preset.id}>
+                    {preset.label}
+                  </option>
+                ))}
+              </select>
+            )}
             <input
               aria-label="Custom day off date"
               type="date"
@@ -143,6 +176,22 @@ export function CalendarSettingsMenu({
               Add
             </button>
           </div>
+
+          {holidayPresetOptions.length > 0 && (
+            <>
+              <div style={separator} />
+              <div style={sectionLabel}>Preset holidays</div>
+              {presetHolidays.length === 0 ? (
+                <div style={rowStyle}>None</div>
+              ) : (
+                presetHolidays.map((day) => (
+                  <div key={day.date} style={rowStyle}>
+                    <span>{holidayLabel(day)}</span>
+                  </div>
+                ))
+              )}
+            </>
+          )}
 
           <div style={separator} />
           <div style={sectionLabel}>Configured</div>

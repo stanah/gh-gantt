@@ -15,6 +15,7 @@ import { ThemeToggle } from "./ThemeToggle.js";
 import { IconButton } from "./IconButton.js";
 import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
 import type { CalendarHoliday } from "../../types/index.js";
+import type { HolidayPreset, HolidayPresetId } from "../../lib/holiday-presets.js";
 
 interface ToolbarProps {
   projectName: string;
@@ -61,6 +62,10 @@ interface ToolbarProps {
   redoCount?: number;
   undoRedoBusy?: boolean;
   configuredHolidays?: CalendarHoliday[];
+  holidayPresetOptions?: HolidayPreset[];
+  selectedHolidayPresetId?: HolidayPresetId;
+  presetHolidays?: CalendarHoliday[];
+  onSelectHolidayPreset?: (presetId: HolidayPresetId) => void;
   customDaysOff?: CalendarHoliday[];
   onAddCustomDayOff?: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff?: (date: string) => void;
@@ -176,6 +181,10 @@ export function Toolbar(props: ToolbarProps) {
       {props.onAddCustomDayOff && props.onRemoveCustomDayOff && (
         <CalendarSettingsMenu
           configuredHolidays={props.configuredHolidays ?? []}
+          holidayPresetOptions={props.holidayPresetOptions}
+          selectedHolidayPresetId={props.selectedHolidayPresetId}
+          presetHolidays={props.presetHolidays}
+          onSelectHolidayPreset={props.onSelectHolidayPreset}
           customDaysOff={props.customDaysOff ?? []}
           onAddCustomDayOff={props.onAddCustomDayOff}
           onRemoveCustomDayOff={props.onRemoveCustomDayOff}

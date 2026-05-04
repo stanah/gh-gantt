@@ -698,6 +698,24 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/working-calendar.test.tsx
+      - id: FR-VIS-017
+        summary: 稼働カレンダーの国別祝日プリセット
+        acceptance_criteria:
+          - id: FR-VIS-017-AC1
+            description: Calendar Settings で祝日プリセットを選択しプリセット休日を表示できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/working-calendar.test.tsx
+          - id: FR-VIS-017-AC2
+            description: 2026 年の日本と米国連邦祝日をプリセットとして提供する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/working-calendar.test.tsx
+          - id: FR-VIS-017-AC3
+            description: 選択した祝日プリセットを localStorage に保存し GanttChart の非稼働日表示に反映する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/working-calendar.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
