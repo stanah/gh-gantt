@@ -208,10 +208,10 @@ function renderGrid(
 ): string {
   const days = Math.max(1, diffDays(startDate, endDate) + 1);
   const lines: string[] = [];
-  for (let day = 0; day <= days; day += 1) {
+  for (let day = 0; day < days; day += 1) {
     const x = chartX + day * dayWidth;
     const date = addDays(startDate, day);
-    const major = date.getUTCDate() === 1 || day === 0 || day === days;
+    const major = date.getUTCDate() === 1 || day === 0 || day === days - 1;
     lines.push(
       `<line x1="${x}" y1="${chartY}" x2="${x}" y2="${chartY + chartHeight}" class="${major ? "grid-major" : "grid"}" />`,
     );
@@ -221,6 +221,9 @@ function renderGrid(
       );
     }
   }
+  lines.push(
+    `<line x1="${chartX + chartWidth}" y1="${chartY}" x2="${chartX + chartWidth}" y2="${chartY + chartHeight}" class="grid-major" />`,
+  );
   return lines.join("");
 }
 

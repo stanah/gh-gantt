@@ -63,12 +63,12 @@ async function renderPngWithPlaywright({
   height,
   scaleFactor,
 }: PngRenderInput): Promise<Buffer> {
-  let chromium: typeof import("@playwright/test").chromium;
+  let chromium: typeof import("playwright").chromium;
   try {
-    ({ chromium } = await import("@playwright/test"));
+    ({ chromium } = await import("playwright"));
   } catch (err) {
     throw new Error(
-      `PNG export requires @playwright/test. 依存関係をインストールしてから再実行してください: ${err instanceof Error ? err.message : String(err)}`,
+      `PNG export requires playwright. 依存関係をインストールしてから再実行してください: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
 

@@ -128,4 +128,23 @@ describe("[FR-VIS-019] SVG/PNG エクスポート", () => {
     expect(result.svg).toContain("表示中タスク");
     expect(result.svg).not.toContain(hidden.title);
   });
+
+  it("[FR-VIS-019-AC2] グリッドの日付ラベルは export 範囲の翌日を出力しない", () => {
+    const task = makeTask("stanah/gh-gantt#20", {
+      title: "単日タスク",
+      start_date: "2026-05-04",
+      end_date: "2026-05-04",
+    });
+
+    const result = renderGanttExportSvg({
+      nodes: buildExportTaskNodes([task]),
+      config,
+      scope: "project",
+      viewScale: "month",
+    });
+
+    expect(result.svg).toContain("2026-05-03");
+    expect(result.svg).toContain("2026-05-05");
+    expect(result.svg).not.toContain("2026-05-06");
+  });
 });

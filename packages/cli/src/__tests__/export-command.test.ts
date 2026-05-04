@@ -134,6 +134,15 @@ describe("[FR-VIS-019-AC5] CLI export command", () => {
     await expect(readFile(outputPath)).resolves.toEqual(Buffer.from("png"));
   });
 
+  it("PNG export の Playwright は CLI の runtime dependency として宣言する", async () => {
+    const packageJson = JSON.parse(
+      await readFile(new URL("../../package.json", import.meta.url), "utf-8"),
+    ) as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+
+    expect(packageJson.dependencies?.playwright).toBeDefined();
+    expect(packageJson.devDependencies?.playwright).toBeUndefined();
+  });
+
   it("CLI では UI の表示中ビューを持たないため current scope を拒否する", async () => {
     const root = await writeProject();
 
