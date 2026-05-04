@@ -764,6 +764,19 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/export-command.test.ts
+      - id: FR-VIS-020
+        summary: フィルタプリセット保存・復元
+        acceptance_criteria:
+          - id: FR-VIS-020-AC1
+            description: 現在のフィルタ状態を名前付きプリセットとして localStorage に保存し、選択時に一括復元できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/filter-presets.test.tsx
+          - id: FR-VIS-020-AC2
+            description: Toolbar からプリセットの選択・保存・更新・名前変更・削除・全フィルタクリアを実行できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/filter-presets.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
