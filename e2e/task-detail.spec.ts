@@ -15,21 +15,18 @@ test("clicking a task opens the detail panel", async ({ page }) => {
   await expect(titleLink).toBeVisible();
 });
 
-test("detail panel shows task metadata", async ({ page }) => {
-  // task-2 is open and visible by default
+test("詳細パネルの Status を編集コントロールの値として表示する", async ({ page }) => {
+  // task-2 は open でデフォルト表示される
   await page.locator("[data-task-id='task-2']").click();
 
-  // In single-column layout, status is shown as an inline badge
-  // Use .first() since multiple elements may show "In Progress"
-  await expect(page.getByText("In Progress").first()).toBeVisible();
+  await expect(page.getByLabel("Status")).toHaveValue("In Progress");
 });
 
-test("detail panel shows dates", async ({ page }) => {
+test("詳細パネルの日付を編集コントロールの値として表示する", async ({ page }) => {
   await page.locator("[data-task-id='task-2']").click();
 
-  // In single-column layout, dates are shown as a date range badge
-  // task-2: start_date "2026-01-16", end_date "2026-02-28"
-  await expect(page.getByText("2026-01-16")).toBeVisible();
+  await expect(page.getByLabel("Start Date")).toHaveValue("2026-01-16");
+  await expect(page.getByLabel("End Date")).toHaveValue("2026-02-28");
 });
 
 test("clicking same task again closes the detail panel", async ({ page }) => {
