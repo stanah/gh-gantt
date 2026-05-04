@@ -303,7 +303,7 @@ describe("[NFR-STABILITY-007-AC1] lint gate は未追跡 worktree と生成 CHAN
     const ci = await readRepoFile(".github/workflows/ci.yml");
 
     expect(packageJson.scripts.lint).toBe(
-      "git ls-files -z -- ':!:CHANGELOG.md' ':!:packages/*/CHANGELOG.md' | xargs -0 vp check",
+      "git ls-files -z -- . ':(exclude)CHANGELOG.md' ':(exclude)packages/*/CHANGELOG.md' | xargs -0 vp check",
     );
     expect(lefthook).toContain("run: pnpm lint < /dev/null");
     expect(lefthook).not.toContain("run: vp check < /dev/null");
