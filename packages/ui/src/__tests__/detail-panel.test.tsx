@@ -138,7 +138,7 @@ describe("TaskDetailPanel", () => {
 
   it("[FR-VIS-022-AC1] 詳細パネルの操作ボタンにアクセシブルラベルを付与する", () => {
     const task = makeTask();
-    const { getByLabelText } = render(
+    const { getByRole } = render(
       <TaskDetailPanel
         task={task}
         config={config}
@@ -150,10 +150,63 @@ describe("TaskDetailPanel", () => {
       />,
     );
 
-    expect(getByLabelText("Copy task info as JSON").getAttribute("title")).toBe(
-      "Copy task info as JSON",
+    const copyButton = getByRole("button", { name: "Copy task info as JSON" });
+    expect(copyButton.getAttribute("aria-label")).toBe("Copy task info as JSON");
+    expect(copyButton.getAttribute("title")).toBe("Copy task info as JSON");
+
+    const closeButton = getByRole("button", { name: "Close task details" });
+    expect(closeButton.getAttribute("aria-label")).toBe("Close task details");
+    expect(closeButton.getAttribute("title")).toBe("Close task details");
+  });
+
+  it("[FR-VIS-022-AC1] コピー成功をライブリージョンで通知する", async () => {
+    const task = makeTask();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const { findByRole, getByRole } = render(
+      <TaskDetailPanel
+        task={task}
+        config={config}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
     );
-    expect(getByLabelText("Close task details").getAttribute("title")).toBe("Close task details");
+
+    fireEvent.click(getByRole("button", { name: "Copy task info as JSON" }));
+
+    expect((await findByRole("status")).textContent).toBe("Task info copied");
+  });
+
+  it("[FR-VIS-022-AC1] コピー失敗をライブリージョンで通知する", async () => {
+    const task = makeTask();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockRejectedValue(new Error("clipboard unavailable")),
+      },
+    });
+    const { findByRole, getByRole } = render(
+      <TaskDetailPanel
+        task={task}
+        config={config}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
+    );
+
+    fireEvent.click(getByRole("button", { name: "Copy task info as JSON" }));
+
+    expect((await findByRole("status")).textContent).toBe("Could not copy task info");
   });
 
   it("renders sub-tasks with titles", () => {

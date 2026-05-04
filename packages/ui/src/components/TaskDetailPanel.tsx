@@ -46,6 +46,12 @@ export function TaskDetailPanel({
   const isTwoColumn = width >= TWO_COLUMN_THRESHOLD;
   const renderPreview =
     renderMarkdownPreview ?? ((value: string) => <MarkdownRenderer markdown={value} />);
+  const copyStatusMessage =
+    copyFeedback === "success"
+      ? "Task info copied"
+      : copyFeedback === "error"
+        ? "Could not copy task info"
+        : null;
 
   const parentTask = task.parent
     ? (() => {
@@ -245,6 +251,26 @@ export function TaskDetailPanel({
               </svg>
             )}
           </button>
+          {copyStatusMessage && (
+            <span
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              style={{
+                position: "absolute",
+                width: 1,
+                height: 1,
+                padding: 0,
+                margin: -1,
+                overflow: "hidden",
+                clip: "rect(0 0 0 0)",
+                whiteSpace: "nowrap",
+                border: 0,
+              }}
+            >
+              {copyStatusMessage}
+            </span>
+          )}
           <button
             type="button"
             onClick={onClose}
