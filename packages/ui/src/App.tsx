@@ -20,6 +20,7 @@ import { SkeletonLoader } from "./components/SkeletonLoader.js";
 import { ThemeProvider } from "./contexts/ThemeContext.js";
 import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
 import { useHolidayPreset } from "./hooks/useHolidayPreset.js";
+import { useFilterPresets, type FilterPresetState } from "./hooks/useFilterPresets.js";
 import { downloadGanttExport } from "./lib/export-download.js";
 import type { ExportRequest } from "./components/toolbar/ExportMenu.js";
 
@@ -138,16 +139,19 @@ export function App() {
   const {
     enabled,
     toggle: toggleType,
+    setEnabledTypes,
     enableAll: enableAllTypes,
   } = useTypeFilter(config?.task_types ?? {});
   const { displayOptions, toggleDisplayOption } = useDisplayOptions();
   const {
     hideClosed,
+    setHideClosed,
     toggleHideClosed,
     dependencyHighlightEnabled,
     toggleDependencyHighlight,
     selectedAssignee,
     selectedAssignees,
+    setSelectedAssignees,
     setSelectedAssignee,
     allAssignees,
     selectedPriorities,
@@ -181,6 +185,61 @@ export function App() {
     searchQuery,
     taskSortMode,
     labelGrouping,
+  });
+
+  const currentFilterPresetState = useMemo<FilterPresetState>(
+    () => ({
+      hideClosed,
+      selectedAssignees,
+      selectedPriorities,
+      selectedLabels,
+      enabledTypes: [...enabled].sort(),
+      searchQuery,
+      taskSortMode,
+    }),
+    [
+      hideClosed,
+      selectedAssignees,
+      selectedPriorities,
+      selectedLabels,
+      enabled,
+      searchQuery,
+      taskSortMode,
+    ],
+  );
+
+  const applyFilterPresetState = useCallback(
+    (state: FilterPresetState) => {
+      setHideClosed(state.hideClosed);
+      setSelectedAssignees(state.selectedAssignees);
+      setSelectedPriorities(state.selectedPriorities);
+      setSelectedLabels(state.selectedLabels);
+      setEnabledTypes(state.enabledTypes);
+      setSearchQuery(state.searchQuery);
+      setTaskSortMode(state.taskSortMode);
+    },
+    [
+      setEnabledTypes,
+      setHideClosed,
+      setSearchQuery,
+      setSelectedAssignees,
+      setSelectedLabels,
+      setSelectedPriorities,
+    ],
+  );
+
+  const {
+    presets: filterPresets,
+    selectedPresetId: selectedFilterPresetId,
+    savePreset: saveFilterPreset,
+    applyPreset: applyFilterPreset,
+    updatePreset: updateFilterPreset,
+    renamePreset: renameFilterPreset,
+    deletePreset: deleteFilterPreset,
+    clearSelectedPreset: clearSelectedFilterPreset,
+  } = useFilterPresets({
+    currentState: currentFilterPresetState,
+    onApplyPreset: applyFilterPresetState,
   });
 
   const visibleTaskNodes = useMemo(
@@ -504,26 +563,43 @@ export function App() {
   const hasActiveFilters = useMemo(() => {
     const allTypeCount = Object.keys(config?.task_types ?? {}).length;
     return (
+      hideClosed ||
       searchQuery.trim() !== "" ||
       selectedAssignees.length > 0 ||
       selectedPriorities.length > 0 ||
       selectedLabels.length > 0 ||
-      (enabled.size > 0 && enabled.size < allTypeCount)
+      taskSortMode !== "default" ||
+      (allTypeCount > 0 && enabled.size < allTypeCount)
     );
-  }, [searchQuery, selectedAssignees, selectedPriorities, selectedLabels, enabled, config]);
+  }, [
+    hideClosed,
+    searchQuery,
+    selectedAssignees,
+    selectedPriorities,
+    selectedLabels,
+    taskSortMode,
+    enabled,
+    config,
+  ]);
 
   const resetAllFilters = useCallback(() => {
+    setHideClosed(false);
     setSearchQuery("");
     setSelectedAssignee(null);
     setSelectedPriorities([]);
     setSelectedLabels([]);
+    setTaskSortMode("default");
     enableAllTypes();
+    clearSelectedFilterPreset();
   }, [
+    setHideClosed,
     setSearchQuery,
     setSelectedAssignee,
     setSelectedPriorities,
     setSelectedLabels,
+    setTaskSortMode,
     enableAllTypes,
+    clearSelectedFilterPreset,
   ]);
 
   return (
@@ -623,6 +699,14 @@ export function App() {
             labelGroupingPrefix={labelGroupingPrefix}
             labelGroupingEnabled={labelGroupingEnabled}
             onToggleLabelGrouping={() => setLabelGroupingEnabled((prev) => !prev)}
+            filterPresets={filterPresets}
+            selectedFilterPresetId={selectedFilterPresetId}
+            onApplyFilterPreset={applyFilterPreset}
+            onSaveFilterPreset={saveFilterPreset}
+            onUpdateFilterPreset={updateFilterPreset}
+            onRenameFilterPreset={renameFilterPreset}
+            onDeleteFilterPreset={deleteFilterPreset}
+            onClearFilters={resetAllFilters}
             searchQuery={searchQuery}
             onSearchChange={setSearchQuery}
             taskSortMode={taskSortMode}

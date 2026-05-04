@@ -15,7 +15,9 @@ import { ThemeToggle } from "./ThemeToggle.js";
 import { IconButton } from "./IconButton.js";
 import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
 import { ExportMenu, type ExportRequest } from "./ExportMenu.js";
+import { FilterPresetSelector } from "./FilterPresetSelector.js";
 import type { CalendarHoliday } from "../../types/index.js";
+import type { FilterPreset } from "../../hooks/useFilterPresets.js";
 import type { HolidayPreset, HolidayPresetId } from "../../lib/holiday-presets.js";
 
 interface ToolbarProps {
@@ -71,6 +73,14 @@ interface ToolbarProps {
   onAddCustomDayOff?: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff?: (date: string) => void;
   onExport?: (request: ExportRequest) => void;
+  filterPresets?: FilterPreset[];
+  selectedFilterPresetId?: string | null;
+  onApplyFilterPreset?: (id: string) => void;
+  onSaveFilterPreset?: (name: string) => void;
+  onUpdateFilterPreset?: (id: string) => void;
+  onRenameFilterPreset?: (id: string, name: string) => void;
+  onDeleteFilterPreset?: (id: string) => void;
+  onClearFilters?: () => void;
 }
 
 const taskSortOptions: Array<{ value: TaskSortMode; label: string }> = [
@@ -127,6 +137,24 @@ export function Toolbar(props: ToolbarProps) {
         labelGroupingEnabled={props.labelGroupingEnabled}
         onToggleLabelGrouping={props.onToggleLabelGrouping}
       />
+      {props.filterPresets &&
+        props.onApplyFilterPreset &&
+        props.onSaveFilterPreset &&
+        props.onUpdateFilterPreset &&
+        props.onRenameFilterPreset &&
+        props.onDeleteFilterPreset &&
+        props.onClearFilters && (
+          <FilterPresetSelector
+            presets={props.filterPresets}
+            selectedPresetId={props.selectedFilterPresetId ?? null}
+            onApplyPreset={props.onApplyFilterPreset}
+            onSavePreset={props.onSaveFilterPreset}
+            onUpdatePreset={props.onUpdateFilterPreset}
+            onRenamePreset={props.onRenameFilterPreset}
+            onDeletePreset={props.onDeleteFilterPreset}
+            onClearFilters={props.onClearFilters}
+          />
+        )}
       <SearchBox
         searchQuery={props.searchQuery}
         onSearchChange={props.onSearchChange}

@@ -24,7 +24,15 @@ export function useTypeFilter(taskTypes: Record<string, TaskType>) {
     });
   }, []);
 
+  const setEnabledTypes = useCallback(
+    (typeNames: string[]) => {
+      const validTypes = new Set(allTypes);
+      setEnabled(new Set(typeNames.filter((typeName) => validTypes.has(typeName))));
+    },
+    [allTypes],
+  );
+
   const enableAll = useCallback(() => setEnabled(new Set(allTypes)), [allTypes]);
 
-  return { enabled, toggle, enableAll };
+  return { enabled, toggle, setEnabledTypes, enableAll };
 }

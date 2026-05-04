@@ -143,8 +143,10 @@ export function useTaskFilter(tasks: Task[]) {
 
   return {
     hideClosed,
+    setHideClosed,
     toggleHideClosed,
     dependencyHighlightEnabled,
+    setDependencyHighlightEnabled,
     toggleDependencyHighlight,
     selectedAssignee,
     setSelectedAssignee,
