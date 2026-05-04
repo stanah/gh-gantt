@@ -136,6 +136,26 @@ describe("TaskDetailPanel", () => {
     expect(html).toContain("Important description text");
   });
 
+  it("[FR-VIS-022-AC1] 詳細パネルの操作ボタンにアクセシブルラベルを付与する", () => {
+    const task = makeTask();
+    const { getByLabelText } = render(
+      <TaskDetailPanel
+        task={task}
+        config={config}
+        comments={[]}
+        allTasks={[task]}
+        onUpdate={() => {}}
+        onClose={() => {}}
+        onSelectTask={() => {}}
+      />,
+    );
+
+    expect(getByLabelText("Copy task info as JSON").getAttribute("title")).toBe(
+      "Copy task info as JSON",
+    );
+    expect(getByLabelText("Close task details").getAttribute("title")).toBe("Close task details");
+  });
+
   it("renders sub-tasks with titles", () => {
     const childTask = makeTask({ id: "TASK-2", title: "Child Task Title", parent: "TASK-1" });
     const parentTask = makeTask({ sub_tasks: ["TASK-2"] });

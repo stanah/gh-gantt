@@ -182,7 +182,9 @@ export function TaskDetailPanel({
         </span>
         <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
           <button
+            type="button"
             onClick={copyTaskInfo}
+            aria-label="Copy task info as JSON"
             title="Copy task info as JSON"
             style={{
               border: "none",
@@ -244,7 +246,10 @@ export function TaskDetailPanel({
             )}
           </button>
           <button
+            type="button"
             onClick={onClose}
+            aria-label="Close task details"
+            title="Close task details"
             style={{
               border: "none",
               background: "none",
