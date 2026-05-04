@@ -32,7 +32,7 @@ const baseStyle: React.CSSProperties = {
 const activeStyle: React.CSSProperties = {
   background: "var(--color-selected-bg)",
   color: "var(--color-selected-fg)",
-  borderColor: "var(--color-selected-border)",
+  border: "1px solid var(--color-selected-border)",
 };
 
 const disabledStyle: React.CSSProperties = {

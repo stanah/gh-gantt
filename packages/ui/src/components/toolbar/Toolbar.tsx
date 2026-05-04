@@ -14,6 +14,7 @@ import { MoreMenu } from "./MoreMenu.js";
 import { ThemeToggle } from "./ThemeToggle.js";
 import { IconButton } from "./IconButton.js";
 import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
+import { ExportMenu, type ExportRequest } from "./ExportMenu.js";
 import type { CalendarHoliday } from "../../types/index.js";
 import type { HolidayPreset, HolidayPresetId } from "../../lib/holiday-presets.js";
 
@@ -69,6 +70,7 @@ interface ToolbarProps {
   customDaysOff?: CalendarHoliday[];
   onAddCustomDayOff?: (day: CalendarHoliday) => void;
   onRemoveCustomDayOff?: (date: string) => void;
+  onExport?: (request: ExportRequest) => void;
 }
 
 const taskSortOptions: Array<{ value: TaskSortMode; label: string }> = [
@@ -190,6 +192,7 @@ export function Toolbar(props: ToolbarProps) {
           onRemoveCustomDayOff={props.onRemoveCustomDayOff}
         />
       )}
+      {props.onExport && <ExportMenu onExport={props.onExport} />}
       <MoreMenu
         displayOptions={props.displayOptions}
         onToggleDisplayOption={props.onToggleDisplayOption}

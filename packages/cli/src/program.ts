@@ -16,6 +16,7 @@ import { doctorCommand } from "./commands/doctor.js";
 import { contextCommand } from "./commands/context.js";
 import { sprintCommand } from "./commands/sprint.js";
 import { acceptanceCriteriaCommand } from "./commands/ac.js";
+import { exportCommand } from "./commands/export.js";
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -34,6 +35,7 @@ export function buildProgram(): Command {
   program.addCommand(contextCommand);
   program.addCommand(sprintCommand);
   program.addCommand(acceptanceCriteriaCommand);
+  program.addCommand(exportCommand);
 
   // Flattened task commands (formerly under `task` subcommand)
   program.addCommand(createTaskListCommand());
