@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "gh-gantt dev-role implementation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "issueNumber",
+    "pass",
+    "status",
+    "changedFiles",
+    "testsChanged",
+    "commitSha",
+    "blockers",
+    "nextRole"
+  ],
+  "properties": {
+    "issueNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pass": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["implemented", "partial", "blocked"]
+    },
+    "changedFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "action", "summary"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "action": {
+            "type": "string",
+            "enum": ["created", "modified", "deleted"]
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "testsChanged": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "commitSha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{7,40}$"
+    },
+    "blockers": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "string"
+    },
+    "nextRole": {
+      "type": "string",
+      "enum": ["executor", "planner", "orchestrator"]
+    }
+  }
+}

@@ -1048,3 +1048,45 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/doctor.test.ts
+      - id: NFR-STABILITY-010
+        summary: gh-gantt-dev-role skill による開発ロール分離
+        acceptance_criteria:
+          - id: NFR-STABILITY-010-AC1
+            description: |
+              gh-gantt-dev-role skill は orchestrator / planner / implementer /
+              executor / reviewer の5ロールを role 引数で選択し、対応する
+              reference を読み込む dispatch 手順を定義している
+            status: covered
+            tests:
+              - tests/workflow/dev-role-skill.test.ts
+          - id: NFR-STABILITY-010-AC2
+            description: |
+              gh-gantt-dev-role skill は Dev-Role Config、valid role、入力
+              artifact schema を HARD-GATE として検証し、.gantt-sync の同期
+              データを直接読まないことを明記している
+            status: covered
+            tests:
+              - tests/workflow/dev-role-skill.test.ts
+          - id: NFR-STABILITY-010-AC3
+            description: |
+              各 role reference は開始前 HARD-GATE、手順、出力契約、Red Flags、
+              エージェント別の留意点を持ち、executor が PR 前の独立検証
+              gate として verifyCommands を直列実行することを定義している
+            status: covered
+            tests:
+              - tests/workflow/dev-role-skill.test.ts
+          - id: NFR-STABILITY-010-AC4
+            description: |
+              gh-gantt-dev-role skill は plan / implementation result /
+              verification result / review / config の JSON Schema と default
+              review rubric を提供している
+            status: covered
+            tests:
+              - tests/workflow/dev-role-skill.test.ts
+          - id: NFR-STABILITY-010-AC5
+            description: |
+              gh-gantt-workflow と AGENTS.md は Dev-Role Config がある project の
+              開発・検証導線として gh-gantt-dev-role を参照している
+            status: covered
+            tests:
+              - tests/workflow/dev-role-skill.test.ts

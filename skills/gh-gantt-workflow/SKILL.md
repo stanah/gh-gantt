@@ -1,6 +1,6 @@
 ---
 name: gh-gantt-workflow
-description: gh-gantt の開発サイクル全体を回すオーケストレーター。「作業を始めたい」「次に何をすべき？」「開発サイクルを回して」で使用。特定の要望のタスク化は gh-gantt-decompose、進捗確認のみは gh-gantt-progress、同期のみは gh-gantt-sync、PR 作成のみは gh-gantt-pr、要件/ADR/テストタグの管理は gh-gantt-living-documentation を使うこと。
+description: gh-gantt の開発サイクル全体を回すオーケストレーター。「作業を始めたい」「次に何をすべき？」「開発サイクルを回して」で使用。特定の要望のタスク化は gh-gantt-decompose、進捗確認のみは gh-gantt-progress、同期のみは gh-gantt-sync、PR 作成のみは gh-gantt-pr、ロール分離された開発・検証は gh-gantt-dev-role、要件/ADR/テストタグの管理は gh-gantt-living-documentation を使うこと。
 ---
 
 # gh-gantt 開発ワークフロー
@@ -70,6 +70,7 @@ Evidence: コマンド出力をそのまま提示する。
 5. **★`on_task_selected`** — workflow.md の該当セクションを実行
 6. ブランチ作成 — Issue から branch 名を標準化する場合は `gh-gantt-pr` の命名規則（`<prefix>/issue-<number>-<slug>`）に従う
 7. **★`before_design`** → 設計 → **★`before_implementation`** → 実装 & 検証
+   - `.gantt-sync/workflow.md` に `## Dev-Role Config` がある場合、開発・検証は `gh-gantt-dev-role role=orchestrator` に引き継ぐ。executor gate を通るまで reviewer / PR 作成へ進んではならない
    - プロジェクトが Living Documentation 体系を採用している場合（`.gantt-sync/workflow.md` に Living Documentation セクションがある）、振る舞い変更を伴う作業では `gh-gantt-living-documentation` を invoke して要件 AC の追加とテストへの `[ID]` 付与を行う
 8. **★`before_commit`** — workflow.md の該当セクションを実行（自己レビュー・lint・テスト等）
 9. `git commit`
@@ -100,6 +101,7 @@ Evidence: コマンド出力をそのまま提示する。
 | レビュー指摘を Issue 化する                                    | レビュー修正は同じ PR に追加コミットするだけ                     |
 | Bot レビューを全て鵜呑みにする                                 | 誤検知や文脈に合わない指摘がある。精査してから対応する           |
 | PR 作成で作業完了扱いする                                      | PR 後の非同期レビューサイクルが始まっている                      |
+| `Dev-Role Config` があるのに executor gate を省略する          | ロール分離が無効化され、動作確認なし PR 作成を再発させる         |
 | PR review 操作を gh-gantt CLI に追加する                       | GitHub PR の責務であり、`gh` / GraphQL workflow で扱う           |
 | `.claude/hooks` をレビューサイクルの正本にする                 | Codex など hook を自動実行できない環境では保証にならない         |
 | 現在ブランチの PR だけを確認して完了報告する                   | 別のオープン PR の未解決レビューを見落とす                       |

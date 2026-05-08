@@ -1,0 +1,80 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "gh-gantt dev-role config",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verifyCommands"],
+  "properties": {
+    "verifyCommands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "reviewerRubricPath": {
+      "type": "string"
+    },
+    "scratchpadDir": {
+      "type": "string",
+      "default": ".dev-flow"
+    },
+    "branchNaming": {
+      "type": "string"
+    },
+    "prCreator": {
+      "type": "string"
+    },
+    "prTemplate": {
+      "type": "string"
+    },
+    "maxImprovementIterations": {
+      "type": "integer",
+      "minimum": 1,
+      "default": 3
+    },
+    "maxExecutorRetries": {
+      "type": "integer",
+      "minimum": 0,
+      "default": 2
+    },
+    "maxWallClockMinutes": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "tokenBudget": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "allowImplementerCommit": {
+      "type": "boolean",
+      "default": false
+    },
+    "commandTimeoutSeconds": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "agentSelection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "defaultPlanner": {
+          "type": "string"
+        },
+        "defaultImplementer": {
+          "type": "string"
+        },
+        "defaultExecutor": {
+          "type": "string"
+        },
+        "defaultReviewer": {
+          "type": "string"
+        },
+        "secondaryReviewer": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

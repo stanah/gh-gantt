@@ -1,0 +1,61 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema",
+  "title": "gh-gantt dev-role verification result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["issueNumber", "pass", "status", "commands", "summary"],
+  "properties": {
+    "issueNumber": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "pass": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["passed", "failed", "blocked"]
+    },
+    "commands": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "exitCode", "status", "stdoutExcerpt", "stderrExcerpt"],
+        "properties": {
+          "command": {
+            "type": "string",
+            "minLength": 1
+          },
+          "exitCode": {
+            "type": ["integer", "null"]
+          },
+          "status": {
+            "type": "string",
+            "enum": ["passed", "failed", "skipped", "blocked"]
+          },
+          "stdoutExcerpt": {
+            "type": "string"
+          },
+          "stderrExcerpt": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "type": "number",
+            "minimum": 0
+          }
+        }
+      }
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "nextRole": {
+      "type": "string",
+      "enum": ["reviewer", "implementer", "orchestrator"]
+    }
+  }
+}
