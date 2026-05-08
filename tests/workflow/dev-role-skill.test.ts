@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { z } from "zod";
 import { describe, expect, it } from "vitest";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
@@ -7,7 +8,8 @@ const skillDir = "skills/gh-gantt-dev-role";
 const roles = ["orchestrator", "planner", "implementer", "executor", "reviewer"] as const;
 
 async function readRepoFile(path: string): Promise<string> {
-  return readFile(resolve(repoRoot, path), "utf-8");
+  const content = await readFile(resolve(repoRoot, path), "utf-8");
+  return z.string().min(1).parse(content);
 }
 
 function extractMarkdownSection(content: string, heading: string): string {
@@ -44,7 +46,7 @@ describe("[NFR-STABILITY-010-AC2] gh-gantt-dev-role skill は共通 HARD-GATE �
     expect(skill).toContain(".gantt-sync/workflow.md");
     expect(skill).toContain(".dev-flow/config.json");
     expect(skill).toContain(
-      "`.gantt-sync/tasks.json` と `.gantt-sync/sync-state.json` は読んではならない",
+      "`.gantt-sync/tasks.json` と `.gantt-sync/sync-state.json` は読み込まないでください",
     );
     expect(skill).not.toContain("cat .gantt-sync/tasks.json");
     expect(skill).not.toContain("cat .gantt-sync/sync-state.json");
@@ -95,6 +97,46 @@ describe("[NFR-STABILITY-010-AC4] dev-role skill は構造化 artifact schema �
       expect(schema.properties).toHaveProperty(firstField);
       expect(schema.properties).toHaveProperty(secondField);
     }
+  });
+
+  it("schema 間の action / nextRole / findings 契約が揃っている", async () => {
+    const implSchema = JSON.parse(
+      await readRepoFile(`${skillDir}/templates/impl-result.schema.json`),
+    ) as {
+      properties: {
+        changedFiles: {
+          items: { properties: { action: { enum: string[] } } };
+        };
+      };
+    };
+    const verifySchema = JSON.parse(
+      await readRepoFile(`${skillDir}/templates/verify-result.schema.json`),
+    ) as {
+      required: string[];
+    };
+    const reviewSchema = JSON.parse(
+      await readRepoFile(`${skillDir}/templates/review.schema.json`),
+    ) as {
+      allOf: Array<{
+        if?: { properties?: { verdict?: { enum?: string[] } } };
+        then?: { properties?: { findings?: { minItems?: number } } };
+      }>;
+    };
+
+    expect(implSchema.properties.changedFiles.items.properties.action.enum).toEqual([
+      "create",
+      "modify",
+      "delete",
+    ]);
+    expect(verifySchema.required).toContain("nextRole");
+    const strictVerdictCondition = reviewSchema.allOf.find((entry) =>
+      entry.if?.properties?.verdict?.enum?.includes("block"),
+    );
+    expect(strictVerdictCondition?.if?.properties?.verdict?.enum).toEqual([
+      "request-changes",
+      "block",
+    ]);
+    expect(strictVerdictCondition?.["then"]?.properties?.findings?.minItems).toBe(1);
   });
 
   it("default review rubric は採点観点と severity を定義する", async () => {

@@ -28,7 +28,7 @@ gh-gantt-dev-role role=executor issue=123 workspace=/path/to/repo input=.dev-flo
 1. `.gantt-sync/workflow.md` の `## Dev-Role Config` セクション
 2. `.dev-flow/config.json`
 
-`.gantt-sync/tasks.json` と `.gantt-sync/sync-state.json` は読んではならない。同期データは常に `gh-gantt` CLI 経由で扱う。
+`.gantt-sync/tasks.json` と `.gantt-sync/sync-state.json` は読み込まないでください。同期データは常に `gh-gantt` CLI 経由で扱う。
 
 `Dev-Role Config` の最小形:
 
@@ -86,13 +86,13 @@ Evidence: 読み込んだ config path、role 名、検証した artifact path、
 
 ## Red Flags
 
-| やりがちなこと                                 | 問題                                   |
-| ---------------------------------------------- | -------------------------------------- |
-| executor を通さず reviewer / PR 作成へ進む     | 「動作確認なしマージ」の再発になる     |
-| implementer が自分の判断で verifier を省略する | ロール分離の意味がなくなる             |
-| `.gantt-sync/tasks.json` を直接読む            | gh-gantt の同期状態を壊す可能性がある  |
-| runtime artifact を無条件に commit する        | セッション固有ログが PR の正本に混ざる |
-| reviewer が rubric なしで承認する              | Yes-Man reviewer になりやすい          |
+| やりがちなこと                                               | 問題                                   |
+| ------------------------------------------------------------ | -------------------------------------- |
+| executor を通さず reviewer / PR 作成へ進む                   | 「動作確認なしマージ」の再発になる     |
+| implementer が自分の判断で検証ツール (`verifier`) を省略する | ロール分離の意味がなくなる             |
+| `.gantt-sync/tasks.json` を直接読む                          | gh-gantt の同期状態を壊す可能性がある  |
+| runtime artifact を無条件に commit する                      | セッション固有ログが PR の正本に混ざる |
+| reviewer が rubric なしで承認する                            | Yes-Man reviewer になりやすい          |
 
 | 言い訳                               | 現実                                                                  |
 | ------------------------------------ | --------------------------------------------------------------------- |

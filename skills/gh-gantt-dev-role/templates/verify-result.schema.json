@@ -3,7 +3,7 @@
   "title": "gh-gantt dev-role verification result",
   "type": "object",
   "additionalProperties": false,
-  "required": ["issueNumber", "pass", "status", "commands", "summary"],
+  "required": ["issueNumber", "pass", "status", "commands", "summary", "nextRole"],
   "properties": {
     "issueNumber": {
       "type": "integer",

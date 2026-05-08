@@ -39,7 +39,7 @@
           },
           "action": {
             "type": "string",
-            "enum": ["created", "modified", "deleted"]
+            "enum": ["create", "modify", "delete"]
           },
           "summary": {
             "type": "string",
