@@ -12,7 +12,7 @@
     "test:json": "vp test run --reporter=default --reporter=json --outputFile=../../test-results-smoke.json"
   },
   "dependencies": {
-    "@gh-gantt/cli": "workspace:*"
+    "gh-gantt": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
