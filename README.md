@@ -28,6 +28,17 @@ bun add -g gh-gantt
 
 This is the recommended path for end users — including AI agents running on Claude Code (web/cloud) where the CLI must be installable without cloning the repository.
 
+### Prerequisites
+
+For end users (npm install above):
+
+- Node.js >= 24
+- GitHub CLI (`gh`) installed and authenticated via `gh auth login`
+
+For contributors building from source, additionally:
+
+- pnpm >= 10 (this is a pnpm workspaces monorepo)
+
 ### From source (for contributors)
 
 ```bash
@@ -37,11 +48,6 @@ pnpm install
 pnpm build
 pnpm --filter gh-gantt exec pnpm link --global
 ```
-
-### Prerequisites
-
-- Node.js >= 24
-- GitHub CLI (`gh`) installed and authenticated via `gh auth login`
 
 ## Usage
 
