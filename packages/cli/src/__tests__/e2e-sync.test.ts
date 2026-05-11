@@ -7,7 +7,7 @@
  *   - gh auth token must be valid
  *
  * These tests run sequentially and modify real GitHub state.
- * Run with: pnpm --filter @gh-gantt/cli exec vitest run src/__tests__/e2e-sync.test.ts --timeout 60000
+ * Run with: pnpm --filter gh-gantt exec vitest run src/__tests__/e2e-sync.test.ts --timeout 60000
  *
  * Checklist items tested (from sync-git-model-checklist.md):
  *   #1  pull is always possible

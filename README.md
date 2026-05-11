@@ -14,23 +14,33 @@ GitHub Projects (V2) lacks three things that gh-gantt fills in:
 
 ## Installation
 
+Install from npm using whichever package manager you prefer:
+
 ```bash
-# Clone the repository
+npm install -g gh-gantt
+# or
+pnpm add -g gh-gantt
+# or
+yarn global add gh-gantt
+# or
+bun add -g gh-gantt
+```
+
+This is the recommended path for end users — including AI agents running on Claude Code (web/cloud) where the CLI must be installable without cloning the repository.
+
+### From source (for contributors)
+
+```bash
 git clone https://github.com/stanah/gh-gantt.git
 cd gh-gantt
-
-# Install dependencies & build
 pnpm install
 pnpm build
-
-# Link the CLI globally
-pnpm --filter @gh-gantt/cli exec pnpm link --global
+pnpm --filter gh-gantt exec pnpm link --global
 ```
 
 ### Prerequisites
 
 - Node.js >= 24
-- pnpm >= 10
 - GitHub CLI (`gh`) installed and authenticated via `gh auth login`
 
 ## Usage
@@ -81,11 +91,11 @@ gh-gantt serve --api-only             # API server only
 
 A pnpm workspaces monorepo with 3 packages:
 
-| Package            | Role                                                                       |
-| ------------------ | -------------------------------------------------------------------------- |
-| `@gh-gantt/shared` | Type definitions & Zod schemas                                             |
-| `@gh-gantt/cli`    | CLI (Commander) + REST API (Express) + sync engine + GitHub GraphQL client |
-| `@gh-gantt/ui`     | React SPA (Vite + D3) for Gantt chart visualization                        |
+| Package            | Role                                                                                         |
+| ------------------ | -------------------------------------------------------------------------------------------- |
+| `@gh-gantt/shared` | Type definitions & Zod schemas (bundled into `gh-gantt` at publish time; not published)      |
+| `gh-gantt`         | CLI (Commander) + REST API (Express) + sync engine + GitHub GraphQL client; published to npm |
+| `@gh-gantt/ui`     | React SPA (Vite + D3); built output is bundled into `gh-gantt` so `gh-gantt serve` works     |
 
 ### Design Principles
 
