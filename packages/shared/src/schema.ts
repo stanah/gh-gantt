@@ -133,7 +133,9 @@ const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
   stale_in_progress_days: z.number().int().positive().optional(),
 });
 
-export const ConfigSchema: z.ZodType<Config> = z.object({
+// `default_view` の z.preprocess が input 型を unknown に広げるため、
+// Input 引数を unknown に明示して TS の input 型不整合を回避する。
+export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
   version: z.string(),
   project: z.object({
     name: z.string(),
