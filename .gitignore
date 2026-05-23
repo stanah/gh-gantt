@@ -22,3 +22,4 @@ gh-gantt-*.png
 docs/generated/
 test-results*.json
 .pnpm-store/
+.dev-flow/
