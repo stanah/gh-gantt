@@ -12,9 +12,10 @@ import { GanttTimeline } from "./GanttTimeline.js";
 import { GanttGrid } from "./GanttGrid.js";
 import { GanttBar } from "./GanttBar.js";
 import { GanttSummaryBar } from "./GanttSummaryBar.js";
-import { GanttMilestone } from "./GanttMilestone.js";
+import { GanttMilestoneLane } from "./GanttMilestoneLane.js";
 import { GanttBlockLines } from "./GanttBlockLines.js";
 import { GanttTooltip } from "./GanttTooltip.js";
+import { extractMilestones } from "../lib/milestone-utils.js";
 import { useGanttScale } from "../hooks/useGanttScale.js";
 import type { ViewScale } from "@gh-gantt/shared";
 import { calculateCriticalPath } from "../lib/dependency-graph.js";
@@ -127,18 +128,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     onViewScaleChange?.(viewScale);
   }, [viewScale, onViewScaleChange]);
 
-  // Publish the timeline header to parent via render callback
-  useEffect(() => {
-    header(
-      <GanttTimeline
-        xScale={xScale}
-        dateRange={dateRange}
-        viewScale={viewScale}
-        totalWidth={totalWidth}
-        sprints={config.sprints}
-      />,
-    );
-  }, [config.sprints, header, xScale, dateRange, viewScale, totalWidth]);
+  const milestones = useMemo(() => extractMilestones(tasks, config), [tasks, config]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
   const holidays = useMemo(
@@ -197,6 +187,43 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     setTooltipSummaryDates(null);
     hideTooltip();
   }, [hideTooltip]);
+
+  // Publish the timeline header (with milestone lane) to parent via render callback
+  useEffect(() => {
+    header(
+      <>
+        <GanttTimeline
+          xScale={xScale}
+          dateRange={dateRange}
+          viewScale={viewScale}
+          totalWidth={totalWidth}
+          sprints={config.sprints}
+        />
+        <GanttMilestoneLane
+          milestones={milestones}
+          xScale={xScale}
+          totalWidth={totalWidth}
+          config={config}
+          onTooltipShow={(task, e) => showTooltip(task, e)}
+          onTooltipHide={() => hideTooltip()}
+          onSelectTask={onSelectTask}
+          selectedTaskId={selectedTaskId}
+        />
+      </>,
+    );
+  }, [
+    config,
+    header,
+    xScale,
+    dateRange,
+    viewScale,
+    totalWidth,
+    milestones,
+    onSelectTask,
+    selectedTaskId,
+    showTooltip,
+    hideTooltip,
+  ]);
 
   // Wheel zoom with passive: false for proper preventDefault
   useEffect(() => {
@@ -317,6 +344,26 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
+        {/* Milestone vertical guide lines — span the full body height behind everything (FR-VIS-023-AC5) */}
+        {milestones.map(({ task, date }) => {
+          const x = xScale(parseDate(date));
+          const color = config.task_types[task.type]?.color ?? "#E74C3C";
+          return (
+            <line
+              key={`milestone-vline-${task.id}`}
+              data-milestone-vline={task.id}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={totalHeight}
+              stroke={color}
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              opacity={0.55}
+              pointerEvents="none"
+            />
+          );
+        })}
         {/* Row hover backgrounds */}
         {flatList.map((node, i) => {
           const nodeKey = node.renderKey ?? node.task.id;
@@ -450,23 +497,8 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
             );
           }
 
-          if (display === "milestone") {
-            return (
-              <GanttMilestone
-                key={nodeKey}
-                task={task}
-                taskType={taskType}
-                xScale={xScale}
-                y={y}
-                height={ROW_HEIGHT}
-                showIssueId={showIssueId}
-                isDimmed={isDimmed}
-                highlightType={highlightType}
-                onTooltipShow={showTooltip}
-                onTooltipHide={hideTooltip}
-              />
-            );
-          }
+          // display === "milestone" は専用レーン (GanttMilestoneLane) に分離され (FR-VIS-023)、
+          // flatList からも除外される。ここには到達しない想定だが、安全側で bar 扱いにフォールバック。
 
           const priorityFieldName = config.sync?.field_mapping?.priority;
 

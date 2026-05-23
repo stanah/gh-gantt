@@ -1,6 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { useTaskTree, type TaskSortMode } from "./hooks/useTaskTree.js";
+import { getMilestoneTypeNames } from "./lib/milestone-utils.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
 import { useTaskFilter } from "./hooks/useTaskFilter.js";
@@ -172,6 +173,10 @@ export function App() {
     }),
     [labelGroupingEnabled, labelGroupingPrefix],
   );
+  const milestoneTypeNames = useMemo(
+    () => (config ? getMilestoneTypeNames(config) : new Set<string>()),
+    [config],
+  );
   const {
     flatList,
     collapsed,
@@ -186,6 +191,7 @@ export function App() {
     searchQuery,
     taskSortMode,
     labelGrouping,
+    excludedTypes: milestoneTypeNames,
   });
 
   const currentFilterPresetState = useMemo<FilterPresetState>(
