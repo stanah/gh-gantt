@@ -97,6 +97,14 @@ score =
 - Project Map: 構造・状態・依存・次アクションの探索。読み取り中心（MVP では編集は詳細パネル経由のみ）。
 - 両者は Toolbar の view 切替で往来し、選択中タスクは可能な範囲で維持する。
 
-## 7. 循環依存の扱い
+## 7. 操作方法
+
+1. Toolbar 左の `Gantt` / `Project Map` トグルで Project Map ビューに切り替える。
+2. 左の System Tree で Epic / Feature / Task を選択すると、Board / Dependency Map / Next Actions / Compact Gantt が選択サブツリーに追従する。
+3. Project Map ツールバーの検索ボックスと readiness チップ（Ready / In Progress / Review / Blocked / Done）で Tree / Board / Next Actions / Compact Gantt を一貫して絞り込める（Dependency Map は選択タスク中心のため選択スコープを優先する）。
+4. 各カード / ノードはクリックまたは Enter / Space で選択でき、選択タスクは詳細パネルで編集できる。編集内容は ViewModel に即時反映される。
+5. ツールバー右に同期状態（最終同期時刻・未反映数・総タスク数）を表示する。Pull / Push 後に自動で更新される。
+
+## 8. 循環依存の扱い
 
 `blocked_by` に循環がある場合、`calculateCriticalPath()` は timing を計算できない。Project Map は ViewModel の `warnings` に循環を記録し、Dependency Map で警告表示する。循環があっても他パネルはクラッシュしない。

@@ -773,6 +773,7 @@ export function App() {
                     config={config}
                     selectedTaskId={selectedTaskId}
                     onSelectTask={handleSelectTask}
+                    syncRefreshKey={syncing}
                   />
                 ) : null}
               </div>

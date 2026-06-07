@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
-import { render, fireEvent } from "@testing-library/react";
+import { render, fireEvent, cleanup, within } from "@testing-library/react";
 import { buildProjectMapViewModel } from "@gh-gantt/shared";
 import { ProjectMapPage } from "../components/project-map/ProjectMapPage.js";
 import type { Config, Task } from "../types/index.js";
@@ -77,6 +77,8 @@ function sampleTasks(): Task[] {
   ];
 }
 
+afterEach(() => cleanup());
+
 function renderPage(selectedTaskId: string | null, onSelectTask = vi.fn()) {
   const vm = buildProjectMapViewModel(sampleTasks(), config);
   const result = render(
@@ -122,5 +124,40 @@ describe("[FR-VIS-024] Project Map ページ", () => {
     const { container } = renderPage(null);
     const next = container.querySelector('[aria-label="Next Actions"]');
     expect(next?.textContent).toContain("UI Shell");
+  });
+});
+
+describe("[FR-VIS-024] Project Map フィルタ (PM-08)", () => {
+  it("検索でタスクが絞り込まれ、System Tree / Board に一貫適用される", () => {
+    const { container } = renderPage(null);
+    const board = container.querySelector('[aria-label="Project Board"]') as HTMLElement;
+    const tree = container.querySelector('[aria-label="System Tree"]') as HTMLElement;
+    expect(board.textContent).toContain("UI Shell");
+
+    const search = container.querySelector(
+      'input[aria-label="Project Map 検索"]',
+    ) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "ViewModel" } });
+
+    // ViewModel に一致しない "UI Shell" は Board から消える
+    expect(board.textContent).not.toContain("UI Shell");
+    // 一致する ViewModel と、その祖先 Epic A は Tree に残る
+    expect(tree.textContent).toContain("Epic A");
+    expect(tree.textContent).toContain("ViewModel");
+  });
+
+  it("readiness フィルタ (Blocked) で該当列以外のタスクが除外される", () => {
+    const { container } = renderPage(null);
+    const filterGroup = container.querySelector('[aria-label="Readiness フィルタ"]') as HTMLElement;
+    // t1=Done, t2=Ready。Blocked フィルタでは両方除外される
+    fireEvent.click(within(filterGroup).getByText("Blocked"));
+    const board = container.querySelector('[aria-label="Project Board"]') as HTMLElement;
+    expect(board.textContent).not.toContain("UI Shell");
+  });
+
+  it("マッチ件数が表示される", () => {
+    const { container } = renderPage(null);
+    // 全 3 タスク
+    expect(container.textContent).toContain("3/3 件");
   });
 });
