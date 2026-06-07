@@ -52,6 +52,12 @@ interface GanttChartProps {
   highlightRelationMap?: Map<string, RelationType>;
   presetHolidays?: CalendarHoliday[];
   customDaysOff?: CalendarHoliday[];
+  /**
+   * TypeFilter で有効化されている task type 名の集合。
+   * 指定時はマイルストーン専用レーン / 縦線も該当 type のみ表示する
+   * （未指定なら全マイルストーンを表示）。
+   */
+  enabledTypes?: Set<string>;
 }
 
 export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function GanttChart(
@@ -72,6 +78,7 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     highlightRelationMap,
     presetHolidays = [],
     customDaysOff = [],
+    enabledTypes,
   },
   ref,
 ) {
@@ -128,7 +135,14 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
     onViewScaleChange?.(viewScale);
   }, [viewScale, onViewScaleChange]);
 
-  const milestones = useMemo(() => extractMilestones(tasks, config), [tasks, config]);
+  // マイルストーン専用レーン / 縦線に表示する対象。TypeFilter (enabledTypes) が
+  // 指定されていれば、無効化された type のマイルストーンは除外する (タスクリストの
+  // type フィルタ動作と整合させる)。
+  const milestones = useMemo(() => {
+    const all = extractMilestones(tasks, config);
+    if (!enabledTypes) return all;
+    return all.filter((m) => enabledTypes.has(m.task.type));
+  }, [tasks, config, enabledTypes]);
 
   const totalHeight = flatList.length * ROW_HEIGHT;
   const holidays = useMemo(
@@ -344,26 +358,6 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
         style={{ position: "absolute", top: 0, left: 0 }}
         onMouseLeave={() => onHoverTask?.(null)}
       >
-        {/* Milestone vertical guide lines — span the full body height behind everything (FR-VIS-023-AC5) */}
-        {milestones.map(({ task, date }) => {
-          const x = xScale(parseDate(date));
-          const color = config.task_types[task.type]?.color ?? "#E74C3C";
-          return (
-            <line
-              key={`milestone-vline-${task.id}`}
-              data-milestone-vline={task.id}
-              x1={x}
-              y1={0}
-              x2={x}
-              y2={totalHeight}
-              stroke={color}
-              strokeWidth={1}
-              strokeDasharray="2 3"
-              opacity={0.55}
-              pointerEvents="none"
-            />
-          );
-        })}
         {/* Row hover backgrounds */}
         {flatList.map((node, i) => {
           const nodeKey = node.renderKey ?? node.task.id;
@@ -498,7 +492,9 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
           }
 
           // display === "milestone" は専用レーン (GanttMilestoneLane) に分離され (FR-VIS-023)、
-          // flatList からも除外される。ここには到達しない想定だが、安全側で bar 扱いにフォールバック。
+          // flatList からも除外される。万一誤って混入した場合でも、start/end を持たない
+          // マイルストーンが不正なバーとして描画されるのを避けるため明示的に描画しない。
+          if (display === "milestone") return null;
 
           const priorityFieldName = config.sync?.field_mapping?.priority;
 
@@ -561,6 +557,27 @@ export const GanttChart = forwardRef<GanttChartHandle, GanttChartProps>(function
               />
             );
           })()}
+        {/* マイルストーン縦ガイド線。行背景やバーに隠れず全行を縦に貫通させるため、
+            本体描画の最前面に配置する (FR-VIS-023-AC5)。pointerEvents は無効化して操作を妨げない。 */}
+        {milestones.map(({ task, date }) => {
+          const x = xScale(parseDate(date));
+          const color = config.task_types[task.type]?.color ?? "#E74C3C";
+          return (
+            <line
+              key={`milestone-vline-${task.id}`}
+              data-milestone-vline={task.id}
+              x1={x}
+              y1={0}
+              x2={x}
+              y2={totalHeight}
+              stroke={color}
+              strokeWidth={1}
+              strokeDasharray="2 3"
+              opacity={0.55}
+              pointerEvents="none"
+            />
+          );
+        })}
       </svg>
       {tooltip && (
         <GanttTooltip

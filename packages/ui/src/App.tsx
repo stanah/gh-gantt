@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import { useApi } from "./hooks/useApi.js";
 import { useTaskTree, type TaskSortMode } from "./hooks/useTaskTree.js";
-import { getMilestoneTypeNames } from "./lib/milestone-utils.js";
+import { extractMilestones, getMilestoneTypeNames } from "./lib/milestone-utils.js";
 import { useTypeFilter } from "./hooks/useTypeFilter.js";
 import { useDisplayOptions } from "./hooks/useDisplayOptions.js";
 import { useTaskFilter } from "./hooks/useTaskFilter.js";
@@ -193,6 +193,14 @@ export function App() {
     labelGrouping,
     excludedTypes: milestoneTypeNames,
   });
+
+  // 専用レーンに実際に表示されるマイルストーンの有無。TypeFilter (enabled) を反映し、
+  // GanttChart 側の表示条件と一致させることで、左ヘッダーの高さ補正 (FR-VIS-023) を
+  // 右ペインのレーン表示と確実に揃える。
+  const hasMilestoneLane = useMemo(() => {
+    if (!config) return false;
+    return extractMilestones(tasks, config).some((m) => enabled.has(m.task.type));
+  }, [tasks, config, enabled]);
 
   const currentFilterPresetState = useMemo<FilterPresetState>(
     () => ({
@@ -758,7 +766,7 @@ export function App() {
             >
               <Layout
                 scrollContainerRef={scrollContainerRef}
-                leftHeader={<TaskTreeHeader config={config} />}
+                leftHeader={<TaskTreeHeader config={config} hasMilestoneLane={hasMilestoneLane} />}
                 leftBody={
                   <TaskTreeBody
                     config={config}
@@ -802,6 +810,7 @@ export function App() {
                     highlightRelationMap={highlightRelationMap}
                     presetHolidays={presetHolidays}
                     customDaysOff={customDaysOff}
+                    enabledTypes={enabled}
                   />
                 }
               />
