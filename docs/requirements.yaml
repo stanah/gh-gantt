@@ -836,6 +836,39 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/milestone-lane.test.tsx
+      - id: FR-VIS-024
+        summary: Project Map ViewModel によるタスク状態・依存・次アクションの導出
+        acceptance_criteria:
+          - id: FR-VIS-024-AC1
+            description: 各タスクが ready_now / in_progress / review / blocked / done / backlog のいずれかの Board 列に分類される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-024-AC2
+            description: 未完了の blocked_by を持つタスクは blocked、依存がすべて完了すると ready_now に分類される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-024-AC3
+            description: Next Actions が ready / 優先度 / 下流解除数 / クリティカルパス / リスクを加味したスコア順に推薦され、同点時は安定ソートされる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-024-AC4
+            description: 依存サブグラフが選択タスクとその子孫を中心に上流/下流 N 階層へ絞り込まれる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-024-AC5
+            description: blocked_by に循環がある場合でもクラッシュせず warnings に循環が記録される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-024-AC6
+            description: status の category が未設定の構成でも done/blocked/ready をフォールバック判定できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

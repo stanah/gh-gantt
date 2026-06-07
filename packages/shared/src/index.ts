@@ -9,5 +9,6 @@ export * from "./task-close-evidence.js";
 export * from "./task-size.js";
 export * from "./status-dates.js";
 export * from "./dependency-graph.js";
+export * from "./project-map.js";
 export * from "./adr-schema.js";
 export * from "./export-renderer.js";
