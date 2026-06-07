@@ -4,19 +4,41 @@ import type { MilestoneInfo } from "../lib/milestone-utils.js";
 import type { Config, Task } from "../types/index.js";
 import { parseDate } from "../lib/date-utils.js";
 
+/** マイルストーン専用レーンの高さ（px）。 */
 export const MILESTONE_LANE_HEIGHT = 22;
 
+/**
+ * {@link GanttMilestoneLane} コンポーネントのプロパティ。
+ */
 interface GanttMilestoneLaneProps {
+  /** 描画対象のマイルストーン情報（日付昇順を想定） */
   milestones: MilestoneInfo[];
+  /** 日付 → X 座標への時間スケール */
   xScale: ScaleTime<number, number>;
+  /** レーン SVG の全幅（px） */
   totalWidth: number;
+  /** マーカー色の解決に使う gantt 設定 */
   config: Config;
+  /** マーカーへのホバー / フォーカス時にツールチップを表示するコールバック */
   onTooltipShow?: (task: Task, e: React.MouseEvent | React.FocusEvent) => void;
+  /** ツールチップを隠すコールバック */
   onTooltipHide?: () => void;
+  /** マーカークリック時に対象タスクを選択するコールバック */
   onSelectTask?: (taskId: string) => void;
+  /** 現在選択中のタスク ID（マーカーの強調表示に使用） */
   selectedTaskId?: string | null;
 }
 
+/**
+ * マイルストーン専用レーンを描画するコンポーネント。
+ *
+ * タイムラインヘッダー直下に配置され、各マイルストーンを菱形マーカーとして
+ * `due_date`（{@link getMilestoneDate} で解決）の時間軸位置に表示する。
+ * マーカーはホバー / フォーカスでツールチップを出し、クリックで選択を切り替える。
+ *
+ * @param props - {@link GanttMilestoneLaneProps}
+ * @returns マイルストーンレーンの JSX。マイルストーンが空なら null
+ */
 export function GanttMilestoneLane({
   milestones,
   xScale,
@@ -66,7 +88,8 @@ export function GanttMilestoneLane({
             >
               <polygon
                 points={`${x},${cy - size} ${x + size},${cy} ${x},${cy + size} ${x - size},${cy}`}
-                fill={task.state === "closed" ? color : color + "66"}
+                fill={color}
+                fillOpacity={task.state === "closed" ? 1 : 0.4}
                 stroke={color}
                 strokeWidth={isSelected ? 2 : 1}
               />

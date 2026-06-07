@@ -817,7 +817,7 @@ areas:
             tests:
               - packages/ui/src/__tests__/milestone-lane.test.tsx
           - id: FR-VIS-023-AC3
-            description: マイルストーンは due_date を基準にレーン上の対応する時間軸位置にマーカーとして配置される
+            description: マイルストーンは date（未設定時は end_date）を基準にレーン上の対応する時間軸位置にマーカーとして配置され、start_date は使用しない
             status: covered
             tests:
               - packages/ui/src/__tests__/milestone-lane.test.tsx

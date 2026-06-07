@@ -34,7 +34,11 @@ export interface TaskFilterOptions {
   searchQuery?: string;
   taskSortMode?: TaskSortMode;
   labelGrouping?: LabelGroupingOptions;
-  // tree から恒久的に除外する task type 名。マイルストーンの専用レーン表示 (FR-VIS-023) などで使用。
+  /**
+   * tree / flatList から恒久的に除外する task type 名の集合。
+   * マイルストーンの専用レーン表示 (FR-VIS-023) など、特定 type を
+   * タスクリストに出さないケースで使用する。
+   */
   excludedTypes?: Set<string>;
 }
 
