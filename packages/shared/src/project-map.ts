@@ -522,6 +522,8 @@ export function buildNextActions(
   for (const task of tasks) {
     const readiness = readinessById[task.id];
     if (!readiness || readiness.isDone || task.state === "closed") continue;
+    // 子タスクを持つ親（epic / feature 等のコンテナ）は直接の着手対象ではないため除外する。
+    if (task.sub_tasks.length > 0) continue;
 
     const priority = getNormalizedPriority(task, config);
     const estimate = getEstimateHours(task, config);

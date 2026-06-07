@@ -84,7 +84,7 @@ score =
   - estimatePenalty        // estimate_hours / 8。未設定なら 0
 ```
 
-- 候補は open かつ done でないタスク。
+- 候補は open かつ done でない、かつ子タスクを持たない（コンテナでない）タスク。
 - スコア降順、同点時は priority → updated_at(新しい順) → title の安定ソート。
 - 各候補に推薦理由（最も効いた要素）を 1 行で付与する。
   - カテゴリ: `unlocker`（下流解除）/ `critical`（クリティカル）/ `risk`（高リスク）/ `quick_win`（すぐ終わる）/ `review_waiting`（レビュー待ち）/ `ready`（着手可能）
