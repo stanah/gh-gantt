@@ -83,6 +83,17 @@ export function GanttMilestoneLane({
                 e.stopPropagation();
                 onSelectTask?.(task.id);
               }}
+              onKeyDown={
+                onSelectTask
+                  ? (e) => {
+                      if (e.key !== "Enter" && e.key !== " ") return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onSelectTask(task.id);
+                    }
+                  : undefined
+              }
+              aria-pressed={onSelectTask ? isSelected : undefined}
               style={{ cursor: onSelectTask ? "pointer" : "default" }}
               className="gantt-focusable"
             >
