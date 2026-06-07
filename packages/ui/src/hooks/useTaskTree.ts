@@ -34,6 +34,12 @@ export interface TaskFilterOptions {
   searchQuery?: string;
   taskSortMode?: TaskSortMode;
   labelGrouping?: LabelGroupingOptions;
+  /**
+   * tree / flatList から恒久的に除外する task type 名の集合。
+   * マイルストーンの専用レーン表示 (FR-VIS-023) など、特定 type を
+   * タスクリストに出さないケースで使用する。
+   */
+  excludedTypes?: Set<string>;
 }
 
 const CONTAINER_TYPES = new Set(["epic", "summary"]);
@@ -215,6 +221,7 @@ export function useTaskTree(
     searchQuery = "",
     taskSortMode = "default",
     labelGrouping,
+    excludedTypes,
   } = filterOptions;
 
   const tree = useMemo(() => {
@@ -246,6 +253,7 @@ export function useTaskTree(
     };
 
     const passesBaseFilters = (t: Task): boolean => {
+      if (excludedTypes?.has(t.type)) return false;
       if (!enabledTypes.has(t.type)) return false;
       if (hideClosed && t.state === "closed") return false;
       if (trimmedQuery && !matchesSearch(t, trimmedQuery)) return false;
@@ -404,6 +412,7 @@ export function useTaskTree(
     searchQuery,
     taskSortMode,
     labelGrouping,
+    excludedTypes,
   ]);
 
   const flatList = useMemo(() => {

@@ -2,6 +2,7 @@ import React from "react";
 import { Tags } from "lucide-react";
 import { TaskRow } from "./TaskRow.js";
 import { FilterEmptyState, NoTasksGuide } from "./EmptyState.js";
+import { MILESTONE_LANE_HEIGHT } from "./GanttMilestoneLane.js";
 import type { Config } from "../types/index.js";
 import type { TreeNode } from "../hooks/useTaskTree.js";
 import type { DisplayOption } from "../hooks/useDisplayOptions.js";
@@ -72,15 +73,21 @@ function GroupRow({
 
 interface TaskTreeHeaderProps {
   config: Config;
+  /**
+   * 右ペインにマイルストーン専用レーンが表示されているか。
+   * true の場合、左ヘッダーにレーン分の高さ ({@link MILESTONE_LANE_HEIGHT}) を
+   * 加えて、左のタスク行と右のガントバーの縦位置を揃える (FR-VIS-023)。
+   */
+  hasMilestoneLane?: boolean;
 }
 
 function getNodeKey(node: TreeNode): string {
   return node.renderKey ?? node.task.id;
 }
 
-export function TaskTreeHeader({ config }: TaskTreeHeaderProps) {
+export function TaskTreeHeader({ config, hasMilestoneLane = false }: TaskTreeHeaderProps) {
   const hasSprintBand = (config.sprints?.length ?? 0) > 0;
-  const headerHeight = hasSprintBand ? 52 : 32;
+  const headerHeight = (hasSprintBand ? 52 : 32) + (hasMilestoneLane ? MILESTONE_LANE_HEIGHT : 0);
   return (
     <div
       style={{

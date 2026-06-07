@@ -803,6 +803,39 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/detail-panel.test.tsx
+      - id: FR-VIS-023
+        summary: マイルストーンの専用レーン表示
+        acceptance_criteria:
+          - id: FR-VIS-023-AC1
+            description: task_type が milestone のタスクは左ペインのタスクリストに表示されない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
+          - id: FR-VIS-023-AC2
+            description: ガント領域のタイムラインヘッダー直下にマイルストーン専用レーンが表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
+          - id: FR-VIS-023-AC3
+            description: マイルストーンは date（未設定時は end_date）を基準にレーン上の対応する時間軸位置にマーカーとして配置され、start_date は使用しない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
+          - id: FR-VIS-023-AC4
+            description: マイルストーンマーカーにホバーするとタイトルと日付がツールチップとして表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
+          - id: FR-VIS-023-AC5
+            description: マイルストーン位置からガント領域の全タスク行を縦に貫通する縦線が描画される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
+          - id: FR-VIS-023-AC6
+            description: プロジェクトにマイルストーンが 1 件も存在しない場合は専用レーンが表示されない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/milestone-lane.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
