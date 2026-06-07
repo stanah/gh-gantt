@@ -16,6 +16,7 @@ import { IconButton } from "./IconButton.js";
 import { CalendarSettingsMenu } from "./CalendarSettingsMenu.js";
 import { ExportMenu, type ExportRequest } from "./ExportMenu.js";
 import { FilterPresetSelector } from "./FilterPresetSelector.js";
+import { ViewToggle, type AppViewMode } from "./ViewToggle.js";
 import type { CalendarHoliday } from "../../types/index.js";
 import type { FilterPreset } from "../../hooks/useFilterPresets.js";
 import type { HolidayPreset, HolidayPresetId } from "../../lib/holiday-presets.js";
@@ -81,6 +82,8 @@ interface ToolbarProps {
   onRenameFilterPreset?: (id: string, name: string) => void;
   onDeleteFilterPreset?: (id: string) => void;
   onClearFilters?: () => void;
+  viewMode?: AppViewMode;
+  onViewModeChange?: (mode: AppViewMode) => void;
 }
 
 const taskSortOptions: Array<{ value: TaskSortMode; label: string }> = [
@@ -114,6 +117,32 @@ export function Toolbar(props: ToolbarProps) {
           flexShrink: 0,
         }}
       />
+      {props.viewMode && props.onViewModeChange && (
+        <ViewToggle viewMode={props.viewMode} onViewModeChange={props.onViewModeChange} />
+      )}
+      {props.viewMode === "project-map" ? (
+        <div style={{ flex: 1 }} />
+      ) : (
+        <ProjectMapHiddenGanttControls props={props} />
+      )}
+      <ThemeToggle />
+      <SyncGroup
+        onPull={props.onPull}
+        onPush={props.onPush}
+        syncing={props.syncing}
+        lastSyncedAt={props.lastSyncedAt}
+      />
+    </div>
+  );
+}
+
+/**
+ * Gantt ビュー専用のツールバー操作群（zoom / filter / sort / undo / calendar / export 等）。
+ * Project Map ビューでは非表示になる。
+ */
+function ProjectMapHiddenGanttControls({ props }: { props: ToolbarProps }) {
+  return (
+    <>
       <ZoomGroup
         activeScale={props.activeScale}
         onScaleChange={props.onScaleChange}
@@ -228,13 +257,6 @@ export function Toolbar(props: ToolbarProps) {
         sprints={props.sprints}
         onOpenShortcuts={props.onOpenShortcuts}
       />
-      <ThemeToggle />
-      <SyncGroup
-        onPull={props.onPull}
-        onPush={props.onPush}
-        syncing={props.syncing}
-        lastSyncedAt={props.lastSyncedAt}
-      />
-    </div>
+    </>
   );
 }

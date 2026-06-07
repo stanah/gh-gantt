@@ -12,6 +12,9 @@ import { TaskTreeHeader, TaskTreeBody } from "./components/TaskTree.js";
 import { GanttChart, type GanttChartHandle } from "./components/GanttChart.js";
 import { TaskDetailPanel } from "./components/TaskDetailPanel.js";
 import { Toolbar } from "./components/toolbar/Toolbar.js";
+import type { AppViewMode } from "./components/toolbar/ViewToggle.js";
+import { ProjectMapPage } from "./components/project-map/ProjectMapPage.js";
+import { useProjectMap } from "./hooks/useProjectMap.js";
 import type { ViewScale } from "@gh-gantt/shared";
 import { useKeyboardShortcuts } from "./hooks/useKeyboardShortcuts.js";
 import { ShortcutHelpPanel } from "./components/ShortcutHelpPanel.js";
@@ -77,6 +80,7 @@ export function App() {
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
+  const [viewMode, setViewMode] = useState<AppViewMode>("gantt");
   const [taskSortMode, setTaskSortMode] = useState<TaskSortMode>("default");
   const [labelGroupingEnabled, setLabelGroupingEnabled] = useState(false);
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
@@ -201,6 +205,9 @@ export function App() {
     if (!config) return false;
     return extractMilestones(tasks, config).some((m) => enabled.has(m.task.type));
   }, [tasks, config, enabled]);
+
+  // Project Map ビュー用の派生 ViewModel（config 未取得時は null）。
+  const projectMapViewModel = useProjectMap(tasks, config);
 
   const currentFilterPresetState = useMemo<FilterPresetState>(
     () => ({
@@ -754,67 +761,85 @@ export function App() {
             onExport={(request) => {
               void handleExport(request);
             }}
+            viewMode={viewMode}
+            onViewModeChange={setViewMode}
           />
           <div style={{ flex: 1, overflow: "hidden", display: "flex" }}>
-            <div
-              style={{ flex: 1, overflow: "hidden" }}
-              onClick={(e) => {
-                const target = e.target as HTMLElement;
-                if (target.closest("button, a, input, select, textarea")) return;
-                handleDeselectTask();
-              }}
-            >
-              <Layout
-                scrollContainerRef={scrollContainerRef}
-                leftHeader={<TaskTreeHeader config={config} hasMilestoneLane={hasMilestoneLane} />}
-                leftBody={
-                  <TaskTreeBody
+            {viewMode === "project-map" ? (
+              <div style={{ flex: 1, overflow: "hidden" }}>
+                {projectMapViewModel ? (
+                  <ProjectMapPage
+                    viewModel={projectMapViewModel}
                     config={config}
                     selectedTaskId={selectedTaskId}
                     onSelectTask={handleSelectTask}
-                    flatList={flatList}
-                    collapsed={collapsed}
-                    onToggleCollapse={toggleCollapse}
-                    displayOptions={displayOptions}
-                    hoveredTaskId={hoveredTaskId}
-                    onHoverTask={setHoveredTaskId}
-                    dependencyHighlightEnabled={dependencyHighlightEnabled}
-                    highlightedTaskIds={highlightedTaskIds}
-                    highlightRelationMap={highlightRelationMap}
-                    searchQuery={searchQuery}
-                    dragState={dragState}
-                    totalTaskCount={tasks.length}
-                    hasActiveFilters={hasActiveFilters}
-                    onResetFilters={resetAllFilters}
+                    syncRefreshKey={syncing}
                   />
-                }
-                rightHeader={ganttHeader}
-                rightBody={
-                  <GanttChart
-                    ref={ganttRef}
-                    tasks={tasks}
-                    flatList={flatList}
-                    config={config}
-                    selectedTaskId={selectedTaskId}
-                    onSelectTask={handleSelectTask}
-                    onUpdateTask={(taskId, updates) => {
-                      void handleTaskUpdate(taskId, updates);
-                    }}
-                    onViewScaleChange={handleViewScaleChange}
-                    scrollContainerRef={scrollContainerRef}
-                    header={handleGanttHeader}
-                    displayOptions={displayOptions}
-                    hoveredTaskId={hoveredTaskId}
-                    onHoverTask={setHoveredTaskId}
-                    dependencyHighlightEnabled={dependencyHighlightEnabled}
-                    highlightRelationMap={highlightRelationMap}
-                    presetHolidays={presetHolidays}
-                    customDaysOff={customDaysOff}
-                    enabledTypes={enabled}
-                  />
-                }
-              />
-            </div>
+                ) : null}
+              </div>
+            ) : (
+              <div
+                style={{ flex: 1, overflow: "hidden" }}
+                onClick={(e) => {
+                  const target = e.target as HTMLElement;
+                  if (target.closest("button, a, input, select, textarea")) return;
+                  handleDeselectTask();
+                }}
+              >
+                <Layout
+                  scrollContainerRef={scrollContainerRef}
+                  leftHeader={
+                    <TaskTreeHeader config={config} hasMilestoneLane={hasMilestoneLane} />
+                  }
+                  leftBody={
+                    <TaskTreeBody
+                      config={config}
+                      selectedTaskId={selectedTaskId}
+                      onSelectTask={handleSelectTask}
+                      flatList={flatList}
+                      collapsed={collapsed}
+                      onToggleCollapse={toggleCollapse}
+                      displayOptions={displayOptions}
+                      hoveredTaskId={hoveredTaskId}
+                      onHoverTask={setHoveredTaskId}
+                      dependencyHighlightEnabled={dependencyHighlightEnabled}
+                      highlightedTaskIds={highlightedTaskIds}
+                      highlightRelationMap={highlightRelationMap}
+                      searchQuery={searchQuery}
+                      dragState={dragState}
+                      totalTaskCount={tasks.length}
+                      hasActiveFilters={hasActiveFilters}
+                      onResetFilters={resetAllFilters}
+                    />
+                  }
+                  rightHeader={ganttHeader}
+                  rightBody={
+                    <GanttChart
+                      ref={ganttRef}
+                      tasks={tasks}
+                      flatList={flatList}
+                      config={config}
+                      selectedTaskId={selectedTaskId}
+                      onSelectTask={handleSelectTask}
+                      onUpdateTask={(taskId, updates) => {
+                        void handleTaskUpdate(taskId, updates);
+                      }}
+                      onViewScaleChange={handleViewScaleChange}
+                      scrollContainerRef={scrollContainerRef}
+                      header={handleGanttHeader}
+                      displayOptions={displayOptions}
+                      hoveredTaskId={hoveredTaskId}
+                      onHoverTask={setHoveredTaskId}
+                      dependencyHighlightEnabled={dependencyHighlightEnabled}
+                      highlightRelationMap={highlightRelationMap}
+                      presetHolidays={presetHolidays}
+                      customDaysOff={customDaysOff}
+                      enabledTypes={enabled}
+                    />
+                  }
+                />
+              </div>
+            )}
             {selectedTaskId &&
               (() => {
                 const detailTask = tasks.find((t) => t.id === selectedTaskId);

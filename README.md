@@ -94,6 +94,10 @@ A pnpm workspaces monorepo with 3 packages:
 - **Git-like sync model** — Familiar pull / push / conflict resolve workflow
 - **Coexists with GitHub Projects** — Complements existing workflows rather than replacing them
 
+## ドキュメント
+
+- [Project Map / Task Landscape（プロジェクトマップ）](docs/project-map.md) — 構造探索・依存探索・次アクション判断のための第 2 ビュー仕様
+
 ## Development
 
 ```bash
