@@ -47,71 +47,90 @@ export function SystemTreePanel({
       rows.push(
         <div
           key={task.id}
-          data-task-id={task.id}
-          role="button"
-          tabIndex={0}
-          aria-pressed={selectedTaskId === task.id}
-          onClick={() => onSelectTask(task.id)}
-          onKeyDown={(e) => {
-            if (e.key !== "Enter" && e.key !== " ") return;
-            e.preventDefault();
-            onSelectTask(task.id);
-          }}
           style={{
             display: "flex",
             alignItems: "center",
             gap: 6,
-            padding: "3px 4px",
-            paddingLeft: 4 + node.depth * 14,
+            paddingLeft: node.depth * 14,
             borderRadius: 4,
-            cursor: "pointer",
             fontSize: 12,
             background: selectedTaskId === task.id ? "rgba(66, 133, 244, 0.14)" : "transparent",
           }}
         >
-          <span
-            onClick={(e) => {
-              if (!hasChildren) return;
-              e.stopPropagation();
-              toggle(task.id);
-            }}
-            style={{
-              width: 12,
-              flexShrink: 0,
-              color: "var(--color-text-muted)",
-              cursor: hasChildren ? "pointer" : "default",
-              textAlign: "center",
-            }}
-          >
-            {hasChildren ? (isCollapsed ? "▶" : "▼") : ""}
-          </span>
-          <span
-            style={{
-              width: 8,
-              height: 8,
-              borderRadius: 2,
-              background: typeColor,
-              flexShrink: 0,
-            }}
-            title={config.task_types[task.type]?.label ?? task.type}
-          />
-          <span
-            style={{
-              flex: 1,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              color: "var(--color-text)",
-            }}
-          >
-            {task.title}
-          </span>
-          {progress != null && (
-            <span style={{ fontSize: 10, color: "var(--color-text-muted)", flexShrink: 0 }}>
-              {progress}%
-            </span>
+          {hasChildren ? (
+            <button
+              type="button"
+              aria-label={isCollapsed ? "ノードを展開" : "ノードを折りたたむ"}
+              aria-expanded={!isCollapsed}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggle(task.id);
+              }}
+              style={{
+                width: 16,
+                height: 20,
+                flexShrink: 0,
+                color: "var(--color-text-muted)",
+                cursor: "pointer",
+                textAlign: "center",
+                border: "none",
+                background: "transparent",
+                padding: 0,
+              }}
+            >
+              {isCollapsed ? "▶" : "▼"}
+            </button>
+          ) : (
+            <span style={{ width: 16, flexShrink: 0 }} />
           )}
-          {readiness && <ReadinessBadge readiness={readiness} />}
+          <button
+            type="button"
+            data-task-id={task.id}
+            aria-pressed={selectedTaskId === task.id}
+            onClick={() => onSelectTask(task.id)}
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              flex: 1,
+              minWidth: 0,
+              padding: "3px 4px",
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              font: "inherit",
+              color: "var(--color-text)",
+              textAlign: "left",
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: 2,
+                background: typeColor,
+                flexShrink: 0,
+              }}
+              title={config.task_types[task.type]?.label ?? task.type}
+            />
+            <span
+              style={{
+                flex: 1,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                color: "var(--color-text)",
+              }}
+            >
+              {task.title}
+            </span>
+            {progress != null && (
+              <span style={{ fontSize: 10, color: "var(--color-text-muted)", flexShrink: 0 }}>
+                {progress}%
+              </span>
+            )}
+            {readiness && <ReadinessBadge readiness={readiness} />}
+          </button>
         </div>,
       );
       if (hasChildren && !isCollapsed) walk(node.children);

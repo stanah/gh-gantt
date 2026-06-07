@@ -7,5 +7,7 @@ import type { Task as SharedTask } from "@gh-gantt/shared";
  */
 export function getTaskProgress(task: SharedTask): number | null {
   const value = (task as { _progress?: number })._progress;
-  return typeof value === "number" ? value : null;
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 100
+    ? value
+    : null;
 }

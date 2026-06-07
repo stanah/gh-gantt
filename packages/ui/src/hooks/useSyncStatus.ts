@@ -9,40 +9,39 @@ export interface SyncStatus {
 
 /**
  * `/api/sync/status` を取得する hook。Project Map のヘッダーに同期状態を表示するために使う。
- * `refreshKey` が変化するたびに再取得し、取得に失敗した場合は null を保持する。
+ * `refreshKey` が変化するたび、または `refresh()` 呼び出しで再取得し、取得に失敗した場合は
+ * null を保持する。クリーンアップは effect 内に閉じ込め、`refresh` は副作用トリガーのみを行う。
  *
- * @param refreshKey - 再取得のトリガー（pull/push 後にインクリメントする想定）
+ * @param refreshKey - 再取得のトリガー（pull/push 後に変化させる想定）
  */
 export function useSyncStatus(refreshKey: unknown = 0): {
   status: SyncStatus | null;
   refresh: () => void;
 } {
   const [status, setStatus] = useState<SyncStatus | null>(null);
+  const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => {
-    let cancelled = false;
-    try {
-      Promise.resolve(fetch("/api/sync/status"))
-        .then((res) => (res.ok ? res.json() : null))
-        .then((data: SyncStatus | null) => {
-          if (!cancelled) setStatus(data);
-        })
-        .catch(() => {
-          if (!cancelled) setStatus(null);
-        });
-    } catch {
-      // fetch 自体が同期的に失敗する環境（テスト等）では同期状態を表示しない
-      setStatus(null);
-    }
-    return () => {
-      cancelled = true;
-    };
+    setTick((t) => t + 1);
   }, []);
 
   useEffect(() => {
-    const cleanup = refresh();
-    return cleanup;
-  }, [refresh, refreshKey]);
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const res = await fetch("/api/sync/status");
+        const data = res.ok ? ((await res.json()) as SyncStatus) : null;
+        if (!cancelled) setStatus(data);
+      } catch {
+        // fetch が利用できない・失敗する環境（テスト等）では同期状態を表示しない
+        if (!cancelled) setStatus(null);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshKey, tick]);
 
   return { status, refresh };
 }

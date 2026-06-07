@@ -1,6 +1,5 @@
 import React, { useMemo } from "react";
 import {
-  buildBoardColumns,
   BOARD_COLUMN_ORDER,
   collectSubtreeIds,
   type BoardColumnId,
@@ -48,10 +47,24 @@ export function ProjectBoardPanel({
     return scope.filter((t) => !CONTAINER_TYPES.has(t.type) && t.type !== "milestone");
   }, [tasks, taskById, selectedTaskId]);
 
-  const columns = useMemo(
-    () => buildBoardColumns(scopedTasks, config, tasks),
-    [scopedTasks, config, tasks],
-  );
+  // 列分類は ViewModel が全タスクに対して算出済みの readinessById を使う。
+  // ここで再計算すると、フィルタで上流タスクが除外された際に依存解決が
+  // 崩れて誤って blocked になるため避ける。
+  const columns = useMemo(() => {
+    const cols: Record<BoardColumnId, SharedTask[]> = {
+      ready_now: [],
+      in_progress: [],
+      review: [],
+      blocked: [],
+      done: [],
+      backlog: [],
+    };
+    for (const task of scopedTasks) {
+      const column = readinessById[task.id]?.column ?? "backlog";
+      cols[column].push(task);
+    }
+    return cols;
+  }, [scopedTasks, readinessById]);
 
   const visibleColumns = useMemo(() => {
     const cols = [...VISIBLE_COLUMNS];
@@ -59,7 +72,7 @@ export function ProjectBoardPanel({
     return cols;
   }, [columns.backlog.length]);
 
-  const hint = selectedTaskId ? "選択サブツリー" : "全タスク";
+  const hint = selectedTaskId && taskById.has(selectedTaskId) ? "選択サブツリー" : "全タスク";
 
   return (
     <>

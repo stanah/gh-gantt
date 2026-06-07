@@ -54,10 +54,13 @@ export function CompactTimelinePanel({
     if (scheduled.length === 0) return null;
     const min = Math.min(...scheduled.map((r) => r.start));
     const max = Math.max(...scheduled.map((r) => r.end));
-    const days = Math.max(1, Math.round((max - min) / DAY_MS) + 1);
+    const days = Math.max(1, Math.floor((max - min) / DAY_MS) + 1);
     const width = days * PX_PER_DAY;
-    const todayX = Math.round((Date.now() - min) / DAY_MS) * PX_PER_DAY;
-    const xOf = (t: number) => Math.round((t - min) / DAY_MS) * PX_PER_DAY;
+    // 日単位で切り捨て、時刻帯による 1 日ズレを防ぐ。today は UTC 日付に丸める。
+    const xOf = (t: number) => Math.floor((t - min) / DAY_MS) * PX_PER_DAY;
+    const now = new Date();
+    const todayUtc = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+    const todayX = xOf(todayUtc);
     return { min, max, width, todayX, xOf };
   }, [scheduled]);
 
