@@ -1,4 +1,4 @@
-import type { Task, Config, StatusValue, StatusCategory } from "./types.js";
+import type { Task, Config, StatusValue, StatusCategory, GroupingFacet } from "./types.js";
 import {
   calculateCriticalPath,
   detectCycles,
@@ -634,12 +634,46 @@ const PRIORITY_LABEL: Record<string, string> = {
   low: "Low",
 };
 
+/** ラベル facet の既定区切り文字。`namespace:value` の `:`。 */
+export const DEFAULT_FACET_SEPARATOR = ":";
+
 /**
- * 設定から Group by 軸の選択肢を組み立てる。
- * 組み込み軸（階層 / タイプ / ステータス / 優先度 / 担当者 / マイルストーン）に加え、
- * `config.grouping.facets` の各 facet を `label:<key>` 軸として追加する。
+ * タスク群のラベルから `namespace<sep>value` 規約のラベルを走査し、
+ * distinct な namespace を facet 軸候補として返す（設定不要の自動検出）。
+ *
+ * 区切りが先頭・末尾にあるラベル（`:foo` / `foo:`）は namespace とみなさない。
+ *
+ * @param tasks - 走査対象のタスク
+ * @param separator - 区切り文字（既定 `:`）
+ * @returns namespace 昇順の facet 配列（label/key は namespace、prefix は `namespace<sep>`）
  */
-export function getGroupDimensions(config: Config): GroupDimensionOption[] {
+export function detectLabelFacets(
+  tasks: Task[],
+  separator: string = DEFAULT_FACET_SEPARATOR,
+): GroupingFacet[] {
+  const namespaces = new Set<string>();
+  for (const task of tasks) {
+    for (const label of task.labels) {
+      const idx = label.indexOf(separator);
+      if (idx > 0 && idx < label.length - separator.length) {
+        namespaces.add(label.slice(0, idx));
+      }
+    }
+  }
+  return [...namespaces].sort().map((ns) => ({ key: ns, label: ns, label_prefix: ns + separator }));
+}
+
+/**
+ * Group by 軸の選択肢を組み立てる。
+ * 組み込み軸（階層 / タイプ / ステータス / 優先度 / 担当者 / マイルストーン）に加え、
+ * `config.grouping.facets`（明示定義）と、タスクのラベルから {@link detectLabelFacets} で
+ * 自動検出した namespace facet をマージして `label:<key>` 軸として並べる。
+ * 同じ key は config の定義（カスタムラベル）を優先する。
+ *
+ * @param config - gantt 設定
+ * @param tasks - 自動検出に使うタスク（省略時は config の facets のみ）
+ */
+export function getGroupDimensions(config: Config, tasks: Task[] = []): GroupDimensionOption[] {
   const options: GroupDimensionOption[] = [
     { value: "hierarchy", label: "階層" },
     { value: "type", label: "タイプ" },
@@ -648,7 +682,10 @@ export function getGroupDimensions(config: Config): GroupDimensionOption[] {
     { value: "assignee", label: "担当者" },
     { value: "milestone", label: "マイルストーン" },
   ];
-  for (const facet of config.grouping?.facets ?? []) {
+  const configFacets = config.grouping?.facets ?? [];
+  const configKeys = new Set(configFacets.map((f) => f.key));
+  const autoFacets = detectLabelFacets(tasks).filter((f) => !configKeys.has(f.key));
+  for (const facet of [...configFacets, ...autoFacets]) {
     options.push({ value: `label:${facet.key}`, label: facet.label });
   }
   return options;
@@ -683,8 +720,8 @@ function resolveGroupAssignments(
   if (dimension.startsWith("label:")) {
     const facetKey = dimension.slice("label:".length);
     const facet = config.grouping?.facets?.find((f) => f.key === facetKey);
-    if (!facet) return [];
-    const prefix = facet.label_prefix;
+    // config に明示定義が無い軸は、自動検出の規約として `<key><sep>` を prefix とする。
+    const prefix = facet?.label_prefix ?? `${facetKey}${DEFAULT_FACET_SEPARATOR}`;
     return task.labels
       .filter((l) => l.startsWith(prefix))
       .map((l) => {

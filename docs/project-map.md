@@ -112,12 +112,14 @@ score =
 分類は単一の親子ツリーに固定せず、**Group by 軸セレクタ（1 度に 1 軸 + 切替）**で切り替える。設計判断は ADR-015 参照。
 
 - 組み込み軸: `階層 (hierarchy) / タイプ / ステータス / 優先度 / 担当者 / マイルストーン`
-- **名前空間ラベル facet 軸**: `config.grouping.facets` で定義した `label:<key>` 軸。機能 vs システムを両立する。
+- **名前空間ラベル facet 軸**: `label:<key>` 軸。機能 vs システムを両立する。
+  - **自動検出（設定不要）**: タスクのラベルから `namespace:value` 規約（既定区切り `:`）を走査し、`system` / `feature` / `phase` / `area` 等の namespace を Group by 軸として自動的に並べる（`detectLabelFacets`）。`config.grouping` が空でも軸が出る。
+  - **明示設定（任意）**: `config.grouping.facets` で `{ key, label, label_prefix }` を定義すると日本語ラベルや並び順をカスタムできる。同じ key は設定が自動検出より優先される。
 
 ```jsonc
 "grouping": {
   "label_prefix": "area:",        // 既存（Gantt 用）はそのまま
-  "facets": [
+  "facets": [                     // 任意。未設定でもラベルから自動検出される
     { "key": "system",  "label": "システム", "label_prefix": "system:" },
     { "key": "feature", "label": "機能",     "label_prefix": "feature:" }
   ]

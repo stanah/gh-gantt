@@ -27,7 +27,7 @@ Project Map の分類を **「Group by 軸セレクタ（1 度に 1 軸 + 切替
 
 1. **軸セレクタ**: 利用者は 1 度に 1 つの軸を選んで切り替える（GitHub Projects と同じモデル）。組み込み軸＝`hierarchy / type / status / priority / assignee / milestone`。
 2. **親子ツリーは「分解構造」という 1 つの軸**として温存（既定 = `hierarchy`）。
-3. **名前空間ラベルを facet 軸**にする。1 タスクに `feature:project-map` と `system:ui` の両方を付与し、見る軸を切り替える（同一データ・軸切替）。`config.grouping.facets` で `{ key, label, label_prefix }` を定義し、各 facet が `label:<key>` 軸になる。
+3. **名前空間ラベルを facet 軸**にする。1 タスクに `feature:project-map` と `system:ui` の両方を付与し、見る軸を切り替える（同一データ・軸切替）。facet は **ラベルから自動検出**する（`namespace:value` 規約、既定区切り `:`）ため設定は不要。`config.grouping.facets` で `{ key, label, label_prefix }` を任意に定義すると、日本語ラベルや並び順をカスタムでき、同じ key は設定が自動検出より優先される。`label:<key>` 軸の prefix は、設定が無ければ `<key>:` にフォールバックする。
 4. **多対多の許容**: ラベル facet / 担当者は重複所属を許す（faceted）。単一値軸（type/milestone/status/priority）は 1 グループ。軸の値を持たないタスクは末尾の「(なし)」グループへ。
 5. **Board はスイムレーン**: hierarchy 以外の軸を選ぶと、Project Board は「グループ（行）× 実行状態（列）」のマトリクスで表示する（Jira 型）。
 6. **後方互換**: 既存の `grouping.label_prefix`（Gantt のラベルグルーピング）は維持する。`label_prefix` は optional 化し、`facets` を追加した。
