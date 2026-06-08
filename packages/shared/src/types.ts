@@ -139,8 +139,20 @@ export interface SprintConfig {
   color: string;
 }
 
-export interface GroupingConfig {
+export interface GroupingFacet {
+  /** facet 軸を識別するキー（例: "system", "feature"）。 */
+  key: string;
+  /** UI 表示用のラベル（例: "システム"）。 */
+  label: string;
+  /** この facet を構成するラベルのプレフィックス（例: "system:"）。 */
   label_prefix: string;
+}
+
+export interface GroupingConfig {
+  /** Gantt のラベルグルーピングで使う単一プレフィックス（後方互換）。 */
+  label_prefix?: string;
+  /** Project Map の Group by 軸として使う名前空間ラベル facet 群。 */
+  facets?: GroupingFacet[];
 }
 
 export interface TaskTemplates {

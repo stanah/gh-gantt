@@ -107,6 +107,32 @@ score =
 4. 各カード / ノードはクリックまたは Enter / Space で選択でき、選択タスクは詳細パネルで編集できる。編集内容は ViewModel に即時反映される。
 5. ツールバー右に同期状態（最終同期時刻・未反映数・総タスク数）を表示する。Pull / Push 後に自動で更新される。
 
-## 8. 循環依存の扱い
+## 8. Group by 軸と多ファセット分類
+
+分類は単一の親子ツリーに固定せず、**Group by 軸セレクタ（1 度に 1 軸 + 切替）**で切り替える。設計判断は ADR-015 参照。
+
+- 組み込み軸: `階層 (hierarchy) / タイプ / ステータス / 優先度 / 担当者 / マイルストーン`
+- **名前空間ラベル facet 軸**: `config.grouping.facets` で定義した `label:<key>` 軸。機能 vs システムを両立する。
+
+```jsonc
+"grouping": {
+  "label_prefix": "area:",        // 既存（Gantt 用）はそのまま
+  "facets": [
+    { "key": "system",  "label": "システム", "label_prefix": "system:" },
+    { "key": "feature", "label": "機能",     "label_prefix": "feature:" }
+  ]
+}
+```
+
+1 タスクに `feature:project-map` と `system:ui` の両方を付与し、Group by を切り替えると同じデータを機能軸 / システム軸で見分けられる。
+
+- 多対多軸（ラベル facet / 担当者）はタスクが複数グループに重複所属する。
+- 単一値軸（type/milestone/status/priority）は 1 グループ。値が無いタスクは末尾の「(なし)」グループへ。
+- `hierarchy` 以外を選ぶと **Project Board はスイムレーン（グループ行 × 実行状態列）**で表示される。
+- 操作: ツールバーの「Group by」ドロップダウンで軸を選ぶ。System Tree はグループ見出し + タスク行に切り替わる。
+
+ラベル名前空間規約（`system:` / `feature:` / `area:` / `phase:`）は ADR-015 に定義。
+
+## 9. 循環依存の扱い
 
 `blocked_by` に循環がある場合、`calculateCriticalPath()` は timing を計算できない。Project Map は ViewModel の `warnings` に循環を記録し、Dependency Map で警告表示する。循環があっても他パネルはクラッシュしない。

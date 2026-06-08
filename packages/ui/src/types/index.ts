@@ -76,8 +76,15 @@ export interface SprintConfig {
   color: string;
 }
 
-export interface GroupingConfig {
+export interface GroupingFacet {
+  key: string;
+  label: string;
   label_prefix: string;
+}
+
+export interface GroupingConfig {
+  label_prefix?: string;
+  facets?: GroupingFacet[];
 }
 
 export interface CalendarHoliday {

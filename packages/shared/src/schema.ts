@@ -115,8 +115,15 @@ export const SprintSchema: z.ZodType<SprintConfig> = z.object({
   color: z.string(),
 });
 
-const GroupingSchema = z.object({
+const GroupingFacetSchema = z.object({
+  key: z.string().trim().min(1),
+  label: z.string().trim().min(1),
   label_prefix: z.string().trim().min(1),
+});
+
+const GroupingSchema = z.object({
+  label_prefix: z.string().trim().min(1).optional(),
+  facets: z.array(GroupingFacetSchema).optional(),
 });
 
 const TaskTemplatesSchema = z.object({

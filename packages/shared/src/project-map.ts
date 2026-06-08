@@ -584,3 +584,173 @@ export function buildProjectMapViewModel(
 
   return { hierarchy, boardColumns, readinessById, nextActions, criticalPath, warnings };
 }
+
+// ---------------------------------------------------------------------------
+// Group by 軸セレクタ / 多ファセット分類 (FR-VIS-025)
+// ---------------------------------------------------------------------------
+
+/**
+ * Project Map の Group by 軸。`label:<facetKey>` は config.grouping.facets で定義された
+ * 名前空間ラベル facet を表す（多対多）。`hierarchy` は分解構造（既定）。
+ */
+export type GroupDimension =
+  | "hierarchy"
+  | "type"
+  | "milestone"
+  | "assignee"
+  | "status"
+  | "priority"
+  | `label:${string}`;
+
+/** Group by の 1 グループ。 */
+export interface TaskGroup {
+  key: string;
+  label: string;
+  taskIds: string[];
+}
+
+/** {@link groupTasks} の結果。 */
+export interface GroupingResult {
+  dimension: GroupDimension;
+  groups: TaskGroup[];
+  /** 1 タスクが複数グループに所属しうる軸（ラベル facet / 担当者）か。 */
+  multiMembership: boolean;
+}
+
+/** Group by ドロップダウンに出す選択肢。 */
+export interface GroupDimensionOption {
+  value: GroupDimension;
+  label: string;
+}
+
+const GROUP_NONE_KEY = "__none__";
+const GROUP_NONE_LABEL = "(なし)";
+const GROUP_ALL_KEY = "__all__";
+
+const PRIORITY_LABEL: Record<string, string> = {
+  critical: "Critical",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+};
+
+/**
+ * 設定から Group by 軸の選択肢を組み立てる。
+ * 組み込み軸（階層 / タイプ / ステータス / 優先度 / 担当者 / マイルストーン）に加え、
+ * `config.grouping.facets` の各 facet を `label:<key>` 軸として追加する。
+ */
+export function getGroupDimensions(config: Config): GroupDimensionOption[] {
+  const options: GroupDimensionOption[] = [
+    { value: "hierarchy", label: "階層" },
+    { value: "type", label: "タイプ" },
+    { value: "status", label: "ステータス" },
+    { value: "priority", label: "優先度" },
+    { value: "assignee", label: "担当者" },
+    { value: "milestone", label: "マイルストーン" },
+  ];
+  for (const facet of config.grouping?.facets ?? []) {
+    options.push({ value: `label:${facet.key}`, label: facet.label });
+  }
+  return options;
+}
+
+/** 1 タスクが指定軸で属するグループ（複数可）を {key,label} の配列で返す。 */
+function resolveGroupAssignments(
+  task: Task,
+  dimension: GroupDimension,
+  config: Config,
+): Array<{ key: string; label: string }> {
+  if (dimension === "type") {
+    const label = config.task_types[task.type]?.label ?? task.type;
+    return [{ key: `type:${task.type}`, label }];
+  }
+  if (dimension === "milestone") {
+    return task.milestone ? [{ key: `ms:${task.milestone}`, label: task.milestone }] : [];
+  }
+  if (dimension === "assignee") {
+    return task.assignees.map((a) => ({ key: `assignee:${a}`, label: a }));
+  }
+  if (dimension === "status") {
+    const name = task.custom_fields[config.statuses.field_name];
+    return typeof name === "string" && name.length > 0
+      ? [{ key: `status:${name}`, label: name }]
+      : [];
+  }
+  if (dimension === "priority") {
+    const p = getNormalizedPriority(task, config);
+    return p ? [{ key: `priority:${p}`, label: PRIORITY_LABEL[p] ?? p }] : [];
+  }
+  if (dimension.startsWith("label:")) {
+    const facetKey = dimension.slice("label:".length);
+    const facet = config.grouping?.facets?.find((f) => f.key === facetKey);
+    if (!facet) return [];
+    const prefix = facet.label_prefix;
+    return task.labels
+      .filter((l) => l.startsWith(prefix))
+      .map((l) => {
+        const value = l.slice(prefix.length);
+        return { key: `${facetKey}:${value}`, label: value };
+      });
+  }
+  return [];
+}
+
+function isMultiMembershipDimension(dimension: GroupDimension): boolean {
+  return dimension === "assignee" || dimension.startsWith("label:");
+}
+
+/**
+ * タスク群を指定した軸でグルーピングする。
+ *
+ * - `hierarchy`: グルーピングせず単一グループ（UI 側で親子ツリーを描く）。
+ * - 単一値軸（type/milestone/status/priority）: 各タスクは 1 グループ。
+ * - 多対多軸（assignee / `label:<facet>`）: タスクは複数グループに重複所属しうる。
+ * - 値を持たないタスクは末尾の「(なし)」グループに入る。
+ *
+ * グループの並びは出現順を保つ（「(なし)」は常に末尾）。
+ *
+ * @param tasks - 対象タスク
+ * @param dimension - Group by 軸
+ * @param config - gantt 設定（facet 定義・status/priority フィールドの解決に使用）
+ * @returns グルーピング結果
+ */
+export function groupTasks(
+  tasks: Task[],
+  dimension: GroupDimension,
+  config: Config,
+): GroupingResult {
+  if (dimension === "hierarchy") {
+    return {
+      dimension,
+      groups: [{ key: GROUP_ALL_KEY, label: "すべて", taskIds: tasks.map((t) => t.id) }],
+      multiMembership: false,
+    };
+  }
+
+  const order: string[] = [];
+  const byKey = new Map<string, TaskGroup>();
+  const ensure = (key: string, label: string): TaskGroup => {
+    let group = byKey.get(key);
+    if (!group) {
+      group = { key, label, taskIds: [] };
+      byKey.set(key, group);
+      order.push(key);
+    }
+    return group;
+  };
+
+  for (const task of tasks) {
+    const assignments = resolveGroupAssignments(task, dimension, config);
+    if (assignments.length === 0) {
+      ensure(GROUP_NONE_KEY, GROUP_NONE_LABEL).taskIds.push(task.id);
+    } else {
+      for (const a of assignments) ensure(a.key, a.label).taskIds.push(task.id);
+    }
+  }
+
+  const groups = order.filter((k) => k !== GROUP_NONE_KEY).map((k) => byKey.get(k)!);
+  const none = byKey.get(GROUP_NONE_KEY);
+  if (none) groups.push(none);
+
+  return { dimension, groups, multiMembership: isMultiMembershipDimension(dimension) };
+}
