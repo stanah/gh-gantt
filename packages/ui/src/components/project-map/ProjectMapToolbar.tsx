@@ -1,5 +1,5 @@
 import React from "react";
-import type { BoardColumnId } from "@gh-gantt/shared";
+import type { BoardColumnId, GroupDimension, GroupDimensionOption } from "@gh-gantt/shared";
 import type { SyncStatus } from "../../hooks/useSyncStatus.js";
 import { boardColumnColor, boardColumnLabel } from "./ReadinessBadge.js";
 
@@ -11,6 +11,9 @@ export interface ProjectMapFilterState {
 interface ProjectMapToolbarProps {
   filter: ProjectMapFilterState;
   onChange: (filter: ProjectMapFilterState) => void;
+  groupDimension: GroupDimension;
+  onGroupDimensionChange: (dimension: GroupDimension) => void;
+  groupDimensions: GroupDimensionOption[];
   syncStatus: SyncStatus | null;
   matchedCount: number;
   totalCount: number;
@@ -38,6 +41,9 @@ function formatSyncedAt(value: string): string {
 export function ProjectMapToolbar({
   filter,
   onChange,
+  groupDimension,
+  onGroupDimensionChange,
+  groupDimensions,
   syncStatus,
   matchedCount,
   totalCount,
@@ -74,6 +80,29 @@ export function ProjectMapToolbar({
           minWidth: 160,
         }}
       />
+      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+        <span style={{ color: "var(--color-text-muted)" }}>Group by</span>
+        <select
+          aria-label="Group by 軸"
+          value={groupDimension}
+          onChange={(e) => onGroupDimensionChange(e.target.value as GroupDimension)}
+          style={{
+            padding: "3px 6px",
+            border: "1px solid var(--color-border)",
+            borderRadius: 4,
+            fontSize: 11,
+            minHeight: 24,
+            background: "var(--color-bg)",
+            color: "var(--color-text)",
+          }}
+        >
+          {groupDimensions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </label>
       <div role="group" aria-label="Readiness フィルタ" style={{ display: "flex", gap: 4 }}>
         <FilterChip
           active={filter.readiness === null}

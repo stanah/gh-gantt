@@ -1,5 +1,11 @@
-import React, { useMemo, useState } from "react";
-import type { ProjectMapViewModel, Task as SharedTask } from "@gh-gantt/shared";
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  groupTasks,
+  getGroupDimensions,
+  type GroupDimension,
+  type ProjectMapViewModel,
+  type Task as SharedTask,
+} from "@gh-gantt/shared";
 import type { Config } from "../../types/index.js";
 import { useSyncStatus } from "../../hooks/useSyncStatus.js";
 import { ProjectMapLayout } from "./ProjectMapLayout.js";
@@ -33,7 +39,16 @@ export function ProjectMapPage({
   syncRefreshKey,
 }: ProjectMapPageProps) {
   const [filter, setFilter] = useState<ProjectMapFilterState>({ search: "", readiness: null });
+  const [groupDimension, setGroupDimension] = useState<GroupDimension>("hierarchy");
   const { status: syncStatus } = useSyncStatus(syncRefreshKey);
+  const groupDimensions = useMemo(() => getGroupDimensions(config), [config]);
+
+  // config 変更で選択中の軸が候補から消えた場合（facet 削除など）は hierarchy に戻す。
+  useEffect(() => {
+    if (!groupDimensions.some((d) => d.value === groupDimension)) {
+      setGroupDimension("hierarchy");
+    }
+  }, [groupDimensions, groupDimension]);
 
   // ViewModel の hierarchy ノードから全タスクを取り出す。
   const allTasks = useMemo(() => {
@@ -69,6 +84,16 @@ export function ProjectMapPage({
     [viewModel.nextActions, matchedIds],
   );
 
+  // Group by 軸が hierarchy 以外のとき、フィルタ後タスクを軸でグルーピングする。
+  const taskById = useMemo(() => new Map(allTasks.map((t) => [t.id, t])), [allTasks]);
+  const treeGroups = useMemo(
+    () =>
+      groupDimension === "hierarchy"
+        ? null
+        : groupTasks(filteredTasks, groupDimension, config).groups,
+    [groupDimension, filteredTasks, config],
+  );
+
   return (
     <div
       data-testid="project-map-page"
@@ -77,6 +102,9 @@ export function ProjectMapPage({
       <ProjectMapToolbar
         filter={filter}
         onChange={setFilter}
+        groupDimension={groupDimension}
+        onGroupDimensionChange={setGroupDimension}
+        groupDimensions={groupDimensions}
         syncStatus={syncStatus}
         matchedCount={matchedIds.size}
         totalCount={allTasks.length}
@@ -86,6 +114,8 @@ export function ProjectMapPage({
           tree={
             <SystemTreePanel
               hierarchy={filteredHierarchy}
+              groups={treeGroups}
+              taskById={taskById}
               readinessById={viewModel.readinessById}
               config={config}
               selectedTaskId={selectedTaskId}
@@ -99,6 +129,8 @@ export function ProjectMapPage({
               config={config}
               selectedTaskId={selectedTaskId}
               onSelectTask={onSelectTask}
+              groups={treeGroups}
+              taskById={taskById}
             />
           }
           dependency={

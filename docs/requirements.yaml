@@ -869,6 +869,29 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
+      - id: FR-VIS-025
+        summary: Project Map の Group by 軸セレクタと多ファセット分類
+        acceptance_criteria:
+          - id: FR-VIS-025-AC1
+            description: hierarchy 以外の軸（type/status/priority/assignee/milestone）でタスクをグルーピングできる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/grouping.test.ts
+          - id: FR-VIS-025-AC2
+            description: label:<facet> 軸で名前空間ラベルにより多対多グルーピングでき、機能軸とシステム軸を切り替えられる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/grouping.test.ts
+          - id: FR-VIS-025-AC3
+            description: グルーピング軸の値を持たないタスクは末尾の「(なし)」グループに入る
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/grouping.test.ts
+          - id: FR-VIS-025-AC4
+            description: getGroupDimensions が config.grouping.facets を反映した Group by 選択肢を返す
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/grouping.test.ts
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

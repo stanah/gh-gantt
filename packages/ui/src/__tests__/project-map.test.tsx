@@ -161,3 +161,43 @@ describe("[FR-VIS-024] Project Map フィルタ (PM-08)", () => {
     expect(container.textContent).toContain("3/3 件");
   });
 });
+
+describe("[FR-VIS-025] Project Map の Group by 軸セレクタ (GRP-02)", () => {
+  it("Group by を type に切り替えると System Tree がグループ表示になる", () => {
+    const { container } = renderPage(null);
+    const tree = container.querySelector('[aria-label="System Tree"]') as HTMLElement;
+    // 既定は階層表示
+    expect(tree.textContent).toContain("構造を探索");
+
+    const select = container.querySelector('select[aria-label="Group by 軸"]') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "type" } });
+
+    // グループ表示に切り替わり、タイプ別グループ見出しが出る
+    expect(tree.textContent).toContain("グループ表示");
+    expect(tree.textContent).toContain("Epic");
+    expect(tree.textContent).toContain("Task");
+  });
+
+  it("Group by セレクタに組み込み軸が並ぶ", () => {
+    const { container } = renderPage(null);
+    const select = container.querySelector('select[aria-label="Group by 軸"]') as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain("hierarchy");
+    expect(values).toContain("type");
+    expect(values).toContain("status");
+  });
+
+  it("Group by 時に Project Board がスイムレーン表示になる (GRP-03)", () => {
+    const { container } = renderPage(null);
+    const board = container.querySelector('[aria-label="Project Board"]') as HTMLElement;
+    // 既定（hierarchy）はスイムレーンなし
+    expect(board.querySelector("[data-lane]")).toBeNull();
+
+    const select = container.querySelector('select[aria-label="Group by 軸"]') as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "type" } });
+
+    expect(board.textContent).toContain("スイムレーン");
+    expect(board.querySelector("[data-lane]")).not.toBeNull();
+    expect(board.textContent).toContain("UI Shell");
+  });
+});
