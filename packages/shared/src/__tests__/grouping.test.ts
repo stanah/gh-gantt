@@ -95,6 +95,21 @@ describe("[FR-VIS-025][FR-VIS-025-AC1] 単一値軸でのグルーピング", ()
     ).toEqual(["a"]);
   });
 
+  it("assignee 軸で担当者ごとにグルーピングできる", () => {
+    const tasks = [
+      baseTask({ id: "a", assignees: ["alice"] }),
+      baseTask({ id: "b", assignees: ["bob"] }),
+      baseTask({ id: "c", assignees: ["alice"] }),
+    ];
+    const result = groupTasks(tasks, "assignee", config);
+    expect(result.multiMembership).toBe(true);
+    expect(result.groups.find((g) => g.key === "assignee:alice")?.taskIds.sort()).toEqual([
+      "a",
+      "c",
+    ]);
+    expect(result.groups.find((g) => g.key === "assignee:bob")?.taskIds).toEqual(["b"]);
+  });
+
   it("hierarchy 軸は単一グループを返す（UI 側でツリー描画）", () => {
     const tasks = [baseTask({ id: "a" }), baseTask({ id: "b" })];
     const result = groupTasks(tasks, "hierarchy", config);

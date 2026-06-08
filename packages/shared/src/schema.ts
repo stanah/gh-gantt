@@ -121,10 +121,26 @@ const GroupingFacetSchema = z.object({
   label_prefix: z.string().trim().min(1),
 });
 
-const GroupingSchema = z.object({
-  label_prefix: z.string().trim().min(1).optional(),
-  facets: z.array(GroupingFacetSchema).optional(),
-});
+const GroupingSchema = z
+  .object({
+    label_prefix: z.string().trim().min(1).optional(),
+    facets: z.array(GroupingFacetSchema).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // facet.key は label:<key> 軸の識別子。重複すると選択肢が二重表示され、
+    // 解決側は先頭一致のみ使うため設定と動作が不一致になる。
+    const seen = new Set<string>();
+    for (const [index, facet] of (value.facets ?? []).entries()) {
+      if (seen.has(facet.key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["facets", index, "key"],
+          message: "grouping.facets.key は一意である必要があります",
+        });
+      }
+      seen.add(facet.key);
+    }
+  });
 
 const TaskTemplatesSchema = z.object({
   path: z.string().trim().min(1),

@@ -124,13 +124,14 @@ export function SystemTreePanel({
   if (groups && taskById) {
     // グループ表示（hierarchy 以外の軸）
     for (const group of groups) {
-      const isCollapsed = collapsed.has(group.key);
+      const groupCollapseKey = `group:${group.key}`;
+      const isCollapsed = collapsed.has(groupCollapseKey);
       rows.push(
         <button
           key={`group-${group.key}`}
           type="button"
           aria-expanded={!isCollapsed}
-          onClick={() => toggle(group.key)}
+          onClick={() => toggle(groupCollapseKey)}
           style={{
             display: "flex",
             alignItems: "center",
@@ -182,7 +183,8 @@ export function SystemTreePanel({
     const walk = (nodes: HierarchyNode[]) => {
       for (const node of nodes) {
         const { task } = node;
-        const isCollapsed = collapsed.has(task.id);
+        const taskCollapseKey = `task:${task.id}`;
+        const isCollapsed = collapsed.has(taskCollapseKey);
         const hasChildren = node.children.length > 0;
         const leading = hasChildren ? (
           <button
@@ -191,7 +193,7 @@ export function SystemTreePanel({
             aria-expanded={!isCollapsed}
             onClick={(e) => {
               e.stopPropagation();
-              toggle(task.id);
+              toggle(taskCollapseKey);
             }}
             style={{
               width: 16,

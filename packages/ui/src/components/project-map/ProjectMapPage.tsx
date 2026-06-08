@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   groupTasks,
   getGroupDimensions,
@@ -42,6 +42,13 @@ export function ProjectMapPage({
   const [groupDimension, setGroupDimension] = useState<GroupDimension>("hierarchy");
   const { status: syncStatus } = useSyncStatus(syncRefreshKey);
   const groupDimensions = useMemo(() => getGroupDimensions(config), [config]);
+
+  // config 変更で選択中の軸が候補から消えた場合（facet 削除など）は hierarchy に戻す。
+  useEffect(() => {
+    if (!groupDimensions.some((d) => d.value === groupDimension)) {
+      setGroupDimension("hierarchy");
+    }
+  }, [groupDimensions, groupDimension]);
 
   // ViewModel の hierarchy ノードから全タスクを取り出す。
   const allTasks = useMemo(() => {
