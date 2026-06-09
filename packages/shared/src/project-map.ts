@@ -684,7 +684,12 @@ export function getGroupDimensions(config: Config, tasks: Task[] = []): GroupDim
   ];
   const configFacets = config.grouping?.facets ?? [];
   const configKeys = new Set(configFacets.map((f) => f.key));
-  const autoFacets = detectLabelFacets(tasks).filter((f) => !configKeys.has(f.key));
+  // key だけでなく label_prefix も突き合わせ、設定済み prefix を別 namespace として
+  // 二重に自動検出しないようにする（例: key=component, prefix=system: と system:ui）。
+  const configPrefixes = new Set(configFacets.map((f) => f.label_prefix));
+  const autoFacets = detectLabelFacets(tasks).filter(
+    (f) => !configKeys.has(f.key) && !configPrefixes.has(f.label_prefix),
+  );
   for (const facet of [...configFacets, ...autoFacets]) {
     options.push({ value: `label:${facet.key}`, label: facet.label });
   }

@@ -32,7 +32,7 @@ Project Map の分類を **「Group by 軸セレクタ（1 度に 1 軸 + 切替
 5. **Board はスイムレーン**: hierarchy 以外の軸を選ぶと、Project Board は「グループ（行）× 実行状態（列）」のマトリクスで表示する（Jira 型）。
 6. **後方互換**: 既存の `grouping.label_prefix`（Gantt のラベルグルーピング）は維持する。`label_prefix` は optional 化し、`facets` を追加した。
 
-分類ロジックは shared の `groupTasks(tasks, dimension, config)` / `getGroupDimensions(config)` に集約し、UI に分散させない。
+分類ロジックは shared の `groupTasks(tasks, dimension, config)` / `getGroupDimensions(config, tasks)` / `detectLabelFacets(tasks)` に集約し、UI に分散させない。
 
 ## ラベル名前空間規約
 

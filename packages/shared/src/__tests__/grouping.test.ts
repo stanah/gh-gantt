@@ -206,6 +206,18 @@ describe("[FR-VIS-025] ラベル prefix の自動検出", () => {
     expect(systemOpts[0].label).toBe("システム");
   });
 
+  it("config facet の label_prefix と同じ prefix の namespace は自動検出で二重に出さない", () => {
+    // key=component だが prefix は system: → system:ui ラベルは config 側で扱う
+    const cfg: Config = {
+      ...config,
+      grouping: { facets: [{ key: "component", label: "部品", label_prefix: "system:" }] },
+    };
+    const tasks = [baseTask({ id: "a", labels: ["system:ui"] })];
+    const values = getGroupDimensions(cfg, tasks).map((o) => o.value);
+    expect(values).toContain("label:component");
+    expect(values).not.toContain("label:system");
+  });
+
   it("config に無い軸でも label:<key> で <key>: prefix にフォールバックしてグルーピングできる", () => {
     const noFacetConfig: Config = { ...config, grouping: undefined };
     const tasks = [
