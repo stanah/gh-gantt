@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0-alpha](https://github.com/stanah/gh-gantt/compare/v0.2.1-alpha...v0.3.0-alpha) (2026-06-10)
+
+
+### Features
+
+* **shared:** Group by 軸のラベル prefix を自動検出する ([#269](https://github.com/stanah/gh-gantt/issues/269)) ([d0814aa](https://github.com/stanah/gh-gantt/commit/d0814aa06452091fd521cf1cff9271364b047859))
+* **skill:** gh-gantt-dev-role を追加 ([#246](https://github.com/stanah/gh-gantt/issues/246)) ([2dba710](https://github.com/stanah/gh-gantt/commit/2dba710f10ef723aff66f3e17abe5568d98ae785))
+* **ui:** Project Map / Task Landscape ビューを追加 ([#251](https://github.com/stanah/gh-gantt/issues/251)) ([cd4d076](https://github.com/stanah/gh-gantt/commit/cd4d07624650775a4d2343bc4efdbdb6b36ea4a2)), closes [#252](https://github.com/stanah/gh-gantt/issues/252) [#253](https://github.com/stanah/gh-gantt/issues/253) [#254](https://github.com/stanah/gh-gantt/issues/254) [#255](https://github.com/stanah/gh-gantt/issues/255) [#256](https://github.com/stanah/gh-gantt/issues/256) [#257](https://github.com/stanah/gh-gantt/issues/257) [#258](https://github.com/stanah/gh-gantt/issues/258) [#259](https://github.com/stanah/gh-gantt/issues/259) [#260](https://github.com/stanah/gh-gantt/issues/260) [#261](https://github.com/stanah/gh-gantt/issues/261)
+* **ui:** Project Map に Group by 軸セレクタと多ファセット分類を追加 ([#263](https://github.com/stanah/gh-gantt/issues/263)) ([188c513](https://github.com/stanah/gh-gantt/commit/188c513600f41bc5f1c78b81167f63cfafa3ca03)), closes [#264](https://github.com/stanah/gh-gantt/issues/264) [#265](https://github.com/stanah/gh-gantt/issues/265) [#266](https://github.com/stanah/gh-gantt/issues/266) [#267](https://github.com/stanah/gh-gantt/issues/267)
+* **ui:** マイルストーンを専用レーン + 全行貫通の縦線で表示する ([#249](https://github.com/stanah/gh-gantt/issues/249)) ([700dc9f](https://github.com/stanah/gh-gantt/commit/700dc9f4937e8d8af6bad8caacb57e34b8a1fbb9))
+
 ## [0.2.1-alpha](https://github.com/stanah/gh-gantt/compare/v0.2.0-alpha...v0.2.1-alpha) (2026-05-04)
 
 
