@@ -41,14 +41,6 @@ export function ProjectMapPage({
   const [filter, setFilter] = useState<ProjectMapFilterState>({ search: "", readiness: null });
   const [groupDimension, setGroupDimension] = useState<GroupDimension>("hierarchy");
   const { status: syncStatus } = useSyncStatus(syncRefreshKey);
-  const groupDimensions = useMemo(() => getGroupDimensions(config), [config]);
-
-  // config 変更で選択中の軸が候補から消えた場合（facet 削除など）は hierarchy に戻す。
-  useEffect(() => {
-    if (!groupDimensions.some((d) => d.value === groupDimension)) {
-      setGroupDimension("hierarchy");
-    }
-  }, [groupDimensions, groupDimension]);
 
   // ViewModel の hierarchy ノードから全タスクを取り出す。
   const allTasks = useMemo(() => {
@@ -62,6 +54,16 @@ export function ProjectMapPage({
     walk(viewModel.hierarchy);
     return tasks;
   }, [viewModel.hierarchy]);
+
+  // Group by 軸 = 組み込み + config facets + ラベルから自動検出した namespace facets。
+  const groupDimensions = useMemo(() => getGroupDimensions(config, allTasks), [config, allTasks]);
+
+  // 選択中の軸が候補から消えた場合（facet 削除・データ変化など）は hierarchy に戻す。
+  useEffect(() => {
+    if (!groupDimensions.some((d) => d.value === groupDimension)) {
+      setGroupDimension("hierarchy");
+    }
+  }, [groupDimensions, groupDimension]);
 
   const matchedIds = useMemo(() => {
     const ids = new Set<string>();

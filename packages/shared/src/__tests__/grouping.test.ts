@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Config, Task } from "../types.js";
-import { groupTasks, getGroupDimensions } from "../project-map.js";
+import { groupTasks, getGroupDimensions, detectLabelFacets } from "../project-map.js";
 
 const baseTask = (overrides: Partial<Task>): Task => ({
   id: "T",
@@ -173,5 +173,59 @@ describe("[FR-VIS-025][FR-VIS-025-AC4] getGroupDimensions", () => {
     const values = getGroupDimensions(noFacet).map((o) => o.value);
     expect(values.some((v) => v.startsWith("label:"))).toBe(false);
     expect(values).toContain("hierarchy");
+  });
+});
+
+describe("[FR-VIS-025] ラベル prefix の自動検出", () => {
+  it("detectLabelFacets が namespace:value ラベルから namespace を検出する", () => {
+    const tasks = [
+      baseTask({ id: "a", labels: ["system:ui", "phase:1"] }),
+      baseTask({ id: "b", labels: ["system:cli", "bug", "area:sync"] }),
+    ];
+    const facets = detectLabelFacets(tasks);
+    const keys = facets.map((f) => f.key);
+    // 区切りを含まない "bug" は対象外
+    expect(keys).toEqual(["area", "phase", "system"]);
+    expect(facets.find((f) => f.key === "system")?.label_prefix).toBe("system:");
+  });
+
+  it("getGroupDimensions は config 未定義の namespace も自動検出して軸に並べる", () => {
+    const noFacetConfig: Config = { ...config, grouping: undefined };
+    const tasks = [baseTask({ id: "a", labels: ["system:ui", "phase:1"] })];
+    const values = getGroupDimensions(noFacetConfig, tasks).map((o) => o.value);
+    expect(values).toContain("label:system");
+    expect(values).toContain("label:phase");
+  });
+
+  it("config 定義の facet は自動検出より優先される（カスタムラベル）", () => {
+    const tasks = [baseTask({ id: "a", labels: ["system:ui"] })];
+    const opts = getGroupDimensions(config, tasks);
+    const systemOpts = opts.filter((o) => o.value === "label:system");
+    // 重複せず 1 つ、ラベルは config の日本語
+    expect(systemOpts).toHaveLength(1);
+    expect(systemOpts[0].label).toBe("システム");
+  });
+
+  it("config facet の label_prefix と同じ prefix の namespace は自動検出で二重に出さない", () => {
+    // key=component だが prefix は system: → system:ui ラベルは config 側で扱う
+    const cfg: Config = {
+      ...config,
+      grouping: { facets: [{ key: "component", label: "部品", label_prefix: "system:" }] },
+    };
+    const tasks = [baseTask({ id: "a", labels: ["system:ui"] })];
+    const values = getGroupDimensions(cfg, tasks).map((o) => o.value);
+    expect(values).toContain("label:component");
+    expect(values).not.toContain("label:system");
+  });
+
+  it("config に無い軸でも label:<key> で <key>: prefix にフォールバックしてグルーピングできる", () => {
+    const noFacetConfig: Config = { ...config, grouping: undefined };
+    const tasks = [
+      baseTask({ id: "a", labels: ["system:ui"] }),
+      baseTask({ id: "b", labels: ["system:cli"] }),
+    ];
+    const result = groupTasks(tasks, "label:system", noFacetConfig);
+    expect(result.groups.find((g) => g.label === "ui")?.taskIds).toEqual(["a"]);
+    expect(result.groups.find((g) => g.label === "cli")?.taskIds).toEqual(["b"]);
   });
 });
