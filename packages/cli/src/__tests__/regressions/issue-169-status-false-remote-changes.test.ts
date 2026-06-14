@@ -40,7 +40,6 @@ function makeConfig(): Config {
     },
     sync: {
       auto_create_issues: true,
-      conflict_strategy: "remote-wins" as const,
       field_mapping: {
         start_date: "Start Date",
         end_date: "End Date",
@@ -53,7 +52,16 @@ function makeConfig(): Config {
     },
     type_hierarchy: {},
     statuses: { field_name: "Status", values: {} },
-    gantt: { default_view: "week" as const },
+    gantt: {
+      default_view: "week" as const,
+      working_days: [1, 2, 3, 4, 5],
+      colors: {
+        critical_path: "#E74C3C",
+        on_track: "#27AE60",
+        at_risk: "#F1C40F",
+        overdue: "#C0392B",
+      },
+    },
   } satisfies Config;
   return config;
 }
@@ -92,6 +100,7 @@ function makeProjectItem(issueNumber: number, updatedAt = "2026-04-01T00:00:00Z"
       closedAt: null,
       issueType: null,
       repository: "stanah/gh-gantt",
+      linkedPullRequests: [],
     },
   };
 }

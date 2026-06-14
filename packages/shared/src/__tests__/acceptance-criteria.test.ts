@@ -27,6 +27,24 @@ describe("[FR-CLI-011-AC3] Issue body の受入基準管理ブロック", () => 
     ]);
   });
 
+  it("[NFR-STABILITY-011-AC3] marker の大小文字揺れがあっても body から分離する", () => {
+    const body = [
+      "説明文",
+      "",
+      "<!-- GH-GANTT:ACCEPTANCE-CRITERIA:START -->",
+      "## 受入基準",
+      "",
+      "- [ ] 追加できる",
+      "<!-- GH-GANTT:ACCEPTANCE-CRITERIA:END -->",
+    ].join("\n");
+
+    const parsed = parseAcceptanceCriteriaBody(body);
+
+    expect(parsed.body).toBe("説明文");
+    expect(parsed.acceptance_criteria).toEqual([{ description: "追加できる", checked: false }]);
+    expect(parsed.has_acceptance_criteria_block).toBe(true);
+  });
+
   it("受入基準を GitHub Issue body の管理ブロックとして直列化する", () => {
     const body = serializeAcceptanceCriteriaBody("説明文", [
       { description: "追加できる", checked: false },

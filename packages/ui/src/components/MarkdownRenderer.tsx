@@ -27,22 +27,35 @@ function splitTableRow(line: string): string[] {
 
 const SAFE_URL_SCHEMES = ["http:", "https:", "mailto:"];
 
-function isSafeHref(rawHref: string): boolean {
-  const href = rawHref.trim().toLowerCase();
-  // Relative URLs and fragment-only URLs are safe (but reject protocol-relative "//")
-  if (href.startsWith("//")) return false;
+function hasUnsafeHrefCharacter(href: string): boolean {
+  for (const char of href) {
+    const code = char.charCodeAt(0);
+    if (code <= 0x20 || code === 0x7f) return true;
+    if (char === "<" || char === ">" || char === '"' || char === "'" || char === "`") return true;
+  }
+  return false;
+}
+
+function sanitizeHref(rawHref: string): string | null {
+  const href = rawHref.trim();
+  if (href.length === 0 || hasUnsafeHrefCharacter(href)) return null;
+
+  const lowerHref = href.toLowerCase();
+  // 相対 URL と fragment は許可するが、protocol-relative URL は拒否する。
+  if (lowerHref.startsWith("//")) return null;
   if (
-    href.startsWith("/") ||
-    href.startsWith("#") ||
-    href.startsWith("?") ||
-    href.startsWith("./") ||
-    href.startsWith("../")
+    lowerHref.startsWith("/") ||
+    lowerHref.startsWith("#") ||
+    lowerHref.startsWith("?") ||
+    lowerHref.startsWith("./") ||
+    lowerHref.startsWith("../")
   )
-    return true;
-  // Allow bare relative paths (no scheme)
-  if (!href.includes(":")) return true;
-  // Allow only known-safe schemes
-  return SAFE_URL_SCHEMES.some((scheme) => href.startsWith(scheme));
+    return href;
+  // 先頭に scheme がない bare path は相対 URL として扱う。
+  const hasScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href);
+  if (!hasScheme) return href;
+  // scheme 付き URL は既知の安全な scheme だけ許可する。
+  return SAFE_URL_SCHEMES.some((scheme) => lowerHref.startsWith(scheme)) ? href : null;
 }
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
@@ -78,8 +91,8 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
       );
     } else if (match[2] != null && match[3] != null) {
       // Link
-      const href = match[3].trim();
-      if (isSafeHref(href)) {
+      const href = sanitizeHref(match[3]);
+      if (href) {
         result.push(
           <a
             key={`${keyPrefix}-link-${tokenIndex}`}

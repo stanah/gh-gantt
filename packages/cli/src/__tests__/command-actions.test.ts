@@ -38,7 +38,7 @@ vi.mock("../store/tasks.js", () => ({
 }));
 
 describe("[FR-CLI-001-AC1] タスクを一覧表示しステータス・タイプ・アサインでフィルタできる", () => {
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
     originalExitCode = process.exitCode;

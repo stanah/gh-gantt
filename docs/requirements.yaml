@@ -1179,3 +1179,29 @@ areas:
             status: covered
             tests:
               - tests/workflow/dev-role-skill.test.ts
+      - id: NFR-STABILITY-011
+        summary: GitHub Security アラートの回帰防止
+        acceptance_criteria:
+          - id: NFR-STABILITY-011-AC1
+            description: |
+              MarkdownRenderer は HTML メタ文字を含む bare link target を
+              href として出力しない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/markdown-renderer.test.tsx
+          - id: NFR-STABILITY-011-AC2
+            description: |
+              serve コマンドは API router の前に rate limiter を登録する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/serve-command.test.ts
+          - id: NFR-STABILITY-011-AC3
+            description: |
+              Issue body の管理ブロックは marker の大小文字揺れを許容し、
+              固定 marker の範囲抽出で処理できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/acceptance-criteria.test.ts
+              - packages/shared/src/__tests__/managed-block.test.ts
+              - packages/shared/src/__tests__/task-review.test.ts
+              - packages/shared/src/__tests__/task-roles.test.ts

@@ -12,9 +12,12 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     // リモートタスク（完全版）
     const remoteTask: Task = {
       id: "owner/repo#8",
+      github_issue: 8,
+      github_repo: "owner/repo",
       title: "Fix login bug v2",
       body: "Updated description",
       state: "closed",
+      state_reason: null,
       type: "task",
       assignees: [],
       labels: [],
@@ -28,6 +31,7 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
       blocked_by: [],
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-02T00:00:00Z",
+      closed_at: "2024-01-02T00:00:00Z",
       linked_prs: [],
     };
     remoteHash = hashTask(remoteTask);
@@ -36,9 +40,12 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     tasks = [
       {
         id: "owner/repo#8",
+        github_issue: 8,
+        github_repo: "owner/repo",
         title: "Fix login bug",
         body: "Original description",
         state: "open",
+        state_reason: null,
         type: "task",
         assignees: [],
         labels: [],
@@ -52,6 +59,7 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
         blocked_by: [],
         created_at: "2024-01-01T00:00:00Z",
         updated_at: "2024-01-01T12:00:00Z",
+        closed_at: null,
         linked_prs: [],
         // コンフリクトマーカー
         title_current: "Fix login bug",
@@ -67,9 +75,12 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     const localHash = "local-hash-123";
     const localTask: Task = {
       id: "owner/repo#8",
+      github_issue: 8,
+      github_repo: "owner/repo",
       title: "Fix login bug",
       body: "Original description",
       state: "open",
+      state_reason: null,
       type: "task",
       assignees: [],
       labels: [],
@@ -83,10 +94,13 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
       blocked_by: [],
       created_at: "2024-01-01T00:00:00Z",
       updated_at: "2024-01-01T12:00:00Z",
+      closed_at: null,
       linked_prs: [],
     };
     syncState = {
       last_synced_at: "2024-01-01T00:00:00Z",
+      project_node_id: "PVT_1",
+      id_map: {},
       snapshots: {
         "owner/repo#8": {
           hash: localHash,

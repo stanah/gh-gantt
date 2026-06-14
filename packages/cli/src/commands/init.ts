@@ -44,12 +44,14 @@ function applyTypeSources(
       if (key === "task" || lower === "task") {
         taskTypes.task = { ...taskTypes.task, [bindingKey]: source.name };
       } else {
+        const existing = taskTypes[key];
         taskTypes[key] = {
-          label: defaults.label,
-          display: defaults.display,
-          color: defaults.color,
-          github_label: null,
-          ...taskTypes[key],
+          ...(existing ?? {
+            label: defaults.label,
+            display: defaults.display,
+            color: defaults.color,
+            github_label: null,
+          }),
           [bindingKey]: source.name,
         };
       }
@@ -59,12 +61,14 @@ function applyTypeSources(
       const normalized = lower.replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "");
       const key = normalized || `type_${Buffer.from(source.name).toString("hex").slice(0, 12)}`;
       if (skipExisting && taskTypes[key]) continue;
+      const existing = taskTypes[key];
       taskTypes[key] = {
-        label: source.name,
-        display: "bar",
-        color: "#95A5A6",
-        github_label: null,
-        ...taskTypes[key],
+        ...(existing ?? {
+          label: source.name,
+          display: "bar",
+          color: "#95A5A6",
+          github_label: null,
+        }),
         [bindingKey]: source.name,
       };
     }

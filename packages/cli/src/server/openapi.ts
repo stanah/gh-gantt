@@ -79,7 +79,7 @@ const ConflictResponseSchema = z.object({
 });
 registry.register("ConflictResponse", ConflictResponseSchema);
 
-const TaskWithProgressSchema = TaskSchema.extend({ _progress: z.number() });
+const TaskWithProgressSchema = TaskSchema.and(z.object({ _progress: z.number() }));
 
 const TasksWithProgressResponseSchema = z.object({
   tasks: z.array(TaskWithProgressSchema),

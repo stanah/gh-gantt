@@ -1,16 +1,7 @@
+import { extractManagedBlock, splitManagedLine } from "./managed-block.js";
+
 export const TASK_CLOSE_EVIDENCE_START_MARKER = "<!-- gh-gantt:close-evidence:start -->";
 export const TASK_CLOSE_EVIDENCE_END_MARKER = "<!-- gh-gantt:close-evidence:end -->";
-
-const TASK_CLOSE_EVIDENCE_BLOCK_RE = new RegExp(
-  `\\n*${escapeRegExp(TASK_CLOSE_EVIDENCE_START_MARKER)}[\\s\\S]*?${escapeRegExp(
-    TASK_CLOSE_EVIDENCE_END_MARKER,
-  )}\\n*`,
-  "im",
-);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export function parseTaskCloseEvidenceBody(body: string | null): {
   body: string | null;
@@ -27,8 +18,12 @@ export function parseTaskCloseEvidenceBody(body: string | null): {
     };
   }
 
-  const match = body.match(TASK_CLOSE_EVIDENCE_BLOCK_RE);
-  if (!match) {
+  const block = extractManagedBlock(
+    body,
+    TASK_CLOSE_EVIDENCE_START_MARKER,
+    TASK_CLOSE_EVIDENCE_END_MARKER,
+  );
+  if (!block) {
     return {
       body,
       evidence: null,
@@ -40,32 +35,26 @@ export function parseTaskCloseEvidenceBody(body: string | null): {
   let recordedAt: string | null = null;
   let collectingEvidence = false;
   const evidenceLines: string[] = [];
-  const endMarker = TASK_CLOSE_EVIDENCE_END_MARKER.toLowerCase();
-  for (const line of match[0].split(/\r?\n/)) {
+  for (const line of block.content.split(/\r?\n/)) {
     const trimmedLine = line.trim();
-    if (trimmedLine.toLowerCase() === endMarker) break;
     if (collectingEvidence) {
       evidenceLines.push(line);
       continue;
     }
-    const recordedAtLine = line.match(/^Recorded-At:\s*(.*)$/i);
-    if (recordedAtLine) {
-      recordedAt = recordedAtLine[1].trim() || null;
+    const managedLine = splitManagedLine(line);
+    if (managedLine?.key === "recorded-at") {
+      recordedAt = managedLine.value || null;
       continue;
     }
-    if (/^Evidence:\s*$/i.test(trimmedLine)) {
+    if (trimmedLine.toLowerCase() === "evidence:") {
       collectingEvidence = true;
     }
   }
 
-  const stripped = body
-    .replace(TASK_CLOSE_EVIDENCE_BLOCK_RE, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
   const evidence = evidenceLines.join("\n").trim();
 
   return {
-    body: stripped.length > 0 ? stripped : null,
+    body: block.body,
     evidence: evidence.length > 0 ? evidence : null,
     recorded_at: recordedAt,
     has_close_evidence_block: true,

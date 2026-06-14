@@ -50,7 +50,7 @@ describe("DetailRelations", () => {
     const blocker = makeTask({ id: "owner/repo#10", title: "Blocker Task", github_issue: 10 });
     const html = renderToStaticMarkup(
       <DetailRelations
-        blockedBy={[{ task: "owner/repo#10" }]}
+        blockedBy={[{ task: "owner/repo#10", type: "finish-to-start", lag: 0 }]}
         linkedPrs={[]}
         allTasks={[blocker]}
         onSelectTask={vi.fn()}

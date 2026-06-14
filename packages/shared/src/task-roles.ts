@@ -1,16 +1,7 @@
+import { extractManagedBlock, splitManagedLine } from "./managed-block.js";
+
 export const TASK_ROLES_START_MARKER = "<!-- gh-gantt:roles:start -->";
 export const TASK_ROLES_END_MARKER = "<!-- gh-gantt:roles:end -->";
-
-const TASK_ROLES_BLOCK_RE = new RegExp(
-  `\\n*${escapeRegExp(TASK_ROLES_START_MARKER)}[\\s\\S]*?${escapeRegExp(
-    TASK_ROLES_END_MARKER,
-  )}\\n*`,
-  "m",
-);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 export function normalizeTaskRoleLogin(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
@@ -31,30 +22,25 @@ export function parseTaskRolesBody(body: string | null): {
     return { body: null, implementer: null, reviewer: null, has_roles_block: false };
   }
 
-  const match = body.match(TASK_ROLES_BLOCK_RE);
-  if (!match) {
+  const block = extractManagedBlock(body, TASK_ROLES_START_MARKER, TASK_ROLES_END_MARKER);
+  if (!block) {
     return { body, implementer: null, reviewer: null, has_roles_block: false };
   }
 
   let implementer: string | null = null;
   let reviewer: string | null = null;
-  for (const line of match[0].split(/\r?\n/)) {
-    const roleLine = line.match(/^(Implementer|Reviewer):\s*(.*)$/i);
+  for (const line of block.content.split(/\r?\n/)) {
+    const roleLine = splitManagedLine(line);
     if (!roleLine) continue;
-    if (roleLine[1].toLowerCase() === "implementer") {
-      implementer = normalizeTaskRoleLogin(roleLine[2]);
-    } else {
-      reviewer = normalizeTaskRoleLogin(roleLine[2]);
+    if (roleLine.key === "implementer") {
+      implementer = normalizeTaskRoleLogin(roleLine.value);
+    } else if (roleLine.key === "reviewer") {
+      reviewer = normalizeTaskRoleLogin(roleLine.value);
     }
   }
 
-  const stripped = body
-    .replace(TASK_ROLES_BLOCK_RE, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
   return {
-    body: stripped.length > 0 ? stripped : null,
+    body: block.body,
     implementer,
     reviewer,
     has_roles_block: true,

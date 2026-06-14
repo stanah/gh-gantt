@@ -89,7 +89,7 @@ vi.mock("../util/task-id.js", () => ({
 describe("[FR-CLI-011-AC2] ac add/check で受入基準を更新できる", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
     currentTasksFile = makeTasksFile(makeTask());

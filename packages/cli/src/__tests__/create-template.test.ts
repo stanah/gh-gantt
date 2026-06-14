@@ -88,7 +88,7 @@ describe("[FR-CLI-012-AC1] create --template の task_templates 解決", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
   let warnSpy: ReturnType<typeof vi.spyOn>;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(async () => {
     tmpRoot = await mkdtemp(join(tmpdir(), "gh-gantt-create-template-"));

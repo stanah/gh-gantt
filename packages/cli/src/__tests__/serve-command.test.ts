@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 const mocks = vi.hoisted(() => {
   const staticMiddleware = Symbol("staticMiddleware");
   const apiRouter = Symbol("apiRouter");
+  const rateLimitMiddleware = Symbol("rateLimitMiddleware");
   const app = {
     use: vi.fn(),
     get: vi.fn(),
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => {
     static: ReturnType<typeof vi.fn>;
   };
   express.static = vi.fn(() => staticMiddleware);
+  const rateLimit = vi.fn(() => rateLimitMiddleware);
 
   return {
     apiRouter,
@@ -26,12 +28,18 @@ const mocks = vi.hoisted(() => {
     createApiRouter: vi.fn(() => apiRouter),
     existsSync: vi.fn(),
     express,
+    rateLimit,
+    rateLimitMiddleware,
     staticMiddleware,
   };
 });
 
 vi.mock("express", () => ({
   default: mocks.express,
+}));
+
+vi.mock("express-rate-limit", () => ({
+  default: mocks.rateLimit,
 }));
 
 vi.mock("node:fs", async (importOriginal: () => Promise<typeof import("node:fs")>) => {
@@ -106,5 +114,27 @@ describe("serve コマンド", () => {
 
     expect(next).toHaveBeenCalledOnce();
     expect(sendFile).not.toHaveBeenCalled();
+  });
+
+  describe("[NFR-STABILITY-011-AC2] rate limiter 登録順序", () => {
+    it("API router の前に rate limiter を登録する", async () => {
+      const { serveCommand } = await import("../commands/serve.js");
+
+      await serveCommand.parseAsync(["serve", "--port", "0", "--api-only"], { from: "user" });
+
+      expect(mocks.rateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          windowMs: 60_000,
+          limit: 120,
+          standardHeaders: true,
+          legacyHeaders: false,
+        }),
+      );
+      const middlewares = mocks.app.use.mock.calls.map(([middleware]) => middleware);
+      expect(middlewares.indexOf(mocks.rateLimitMiddleware)).toBeGreaterThanOrEqual(0);
+      expect(middlewares.indexOf(mocks.apiRouter)).toBeGreaterThan(
+        middlewares.indexOf(mocks.rateLimitMiddleware),
+      );
+    });
   });
 });

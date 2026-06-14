@@ -1,25 +1,19 @@
 import type { AcceptanceCriterion } from "./types.js";
+import { extractManagedBlock } from "./managed-block.js";
 
 export const ACCEPTANCE_CRITERIA_START_MARKER = "<!-- gh-gantt:acceptance-criteria:start -->";
 export const ACCEPTANCE_CRITERIA_END_MARKER = "<!-- gh-gantt:acceptance-criteria:end -->";
-
-const ACCEPTANCE_CRITERIA_BLOCK_RE = new RegExp(
-  `\\n*${escapeRegExp(ACCEPTANCE_CRITERIA_START_MARKER)}[\\s\\S]*?${escapeRegExp(
-    ACCEPTANCE_CRITERIA_END_MARKER,
-  )}\\n*`,
-  "m",
-);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function normalizeDescription(description: string): string {
   return description.replace(/\s+/g, " ").trim();
 }
 
 export function hasAcceptanceCriteriaBlock(body: string | null): boolean {
-  return body != null && ACCEPTANCE_CRITERIA_BLOCK_RE.test(body);
+  return (
+    body != null &&
+    extractManagedBlock(body, ACCEPTANCE_CRITERIA_START_MARKER, ACCEPTANCE_CRITERIA_END_MARKER) !=
+      null
+  );
 }
 
 export function normalizeAcceptanceCriteria(
@@ -33,6 +27,23 @@ export function normalizeAcceptanceCriteria(
     .filter((criterion) => criterion.description.length > 0);
 }
 
+function parseAcceptanceCriterionLine(line: string): AcceptanceCriterion | null {
+  if (!line.startsWith("- [") || line[4] !== "]") return null;
+  const marker = line[3];
+  if (marker !== " " && marker !== "x" && marker !== "X") return null;
+  if (line.length <= 5 || !/\s/.test(line[5])) return null;
+
+  let descriptionStart = 5;
+  while (descriptionStart < line.length && /\s/.test(line[descriptionStart])) {
+    descriptionStart += 1;
+  }
+
+  return {
+    checked: marker.toLowerCase() === "x",
+    description: normalizeDescription(line.slice(descriptionStart)),
+  };
+}
+
 export function parseAcceptanceCriteriaBody(body: string | null): {
   body: string | null;
   acceptance_criteria: AcceptanceCriterion[];
@@ -42,28 +53,23 @@ export function parseAcceptanceCriteriaBody(body: string | null): {
     return { body: null, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
-  const match = body.match(ACCEPTANCE_CRITERIA_BLOCK_RE);
-  if (!match) {
+  const block = extractManagedBlock(
+    body,
+    ACCEPTANCE_CRITERIA_START_MARKER,
+    ACCEPTANCE_CRITERIA_END_MARKER,
+  );
+  if (!block) {
     return { body, acceptance_criteria: [], has_acceptance_criteria_block: false };
   }
 
   const criteria: AcceptanceCriterion[] = [];
-  for (const line of match[0].split(/\r?\n/)) {
-    const bullet = line.match(/^- \[( |x|X)\]\s+(.+)$/);
-    if (!bullet) continue;
-    criteria.push({
-      checked: bullet[1].toLowerCase() === "x",
-      description: normalizeDescription(bullet[2]),
-    });
+  for (const line of block.content.split(/\r?\n/)) {
+    const criterion = parseAcceptanceCriterionLine(line);
+    if (criterion) criteria.push(criterion);
   }
 
-  const stripped = body
-    .replace(ACCEPTANCE_CRITERIA_BLOCK_RE, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
   return {
-    body: stripped.length > 0 ? stripped : null,
+    body: block.body,
     acceptance_criteria: normalizeAcceptanceCriteria(criteria),
     has_acceptance_criteria_block: true,
   };

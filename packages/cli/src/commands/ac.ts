@@ -114,7 +114,7 @@ export function createAcceptanceCriteriaCommand(): Command {
         if (opts.json) {
           console.log(JSON.stringify(result.task, null, 2));
         } else {
-          const count = result.task.acceptance_criteria.length;
+          const count = normalizeAcceptanceCriteria(result.task.acceptance_criteria).length;
           console.log(`Added acceptance criterion #${count} to ${resolvedId}.`);
         }
       } catch (err) {

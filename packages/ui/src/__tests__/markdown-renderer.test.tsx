@@ -105,3 +105,22 @@ describe("MarkdownRenderer", () => {
     expect(html).not.toContain('href="javascript:alert(1)"');
   });
 });
+
+describe("[NFR-STABILITY-011-AC1] MarkdownRenderer の link target 安全化", () => {
+  it("HTML メタ文字を含む bare link target を href として出力しない", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownRenderer markdown={"[bad](<img src=x onerror=alert>)"} />,
+    );
+
+    expect(html).not.toContain("href=");
+    expect(html).toContain("[bad](&lt;img src=x onerror=alert&gt;)");
+  });
+
+  it("コロンを含む相対パスは href として出力する", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownRenderer markdown={"[changelog](docs/changelog:2026.md)"} />,
+    );
+
+    expect(html).toContain('href="docs/changelog:2026.md"');
+  });
+});
