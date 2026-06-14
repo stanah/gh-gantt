@@ -720,7 +720,7 @@ describe("executePush", () => {
       const task = makeTask("o/r#1", {
         github_issue: 1,
         parent: "o/r#10",
-        blocked_by: [{ task: "o/r#20", type: "blocked_by" as const }],
+        blocked_by: [{ task: "o/r#20", type: "finish-to-start", lag: 0 }],
       });
       const tasksFile: TasksFile = {
         tasks: [parentTask, blockerTask, task],

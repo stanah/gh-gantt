@@ -20,6 +20,24 @@ describe("[FR-CLI-013-AC3] タスクロールの Issue body 管理ブロック",
     expect(parsed.has_roles_block).toBe(true);
   });
 
+  it("[NFR-STABILITY-011-AC3] marker の大小文字揺れがあってもロールブロックを抽出する", () => {
+    const body = [
+      "説明文",
+      "",
+      "<!-- GH-GANTT:ROLES:START -->",
+      "Implementer: @alice",
+      "Reviewer: bob",
+      "<!-- GH-GANTT:ROLES:END -->",
+    ].join("\n");
+
+    const parsed = parseTaskRolesBody(body);
+
+    expect(parsed.body).toBe("説明文");
+    expect(parsed.implementer).toBe("alice");
+    expect(parsed.reviewer).toBe("bob");
+    expect(parsed.has_roles_block).toBe(true);
+  });
+
   it("ロールが未設定なら body を変更せず null として返す", () => {
     const parsed = parseTaskRolesBody("説明文");
 

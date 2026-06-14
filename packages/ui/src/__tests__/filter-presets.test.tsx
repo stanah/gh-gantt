@@ -121,15 +121,13 @@ describe("[FR-VIS-020-AC1] フィルタプリセットの localStorage 永続化
     const { getByText } = render(<PresetProbe />);
 
     fireEvent.click(getByText("update"));
-    let stored = JSON.parse(localStorage.getItem(FILTER_PRESETS_STORAGE_KEY) ?? "[]") as Array<{
-      state: FilterPresetState;
-    }>;
+    let stored = JSON.parse(
+      localStorage.getItem(FILTER_PRESETS_STORAGE_KEY) ?? "[]",
+    ) as FilterPreset[];
     expect(stored[0]?.state).toEqual(emptyFilterState);
 
     fireEvent.click(getByText("rename"));
-    stored = JSON.parse(localStorage.getItem(FILTER_PRESETS_STORAGE_KEY) ?? "[]") as Array<{
-      name: string;
-    }>;
+    stored = JSON.parse(localStorage.getItem(FILTER_PRESETS_STORAGE_KEY) ?? "[]") as FilterPreset[];
     expect(stored[0]?.name).toBe("今週更新");
 
     fireEvent.click(getByText("delete"));

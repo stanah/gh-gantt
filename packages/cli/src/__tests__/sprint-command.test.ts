@@ -102,7 +102,7 @@ async function runSprintCommand(args: string[]): Promise<void> {
 describe("[FR-CLI-009-AC1] sprint CLI で config の sprints を CRUD できる", () => {
   let tmpRoot: string;
   let originalCwd: string;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
@@ -189,7 +189,7 @@ describe("[FR-CLI-009-AC1] sprint CLI で config の sprints を CRUD できる"
 describe("[FR-CLI-009-AC2] sprint CLI は重複 name と不正な日付範囲を拒否する", () => {
   let tmpRoot: string;
   let originalCwd: string;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
@@ -264,7 +264,7 @@ describe("[FR-CLI-009-AC2] sprint CLI は重複 name と不正な日付範囲を
 describe("[FR-CLI-010-AC1][FR-CLI-010-AC2][FR-CLI-010-AC3] sprint CLI で task を sprint へ移動できる", () => {
   let tmpRoot: string;
   let originalCwd: string;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
   let logSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
 

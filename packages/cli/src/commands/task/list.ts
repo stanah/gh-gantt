@@ -374,7 +374,7 @@ export function createTaskListCommand(): Command {
         statusFieldName: config.statuses.field_name,
         label: opts.label,
         search: opts.search,
-        updatedSinceTimestamp,
+        updatedSinceTimestamp: updatedSinceTimestamp ?? undefined,
       });
 
       if (opts.sort) {

@@ -1,21 +1,12 @@
 import { normalizeTaskRoleLogin } from "./task-roles.js";
+import { extractManagedBlock, splitManagedLine } from "./managed-block.js";
 
 export const TASK_REVIEW_START_MARKER = "<!-- gh-gantt:review:start -->";
 export const TASK_REVIEW_END_MARKER = "<!-- gh-gantt:review:end -->";
 
-const TASK_REVIEW_BLOCK_RE = new RegExp(
-  `\\n*${escapeRegExp(TASK_REVIEW_START_MARKER)}[\\s\\S]*?${escapeRegExp(
-    TASK_REVIEW_END_MARKER,
-  )}\\n*`,
-  "m",
-);
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function parseBoolean(value: string): boolean {
-  return /^(true|yes|1)$/i.test(value.trim());
+  const normalized = value.trim().toLowerCase();
+  return normalized === "true" || normalized === "yes" || normalized === "1";
 }
 
 export function parseTaskReviewBody(body: string | null): {
@@ -35,8 +26,8 @@ export function parseTaskReviewBody(body: string | null): {
     };
   }
 
-  const match = body.match(TASK_REVIEW_BLOCK_RE);
-  if (!match) {
+  const block = extractManagedBlock(body, TASK_REVIEW_START_MARKER, TASK_REVIEW_END_MARKER);
+  if (!block) {
     return {
       body,
       require_review: false,
@@ -49,29 +40,21 @@ export function parseTaskReviewBody(body: string | null): {
   let requireReview = false;
   let reviewApprovedBy: string | null = null;
   let reviewApprovedAt: string | null = null;
-  for (const line of match[0].split(/\r?\n/)) {
-    const reviewLine = line.match(
-      /^(Require-Review|Review-Approved-By|Review-Approved-At):\s*(.*)$/i,
-    );
+  for (const line of block.content.split(/\r?\n/)) {
+    const reviewLine = splitManagedLine(line);
     if (!reviewLine) continue;
-    const key = reviewLine[1].toLowerCase();
-    const value = reviewLine[2].trim();
+    const { key, value } = reviewLine;
     if (key === "require-review") {
       requireReview = parseBoolean(value);
     } else if (key === "review-approved-by") {
       reviewApprovedBy = normalizeTaskRoleLogin(value);
-    } else {
+    } else if (key === "review-approved-at") {
       reviewApprovedAt = value.length > 0 ? value : null;
     }
   }
 
-  const stripped = body
-    .replace(TASK_REVIEW_BLOCK_RE, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
   return {
-    body: stripped.length > 0 ? stripped : null,
+    body: block.body,
     require_review: requireReview,
     review_approved_by: reviewApprovedBy,
     review_approved_at: reviewApprovedAt,

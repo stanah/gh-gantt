@@ -94,7 +94,7 @@ describe("[FR-CLI-016-AC1] close command の evidence warning", () => {
   let logSpy: ReturnType<typeof vi.spyOn>;
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let errorSpy: ReturnType<typeof vi.spyOn>;
-  let originalExitCode: number | undefined;
+  let originalExitCode: typeof process.exitCode;
 
   beforeEach(() => {
     currentConfig = makeConfig();

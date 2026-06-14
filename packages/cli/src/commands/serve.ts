@@ -1,5 +1,6 @@
 import { Command } from "commander";
 import express from "express";
+import rateLimit from "express-rate-limit";
 import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -41,6 +42,14 @@ export const serveCommand = new Command("serve")
 
     // API は gh-gantt を実行したプロジェクトの同期データを読む。
     const apiRouter = createApiRouter(projectRoot);
+    app.use(
+      rateLimit({
+        windowMs: 60_000,
+        limit: 120,
+        standardHeaders: true,
+        legacyHeaders: false,
+      }),
+    );
     app.use(apiRouter);
 
     if (!opts.apiOnly) {
