@@ -51,8 +51,9 @@ function sanitizeHref(rawHref: string): string | null {
     lowerHref.startsWith("../")
   )
     return href;
-  // scheme のない bare path は相対 URL として扱う。
-  if (!href.includes(":")) return href;
+  // 先頭に scheme がない bare path は相対 URL として扱う。
+  const hasScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(href);
+  if (!hasScheme) return href;
   // scheme 付き URL は既知の安全な scheme だけ許可する。
   return SAFE_URL_SCHEMES.some((scheme) => lowerHref.startsWith(scheme)) ? href : null;
 }

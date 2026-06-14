@@ -116,23 +116,25 @@ describe("serve コマンド", () => {
     expect(sendFile).not.toHaveBeenCalled();
   });
 
-  it("[NFR-STABILITY-011-AC2] API router の前に rate limiter を登録する", async () => {
-    const { serveCommand } = await import("../commands/serve.js");
+  describe("[NFR-STABILITY-011-AC2] rate limiter 登録順序", () => {
+    it("API router の前に rate limiter を登録する", async () => {
+      const { serveCommand } = await import("../commands/serve.js");
 
-    await serveCommand.parseAsync(["serve", "--port", "0", "--api-only"], { from: "user" });
+      await serveCommand.parseAsync(["serve", "--port", "0", "--api-only"], { from: "user" });
 
-    expect(mocks.rateLimit).toHaveBeenCalledWith(
-      expect.objectContaining({
-        windowMs: 60_000,
-        limit: 120,
-        standardHeaders: true,
-        legacyHeaders: false,
-      }),
-    );
-    const middlewares = mocks.app.use.mock.calls.map(([middleware]) => middleware);
-    expect(middlewares.indexOf(mocks.rateLimitMiddleware)).toBeGreaterThanOrEqual(0);
-    expect(middlewares.indexOf(mocks.apiRouter)).toBeGreaterThan(
-      middlewares.indexOf(mocks.rateLimitMiddleware),
-    );
+      expect(mocks.rateLimit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          windowMs: 60_000,
+          limit: 120,
+          standardHeaders: true,
+          legacyHeaders: false,
+        }),
+      );
+      const middlewares = mocks.app.use.mock.calls.map(([middleware]) => middleware);
+      expect(middlewares.indexOf(mocks.rateLimitMiddleware)).toBeGreaterThanOrEqual(0);
+      expect(middlewares.indexOf(mocks.apiRouter)).toBeGreaterThan(
+        middlewares.indexOf(mocks.rateLimitMiddleware),
+      );
+    });
   });
 });

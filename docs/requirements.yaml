@@ -1202,5 +1202,6 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/acceptance-criteria.test.ts
+              - packages/shared/src/__tests__/managed-block.test.ts
               - packages/shared/src/__tests__/task-review.test.ts
               - packages/shared/src/__tests__/task-roles.test.ts

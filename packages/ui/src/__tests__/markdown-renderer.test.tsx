@@ -115,4 +115,12 @@ describe("[NFR-STABILITY-011-AC1] MarkdownRenderer の link target 安全化", (
     expect(html).not.toContain("href=");
     expect(html).toContain("[bad](&lt;img src=x onerror=alert&gt;)");
   });
+
+  it("コロンを含む相対パスは href として出力する", () => {
+    const html = renderToStaticMarkup(
+      <MarkdownRenderer markdown={"[changelog](docs/changelog:2026.md)"} />,
+    );
+
+    expect(html).toContain('href="docs/changelog:2026.md"');
+  });
 });

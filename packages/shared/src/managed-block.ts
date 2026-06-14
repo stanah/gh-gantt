@@ -4,19 +4,38 @@ export interface ManagedBlockMatch {
   body: string | null;
 }
 
+function asciiLowerCode(code: number): number {
+  return code >= 0x41 && code <= 0x5a ? code + 0x20 : code;
+}
+
+function markerMatchesAt(body: string, marker: string, index: number): boolean {
+  if (index + marker.length > body.length) return false;
+
+  for (let i = 0; i < marker.length; i += 1) {
+    if (asciiLowerCode(body.charCodeAt(index + i)) !== asciiLowerCode(marker.charCodeAt(i))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function indexOfMarker(body: string, marker: string, fromIndex = 0): number {
+  for (let i = Math.max(0, fromIndex); i <= body.length - marker.length; i += 1) {
+    if (markerMatchesAt(body, marker, i)) return i;
+  }
+  return -1;
+}
+
 export function extractManagedBlock(
   body: string,
   startMarker: string,
   endMarker: string,
 ): ManagedBlockMatch | null {
-  const lowerBody = body.toLowerCase();
-  const lowerStartMarker = startMarker.toLowerCase();
-  const lowerEndMarker = endMarker.toLowerCase();
-  const markerStart = lowerBody.indexOf(lowerStartMarker);
+  const markerStart = indexOfMarker(body, startMarker);
   if (markerStart < 0) return null;
 
   const contentStart = markerStart + startMarker.length;
-  const markerEnd = lowerBody.indexOf(lowerEndMarker, contentStart);
+  const markerEnd = indexOfMarker(body, endMarker, contentStart);
   if (markerEnd < 0) return null;
 
   const contentEnd = markerEnd;
