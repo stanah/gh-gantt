@@ -1188,6 +1188,7 @@ areas:
               href として出力しない
             status: covered
             tests:
+              - packages/ui/src/__tests__/detail-panel.test.tsx
               - packages/ui/src/__tests__/markdown-renderer.test.tsx
           - id: NFR-STABILITY-011-AC2
             description: |
