@@ -1,5 +1,5 @@
 {
-  "name": "gh-gantt",
+  "name": "gh-gantt-monorepo",
   "version": "0.2.1-alpha",
   "private": true,
   "description": "GitHub Projects Gantt chart with hierarchical progress tracking",

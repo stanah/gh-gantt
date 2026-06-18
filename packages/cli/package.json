@@ -1,22 +1,52 @@
 {
-  "name": "@gh-gantt/cli",
+  "name": "gh-gantt",
   "version": "0.2.1-alpha",
-  "private": true,
+  "description": "GitHub Projects (V2) と双方向同期し、タスクの階層・依存・進捗をガントチャートで可視化する CLI",
+  "keywords": [
+    "claude-code",
+    "cli",
+    "gantt",
+    "github",
+    "github-projects",
+    "project-management",
+    "task-management"
+  ],
+  "homepage": "https://github.com/stanah/gh-gantt#readme",
+  "bugs": {
+    "url": "https://github.com/stanah/gh-gantt/issues"
+  },
+  "license": "MIT",
+  "author": "stanah",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/stanah/gh-gantt.git",
+    "directory": "packages/cli"
+  },
   "bin": {
     "gh-gantt": "./dist/index.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "scripts": {
-    "build": "vp pack",
+    "build": "vp pack && pnpm bundle-ui",
+    "bundle-ui": "node scripts/bundle-ui.mjs",
     "dev": "vp pack --watch",
     "test": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts'",
     "test:json": "vp test run --exclude 'src/__tests__/e2e-sync.test.ts' --reporter=default --reporter=json --outputFile=../../test-results-cli.json",
     "test:e2e-sync": "vp test run src/__tests__/e2e-sync.test.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm --filter @gh-gantt/shared build && pnpm --filter @gh-gantt/ui build && pnpm build"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
-    "@gh-gantt/shared": "workspace:*",
     "@octokit/graphql": "^8.0.0",
     "cli-table3": "^0.6.5",
     "commander": "^12.0.0",
@@ -26,8 +56,13 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@gh-gantt/shared": "workspace:*",
+    "@gh-gantt/ui": "workspace:*",
     "@types/express": "^4.17.0",
     "typescript": "^5.5.0",
     "vite-plus": "^0.1.17"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

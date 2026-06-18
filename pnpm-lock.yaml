@@ -56,9 +56,6 @@ importers:
       '@asteasolutions/zod-to-openapi':
         specifier: ^7.3.4
         version: 7.3.4(zod@3.25.76)
-      '@gh-gantt/shared':
-        specifier: workspace:*
-        version: link:../shared
       '@octokit/graphql':
         specifier: ^8.0.0
         version: 8.2.2
@@ -81,6 +78,12 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
     devDependencies:
+      '@gh-gantt/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@gh-gantt/ui':
+        specifier: workspace:*
+        version: link:../ui
       '@types/express':
         specifier: ^4.17.0
         version: 4.17.25
@@ -109,7 +112,7 @@ importers:
 
   packages/smoke:
     dependencies:
-      '@gh-gantt/cli':
+      gh-gantt:
         specifier: workspace:*
         version: link:../cli
     devDependencies:

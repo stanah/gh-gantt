@@ -4,15 +4,59 @@ on:
   push:
     branches: [main]
 
+# 最小権限化のため workflow 全体ではなく job 単位で permissions を指定する。
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
+    permissions:
+      contents: write
+      pull-requests: write
     runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
     steps:
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0 を固定コミットで利用
+        id: release
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+  publish-npm:
+    permissions:
+      contents: read
+      # npm provenance を発行するために OIDC token が必要。
+      id-token: write
+    needs: release-please
+    if: needs.release-please.outputs.release_created == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.release-please.outputs.tag_name }}
+
+      - uses: voidzero-dev/setup-vp@624fe22ccfe9204a526ac8139186d34297453722 # v1
+        with:
+          node-version: "24"
+          cache: true
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          registry-url: "https://registry.npmjs.org/"
+
+      # 全ワークスペース（shared / ui / cli）をビルドしてから cli の dist を publish する。
+      # vite.config.ts の copy ステップで UI dist が cli/dist/ui/dist に同梱され、
+      # @gh-gantt/shared は alwaysBundle 設定によって cli の単一ファイルに inline される。
+      - run: vp install
+      - run: vp run build
+
+      - name: Publish gh-gantt to npm
+        working-directory: packages/cli
+        # prepublishOnly でも build が走るが、CI では上で済ませているため --ignore-scripts で重複を避ける。
+        run: npm publish --access public --provenance --ignore-scripts
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
