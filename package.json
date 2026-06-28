@@ -1,6 +1,6 @@
 {
   "name": "gh-gantt",
-  "version": "0.2.1-alpha",
+  "version": "0.3.0-alpha",
   "private": true,
   "description": "GitHub Projects Gantt chart with hierarchical progress tracking",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "lefthook": "^2.1.4",
     "tsx": "^4.21.0",
     "typedoc": "^0.28.18",
-    "vite-plus": "^0.1.24",
+    "vite-plus": "^0.1.17",
     "vitest": "4.1.8",
     "yaml": "^2.8.3",
     "zod": "^3.25.76"
