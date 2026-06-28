@@ -136,6 +136,31 @@ describe("TaskDetailPanel", () => {
     expect(html).toContain("Important description text");
   });
 
+  describe("[NFR-STABILITY-011-AC1] Markdown preview の安全化", () => {
+    it("未保存の Markdown preview はリンクとして再解釈しない", () => {
+      const task = makeTask({ body: "Initial body" });
+      const { getByRole, queryByRole } = render(
+        <TaskDetailPanel
+          task={task}
+          config={config}
+          comments={[]}
+          allTasks={[task]}
+          onUpdate={() => {}}
+          onClose={() => {}}
+          onSelectTask={() => {}}
+        />,
+      );
+
+      fireEvent.click(getByRole("button", { name: "Edit" }));
+      fireEvent.change(getByRole("textbox"), {
+        target: { value: "[draft](https://example.com)" },
+      });
+      fireEvent.click(getByRole("button", { name: "Preview" }));
+
+      expect(queryByRole("link", { name: "draft" })).toBeNull();
+    });
+  });
+
   it("[FR-VIS-022-AC1] 詳細パネルの操作ボタンにアクセシブルラベルを付与する", () => {
     const task = makeTask();
     const { getByRole } = render(

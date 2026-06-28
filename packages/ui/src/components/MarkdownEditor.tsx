@@ -20,9 +20,9 @@ export function MarkdownEditor({ value, onChange, renderPreview }: MarkdownEdito
   const previewNode = useMemo(() => {
     if (!draft.trim())
       return <span style={{ color: "var(--color-text-muted)" }}>No description</span>;
-    if (renderPreview) return renderPreview(draft);
+    if (renderPreview && !dirty) return renderPreview(value);
     return <div style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{draft}</div>;
-  }, [draft, renderPreview]);
+  }, [dirty, draft, renderPreview, value]);
 
   const tabButtonStyle = (active: boolean): React.CSSProperties => ({
     padding: "4px 10px",
