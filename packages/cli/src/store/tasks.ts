@@ -47,12 +47,14 @@ export class TasksStore {
     await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
   }
 
+  /** ファイルの存在判定。ENOENT のみ false とし、権限エラー等は再 throw する。 */
   async exists(): Promise<boolean> {
     try {
       await readFile(this.path);
       return true;
-    } catch {
-      return false;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw err;
     }
   }
 }

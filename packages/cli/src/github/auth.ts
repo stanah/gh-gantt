@@ -16,11 +16,13 @@ export async function getToken(): Promise<string> {
 
   try {
     const { stdout } = await execFileAsync("gh", ["auth", "token"]);
-    return stdout.trim();
+    const token = stdout.trim();
+    if (!token) throw new Error("gh auth token が空のトークンを返しました");
+    return token;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
-      `GitHub トークンを取得できませんでした (${message})。` +
+      `GitHub トークンを取得できませんでした (${message})。 ` +
         "GITHUB_TOKEN（または GH_TOKEN）環境変数を設定するか、gh CLI で gh auth login してください。",
     );
   }
