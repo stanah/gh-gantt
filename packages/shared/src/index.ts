@@ -10,5 +10,6 @@ export * from "./task-size.js";
 export * from "./status-dates.js";
 export * from "./dependency-graph.js";
 export * from "./project-map.js";
+export * from "./loop-state.js";
 export * from "./adr-schema.js";
 export * from "./export-renderer.js";

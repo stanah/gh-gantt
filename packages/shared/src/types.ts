@@ -1,3 +1,5 @@
+import type { LoopConfig } from "./loop-state.js";
+
 export type TaskDisplay = "bar" | "summary" | "milestone";
 export type DependencyType =
   | "finish-to-start"
@@ -179,6 +181,8 @@ export interface Config {
   sprints?: SprintConfig[];
   task_templates?: TaskTemplates;
   doctor?: DoctorConfig;
+  /** 外側ループの停止条件（ADR-016 案C / ADR-017）。未設定でも既存挙動は変わらない。 */
+  loop?: LoopConfig;
   require_review_for_types?: string[];
   require_close_evidence?: boolean;
   max_task_size_hours?: number;
