@@ -54,9 +54,13 @@ Next Actions は UI の推薦リストとして blocked タスクも候補に含
 関数であって候補集合ではない。ready フィルタ後の候補が空の場合に初めて
 枯渇分類（Decision 3）へ進む。
 
-iteration plan には選定理由
-（`why: critical_path | at_risk | unblocks_most | priority | fallback_order` と
-スコア内訳）を含め、LLM と人間が選定根拠を検証できるようにする。
+iteration plan には選定した `NextAction` を**そのまま埋め込む**
+（`score` / `category` / `reason`。`category` は既存の `NextActionCategory` =
+`unlocker | critical | risk | review_waiting | quick_win | ready`、`reason` は
+その 1 行日本語ラベル）。選定理由の語彙は `NextActionCategory` を正とし、
+独自の `why` 列挙は導入しない。スコア内訳（各成分の寄与）は iteration plan 側の
+フィールドとして LoopState スキーマ（#279）で定義し、`@gh-gantt/shared` の
+`NextAction` 型は拡張しない。これにより LLM と人間が選定根拠を検証できる。
 
 ### 2. complete は予実を記録し、スリップを検出する
 
@@ -73,14 +77,17 @@ iteration plan には選定理由
 
 ### 3. ready 枯渇を 3 状態に分類する
 
-`Config.loop.stopWhen` の `no_ready_tasks` を廃止し、以下に分割する。
+`Config.loop.stopWhen` の `no_ready_tasks` を廃止し、ready 枯渇の 3 状態に
+分割する。その他の停止条件は ADR-016 から変更なく引き継ぐ。
 
 ```yaml
 loop:
   stopWhen:
+    # --- no_ready_tasks を置き換える ready 枯渇 3 分類 ---
     - all_done # open タスク 0 → 正常終了
     - all_blocked # open はあるが ready 0 かつ全て依存・レビュー待ち → ブロッカー一覧を提示
     - backlog_needs_decomposition # 分解可能な type（type_hierarchy 上の非 leaf）の open のみ残存
+    # --- ADR-016 から変更なしで引き継ぐ停止条件 ---
     - conflicts_present
     - human_gate_required
     - budget_exhausted
