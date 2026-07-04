@@ -151,7 +151,8 @@ export function getNormalizedPriority(task: Task, config: Config): string | null
   return level in PRIORITY_WEIGHT ? level : null;
 }
 
-function getEstimateHours(task: Task, config: Config): number | null {
+/** field_mapping.estimate_hours で指定されたカスタムフィールドから見積り時間を取得する。 */
+export function getEstimateHours(task: Task, config: Config): number | null {
   const field = config.sync?.field_mapping?.estimate_hours;
   if (!field) return null;
   const raw = task.custom_fields[field];
