@@ -26,9 +26,23 @@ export const pullCommand = new Command("pull")
     const tasksStore = new TasksStore(projectRoot);
     const stateStore = new SyncStateStore(projectRoot);
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
-    const syncState = await stateStore.read();
+    let config;
+    try {
+      config = await configStore.read();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        console.error(".gantt-sync/gantt.config.json がありません。");
+        console.error("  設定をコミットしてあるリポジトリなら checkout 漏れを確認してください。");
+        console.error(
+          "  未初期化なら gh-gantt init --owner <owner> --repo <repo> --project <N> を実行してください。",
+        );
+        process.exit(1);
+      }
+      throw err;
+    }
+    // tasks.json / sync-state.json は不在なら空から開始し、GitHub だけから再構成する
+    const tasksFile = await tasksStore.readOrDefault();
+    const syncState = await stateStore.readOrDefault();
 
     // Guard: Unresolved conflicts must be resolved before next pull
     if (tasksFile.has_conflicts) {

@@ -27,6 +27,27 @@ export class SyncStateStore {
     return SyncStateSchema.parse(JSON.parse(raw));
   }
 
+  /**
+   * ファイル不在（新品クローン等）は初回同期用の空 state を返す。破損は例外のまま。
+   * last_synced_at が空のため executePull は quick-check をバイパスしフル同期する。
+   */
+  async readOrDefault(): Promise<SyncState> {
+    try {
+      return await this.read();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return {
+          last_synced_at: "",
+          project_node_id: "",
+          id_map: {},
+          field_ids: {},
+          snapshots: {},
+        };
+      }
+      throw err;
+    }
+  }
+
   async write(data: SyncState): Promise<void> {
     await mkdir(join(this.path, ".."), { recursive: true });
     await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");

@@ -84,8 +84,18 @@ export const initCommand = new Command("init")
   .option("--end-date-field <name>", "End date field name", "End Date")
   .option("--status-field <name>", "Status field name", "Status")
   .option("--type-field <name>", "Type custom field name (auto-detected if omitted)")
+  .option("--force", "既存の gantt.config.json を上書きする")
   .action(async (opts) => {
     const projectRoot = process.cwd();
+
+    // 初期化済みワークスペースの config を誤って上書きしない（--force で明示上書き）
+    if (!opts.force && (await new ConfigStore(projectRoot).exists())) {
+      console.error(".gantt-sync/gantt.config.json が既に存在します。");
+      console.error("  同期データの再構成だけなら gh-gantt pull を使ってください。");
+      console.error("  設定ごと作り直す場合は --force を指定してください。");
+      process.exit(1);
+    }
+
     console.log(`Initializing gh-gantt for ${opts.owner}/${opts.repo} project #${opts.project}...`);
 
     const gql = await createGraphQLClient();

@@ -27,6 +27,21 @@ export class TasksStore {
     return TasksFileWithConflictsSchema.parse(JSON.parse(raw)) as TasksFile;
   }
 
+  /**
+   * ファイル不在（新品クローン等）は空の初期値を返す。破損は例外のまま。
+   * エフェメラル環境で pull が GitHub だけから状態を再構成するための入口。
+   */
+  async readOrDefault(): Promise<TasksFile> {
+    try {
+      return await this.read();
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        return { tasks: [], cache: { comments: {}, reactions: {} } };
+      }
+      throw err;
+    }
+  }
+
   async write(data: TasksFile): Promise<void> {
     await mkdir(join(this.path, ".."), { recursive: true });
     await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
