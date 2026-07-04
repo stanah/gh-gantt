@@ -46,4 +46,13 @@ export class TasksStore {
     await mkdir(join(this.path, ".."), { recursive: true });
     await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
   }
+
+  async exists(): Promise<boolean> {
+    try {
+      await readFile(this.path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }

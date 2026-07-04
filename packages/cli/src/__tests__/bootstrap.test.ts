@@ -1,13 +1,21 @@
 import { describe, it, expect, afterEach } from "vitest";
-import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
+import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { getToken } from "../github/auth.js";
 
+const createdDirs: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(createdDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
 async function freshDir(): Promise<string> {
-  return mkdtemp(join(tmpdir(), "gh-gantt-bootstrap-"));
+  const dir = await mkdtemp(join(tmpdir(), "gh-gantt-bootstrap-"));
+  createdDirs.push(dir);
+  return dir;
 }
 
 describe("新品クローンからのブートストラップ（store の readOrDefault）", () => {

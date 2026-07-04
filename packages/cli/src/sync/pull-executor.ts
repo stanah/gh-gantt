@@ -214,6 +214,8 @@ export async function executePull(
         tasksFile,
         syncState: {
           ...syncState,
+          // bootstrap（sync-state 不在からの初回同期）では空のため、取得値で補完する
+          project_node_id: syncState.project_node_id || projectData.projectNodeId,
           id_map: newIdMap,
           field_ids: fieldIds,
           option_ids: optionIds,
@@ -388,6 +390,8 @@ export async function executePull(
 
   const newSyncState: SyncState = {
     ...syncState,
+    // bootstrap（sync-state 不在からの初回同期）では空のため、取得値で補完する
+    project_node_id: syncState.project_node_id || projectData.projectNodeId,
     last_synced_at: new Date().toISOString(),
     id_map: newIdMap,
     snapshots: newSnapshots,

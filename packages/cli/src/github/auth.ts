@@ -21,7 +21,7 @@ export async function getToken(): Promise<string> {
     const message = err instanceof Error ? err.message : String(err);
     throw new Error(
       `GitHub トークンを取得できませんでした (${message})。` +
-        "GITHUB_TOKEN 環境変数を設定するか、gh CLI で gh auth login してください。",
+        "GITHUB_TOKEN（または GH_TOKEN）環境変数を設定するか、gh CLI で gh auth login してください。",
     );
   }
 }

@@ -76,6 +76,11 @@ export const pullCommand = new Command("pull")
     if (result.skipped) {
       // Save updated field/option metadata even when no task changes
       await stateStore.write(newSyncState);
+      // bootstrap（tasks.json 不在）では空プロジェクトでも quick-skip され得るため、
+      // 後続の status / list が ENOENT にならないよう初期ファイルを永続化する
+      if (bootstrapping && !opts.dryRun) {
+        await tasksStore.write(newTasksFile);
+      }
 
       if (!opts.withComments && !opts.forceComments) {
         if (opts.json) {
