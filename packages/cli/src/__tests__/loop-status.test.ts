@@ -141,6 +141,22 @@ describe("buildLoopStatusReport によるループ現在地の導出", () => {
     expect(candidateIds).toContain("dep");
   });
 
+  it("子タスクを持つ親（コンテナ）は ready 件数にも候補にも含まれない", () => {
+    const tasks = [
+      baseTask({
+        id: "epic",
+        type: "task",
+        title: "コンテナ",
+        sub_tasks: ["leaf"],
+        custom_fields: { Status: "Todo" },
+      }),
+      baseTask({ id: "leaf", parent: "epic", title: "葉", custom_fields: { Status: "Todo" } }),
+    ];
+    const report = buildLoopStatusReport(null, config, tasks);
+    expect(report.readyCount).toBe(1);
+    expect(report.readyCandidates.map((c) => c.taskId)).toEqual(["leaf"]);
+  });
+
   it("ready 候補は Next Actions のスコア降順で並び selection 相当の根拠を含む", () => {
     const tasks = [
       baseTask({ id: "plain", title: "通常", custom_fields: { Status: "Todo" } }),

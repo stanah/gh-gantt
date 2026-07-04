@@ -100,7 +100,7 @@ const LoopSelectionSchema: z.ZodType<LoopSelection> = z.object({
   taskId: z.string().min(1),
   score: z.number(),
   category: z.enum(NEXT_ACTION_CATEGORIES),
-  reason: z.string(),
+  reason: z.string().min(1),
 });
 
 export const LoopIterationSchema: z.ZodType<LoopIteration> = z.object({
@@ -109,7 +109,7 @@ export const LoopIterationSchema: z.ZodType<LoopIteration> = z.object({
   completedAt: z.string().min(1).optional(),
   selectedTask: z.string().nullable(),
   selection: LoopSelectionSchema.optional(),
-  decision: z.string(),
+  decision: z.string().min(1),
   outcome: z.enum(LOOP_ITERATION_OUTCOMES).optional(),
   verifyResults: z.array(LoopVerifyResultSchema).optional(),
   reviewOutcome: z.string().nullable().optional(),

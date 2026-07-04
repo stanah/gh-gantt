@@ -40,8 +40,13 @@ export function buildLoopStatusReport(
 
   // ADR-017: decide は候補集合を ready に限定してからスコアリング関数を再利用する。
   // readiness マップを ready のみに絞って渡すことで blocked の高スコア候補を排除する。
+  // 子タスクを持つ親（コンテナ）は直接の着手対象ではないため、
+  // buildNextActions と同じ基準（leaf のみ）で件数・候補を揃える。
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
   const readyOnly = Object.fromEntries(
-    Object.entries(vm.readinessById).filter(([, r]) => r.isReady),
+    Object.entries(vm.readinessById).filter(
+      ([id, r]) => r.isReady && (taskById.get(id)?.sub_tasks.length ?? 0) === 0,
+    ),
   );
   const readyActions = buildNextActions(tasks, config, readyOnly, READY_CANDIDATE_LIMIT);
 

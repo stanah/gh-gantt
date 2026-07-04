@@ -106,6 +106,18 @@ describe("LoopStateSchema による loop-state.json の検証", () => {
     ).toThrow();
   });
 
+  it("空文字の decision / selection.reason を拒否する（直接編集の破損検知）", () => {
+    expect(() =>
+      LoopStateSchema.parse({ version: "1", iterations: [{ ...validIteration, decision: "" }] }),
+    ).toThrow();
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [{ ...validIteration, selection: { ...validIteration.selection, reason: "" } }],
+      }),
+    ).toThrow();
+  });
+
   it("id が正の整数でないイテレーションを拒否する", () => {
     expect(() =>
       LoopStateSchema.parse({ version: "1", iterations: [{ ...validIteration, id: 0 }] }),
