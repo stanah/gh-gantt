@@ -182,6 +182,23 @@ describe("buildLoopStatusReport によるループ現在地の導出", () => {
   });
 });
 
+describe("コンフリクト検出時の HARD-GATE", () => {
+  it("has_conflicts が真なら readyCandidates を提示しない", () => {
+    const tasks = [baseTask({ id: "r", title: "着手可能", custom_fields: { Status: "Todo" } })];
+    const report = buildLoopStatusReport(null, config, tasks, true);
+    expect(report.hasConflicts).toBe(true);
+    expect(report.readyCandidates).toEqual([]);
+  });
+
+  it("テキスト出力はコンフリクト警告を表示し候補一覧を出さない", () => {
+    const tasks = [baseTask({ id: "r", title: "着手可能", custom_fields: { Status: "Todo" } })];
+    const text = formatLoopStatus(buildLoopStatusReport(null, config, tasks, true));
+    expect(text).toContain("conflicts_present");
+    expect(text).toContain("gh-gantt conflicts");
+    expect(text).not.toContain("Next candidates");
+  });
+});
+
 describe("formatLoopStatus によるテキスト整形", () => {
   it("未初期化の場合はその旨と管理方法を表示する", () => {
     const text = formatLoopStatus(buildLoopStatusReport(null, config, []));

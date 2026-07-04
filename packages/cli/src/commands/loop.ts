@@ -22,10 +22,13 @@ export interface LoopStatusReport {
   iterationCount: number;
   lastIteration: LoopIteration | null;
   stop: ResolvedLoopConfig;
+  /** tasks.json に未解決コンフリクトがあるか（conflicts_present 相当）。 */
+  hasConflicts: boolean;
   readyCount: number;
   /**
    * 次の着手候補。ADR-017 に従い、候補集合を ready に限定した上で
    * Next Actions のスコアリングを適用した順で並ぶ。
+   * コンフリクト検出中は HARD-GATE（解決まで他作業禁止）に従い空になる。
    */
   readyCandidates: LoopReadyCandidate[];
 }
@@ -35,6 +38,7 @@ export function buildLoopStatusReport(
   state: LoopState | null,
   config: Config,
   tasks: Task[],
+  hasConflicts = false,
 ): LoopStatusReport {
   const vm = buildProjectMapViewModel(tasks, config);
 
@@ -56,14 +60,18 @@ export function buildLoopStatusReport(
     iterationCount: iterations.length,
     lastIteration: iterations.length > 0 ? iterations[iterations.length - 1] : null,
     stop: resolveLoopConfig(config.loop),
+    hasConflicts,
     readyCount: Object.keys(readyOnly).length,
-    readyCandidates: readyActions.map((a) => ({
-      taskId: a.task.id,
-      title: a.task.title,
-      score: a.score,
-      category: a.category,
-      reason: a.reason,
-    })),
+    // コンフリクト解決が最優先（HARD-GATE）。解決まで次の着手候補は提示しない。
+    readyCandidates: hasConflicts
+      ? []
+      : readyActions.map((a) => ({
+          taskId: a.task.id,
+          title: a.task.title,
+          score: a.score,
+          category: a.category,
+          reason: a.reason,
+        })),
   };
 }
 
@@ -92,6 +100,13 @@ export function formatLoopStatus(report: LoopStatusReport): string {
   lines.push(`  maxIterations: ${max} / onVerifyFailure: ${report.stop.onVerifyFailure}`);
 
   lines.push("");
+  if (report.hasConflicts) {
+    lines.push("!! Conflicts detected (conflicts_present)");
+    lines.push(
+      "   未解決コンフリクトがあります。gh-gantt conflicts / resolve で解決するまで次の着手候補は提示しません。",
+    );
+    return lines.join("\n");
+  }
   lines.push(`Ready tasks: ${report.readyCount}`);
   if (report.readyCandidates.length > 0) {
     lines.push("Next candidates (ready のみ, Next Actions スコア順):");
@@ -118,7 +133,12 @@ export const loopCommand = new Command("loop")
         const tasksFile = await new TasksStore(projectRoot).read();
         const state = await new LoopStateStore(projectRoot).readOrNull();
 
-        const report = buildLoopStatusReport(state, config, tasksFile.tasks);
+        const report = buildLoopStatusReport(
+          state,
+          config,
+          tasksFile.tasks,
+          tasksFile.has_conflicts === true,
+        );
         if (opts.json) {
           console.log(JSON.stringify(report, null, 2));
         } else {
