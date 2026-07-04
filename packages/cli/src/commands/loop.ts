@@ -392,7 +392,7 @@ export function parseVerifySpecs(specs: string[]): LoopVerifyResult[] {
   return specs.map((spec) => {
     const match = spec.match(/^(.+)=(pass|fail)$/);
     if (!match) {
-      throw new Error(`--verify の形式が不正です: "${spec}" ("<command>=pass|fail" で指定)`);
+      throw new UsageError(`--verify の形式が不正です: "${spec}" ("<command>=pass|fail" で指定)`);
     }
     const command = match[1];
     const attempt = (attempts.get(command) ?? 0) + 1;
@@ -457,12 +457,17 @@ export function formatLoopComplete(result: LoopCompleteResult): string {
 // commander 配線
 // ---------------------------------------------------------------------------
 
+/** ユーザー入力の誤りを示すエラー。データ破損の示唆を出さずに使い方を案内する。 */
+class UsageError extends Error {}
+
 function reportCommandError(context: string, err: unknown): void {
   const message = err instanceof Error ? err.message : String(err);
   console.error(`${context} の実行に失敗しました: ${message}`);
-  console.error(
-    "  .gantt-sync/ の設定・同期データ、または loop-state.json が破損している可能性があります。",
-  );
+  if (!(err instanceof UsageError)) {
+    console.error(
+      "  .gantt-sync/ の設定・同期データ、または loop-state.json が破損している可能性があります。",
+    );
+  }
   process.exitCode = 1;
 }
 
@@ -550,26 +555,24 @@ export const loopCommand = new Command("loop")
         async (opts: { json?: boolean; outcome: string; review?: string; verify: string[] }) => {
           try {
             if (!(COMPLETE_OUTCOMES as readonly string[]).includes(opts.outcome)) {
-              throw new Error(
+              throw new UsageError(
                 `--outcome は ${COMPLETE_OUTCOMES.join(" | ")} のいずれかで指定してください`,
               );
             }
             const { config, tasksFile, loopStore, state } = await loadStores(process.cwd());
-            if (!state) {
-              console.log(formatLoopComplete({ kind: "no_open_iteration" }));
-              process.exitCode = 1;
-              return;
-            }
-            const result = completeIteration({
-              state,
-              config,
-              tasks: tasksFile.tasks,
-              now: new Date().toISOString(),
-              outcome: opts.outcome as LoopIterationOutcome,
-              reviewOutcome: opts.review,
-              verify: parseVerifySpecs(opts.verify),
-            });
-            if (result.kind === "completed") {
+            // state 未初期化でも --json の出力形式は state ありの場合と揃える
+            const result: LoopCompleteResult = state
+              ? completeIteration({
+                  state,
+                  config,
+                  tasks: tasksFile.tasks,
+                  now: new Date().toISOString(),
+                  outcome: opts.outcome as LoopIterationOutcome,
+                  reviewOutcome: opts.review,
+                  verify: parseVerifySpecs(opts.verify),
+                })
+              : { kind: "no_open_iteration" };
+            if (result.kind === "completed" && state) {
               await loopStore.write(state);
             } else {
               process.exitCode = 1;
