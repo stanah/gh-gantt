@@ -75,7 +75,7 @@ pnpm --filter @gh-gantt/cli exec gh-gantt loop status
   （既存 config がある場合 init は中止する。上書きは `--force`）
 - `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーであり、
   不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できる
-- グローバル install（`pnpm --filter @gh-gantt/cli exec pnpm link --global`）は任意。
+- グローバル install（`pnpm add -g ./packages/cli`）は任意。
   エフェメラル環境では `pnpm --filter @gh-gantt/cli exec gh-gantt` で十分
 
 ## 開発コマンド
@@ -99,7 +99,7 @@ pnpm --filter @gh-gantt/ui test
 pnpm --filter @gh-gantt/cli exec vp test run src/__tests__/hash.test.ts
 
 # CLI をグローバルにリンク（初回 or 再ビルド後）
-pnpm build && pnpm --filter @gh-gantt/cli exec pnpm link --global
+pnpm build && pnpm add -g ./packages/cli
 ```
 
 ### CI 再現チェック

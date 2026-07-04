@@ -55,6 +55,13 @@ describe("新品クローンからのブートストラップ（store の readOr
     await writeFile(join(dir, ".gantt-sync", "tasks.json"), "{ broken");
     await expect(new TasksStore(dir).readOrDefault()).rejects.toThrow();
   });
+
+  it("破損した sync-state.json も初期値に落とさず例外にする", async () => {
+    const dir = await freshDir();
+    await mkdir(join(dir, ".gantt-sync"), { recursive: true });
+    await writeFile(join(dir, ".gantt-sync", "sync-state.json"), "{ broken");
+    await expect(new SyncStateStore(dir).readOrDefault()).rejects.toThrow();
+  });
 });
 
 describe("getToken の環境変数フォールバック", () => {
