@@ -103,18 +103,36 @@ const LoopSelectionSchema: z.ZodType<LoopSelection> = z.object({
   reason: z.string().min(1),
 });
 
-export const LoopIterationSchema: z.ZodType<LoopIteration> = z.object({
-  id: z.number().int().positive(),
-  startedAt: z.string().min(1),
-  completedAt: z.string().min(1).optional(),
-  selectedTask: z.string().nullable(),
-  selection: LoopSelectionSchema.optional(),
-  decision: z.string().min(1),
-  outcome: z.enum(LOOP_ITERATION_OUTCOMES).optional(),
-  verifyResults: z.array(LoopVerifyResultSchema).optional(),
-  reviewOutcome: z.string().nullable().optional(),
-  stopReason: z.enum(LOOP_STOP_REASONS).optional(),
-});
+export const LoopIterationSchema: z.ZodType<LoopIteration> = z
+  .object({
+    id: z.number().int().positive(),
+    startedAt: z.string().min(1),
+    completedAt: z.string().min(1).optional(),
+    selectedTask: z.string().nullable(),
+    selection: LoopSelectionSchema.optional(),
+    decision: z.string().min(1),
+    outcome: z.enum(LOOP_ITERATION_OUTCOMES).optional(),
+    verifyResults: z.array(LoopVerifyResultSchema).optional(),
+    reviewOutcome: z.string().nullable().optional(),
+    stopReason: z.enum(LOOP_STOP_REASONS).optional(),
+  })
+  .superRefine((it, ctx) => {
+    // フィールド間の不整合はジャーナルの直接編集破損とみなす
+    if (it.selection && it.selectedTask !== it.selection.taskId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["selection", "taskId"],
+        message: "selection.taskId と selectedTask が一致しません",
+      });
+    }
+    if (it.outcome === "stopped" && !it.stopReason) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["stopReason"],
+        message: "outcome が stopped のイテレーションには stopReason が必要です",
+      });
+    }
+  });
 
 export const LoopStateSchema: z.ZodType<LoopState> = z.object({
   version: z.string(),

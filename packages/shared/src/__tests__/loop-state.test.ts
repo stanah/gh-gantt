@@ -118,6 +118,38 @@ describe("LoopStateSchema による loop-state.json の検証", () => {
     ).toThrow();
   });
 
+  it("selection.taskId と selectedTask の不一致を拒否する（直接編集の破損検知）", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [{ ...validIteration, selectedTask: "stanah/gh-gantt#999" }],
+      }),
+    ).toThrow();
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [{ ...validIteration, selectedTask: null }],
+      }),
+    ).toThrow();
+  });
+
+  it("outcome が stopped なのに stopReason がないイテレーションを拒否する", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [
+          {
+            id: 2,
+            startedAt: "2026-07-04T02:00:00Z",
+            selectedTask: null,
+            decision: "停止",
+            outcome: "stopped",
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
   it("id が正の整数でないイテレーションを拒否する", () => {
     expect(() =>
       LoopStateSchema.parse({ version: "1", iterations: [{ ...validIteration, id: 0 }] }),

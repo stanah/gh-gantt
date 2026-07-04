@@ -1,6 +1,13 @@
 import { Command } from "commander";
 import { buildNextActions, buildProjectMapViewModel, resolveLoopConfig } from "@gh-gantt/shared";
-import type { Config, LoopIteration, LoopState, ResolvedLoopConfig, Task } from "@gh-gantt/shared";
+import type {
+  Config,
+  LoopIteration,
+  LoopState,
+  NextActionCategory,
+  ResolvedLoopConfig,
+  Task,
+} from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { LoopStateStore } from "../store/loop-state.js";
@@ -12,7 +19,7 @@ export interface LoopReadyCandidate {
   taskId: string;
   title: string;
   score: number;
-  category: string;
+  category: NextActionCategory;
   reason: string;
 }
 
@@ -128,21 +135,32 @@ export const loopCommand = new Command("loop")
       .description("Show outer-loop status: last iteration, stop conditions, ready candidates")
       .option("--json", "Output as JSON")
       .action(async (opts: { json?: boolean }) => {
-        const projectRoot = process.cwd();
-        const config = await new ConfigStore(projectRoot).read();
-        const tasksFile = await new TasksStore(projectRoot).read();
-        const state = await new LoopStateStore(projectRoot).readOrNull();
+        // エントリポイントは program.parse() のため、reject をここで処理しないと
+        // 未処理 rejection としてスタックトレースがそのまま表に出る
+        try {
+          const projectRoot = process.cwd();
+          const config = await new ConfigStore(projectRoot).read();
+          const tasksFile = await new TasksStore(projectRoot).read();
+          const state = await new LoopStateStore(projectRoot).readOrNull();
 
-        const report = buildLoopStatusReport(
-          state,
-          config,
-          tasksFile.tasks,
-          tasksFile.has_conflicts === true,
-        );
-        if (opts.json) {
-          console.log(JSON.stringify(report, null, 2));
-        } else {
-          console.log(formatLoopStatus(report));
+          const report = buildLoopStatusReport(
+            state,
+            config,
+            tasksFile.tasks,
+            tasksFile.has_conflicts === true,
+          );
+          if (opts.json) {
+            console.log(JSON.stringify(report, null, 2));
+          } else {
+            console.log(formatLoopStatus(report));
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`loop status の実行に失敗しました: ${message}`);
+          console.error(
+            "  .gantt-sync/ の設定・同期データ、または loop-state.json が破損している可能性があります。",
+          );
+          process.exitCode = 1;
         }
       }),
   );
