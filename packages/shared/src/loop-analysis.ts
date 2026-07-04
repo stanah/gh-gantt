@@ -61,7 +61,11 @@ export function classifyReadyExhaustion(
   if (workable.length === 0) {
     return {
       reason: "backlog_needs_decomposition",
-      decomposeCandidates: open.filter((t) => isDecomposableType(t, config)).map((t) => t.id),
+      // 分解可能 type に加え、分解不可 type なのに子を持つ不整合タスクも
+      // 直接着手できないため整理対象として提示する（出力から消さない）
+      decomposeCandidates: open
+        .filter((t) => isDecomposableType(t, config) || t.sub_tasks.length > 0)
+        .map((t) => t.id),
     };
   }
 

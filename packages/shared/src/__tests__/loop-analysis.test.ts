@@ -121,6 +121,19 @@ describe("classifyReadyExhaustion による ready 枯渇の 3 分類 (ADR-017)",
     }
   });
 
+  it("分解不可 type なのに子を持つ不整合タスクも分解候補に含まれる（出力から消えない）", () => {
+    const tasks = [
+      // type task (分解不可) だが sub_tasks を持つデータ不整合
+      baseTask({ id: "odd-parent", sub_tasks: ["child"], custom_fields: { Status: "Todo" } }),
+      baseTask({ id: "child", parent: "odd-parent", state: "closed" }),
+    ];
+    const result = classify(tasks);
+    expect(result?.reason).toBe("backlog_needs_decomposition");
+    if (result?.reason === "backlog_needs_decomposition") {
+      expect(result.decomposeCandidates).toContain("odd-parent");
+    }
+  });
+
   it("子を持つ epic と完了済みの子だけなら backlog_needs_decomposition（追加の分解が必要）", () => {
     const tasks = [
       baseTask({

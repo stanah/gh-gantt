@@ -69,6 +69,17 @@ function toCandidate(action: {
   };
 }
 
+/**
+ * ローカルタイムゾーンの今日 (YYYY-MM-DD)。
+ * UI の遅延判定（date-utils）とタイムゾーン基準を揃える。
+ */
+function localToday(): string {
+  const d = new Date();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
 /** イテレーション所要時間（時間単位・小数 1 桁）。日時が不正なら null。 */
 function durationHours(startedAt: string, completedAt: string): number | null {
   const start = Date.parse(startedAt);
@@ -115,7 +126,7 @@ export function buildLoopStatusReport(
   config: Config,
   tasks: Task[],
   hasConflicts = false,
-  today: string = new Date().toISOString().slice(0, 10),
+  today: string = localToday(),
 ): LoopStatusReport {
   const { vm, readyOnly, readyActions } = selectReadyCandidates(config, tasks);
 
