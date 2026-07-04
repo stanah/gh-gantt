@@ -182,6 +182,59 @@ describe("buildLoopStatusReport によるループ現在地の導出", () => {
   });
 });
 
+describe("スリップ検出と予実の表示 (ADR-017)", () => {
+  const today = "2026-07-04";
+
+  it("期日超過タスクが slips に載り、テキストに警告が出る", () => {
+    const tasks = [
+      baseTask({
+        id: "late",
+        title: "遅延中",
+        end_date: "2026-07-01",
+        custom_fields: { Status: "Todo" },
+      }),
+    ];
+    const report = buildLoopStatusReport(null, config, tasks, false, today);
+    expect(report.slips).toEqual([{ taskId: "late", title: "遅延中", kind: "overdue", days: 3 }]);
+    const text = formatLoopStatus(report);
+    expect(text).toContain("Schedule slips");
+    expect(text).toContain("期日超過 3日");
+    expect(text).toContain("gh-gantt update");
+  });
+
+  it("直近の完了イテレーションの所要と見積が表示される", () => {
+    const tasks = [baseTask({ id: "stanah/gh-gantt#279", custom_fields: { Status: "Todo" } })];
+    const report = buildLoopStatusReport(sampleState, config, tasks, false, today);
+    expect(report.lastActual).toEqual({
+      iterationId: 1,
+      taskId: "stanah/gh-gantt#279",
+      durationHours: 1,
+      estimateHours: null,
+    });
+    expect(formatLoopStatus(report)).toContain("所要 1h / 見積 未設定");
+  });
+
+  it("全ブロック時は exhaustion にブロッカー一覧が載る", () => {
+    const tasks = [
+      baseTask({ id: "dep", custom_fields: { Status: "Todo" } }),
+      baseTask({
+        id: "b",
+        blocked_by: [{ task: "外部", type: "finish-to-start", lag: 0 }],
+        custom_fields: { Status: "Todo" },
+      }),
+    ];
+    // dep 自体は ready なので枯渇にはならない
+    expect(buildLoopStatusReport(null, config, tasks, false, today).exhaustion).toBeNull();
+
+    const allBlocked = [tasks[1]];
+    const report = buildLoopStatusReport(null, config, allBlocked, false, today);
+    expect(report.exhaustion?.reason).toBe("all_blocked");
+    const text = formatLoopStatus(report);
+    expect(text).toContain("all_blocked");
+    expect(text).toContain("blocked by: 外部");
+  });
+});
+
 describe("コンフリクト検出時の HARD-GATE", () => {
   it("has_conflicts が真なら readyCandidates を提示しない", () => {
     const tasks = [baseTask({ id: "r", title: "着手可能", custom_fields: { Status: "Todo" } })];
