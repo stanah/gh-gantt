@@ -144,3 +144,42 @@ describe("[Issue #157] pull pre-check", () => {
     }
   });
 });
+
+describe("bootstrap（sync-state 不在からの初回同期）", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockFetchRepoMeta.mockResolvedValue({
+      labelMap: new Map(),
+      milestoneMap: new Map(),
+      milestones: [],
+    });
+    mockFetchProject.mockResolvedValue({
+      projectNodeId: "PVT_1",
+      projectTitle: "Test",
+      fields: [],
+      items: [],
+    });
+  });
+
+  it("空の sync-state からの pull は pre-check をバイパスし project_node_id を取得値で補完する", async () => {
+    const syncState: SyncState = {
+      last_synced_at: "",
+      project_node_id: "",
+      id_map: {},
+      field_ids: {},
+      snapshots: {},
+    };
+
+    const { syncState: newState } = await executePull(
+      gql as any,
+      makeConfig(),
+      makeEmptyTasksFile(),
+      syncState,
+    );
+
+    expect(mockCheckRemote).not.toHaveBeenCalled();
+    expect(mockFetchProject).toHaveBeenCalledOnce();
+    // 空のまま永続化すると後続の push（addProjectItem 等）が壊れる
+    expect(newState.project_node_id).toBe("PVT_1");
+  });
+});
