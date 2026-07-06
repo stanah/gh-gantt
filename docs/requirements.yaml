@@ -232,7 +232,7 @@ areas:
         summary: コマンド体系
         acceptance_criteria:
           - id: FR-CLI-006-AC1
-            description: init/pull/push/status/create/list/show/update/link/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている
+            description: init/pull/push/status/create/list/show/update/link/delete/context/sprint/serve/conflicts/resolve/ac/loop コマンドが定義されている
             status: covered
             tests:
               - packages/cli/src/__tests__/command-structure.test.ts
@@ -429,6 +429,15 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/task-close-evidence.test.ts
+      - id: FR-CLI-017
+        summary: 誤作成 Issue の transactional delete
+        acceptance_criteria:
+          - id: FR-CLI-017-AC1
+            description: delete command は誤作成 Issue と mirror 参照を transactional に取り消せる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-structure.test.ts
+              - packages/cli/src/__tests__/delete-command.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層
