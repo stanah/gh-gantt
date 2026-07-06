@@ -90,6 +90,17 @@ Evidence: コマンド出力をそのまま提示する。
 17. **★`on_session_end`** — workflow.md の該当セクションを実行
 18. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
+## 自律ループモード
+
+人間との対話なしで複数タスクを連続処理する場合（Claude Code の /loop 等）は、
+タスク選定・停止判定・実績記録を `gh-gantt loop` コマンドに委ねる。
+1 イテレーションの手順と停止条件は [references/autonomous-loop.md](references/autonomous-loop.md) を参照。
+
+- 選定は `gh-gantt loop next` — デフォルトフローのステップ 3〜5（一覧表示 → ユーザー選択 →
+  status 更新）を置き換え、作業粒度の ready を Next Actions スコア順で決定論的に選定する
+- 実績記録と status 更新は `gh-gantt loop complete --task-status <status>`
+- 現在地の確認は `gh-gantt loop status`（直近イテレーション・停止条件・スリップ・次候補）
+
 ## Red Flags
 
 | やりがちなこと                                                 | 問題                                                             |

@@ -3,6 +3,7 @@ import {
   buildNextActions,
   buildProjectMapViewModel,
   classifyReadyExhaustion,
+  computeStatusDateUpdates,
   createEmptyLoopState,
   detectScheduleSlips,
   getEstimateHours,
@@ -21,9 +22,11 @@ import type {
   ResolvedLoopConfig,
   ScheduleSlip,
   Task,
+  TasksFile,
 } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
+import { SyncStateStore } from "../store/state.js";
 import { LoopStateStore } from "../store/loop-state.js";
 
 /** ready 候補として表示する件数。 */
@@ -67,6 +70,26 @@ function toCandidate(action: {
     category: action.category,
     reason: action.reason,
   };
+}
+
+/** stale とみなす同期経過時間（時間）。 */
+const SYNC_STALE_THRESHOLD_HOURS = 24;
+
+/**
+ * 同期の鮮度を判定する（observe の一部）。
+ * never（初回同期がまだ）の場合、ローカルの空状態を all_done と誤判定し得るため
+ * loop next は選定に進まず pull を要求する。
+ */
+export function assessSyncFreshness(
+  lastSyncedAt: string,
+  now: string,
+  thresholdHours: number = SYNC_STALE_THRESHOLD_HOURS,
+): "never" | "stale" | "fresh" {
+  if (!lastSyncedAt) return "never";
+  const synced = Date.parse(lastSyncedAt);
+  const current = Date.parse(now);
+  if (!Number.isFinite(synced) || !Number.isFinite(current)) return "stale";
+  return current - synced > thresholdHours * 3_600_000 ? "stale" : "fresh";
 }
 
 /**
@@ -247,6 +270,7 @@ export function formatLoopStatus(report: LoopStatusReport): string {
 // ---------------------------------------------------------------------------
 
 export type LoopNextResult =
+  | { kind: "sync_required" }
   | { kind: "open_iteration"; openIterationId: number }
   | {
       kind: "stopped";
@@ -275,9 +299,16 @@ export function decideNextIteration(params: {
   tasks: Task[];
   hasConflicts: boolean;
   now: string;
+  /** sync-state の last_synced_at。空（未同期）なら選定せず pull を要求する。 */
+  lastSyncedAt?: string;
   decision?: string;
 }): LoopNextResult {
-  const { state, config, tasks, hasConflicts, now, decision } = params;
+  const { state, config, tasks, hasConflicts, now, lastSyncedAt, decision } = params;
+
+  // 一度も同期していないローカル状態は空であり、all_done と誤判定し得る
+  if (lastSyncedAt !== undefined && assessSyncFreshness(lastSyncedAt, now) === "never") {
+    return { kind: "sync_required" };
+  }
 
   const last = state.iterations.length > 0 ? state.iterations[state.iterations.length - 1] : null;
   if (last && last.selectedTask !== null && last.completedAt === undefined && !last.outcome) {
@@ -336,6 +367,12 @@ export function decideNextIteration(params: {
 }
 
 export function formatLoopNext(result: LoopNextResult): string {
+  if (result.kind === "sync_required") {
+    return [
+      "初回同期がまだです（sync-state が空）。",
+      "gh-gantt pull を実行してから loop next を再実行してください。",
+    ].join("\n");
+  }
   if (result.kind === "open_iteration") {
     return [
       `イテレーション #${result.openIterationId} が未完了です。`,
@@ -413,6 +450,38 @@ export function parseVerifySpecs(specs: string[]): LoopVerifyResult[] {
 }
 
 /**
+ * タスクの status をローカルで更新する（tasksFile を直接更新する）。
+ * status 遷移に伴う start/end date の自動更新（computeStatusDateUpdates）も適用する。
+ * GitHub への反映は gh-gantt push が担う（sync 規律に従う）。
+ */
+export function applyTaskStatus(
+  tasksFile: TasksFile,
+  taskId: string,
+  status: string,
+  config: Config,
+): Task {
+  if (!config.statuses.values[status]) {
+    throw new UsageError(
+      `不明な status です: "${status}"。利用可能: ${Object.keys(config.statuses.values).join(", ")}`,
+    );
+  }
+  const task = tasksFile.tasks.find((t) => t.id === taskId);
+  if (!task) {
+    throw new UsageError(`タスク ${taskId} が tasks.json に見つかりません`);
+  }
+  const statusField = config.statuses.field_name;
+  const oldStatus = task.custom_fields[statusField] as string | undefined;
+  task.custom_fields = { ...task.custom_fields, [statusField]: status };
+  const dateUpdates = computeStatusDateUpdates(oldStatus, status, config.statuses.values, {
+    start_date: task.start_date,
+    end_date: task.end_date,
+  });
+  if (dateUpdates.start_date) task.start_date = dateUpdates.start_date;
+  if (dateUpdates.end_date) task.end_date = dateUpdates.end_date;
+  return task;
+}
+
+/**
  * 直近の開いたイテレーションに実績を記録する（state を直接更新する）。
  */
 export function completeIteration(params: {
@@ -484,10 +553,12 @@ function reportCommandError(context: string, err: unknown): void {
 
 async function loadStores(projectRoot: string) {
   const config = await new ConfigStore(projectRoot).read();
-  const tasksFile = await new TasksStore(projectRoot).read();
+  const tasksStore = new TasksStore(projectRoot);
+  const tasksFile = await tasksStore.read();
+  const syncState = await new SyncStateStore(projectRoot).readOrDefault();
   const loopStore = new LoopStateStore(projectRoot);
   const state = await loopStore.readOrNull();
-  return { config, tasksFile, loopStore, state };
+  return { config, tasksStore, tasksFile, syncState, loopStore, state };
 }
 
 export const loopCommand = new Command("loop")
@@ -520,14 +591,24 @@ export const loopCommand = new Command("loop")
       .option("--decision <text>", "このイテレーションでやることの要約を上書きする")
       .action(async (opts: { json?: boolean; decision?: string }) => {
         try {
-          const { config, tasksFile, loopStore, state } = await loadStores(process.cwd());
+          const { config, tasksFile, syncState, loopStore, state } = await loadStores(
+            process.cwd(),
+          );
+          const now = new Date().toISOString();
+          // observe: 同期の鮮度確認（stale なら警告して続行、never は選定を拒否）
+          if (assessSyncFreshness(syncState.last_synced_at, now) === "stale") {
+            console.warn(
+              `⚠ 最終同期から ${SYNC_STALE_THRESHOLD_HOURS} 時間以上経過しています。gh-gantt pull の実行を推奨します。`,
+            );
+          }
           const current = state ?? createEmptyLoopState();
           const result = decideNextIteration({
             state: current,
             config,
             tasks: tasksFile.tasks,
             hasConflicts: tasksFile.has_conflicts === true,
-            now: new Date().toISOString(),
+            now,
+            lastSyncedAt: syncState.last_synced_at,
             decision: opts.decision,
           });
 
@@ -540,7 +621,9 @@ export const loopCommand = new Command("loop")
           }
 
           console.log(opts.json ? JSON.stringify(result, null, 2) : formatLoopNext(result));
-          if (result.kind === "open_iteration") process.exitCode = 1;
+          if (result.kind === "open_iteration" || result.kind === "sync_required") {
+            process.exitCode = 1;
+          }
         } catch (err) {
           reportCommandError("loop next", err);
         }
@@ -557,20 +640,32 @@ export const loopCommand = new Command("loop")
       )
       .option("--review <text>", "レビュー結果の要約")
       .option(
+        "--task-status <status>",
+        "選定タスクの status をローカル更新する（GitHub への反映は gh-gantt push）",
+      )
+      .option(
         "--verify <spec>",
         '検証結果 "<command>=pass|fail"（繰り返し指定可、attempt は指定順で採番）',
         (value: string, previous: string[]) => [...previous, value],
         [] as string[],
       )
       .action(
-        async (opts: { json?: boolean; outcome: string; review?: string; verify: string[] }) => {
+        async (opts: {
+          json?: boolean;
+          outcome: string;
+          review?: string;
+          taskStatus?: string;
+          verify: string[];
+        }) => {
           try {
             if (!(COMPLETE_OUTCOMES as readonly string[]).includes(opts.outcome)) {
               throw new UsageError(
                 `--outcome は ${COMPLETE_OUTCOMES.join(" | ")} のいずれかで指定してください`,
               );
             }
-            const { config, tasksFile, loopStore, state } = await loadStores(process.cwd());
+            const { config, tasksStore, tasksFile, loopStore, state } = await loadStores(
+              process.cwd(),
+            );
             // state 未初期化でも --json の出力形式は state ありの場合と揃える
             const result: LoopCompleteResult = state
               ? completeIteration({
@@ -585,10 +680,20 @@ export const loopCommand = new Command("loop")
               : { kind: "no_open_iteration" };
             if (result.kind === "completed" && state) {
               await loopStore.write(state);
+              // journal 記録と status 更新を 1 コマンドで原子的に行う（ADR-016 案A）
+              if (opts.taskStatus && result.iteration.selectedTask) {
+                applyTaskStatus(tasksFile, result.iteration.selectedTask, opts.taskStatus, config);
+                await tasksStore.write(tasksFile);
+              }
             } else {
               process.exitCode = 1;
             }
             console.log(opts.json ? JSON.stringify(result, null, 2) : formatLoopComplete(result));
+            if (result.kind === "completed" && opts.taskStatus) {
+              console.log(
+                `task status を "${opts.taskStatus}" に更新しました。gh-gantt push で GitHub に反映してください。`,
+              );
+            }
           } catch (err) {
             reportCommandError("loop complete", err);
           }

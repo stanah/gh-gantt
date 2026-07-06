@@ -232,6 +232,26 @@ gh-gantt link <id> [--blocked-by <id>] [--unblock <id>] \
 
 ---
 
+## loop
+
+外側ループ（ADR-016 / ADR-017）の観測・選定・実績記録。ジャーナルは `.gantt-sync/loop-state.json`（直接編集禁止）。
+
+```bash
+gh-gantt loop status [--json]     # 直近イテレーション・停止条件・スリップ・ready 候補
+gh-gantt loop next [--json] [--decision <text>]
+gh-gantt loop complete [--json] [--outcome completed|verify_failed|abandoned] \
+  [--review <text>] [--verify "<command>=pass|fail"]... [--task-status <status>]
+```
+
+- `next` は作業粒度（コンテナ・分解可能 type を除く）の ready を Next Actions スコア順で選定し、
+  ジャーナルに追記する。選定できない場合は停止理由（all_done / all_blocked /
+  backlog_needs_decomposition / conflicts_present / budget_exhausted）を記録する。
+  未同期（sync-state が空）の場合は選定せず pull を要求する
+- `complete` は開いているイテレーションに completedAt / outcome / verifyResults を記録し、
+  所要 vs 見積の予実を表示する。`--task-status` で選定タスクの status をローカル更新
+  （GitHub への反映は `gh-gantt push`）
+- 自律実行の手順は [autonomous-loop.md](autonomous-loop.md) を参照
+
 ## タスクタイプ（task_types）
 
 gh-gantt はタスクの種類（epic, task, feature 等）を `gantt.config.json` の `task_types` で管理する。

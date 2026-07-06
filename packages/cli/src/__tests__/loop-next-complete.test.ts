@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import type { Config, LoopState, Task } from "@gh-gantt/shared";
 import { createEmptyLoopState } from "@gh-gantt/shared";
 import {
+  applyTaskStatus,
+  assessSyncFreshness,
   completeIteration,
   decideNextIteration,
   formatLoopNext,
@@ -301,5 +303,74 @@ describe("parseVerifySpecs による --verify のパース", () => {
   it("形式が不正ならエラーになる", () => {
     expect(() => parseVerifySpecs(["pnpm test"])).toThrow(/形式が不正/);
     expect(() => parseVerifySpecs(["pnpm test=ok"])).toThrow(/形式が不正/);
+  });
+});
+
+describe("assessSyncFreshness による同期鮮度の判定 (observe)", () => {
+  it("last_synced_at が空なら never（初回同期がまだ）", () => {
+    expect(assessSyncFreshness("", NOW)).toBe("never");
+  });
+
+  it("閾値内なら fresh、超過なら stale", () => {
+    expect(assessSyncFreshness("2026-07-04T09:00:00Z", NOW)).toBe("fresh");
+    expect(assessSyncFreshness("2026-07-01T00:00:00Z", NOW)).toBe("stale");
+  });
+
+  it("閾値は時間単位で指定できる", () => {
+    expect(assessSyncFreshness("2026-07-04T07:00:00Z", NOW, 2)).toBe("stale");
+    expect(assessSyncFreshness("2026-07-04T09:00:00Z", NOW, 2)).toBe("fresh");
+  });
+});
+
+describe("未同期時の loop next", () => {
+  it("lastSyncedAt が空なら選定せず sync_required を返す（空状態の all_done 誤判定を防ぐ）", () => {
+    const result = decideNextIteration({
+      state: createEmptyLoopState(),
+      config,
+      tasks: [],
+      hasConflicts: false,
+      now: NOW,
+      lastSyncedAt: "",
+    });
+    expect(result).toEqual({ kind: "sync_required" });
+    expect(formatLoopNext(result)).toContain("gh-gantt pull");
+  });
+
+  it("同期済みなら通常どおり選定する", () => {
+    const result = decideNextIteration({
+      state: createEmptyLoopState(),
+      config,
+      tasks: readyTasks(),
+      hasConflicts: false,
+      now: NOW,
+      lastSyncedAt: "2026-07-04T09:00:00Z",
+    });
+    expect(result.kind).toBe("selected");
+  });
+});
+
+describe("applyTaskStatus によるローカル status 更新", () => {
+  const makeTasksFile = () => ({
+    tasks: [baseTask({ id: "t1", custom_fields: { Status: "Todo" } })],
+    cache: { comments: {}, reactions: {} },
+  });
+
+  it("status を更新し、done への遷移で end_date が自動設定される", () => {
+    const tasksFile = makeTasksFile();
+    const task = applyTaskStatus(tasksFile, "t1", "Done", config);
+    expect(task.custom_fields.Status).toBe("Done");
+    expect(task.end_date).not.toBeNull();
+  });
+
+  it("config に存在しない status はエラーになる", () => {
+    expect(() => applyTaskStatus(makeTasksFile(), "t1", "Unknown", config)).toThrow(
+      /不明な status/,
+    );
+  });
+
+  it("存在しないタスク ID はエラーになる", () => {
+    expect(() => applyTaskStatus(makeTasksFile(), "missing", "Done", config)).toThrow(
+      /見つかりません/,
+    );
   });
 });
