@@ -29,6 +29,32 @@
    （`gh-gantt-pr` と [PR レビューサイクル](pr-review-cycle.md) に従う）
 6. 手順 1 に戻る
 
+## センサー結線（検証とループの接続）
+
+検証（`verifyCommands` / dev-role の executor gate, ADR-014）は外側ループのセンサーであり、
+検証失敗は**新規 Issue 化せず、同一イテレーション内の retry** として扱う
+（`loop.onVerifyFailure: retry`, ADR-016 案D）。
+
+- リトライ予算は dev-role の `maxExecutorRetries` に従う。予算内に合格しなければ
+  `--outcome verify_failed` で記録して次の decide に進む
+- 各試行は `--verify "<command>=pass|fail"` で失敗分も含めて漏れなく記録する
+  （attempt は指定順で採番）。記録した attempt 分布が
+  `gh-gantt loop status` の Loop metrics（改善反復ヒストグラム・停滞警告）の入力になる
+- Living Documentation 採用プロジェクト（ADR-012）では、各イテレーションの record 前に
+  `pnpm req:trace` → `pnpm req:validate` を 1 回実行して要件トレーサビリティの陳腐化を防ぎ、
+  結果を `--verify "req:validate=pass"` として記録する
+
+## メトリクスと停滞への対応
+
+`gh-gantt loop status` はジャーナルから以下を提示する：
+
+- outcomes 内訳と verify 反復ヒストグラム（何回目の試行で合格したか・失敗からの回復数）
+- ⚠ 停滞警告: 直近 2 イテレーション以上の連続失敗（verify_failed / abandoned）、
+  同一タスクが 2 回以上選定されて未完了
+
+停滞警告が出たら同じアプローチの繰り返しをやめ、タスクの分解（`gh-gantt-decompose`）、
+依存関係の見直し、人間への相談のいずれかに切り替える。
+
 ## 停止条件（stopReason）と対応
 
 | stopReason                    | 意味                              | 次の一手                                |

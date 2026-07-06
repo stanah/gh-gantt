@@ -237,7 +237,7 @@ gh-gantt link <id> [--blocked-by <id>] [--unblock <id>] \
 外側ループ（ADR-016 / ADR-017）の観測・選定・実績記録。ジャーナルは `.gantt-sync/loop-state.json`（直接編集禁止）。
 
 ```bash
-gh-gantt loop status [--json]     # 直近イテレーション・停止条件・スリップ・ready 候補
+gh-gantt loop status [--json]     # 直近イテレーション・停止条件・スリップ・メトリクス・ready 候補
 gh-gantt loop next [--json] [--decision <text>]
 gh-gantt loop complete [--json] [--outcome completed|verify_failed|abandoned] \
   [--review <text>] [--verify "<command>=pass|fail"]... [--task-status <status>]
@@ -250,7 +250,9 @@ gh-gantt loop complete [--json] [--outcome completed|verify_failed|abandoned] \
 - `complete` は開いているイテレーションに completedAt / outcome / verifyResults を記録し、
   所要 vs 見積の予実を表示する。`--task-status` で選定タスクの status をローカル更新
   （GitHub への反映は `gh-gantt push`）
-- 自律実行の手順は [autonomous-loop.md](autonomous-loop.md) を参照
+- `status` はジャーナルからループメトリクス（outcome 内訳・verify 反復ヒストグラム・
+  停滞警告）も提示する
+- 自律実行の手順と検証（センサー）の結線は [autonomous-loop.md](autonomous-loop.md) を参照
 
 ## タスクタイプ（task_types）
 

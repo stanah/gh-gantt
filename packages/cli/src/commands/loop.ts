@@ -3,17 +3,20 @@ import {
   buildNextActions,
   buildProjectMapViewModel,
   classifyReadyExhaustion,
+  computeLoopMetrics,
   computeStatusDateUpdates,
   createEmptyLoopState,
   detectScheduleSlips,
   getEstimateHours,
   isWorkableTask,
   resolveLoopConfig,
+  STAGNATION_FAILURE_STREAK_THRESHOLD,
 } from "@gh-gantt/shared";
 import type {
   Config,
   LoopIteration,
   LoopIterationOutcome,
+  LoopMetrics,
   LoopState,
   LoopStopReason,
   LoopVerifyResult,
@@ -134,6 +137,8 @@ export interface LoopStatusReport {
   slips: ScheduleSlip[];
   /** ready 枯渇の分類（ready 候補がある場合は null）。 */
   exhaustion: ReadyExhaustion | null;
+  /** ジャーナルから算出したループメトリクス（停滞検出・改善反復、ADR-016 案D）。 */
+  metrics: LoopMetrics;
   readyCount: number;
   /**
    * 次の着手候補。ADR-017 に従い、候補集合を作業粒度かつ ready に限定した上で
@@ -181,10 +186,52 @@ export function buildLoopStatusReport(
     hasConflicts,
     slips: detectScheduleSlips(tasks, config, today),
     exhaustion: classifyReadyExhaustion(tasks, config, vm.readinessById),
+    metrics: computeLoopMetrics(state),
     readyCount: Object.keys(readyOnly).length,
     // コンフリクト解決が最優先（HARD-GATE）。解決まで次の着手候補は提示しない。
     readyCandidates: hasConflicts ? [] : readyActions.map(toCandidate),
   };
+}
+
+/** outcome の表示順（LOOP_ITERATION_OUTCOMES と同順）。 */
+const OUTCOME_DISPLAY_ORDER: readonly LoopIterationOutcome[] = [
+  "completed",
+  "verify_failed",
+  "abandoned",
+  "stopped",
+];
+
+/** ループメトリクス（停滞検出・改善反復、ADR-016 案D）の表示行を組み立てる。 */
+function formatLoopMetricsLines(metrics: LoopMetrics): string[] {
+  const lines: string[] = [];
+  const outcomes = OUTCOME_DISPLAY_ORDER.filter((o) => (metrics.outcomeCounts[o] ?? 0) > 0).map(
+    (o) => `${o} ${metrics.outcomeCounts[o]}`,
+  );
+  const attempts = Object.entries(metrics.verifyAttemptHistogram)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([attempt, count]) => `${attempt}回 ${count}件`);
+
+  if (outcomes.length > 0 || attempts.length > 0) {
+    lines.push("");
+    lines.push("Loop metrics:");
+    if (outcomes.length > 0) lines.push(`  outcomes: ${outcomes.join(" / ")}`);
+    if (attempts.length > 0) {
+      const recovered =
+        metrics.recoveredCount > 0 ? ` (失敗から回復 ${metrics.recoveredCount}件)` : "";
+      lines.push(`  verify 反復: ${attempts.join(", ")}${recovered}`);
+    }
+  }
+
+  // 停滞シグナルは閾値以上のときだけ警告として表示する
+  if (metrics.currentFailureStreak >= STAGNATION_FAILURE_STREAK_THRESHOLD) {
+    lines.push(
+      `  ⚠ 停滞: 直近 ${metrics.currentFailureStreak} イテレーション連続で失敗しています (verify_failed / abandoned)`,
+    );
+  }
+  for (const t of metrics.repeatedTasks) {
+    lines.push(`  ⚠ 停滞: ${t.taskId} は ${t.selections} 回選定されましたが未完了です`);
+  }
+  return lines;
 }
 
 /** レポートを人間向けテキストに整形する。 */
@@ -217,6 +264,8 @@ export function formatLoopStatus(report: LoopStatusReport): string {
   const max = report.stop.maxIterations === null ? "unlimited" : String(report.stop.maxIterations);
   lines.push(`Stop conditions: ${report.stop.stopWhen.join(", ")}`);
   lines.push(`  maxIterations: ${max} / onVerifyFailure: ${report.stop.onVerifyFailure}`);
+
+  lines.push(...formatLoopMetricsLines(report.metrics));
 
   if (report.slips.length > 0) {
     lines.push("");

@@ -304,3 +304,68 @@ describe("LoopStateStore によるジャーナルの読み書き", () => {
     await expect(new LoopStateStore(dir).readOrNull()).rejects.toThrow();
   });
 });
+
+describe("ループメトリクスの提示 (ADR-016 案D)", () => {
+  const failingState: LoopState = {
+    version: "1",
+    iterations: [
+      {
+        id: 1,
+        startedAt: "2026-07-04T00:00:00Z",
+        completedAt: "2026-07-04T01:00:00Z",
+        selectedTask: "T-A",
+        decision: "初回実装",
+        outcome: "completed",
+        verifyResults: [
+          { command: "pnpm test", passed: false, attempt: 1 },
+          { command: "pnpm test", passed: true, attempt: 2 },
+        ],
+      },
+      {
+        id: 2,
+        startedAt: "2026-07-05T00:00:00Z",
+        completedAt: "2026-07-05T01:00:00Z",
+        selectedTask: "T-B",
+        decision: "難所 1 回目",
+        outcome: "verify_failed",
+      },
+      {
+        id: 3,
+        startedAt: "2026-07-05T02:00:00Z",
+        completedAt: "2026-07-05T03:00:00Z",
+        selectedTask: "T-B",
+        decision: "難所 2 回目",
+        outcome: "abandoned",
+      },
+    ],
+  };
+
+  it("レポートにジャーナル由来のメトリクスが含まれる", () => {
+    const report = buildLoopStatusReport(failingState, config, []);
+    expect(report.metrics.totalIterations).toBe(3);
+    expect(report.metrics.outcomeCounts).toEqual({
+      completed: 1,
+      verify_failed: 1,
+      abandoned: 1,
+    });
+    expect(report.metrics.verifyAttemptHistogram).toEqual({ 2: 1 });
+    expect(report.metrics.recoveredCount).toBe(1);
+    expect(report.metrics.currentFailureStreak).toBe(2);
+    expect(report.metrics.repeatedTasks).toEqual([{ taskId: "T-B", selections: 2 }]);
+  });
+
+  it("整形出力に outcomes と verify 反復、停滞警告が含まれる", () => {
+    const text = formatLoopStatus(buildLoopStatusReport(failingState, config, []));
+    expect(text).toContain("Loop metrics:");
+    expect(text).toContain("outcomes: completed 1 / verify_failed 1 / abandoned 1");
+    expect(text).toContain("verify 反復: 2回 1件 (失敗から回復 1件)");
+    expect(text).toContain("⚠ 停滞: 直近 2 イテレーション連続で失敗しています");
+    expect(text).toContain("⚠ 停滞: T-B は 2 回選定されましたが未完了です");
+  });
+
+  it("ジャーナルが空なら metrics セクションも停滞警告も出さない", () => {
+    const text = formatLoopStatus(buildLoopStatusReport(createEmptyLoopState(), config, []));
+    expect(text).not.toContain("Loop metrics:");
+    expect(text).not.toContain("停滞");
+  });
+});
