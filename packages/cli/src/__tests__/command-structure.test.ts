@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildProgram } from "../program.js";
 
-describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/close/context/sprint/serve/conflicts/resolve/ac コマンドが定義されている", () => {
+describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/delete/close/context/sprint/serve/conflicts/resolve/ac/loop コマンドが定義されている", () => {
   const program = buildProgram();
   const commandNames = program.commands.map((c) => c.name());
 
@@ -32,6 +32,12 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/cl
     expect(closeCommand.options.map((option) => option.long)).toContain("--evidence");
   });
 
+  it("[FR-CLI-017-AC1] delete がトップレベルコマンドとして定義され --yes を要求できる", () => {
+    expect(commandNames).toContain("delete");
+    const deleteCommand = program.commands.find((c) => c.name() === "delete")!;
+    expect(deleteCommand.options.map((option) => option.long)).toContain("--yes");
+  });
+
   it("context がトップレベルコマンドとして定義されている", () => {
     expect(commandNames).toContain("context");
   });
@@ -60,6 +66,7 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/cl
       "create",
       "conflicts",
       "resolve",
+      "loop",
     ]) {
       expect(commandNames).toContain(name);
     }

@@ -57,6 +57,7 @@ gh-gantt list                         # List tasks
 gh-gantt show <id>                    # Show task details
 gh-gantt update <id>                  # Update a task
 gh-gantt link <id>                    # Manage dependencies and parent relationships
+gh-gantt delete <id> --yes            # Delete an issue task and reconcile the mirror
 gh-gantt create                       # Create a new draft task locally
 ```
 

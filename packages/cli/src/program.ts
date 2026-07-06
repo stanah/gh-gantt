@@ -18,6 +18,7 @@ import { sprintCommand } from "./commands/sprint.js";
 import { acceptanceCriteriaCommand } from "./commands/ac.js";
 import { exportCommand } from "./commands/export.js";
 import { loopCommand } from "./commands/loop.js";
+import { deleteCommand } from "./commands/delete.js";
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -38,6 +39,7 @@ export function buildProgram(): Command {
   program.addCommand(acceptanceCriteriaCommand);
   program.addCommand(exportCommand);
   program.addCommand(loopCommand);
+  program.addCommand(deleteCommand);
 
   // Flattened task commands (formerly under `task` subcommand)
   program.addCommand(createTaskListCommand());
