@@ -14,7 +14,7 @@ export const STAGNATION_RESELECTION_THRESHOLD = 2;
 /** 複数回選定されたが完了に至っていないタスク（停滞候補）。 */
 export interface LoopRepeatedTask {
   taskId: string;
-  /** 選定されたイテレーション数。 */
+  /** 直近の completed 以降に選定されたイテレーション数。 */
   selections: number;
 }
 
@@ -32,7 +32,10 @@ export interface LoopMetrics {
   recoveredCount: number;
   /** 直近から遡った連続 verify_failed / abandoned 数（進行中のイテレーションは無視）。 */
   currentFailureStreak: number;
-  /** 複数回（閾値以上）選定されたが completed に至っていないタスク。選定回数の降順。 */
+  /**
+   * 直近の completed 以降に複数回（閾値以上）選定されたが completed に至っていないタスク。
+   * 選定回数の降順。完了するとカウントはリセットされ、reopen 後の再停滞も検出できる。
+   */
   repeatedTasks: LoopRepeatedTask[];
 }
 
@@ -48,8 +51,9 @@ export function computeLoopMetrics(state: LoopState | null): LoopMetrics {
   const verifyAttemptHistogram: Record<number, number> = {};
   let recoveredCount = 0;
 
-  const selectionsByTask = new Map<string, number>();
-  const completedTasks = new Set<string>();
+  // タスクごとの「直近の completed 以降」の選定回数。完了でリセットすることで、
+  // 過去に一度完了したタスクが reopen されて失敗を繰り返すケースも停滞として検出する
+  const selectionsSinceCompletion = new Map<string, number>();
 
   for (const it of iterations) {
     if (it.outcome) {
@@ -63,8 +67,14 @@ export function computeLoopMetrics(state: LoopState | null): LoopMetrics {
       }
     }
     if (it.selectedTask !== null) {
-      selectionsByTask.set(it.selectedTask, (selectionsByTask.get(it.selectedTask) ?? 0) + 1);
-      if (it.outcome === "completed") completedTasks.add(it.selectedTask);
+      if (it.outcome === "completed") {
+        selectionsSinceCompletion.delete(it.selectedTask);
+      } else {
+        selectionsSinceCompletion.set(
+          it.selectedTask,
+          (selectionsSinceCompletion.get(it.selectedTask) ?? 0) + 1,
+        );
+      }
     }
   }
 
@@ -77,11 +87,8 @@ export function computeLoopMetrics(state: LoopState | null): LoopMetrics {
     currentFailureStreak += 1;
   }
 
-  const repeatedTasks = [...selectionsByTask.entries()]
-    .filter(
-      ([taskId, selections]) =>
-        selections >= STAGNATION_RESELECTION_THRESHOLD && !completedTasks.has(taskId),
-    )
+  const repeatedTasks = [...selectionsSinceCompletion.entries()]
+    .filter(([, selections]) => selections >= STAGNATION_RESELECTION_THRESHOLD)
     .map(([taskId, selections]) => ({ taskId, selections }))
     .sort((a, b) => b.selections - a.selections);
 
