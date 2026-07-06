@@ -554,7 +554,9 @@ function reportCommandError(context: string, err: unknown): void {
 async function loadStores(projectRoot: string) {
   const config = await new ConfigStore(projectRoot).read();
   const tasksStore = new TasksStore(projectRoot);
-  const tasksFile = await tasksStore.read();
+  // 新品クローン等で tasks.json 不在でも例外にせず空状態で開始する。
+  // last_synced_at が空のままなので loop next は sync_required で pull を要求する
+  const tasksFile = await tasksStore.readOrDefault();
   const syncState = await new SyncStateStore(projectRoot).readOrDefault();
   const loopStore = new LoopStateStore(projectRoot);
   const state = await loopStore.readOrNull();
@@ -598,7 +600,7 @@ export const loopCommand = new Command("loop")
           // observe: 同期の鮮度確認（stale なら警告して続行、never は選定を拒否）
           if (assessSyncFreshness(syncState.last_synced_at, now) === "stale") {
             console.warn(
-              `⚠ 最終同期から ${SYNC_STALE_THRESHOLD_HOURS} 時間以上経過しています。gh-gantt pull の実行を推奨します。`,
+              `⚠ 最終同期から ${SYNC_STALE_THRESHOLD_HOURS} 時間を超えて経過しています。gh-gantt pull の実行を推奨します。`,
             );
           }
           const current = state ?? createEmptyLoopState();
@@ -680,7 +682,9 @@ export const loopCommand = new Command("loop")
               : { kind: "no_open_iteration" };
             if (result.kind === "completed" && state) {
               await loopStore.write(state);
-              // journal 記録と status 更新を 1 コマンドで原子的に行う（ADR-016 案A）
+              // journal 記録と status 更新を 1 コマンドにまとめる（ADR-016 案A）。
+              // 各ファイルは個別に atomic write されるが 2 ファイル間はトランザクションではなく、
+              // 万一 tasks.json 側が失敗しても journal は残る（再実行で status のみ再適用可能）
               if (opts.taskStatus && result.iteration.selectedTask) {
                 applyTaskStatus(tasksFile, result.iteration.selectedTask, opts.taskStatus, config);
                 await tasksStore.write(tasksFile);
