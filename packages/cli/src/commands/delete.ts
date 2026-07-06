@@ -1,5 +1,3 @@
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { Command } from "commander";
 import type { SyncState, Task, TasksFile } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
@@ -8,8 +6,6 @@ import { SyncStateStore } from "../store/state.js";
 import { resolveTaskId } from "../util/task-id.js";
 import { createGraphQLClient } from "../github/client.js";
 import { executePull } from "../sync/pull-executor.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface TaskDeletionRepair {
   parentCleared: string[];
@@ -23,6 +19,9 @@ export type TaskDeletionPlan =
       taskId: string;
       task: Task;
       issueNumber: number;
+      issueNodeId: string;
+      owner: string;
+      repo: string;
       repair: TaskDeletionRepair;
     }
   | { ok: false; error: string };
@@ -31,6 +30,7 @@ export interface DeleteGithubIssueInput {
   owner: string;
   repo: string;
   issueNumber: number;
+  issueNodeId: string;
 }
 
 export interface ForcePullInput {
@@ -39,8 +39,6 @@ export interface ForcePullInput {
 }
 
 export interface TaskDeletionInput {
-  owner: string;
-  repo: string;
   tasksFile: TasksFile;
   syncState: SyncState;
   taskId: string;
@@ -65,20 +63,27 @@ function formatError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export async function deleteGithubIssueWithGh(input: DeleteGithubIssueInput): Promise<void> {
-  await execFileAsync("gh", [
-    "issue",
-    "delete",
-    String(input.issueNumber),
-    "--yes",
-    "-R",
-    `${input.owner}/${input.repo}`,
-  ]);
+function parseGithubRepo(fullName: string): { owner: string; repo: string } | null {
+  const [owner, repo, extra] = fullName.split("/");
+  if (!owner || !repo || extra) return null;
+  return { owner, repo };
+}
+
+export async function deleteGithubIssueWithGraphQL(input: DeleteGithubIssueInput): Promise<void> {
+  const gql = await createGraphQLClient();
+  await gql<{ deleteIssue: { clientMutationId: string | null } }>(
+    `mutation DeleteIssue($issueId: ID!) {
+      deleteIssue(input: { issueId: $issueId }) {
+        clientMutationId
+      }
+    }`,
+    { issueId: input.issueNodeId },
+  );
 }
 
 export function planTaskDeletion(
   tasksFile: TasksFile,
-  _syncState: SyncState,
+  syncState: SyncState,
   taskId: string,
 ): TaskDeletionPlan {
   if (tasksFile.has_conflicts) {
@@ -90,17 +95,37 @@ export function planTaskDeletion(
     return { ok: false, error: `Task not found: ${taskId}` };
   }
 
-  if (task.github_issue === null || task.id.includes("#draft-")) {
+  if (task.id.startsWith("milestone:")) {
+    return {
+      ok: false,
+      error: "milestone task は delete できません。GitHub Issue の task を指定してください",
+    };
+  }
+
+  if (task.id.includes("#draft-")) {
     return {
       ok: false,
       error: "draft task は delete できません。push 前の draft は discard を使ってください",
     };
   }
 
-  if (task.id.startsWith("milestone:")) {
+  if (task.github_issue === null) {
     return {
       ok: false,
-      error: "milestone task は delete できません。GitHub Issue の task を指定してください",
+      error: "GitHub Issue のない task は delete できません",
+    };
+  }
+
+  const repo = parseGithubRepo(task.github_repo);
+  if (!repo) {
+    return { ok: false, error: `GitHub repository が不正です: ${task.github_repo}` };
+  }
+
+  const issueNodeId = syncState.id_map[taskId]?.issue_node_id;
+  if (!issueNodeId) {
+    return {
+      ok: false,
+      error: `sync-state に issue_node_id がありません: ${taskId}`,
     };
   }
 
@@ -123,7 +148,16 @@ export function planTaskDeletion(
     }
   }
 
-  return { ok: true, taskId, task, issueNumber: task.github_issue, repair };
+  return {
+    ok: true,
+    taskId,
+    task,
+    issueNumber: task.github_issue,
+    issueNodeId,
+    owner: repo.owner,
+    repo: repo.repo,
+    repair,
+  };
 }
 
 export function applyTaskDeletion(
@@ -168,9 +202,10 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
 
   try {
     await input.deleteGithubIssue({
-      owner: input.owner,
-      repo: input.repo,
+      owner: plan.owner,
+      repo: plan.repo,
       issueNumber: plan.issueNumber,
+      issueNodeId: plan.issueNodeId,
     });
   } catch (err) {
     return { ok: false, error: `GitHub Issue の削除に失敗しました: ${formatError(err)}` };
@@ -238,17 +273,12 @@ export function createDeleteCommand(): Command {
       const tasksFile = await tasksStore.read();
       const syncState = await stateStore.read();
       const taskId = resolveTaskId(id, config);
-      const owner = config.project.github.owner;
-      const repo = config.project.github.repo;
-
       const result = await executeTaskDeletion({
-        owner,
-        repo,
         tasksFile,
         syncState,
         taskId,
         yes: opts.yes === true,
-        deleteGithubIssue: deleteGithubIssueWithGh,
+        deleteGithubIssue: deleteGithubIssueWithGraphQL,
         forcePull: async ({ tasksFile: cleanedTasksFile, syncState: cleanedSyncState }) => {
           const gql = await createGraphQLClient();
           const pulled = await executePull(gql, config, cleanedTasksFile, cleanedSyncState, {

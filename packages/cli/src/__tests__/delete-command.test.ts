@@ -163,21 +163,50 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
     });
   });
 
+  it("milestone task は draft ではなく milestone として拒否する", () => {
+    const tasksFile = makeTasksFile([
+      makeTask("milestone:v1", { type: "milestone", github_issue: null }),
+    ]);
+    const syncState = makeSyncState(["milestone:v1"]);
+
+    const plan = planTaskDeletion(tasksFile, syncState, "milestone:v1");
+
+    expect(plan).toEqual({
+      ok: false,
+      error: "milestone task は delete できません。GitHub Issue の task を指定してください",
+    });
+  });
+
+  it("GitHub Issue のない非 draft task は明示的に拒否する", () => {
+    const tasksFile = makeTasksFile([makeTask("owner/repo#local", { github_issue: null })]);
+    const syncState = makeSyncState(["owner/repo#local"]);
+
+    const plan = planTaskDeletion(tasksFile, syncState, "owner/repo#local");
+
+    expect(plan).toEqual({
+      ok: false,
+      error: "GitHub Issue のない task は delete できません",
+    });
+  });
+
   it("GitHub Issue 削除、mirror cleanup、force pull 検証を一つの操作として実行する", async () => {
-    const target = makeTask("owner/repo#2");
+    const target = makeTask("other/project#2", { github_repo: "other/project" });
     const dependent = makeTask("owner/repo#3", {
-      blocked_by: [{ task: "owner/repo#2", type: "finish-to-start", lag: 0 }],
+      blocked_by: [{ task: "other/project#2", type: "finish-to-start", lag: 0 }],
     });
     const tasksFile = makeTasksFile([target, dependent]);
     const syncState = makeSyncState(tasksFile.tasks.map((task) => task.id));
-    const deleteCalls: Array<{ owner: string; repo: string; issueNumber: number }> = [];
+    const deleteCalls: Array<{
+      owner: string;
+      repo: string;
+      issueNumber: number;
+      issueNodeId: string;
+    }> = [];
 
     const result = await executeTaskDeletion({
-      owner: "owner",
-      repo: "repo",
       tasksFile,
       syncState,
-      taskId: "owner/repo#2",
+      taskId: "other/project#2",
       yes: true,
       now: "2026-02-01T00:00:00.000Z",
       deleteGithubIssue: async (input) => {
@@ -190,11 +219,13 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
     });
 
     expect(result.ok).toBe(true);
-    expect(deleteCalls).toEqual([{ owner: "owner", repo: "repo", issueNumber: 2 }]);
+    expect(deleteCalls).toEqual([
+      { owner: "other", repo: "project", issueNumber: 2, issueNodeId: "ISSUE_1" },
+    ]);
     if (!result.ok) throw new Error(result.error);
     expect(result.tasksFile.tasks.map((task) => task.id)).toEqual(["owner/repo#3"]);
     expect(result.tasksFile.tasks[0]!.blocked_by).toEqual([]);
-    expect(result.syncState.id_map["owner/repo#2"]).toBeUndefined();
+    expect(result.syncState.id_map["other/project#2"]).toBeUndefined();
   });
 
   it("--yes がない場合は GitHub Issue を削除しない", async () => {
@@ -203,8 +234,6 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
     const syncState = makeSyncState(["owner/repo#1"]);
 
     const result = await executeTaskDeletion({
-      owner: "owner",
-      repo: "repo",
       tasksFile,
       syncState,
       taskId: "owner/repo#1",
@@ -229,8 +258,6 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
     const syncState = makeSyncState(["owner/repo#1"]);
 
     const result = await executeTaskDeletion({
-      owner: "owner",
-      repo: "repo",
       tasksFile,
       syncState,
       taskId: "owner/repo#1",
