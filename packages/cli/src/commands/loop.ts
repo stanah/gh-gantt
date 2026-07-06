@@ -681,14 +681,14 @@ export const loopCommand = new Command("loop")
                 })
               : { kind: "no_open_iteration" };
             if (result.kind === "completed" && state) {
-              await loopStore.write(state);
-              // journal 記録と status 更新を 1 コマンドにまとめる（ADR-016 案A）。
-              // 各ファイルは個別に atomic write されるが 2 ファイル間はトランザクションではなく、
-              // 万一 tasks.json 側が失敗しても journal は残る（再実行で status のみ再適用可能）
+              // journal 記録と status 更新は別ファイルへの書き込みでありトランザクションではない。
+              // 先に tasks.json を書き込むことで、途中失敗時は「イテレーション未完了」のまま残り、
+              // loop complete の再実行で復旧できる（逆順だと journal だけ完了して status が失われる）
               if (opts.taskStatus && result.iteration.selectedTask) {
                 applyTaskStatus(tasksFile, result.iteration.selectedTask, opts.taskStatus, config);
                 await tasksStore.write(tasksFile);
               }
+              await loopStore.write(state);
             } else {
               process.exitCode = 1;
             }
