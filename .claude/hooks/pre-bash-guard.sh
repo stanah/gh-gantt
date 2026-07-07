@@ -35,13 +35,23 @@ if [ "$kind" = "COMMIT" ] && { [ "$branch" = "main" ] || [ "$branch" = "master" 
   exit 2
 fi
 
-# マージ済みブランチへの誤コミット / 誤 push を検出する (gh 不在時は fail-open)
+# マージ済みブランチへの誤コミット / 誤 push を検出する (gh 不在時は fail-open)。
+# fork 由来の同名ブランチ PR を拾わないよう、head リポジトリの owner で絞り込む。
+# 絞り込みはテストで実挙動を検証できるよう gh の --jq ではなく python3 で行う
 if command -v gh >/dev/null 2>&1; then
   repo_owner=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
   if [ -n "$repo_owner" ]; then
     merged=$(gh pr list --head "$branch" --state merged --json number,headRepositoryOwner \
-      --jq "[.[] | select(.headRepositoryOwner.login == \"$repo_owner\")][0].number // empty" \
-      2>/dev/null || true)
+      2>/dev/null | python3 -c '
+import json, sys
+owner = sys.argv[1]
+try:
+    prs = json.load(sys.stdin)
+except Exception:
+    prs = []
+hits = [p["number"] for p in prs if (p.get("headRepositoryOwner") or {}).get("login") == owner]
+print(hits[0] if hits else "")
+' "$repo_owner" 2>/dev/null || true)
     if [ -n "$merged" ]; then
       echo "⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。" >&2
       exit 2
