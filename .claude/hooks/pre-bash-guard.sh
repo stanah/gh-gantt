@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# PreToolUse hook: git commit / git push の実行前にブランチ状態を検査してブロックする
+# (ADR-010 L2 / #310)。
+# Claude Code の matcher はツール名にしか効かないため、対象コマンドの判定は
+# 本スクリプトが stdin の tool_input.command で行う。
+set -u
+
+input=$(cat 2>/dev/null || true)
+command -v python3 >/dev/null 2>&1 || exit 0
+command -v git >/dev/null 2>&1 || exit 0
+
+kind=$(printf '%s' "$input" | python3 -c '
+import json, re, sys, shlex
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    print("")
+    sys.exit(0)
+cmd = (data.get("tool_input") or {}).get("command", "")
+
+# 連結 (; & | 改行) で区切った各セグメントの先頭コマンドだけを対象にする。
+# 引数内の文字列言及 (echo "git commit ..." 等) はトークン位置で除外される
+GIT_VALUE_OPTIONS = {"-c", "-C", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+kind = ""
+for seg in re.split(r"[;&|\n]+", cmd):
+    seg = seg.strip()
+    if not seg:
+        continue
+    try:
+        tokens = shlex.split(seg)
+    except ValueError:
+        tokens = seg.split()
+    if tokens and tokens[0] == "command":
+        tokens = tokens[1:]
+    if not tokens or tokens[0] != "git":
+        continue
+    # git のグローバルオプション (-c k=v, -C path 等) を読み飛ばしてサブコマンドを特定する
+    rest = tokens[1:]
+    i = 0
+    while i < len(rest) and rest[i].startswith("-"):
+        i += 2 if rest[i] in GIT_VALUE_OPTIONS else 1
+    sub = rest[i] if i < len(rest) else ""
+    if sub == "commit":
+        kind = "COMMIT"
+        break
+    if sub == "push":
+        kind = "PUSH"
+        break
+print(kind)
+' 2>/dev/null || true)
+[ -z "$kind" ] && exit 0
+
+branch=$(git branch --show-current 2>/dev/null || true)
+[ -z "$branch" ] && exit 0
+
+if [ "$kind" = "COMMIT" ] && { [ "$branch" = "main" ] || [ "$branch" = "master" ]; }; then
+  echo "⚠ main ブランチへの直接コミットは禁止です。feature ブランチを作成してください。" >&2
+  exit 2
+fi
+
+# マージ済みブランチへの誤コミット / 誤 push を検出する (gh 不在時は fail-open)。
+# fork 由来の同名ブランチ PR を拾わないよう、head リポジトリの owner で絞り込む。
+# 絞り込みはテストで実挙動を検証できるよう gh の --jq ではなく python3 で行う
+if command -v gh >/dev/null 2>&1; then
+  repo_owner=$(gh repo view --json owner --jq '.owner.login' 2>/dev/null || true)
+  if [ -n "$repo_owner" ]; then
+    merged=$(gh pr list --head "$branch" --state merged --json number,headRepositoryOwner \
+      2>/dev/null | python3 -c '
+import json, sys
+owner = sys.argv[1]
+try:
+    prs = json.load(sys.stdin)
+except Exception:
+    prs = []
+hits = [p["number"] for p in prs if (p.get("headRepositoryOwner") or {}).get("login") == owner]
+print(hits[0] if hits else "")
+' "$repo_owner" 2>/dev/null || true)
+    if [ -n "$merged" ]; then
+      echo "⚠ このブランチの PR #$merged は既にマージ済みです。main に戻って新しいブランチを作成してください。" >&2
+      exit 2
+    fi
+  fi
+fi
+
+exit 0
