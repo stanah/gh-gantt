@@ -40,7 +40,9 @@ esac
 
 function runHook(command: string, opts: { cwd: string; env: NodeJS.ProcessEnv }) {
   const payload = JSON.stringify({ tool_input: { command } });
-  return execFileAsync("bash", ["-c", `printf '%s' '${payload}' | bash "${hookAbsPath}"`], opts);
+  // settings.json の実配線と同じくスクリプトを直接起動する
+  // (shebang・実行ビットの問題もテストで検出できるように)
+  return execFileAsync("bash", ["-c", `printf '%s' '${payload}' | "${hookAbsPath}"`], opts);
 }
 
 describe("pre-bash-guard によるブランチ状態ゲート (ADR-010 L2 / #310)", () => {
@@ -67,6 +69,14 @@ describe("pre-bash-guard によるブランチ状態ゲート (ADR-010 L2 / #310
       await expect(
         runHook("git commit -m test", { cwd: repoDir, env: cleanEnv }),
       ).rejects.toMatchObject({ code: 2 });
+      // 連結コマンドの先頭以外に現れる場合も対象
+      await expect(
+        runHook("cd /tmp && git commit -m test", { cwd: repoDir, env: cleanEnv }),
+      ).rejects.toMatchObject({ code: 2 });
+      // git のグローバルオプション付きでもバイパスできない
+      await expect(
+        runHook("git -c user.name=bot commit -m test", { cwd: repoDir, env: cleanEnv }),
+      ).rejects.toMatchObject({ code: 2 });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
@@ -84,6 +94,10 @@ describe("pre-bash-guard によるブランチ状態ゲート (ADR-010 L2 / #310
       await expect(runHook("git push", { cwd: repoDir, env: cleanEnv })).rejects.toMatchObject({
         code: 2,
       });
+      // グローバルオプション付き push もバイパスできない
+      await expect(
+        runHook("git -C . push origin HEAD", { cwd: repoDir, env: cleanEnv }),
+      ).rejects.toMatchObject({ code: 2 });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
