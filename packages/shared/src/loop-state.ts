@@ -41,6 +41,42 @@ export interface LoopVerifyResult {
 }
 
 /**
+ * prEvidence に記録する PR の live 状態（ADR-019）。
+ *
+ * OPEN / MERGED / CLOSED は GitHub API の PullRequestState をそのまま写す。
+ * UNKNOWN は API 到達不能のまま --override-pr-gate でバイパスした場合にのみ使う。
+ */
+export const LOOP_PR_EVIDENCE_STATES = ["OPEN", "MERGED", "CLOSED", "UNKNOWN"] as const;
+
+export type LoopPrEvidenceState = (typeof LOOP_PR_EVIDENCE_STATES)[number];
+
+/**
+ * loop complete (outcome=completed) 時に記録する PR レビューサイクルの evidence
+ * （ADR-019）。
+ *
+ * ゲート判定は state（live 状態）のみで行う。reviewDecision / unresolvedThreads /
+ * pendingChecks は拒否時の診断表示と記録のための参考情報であり、判定には使わない。
+ */
+export interface LoopPrEvidence {
+  /** PR 番号。 */
+  number: number;
+  /** GitHub API から取得した live 状態。API 未到達の override 時は UNKNOWN。 */
+  state: LoopPrEvidenceState;
+  /** レビュー判定（APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED など）。 */
+  reviewDecision?: string | null;
+  /** 未解決レビュースレッド数（先頭 100 件までの集計）。 */
+  unresolvedThreads?: number;
+  /** 完了していないチェック数（先頭 100 件までの集計）。チェック未設定なら省略。 */
+  pendingChecks?: number;
+  /** 評価時刻（ISO 8601）。 */
+  checkedAt: string;
+  /** --override-pr-gate によるバイパスかどうか。 */
+  overridden?: boolean;
+  /** override の理由。overridden が true の場合は必須。 */
+  overrideReason?: string;
+}
+
+/**
  * decide が選定したタスクの選定根拠。
  *
  * ADR-017 に従い、既存 `NextAction`（score / category / reason）のスナップショットを
@@ -70,6 +106,8 @@ export interface LoopIteration {
   outcome?: LoopIterationOutcome;
   verifyResults?: LoopVerifyResult[];
   reviewOutcome?: string | null;
+  /** loop complete 時の PR レビューサイクル evidence（ADR-019）。 */
+  prEvidence?: LoopPrEvidence[];
   stopReason?: LoopStopReason;
 }
 
@@ -103,6 +141,28 @@ const LoopSelectionSchema: z.ZodType<LoopSelection> = z.object({
   reason: z.string().min(1),
 });
 
+export const LoopPrEvidenceSchema: z.ZodType<LoopPrEvidence> = z
+  .object({
+    number: z.number().int().positive(),
+    state: z.enum(LOOP_PR_EVIDENCE_STATES),
+    reviewDecision: z.string().nullable().optional(),
+    unresolvedThreads: z.number().int().nonnegative().optional(),
+    pendingChecks: z.number().int().nonnegative().optional(),
+    checkedAt: z.string().min(1),
+    overridden: z.boolean().optional(),
+    overrideReason: z.string().min(1).optional(),
+  })
+  .superRefine((ev, ctx) => {
+    // override の事実だけ残して理由が消えるとバイパスの説明責任が果たせない
+    if (ev.overridden === true && ev.overrideReason === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["overrideReason"],
+        message: "overridden が true の evidence には overrideReason が必要です",
+      });
+    }
+  });
+
 export const LoopIterationSchema: z.ZodType<LoopIteration> = z
   .object({
     id: z.number().int().positive(),
@@ -114,6 +174,7 @@ export const LoopIterationSchema: z.ZodType<LoopIteration> = z
     outcome: z.enum(LOOP_ITERATION_OUTCOMES).optional(),
     verifyResults: z.array(LoopVerifyResultSchema).optional(),
     reviewOutcome: z.string().nullable().optional(),
+    prEvidence: z.array(LoopPrEvidenceSchema).optional(),
     stopReason: z.enum(LOOP_STOP_REASONS).optional(),
   })
   .superRefine((it, ctx) => {
@@ -159,12 +220,18 @@ export interface LoopConfig {
    * 従う（ADR-017）。値の拡張は案D で行う。
    */
   onVerifyFailure?: "retry";
+  /**
+   * loop complete (outcome=completed) 時に linked PR の live 状態を検証する
+   * PR evidence ゲート（ADR-019）を有効にするか。未指定は有効 (true)。
+   */
+  requirePrEvidence?: boolean;
 }
 
 export const LoopConfigSchema: z.ZodType<LoopConfig> = z.object({
   maxIterations: z.number().int().positive().optional(),
   stopWhen: z.array(z.enum(LOOP_STOP_REASONS)).optional(),
   onVerifyFailure: z.enum(["retry"]).optional(),
+  requirePrEvidence: z.boolean().optional(),
 });
 
 /** stopWhen 未指定時のデフォルト（全停止条件を有効にする）。 */
@@ -174,6 +241,8 @@ export interface ResolvedLoopConfig {
   maxIterations: number | null;
   stopWhen: readonly LoopStopReason[];
   onVerifyFailure: "retry";
+  /** PR evidence ゲート（ADR-019）の有効フラグ。既定は有効。 */
+  requirePrEvidence: boolean;
 }
 
 /**
@@ -185,5 +254,6 @@ export function resolveLoopConfig(loop: LoopConfig | undefined): ResolvedLoopCon
     maxIterations: loop?.maxIterations ?? null,
     stopWhen: loop?.stopWhen ?? DEFAULT_LOOP_STOP_CONDITIONS,
     onVerifyFailure: loop?.onVerifyFailure ?? "retry",
+    requirePrEvidence: loop?.requirePrEvidence ?? true,
   };
 }

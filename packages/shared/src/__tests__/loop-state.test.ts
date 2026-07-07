@@ -157,6 +157,82 @@ describe("LoopStateSchema による loop-state.json の検証", () => {
   });
 });
 
+describe("[FR-CLI-018-AC2] LoopIteration.prEvidence のスキーマ検証", () => {
+  const validEvidence = {
+    number: 304,
+    state: "MERGED",
+    reviewDecision: "APPROVED",
+    unresolvedThreads: 0,
+    pendingChecks: 0,
+    checkedAt: "2026-07-07T10:00:00Z",
+  };
+
+  it("prEvidence 付きイテレーションをパースできる", () => {
+    const state = LoopStateSchema.parse({
+      version: "1",
+      iterations: [{ ...validIteration, prEvidence: [validEvidence] }],
+    });
+    expect(state.iterations[0].prEvidence?.[0].state).toBe("MERGED");
+    expect(state.iterations[0].prEvidence?.[0].checkedAt).toBe("2026-07-07T10:00:00Z");
+  });
+
+  it("[FR-CLI-018-AC3] override 付き evidence（state UNKNOWN）をパースできる", () => {
+    const state = LoopStateSchema.parse({
+      version: "1",
+      iterations: [
+        {
+          ...validIteration,
+          prEvidence: [
+            {
+              number: 304,
+              state: "UNKNOWN",
+              checkedAt: "2026-07-07T10:00:00Z",
+              overridden: true,
+              overrideReason: "オフライン作業のため",
+            },
+          ],
+        },
+      ],
+    });
+    expect(state.iterations[0].prEvidence?.[0].overridden).toBe(true);
+    expect(state.iterations[0].prEvidence?.[0].overrideReason).toBe("オフライン作業のため");
+  });
+
+  it("[FR-CLI-018-AC3] overridden が true なのに overrideReason がない evidence を拒否する", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [
+          {
+            ...validIteration,
+            prEvidence: [
+              { number: 304, state: "OPEN", checkedAt: "2026-07-07T10:00:00Z", overridden: true },
+            ],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("不正な state の evidence を拒否する", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [{ ...validIteration, prEvidence: [{ ...validEvidence, state: "DRAFT" }] }],
+      }),
+    ).toThrow();
+  });
+
+  it("PR 番号が正の整数でない evidence を拒否する", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [{ ...validIteration, prEvidence: [{ ...validEvidence, number: 0 }] }],
+      }),
+    ).toThrow();
+  });
+});
+
 describe("Config.loop セクションの検証と後方互換", () => {
   it("loop 未設定の既存 config をそのままパースできる（後方互換）", () => {
     const config = ConfigSchema.parse(baseConfig);
@@ -187,6 +263,15 @@ describe("Config.loop セクションの検証と後方互換", () => {
   it("maxIterations に 0 以下を指定するとエラーになる", () => {
     expect(() => LoopConfigSchema.parse({ maxIterations: 0 })).toThrow();
   });
+
+  it("[FR-CLI-018-AC6] requirePrEvidence を含む config をパースできる", () => {
+    const config = ConfigSchema.parse({
+      ...baseConfig,
+      loop: { requirePrEvidence: false },
+    });
+    expect(config.loop?.requirePrEvidence).toBe(false);
+    expect(() => LoopConfigSchema.parse({ requirePrEvidence: "yes" })).toThrow();
+  });
 });
 
 describe("resolveLoopConfig によるデフォルト解決", () => {
@@ -195,6 +280,12 @@ describe("resolveLoopConfig によるデフォルト解決", () => {
     expect(resolved.maxIterations).toBeNull();
     expect(resolved.stopWhen).toEqual([...LOOP_STOP_REASONS]);
     expect(resolved.onVerifyFailure).toBe("retry");
+  });
+
+  it("[FR-CLI-018-AC6] requirePrEvidence は未指定なら true、false 指定で無効化できる", () => {
+    expect(resolveLoopConfig(undefined).requirePrEvidence).toBe(true);
+    expect(resolveLoopConfig({}).requirePrEvidence).toBe(true);
+    expect(resolveLoopConfig({ requirePrEvidence: false }).requirePrEvidence).toBe(false);
   });
 
   it("指定した値がデフォルトより優先される", () => {
