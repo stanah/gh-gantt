@@ -17,6 +17,7 @@ import type {
   LoopIteration,
   LoopIterationOutcome,
   LoopMetrics,
+  LoopPrEvidence,
   LoopState,
   LoopStopReason,
   LoopVerifyResult,
@@ -31,6 +32,16 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { LoopStateStore } from "../store/loop-state.js";
+import {
+  detectMissingTaskRejection,
+  evaluatePrEvidence,
+  extractLinkedPrTargets,
+  fetchPrGateStates,
+  formatPrGateRejection,
+  normalizeOverrideReason,
+  shouldApplyPrGate,
+} from "../loop/pr-evidence.js";
+import type { PrGateRejection, PrGateState } from "../loop/pr-evidence.js";
 
 /** ready 候補として表示する件数。 */
 const READY_CANDIDATE_LIMIT = 3;
@@ -476,12 +487,20 @@ const COMPLETE_OUTCOMES = ["completed", "verify_failed", "abandoned"] as const;
 
 export type LoopCompleteResult =
   | { kind: "no_open_iteration" }
+  | { kind: "pr_gate_rejected"; rejection: PrGateRejection }
   | {
       kind: "completed";
       iteration: LoopIteration;
       durationHours: number | null;
       estimateHours: number | null;
     };
+
+/** 直近の開いたイテレーション（タスク選定済み・未完了）を返す。 */
+export function findOpenIteration(state: LoopState): LoopIteration | undefined {
+  return [...state.iterations]
+    .reverse()
+    .find((i) => i.selectedTask !== null && i.completedAt === undefined && !i.outcome);
+}
 
 /** `--verify "<command>=pass|fail"` の繰り返し指定をパースする。attempt は指定順で採番。 */
 export function parseVerifySpecs(specs: string[]): LoopVerifyResult[] {
@@ -541,17 +560,18 @@ export function completeIteration(params: {
   outcome: LoopIterationOutcome;
   reviewOutcome?: string;
   verify?: LoopVerifyResult[];
+  /** PR evidence ゲート（ADR-019）を通過した評価結果。 */
+  prEvidence?: LoopPrEvidence[];
 }): LoopCompleteResult {
-  const { state, config, tasks, now, outcome, reviewOutcome, verify } = params;
-  const it = [...state.iterations]
-    .reverse()
-    .find((i) => i.selectedTask !== null && i.completedAt === undefined && !i.outcome);
+  const { state, config, tasks, now, outcome, reviewOutcome, verify, prEvidence } = params;
+  const it = findOpenIteration(state);
   if (!it) return { kind: "no_open_iteration" };
 
   it.completedAt = now;
   it.outcome = outcome;
   if (reviewOutcome !== undefined) it.reviewOutcome = reviewOutcome;
   if (verify && verify.length > 0) it.verifyResults = verify;
+  if (prEvidence && prEvidence.length > 0) it.prEvidence = prEvidence;
 
   const task = tasks.find((t) => t.id === it.selectedTask);
   return {
@@ -566,6 +586,9 @@ export function formatLoopComplete(result: LoopCompleteResult): string {
   if (result.kind === "no_open_iteration") {
     return "開いているイテレーションがありません。gh-gantt loop next で開始してください。";
   }
+  if (result.kind === "pr_gate_rejected") {
+    return formatPrGateRejection(result.rejection);
+  }
   const it = result.iteration;
   const lines = [
     `Iteration #${it.id} を記録しました (${it.outcome})`,
@@ -579,7 +602,25 @@ export function formatLoopComplete(result: LoopCompleteResult): string {
     const failed = it.verifyResults.filter((v) => !v.passed).length;
     lines.push(`  verify: ${it.verifyResults.length} 回実行 (失敗 ${failed} 回)`);
   }
+  if (it.prEvidence && it.prEvidence.length > 0) {
+    const summary = it.prEvidence.map((e) => `#${e.number} ${e.state}`).join(", ");
+    const overridden = it.prEvidence.some((e) => e.overridden === true);
+    lines.push(`  pr evidence: ${summary}${overridden ? " (override)" : ""}`);
+  }
   return lines.join("\n");
+}
+
+/** "owner/repo" 形式をパースする。不正な形式なら fallback（config の値）を使う。 */
+function parseRepoFullName(
+  fullName: string,
+  fallback: { owner: string; repo: string },
+): { owner: string; repo: string } {
+  // "owner/repo/extra" のような入力を owner/repo と誤解釈して
+  // 無関係なリポジトリへ問い合わせないよう、2 セグメント以外は不正扱いにする
+  const parts = fullName.split("/");
+  return parts.length === 2 && parts[0] && parts[1]
+    ? { owner: parts[0], repo: parts[1] }
+    : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -700,6 +741,10 @@ export const loopCommand = new Command("loop")
         (value: string, previous: string[]) => [...previous, value],
         [] as string[],
       )
+      .option(
+        "--override-pr-gate <reason>",
+        "PR evidence ゲート (ADR-019) を理由付きでバイパスする（override は prEvidence に記録される）",
+      )
       .action(
         async (opts: {
           json?: boolean;
@@ -707,6 +752,7 @@ export const loopCommand = new Command("loop")
           review?: string;
           taskStatus?: string;
           verify: string[];
+          overridePrGate?: string;
         }) => {
           try {
             if (!(COMPLETE_OUTCOMES as readonly string[]).includes(opts.outcome)) {
@@ -714,21 +760,93 @@ export const loopCommand = new Command("loop")
                 `--outcome は ${COMPLETE_OUTCOMES.join(" | ")} のいずれかで指定してください`,
               );
             }
+            const outcome = opts.outcome as LoopIterationOutcome;
+            // ネットワークを伴うゲート評価より先に入力エラーを検出する
+            const overrideCheck = normalizeOverrideReason(opts.overridePrGate);
+            if (!overrideCheck.ok) {
+              throw new UsageError("--override-pr-gate には空でない理由を指定してください");
+            }
+            const overrideReason = overrideCheck.reason;
+            const verify = parseVerifySpecs(opts.verify);
             const { config, tasksStore, tasksFile, loopStore, state } = await loadStores(
               process.cwd(),
             );
+            const now = new Date().toISOString();
+
             // state 未初期化でも --json の出力形式は state ありの場合と揃える
-            const result: LoopCompleteResult = state
-              ? completeIteration({
-                  state,
-                  config,
-                  tasks: tasksFile.tasks,
-                  now: new Date().toISOString(),
-                  outcome: opts.outcome as LoopIterationOutcome,
-                  reviewOutcome: opts.review,
-                  verify: parseVerifySpecs(opts.verify),
+            let result: LoopCompleteResult;
+            if (!state) {
+              result = { kind: "no_open_iteration" };
+            } else {
+              const open = findOpenIteration(state);
+              const task = open
+                ? tasksFile.tasks.find((t) => t.id === open.selectedTask)
+                : undefined;
+              // ローカルの linked_prs からは PR の所在（リポジトリ + 番号）のみ列挙する
+              // （state は live で判定: ADR-019。cross-repo の closing reference に対応）
+              const targets = task
+                ? extractLinkedPrTargets(
+                    task.linked_prs,
+                    parseRepoFullName(task.github_repo, config.project.github),
+                  )
+                : [];
+              const resolved = resolveLoopConfig(config.loop);
+
+              let prEvidence: LoopPrEvidence[] | undefined;
+              let rejection: PrGateRejection | null = null;
+              if (
+                task &&
+                shouldApplyPrGate({
+                  outcome,
+                  requirePrEvidence: resolved.requirePrEvidence,
+                  prNumbers: targets.map((t) => t.number),
                 })
-              : { kind: "no_open_iteration" };
+              ) {
+                let fetched: PrGateState[] | null = null;
+                let fetchError: string | undefined;
+                try {
+                  fetched = await fetchPrGateStates({ targets });
+                } catch (err) {
+                  // fail-closed: 取得失敗は evaluatePrEvidence で拒否として扱う
+                  fetchError = err instanceof Error ? err.message : String(err);
+                }
+                const evaluation = evaluatePrEvidence({
+                  targets,
+                  fetched,
+                  fetchError,
+                  checkedAt: now,
+                  overrideReason,
+                });
+                if (evaluation.kind === "accepted") {
+                  prEvidence = evaluation.evidence;
+                } else {
+                  rejection = evaluation;
+                }
+              } else if (open?.selectedTask && task === undefined) {
+                // タスク不在だと linked PR を列挙できず、ゲートが黙って
+                // スキップされる fail-open になるため completed を拒否する
+                rejection = detectMissingTaskRejection({
+                  outcome,
+                  requirePrEvidence: resolved.requirePrEvidence,
+                  selectedTask: open.selectedTask,
+                  taskFound: false,
+                  overrideReason,
+                });
+              }
+
+              result = rejection
+                ? { kind: "pr_gate_rejected", rejection }
+                : completeIteration({
+                    state,
+                    config,
+                    tasks: tasksFile.tasks,
+                    now,
+                    outcome,
+                    reviewOutcome: opts.review,
+                    verify,
+                    prEvidence,
+                  });
+            }
             if (result.kind === "completed" && state) {
               // journal 記録と status 更新は別ファイルへの書き込みでありトランザクションではない。
               // 先に tasks.json を書き込むことで、途中失敗時は「イテレーション未完了」のまま残り、
