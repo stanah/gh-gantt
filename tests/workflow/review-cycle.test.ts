@@ -219,14 +219,26 @@ esac
 `;
       await writeFile(mockGhPath, mockGh);
       await chmod(mockGhPath, 0o755);
+      // pre-push フック配下では git が GIT_DIR 等を設定しており、それを継承すると
+      // git init が一時ディレクトリではなく親リポジトリを再初期化してしまう
+      const cleanEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+      };
+      delete cleanEnv.GIT_DIR;
+      delete cleanEnv.GIT_WORK_TREE;
+      delete cleanEnv.GIT_INDEX_FILE;
+      delete cleanEnv.GIT_COMMON_DIR;
       // feature ブランチを持つ一時 git リポジトリで実行する（CI の detached HEAD に依存しない）
       const repoDir = join(tempDir, "repo");
-      await execFileAsync("git", ["init", "-b", "feature-stop-hook-test", repoDir]);
+      await execFileAsync("git", ["init", "-b", "feature-stop-hook-test", repoDir], {
+        env: cleanEnv,
+      });
       const hookAbsPath = resolve(repoRoot, ".claude/hooks/stop-pr-review-cycle.sh");
       await expect(
         execFileAsync("bash", ["-c", `echo '{}' | bash "${hookAbsPath}"`], {
           cwd: repoDir,
-          env: { ...process.env, PATH: `${tempDir}:${process.env.PATH ?? ""}` },
+          env: cleanEnv,
         }),
       ).rejects.toMatchObject({ code: 2 });
     } finally {
