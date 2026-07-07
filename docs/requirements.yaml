@@ -463,6 +463,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/loop-pr-evidence.test.ts
+              - packages/shared/src/__tests__/loop-state.test.ts
           - id: FR-CLI-018-AC5
             description: outcome が verify_failed / abandoned の場合、または linked PR がない場合はゲートを適用しない (後方互換)
             status: covered
@@ -475,10 +476,11 @@ areas:
               - packages/cli/src/__tests__/loop-pr-evidence.test.ts
               - packages/shared/src/__tests__/loop-state.test.ts
           - id: FR-CLI-018-AC7
-            description: ゲート判定は GitHub API の live 状態から決定論的に行い、ローカルキャッシュの linked_prs の state には依存しない (PR 番号の列挙にのみ使用)
+            description: ゲート判定は GitHub API の live 状態から決定論的に行い、ローカルキャッシュの linked_prs の state には依存しない (PR の所在 = リポジトリ + 番号の列挙にのみ使用。cross-repo の closing reference は URL からリポジトリを解決する)
             status: covered
             tests:
               - packages/cli/src/__tests__/loop-pr-evidence.test.ts
+              - packages/shared/src/__tests__/loop-state.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

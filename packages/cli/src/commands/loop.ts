@@ -35,9 +35,10 @@ import { LoopStateStore } from "../store/loop-state.js";
 import {
   detectMissingTaskRejection,
   evaluatePrEvidence,
-  extractLinkedPrNumbers,
+  extractLinkedPrTargets,
   fetchPrGateStates,
   formatPrGateRejection,
+  normalizeOverrideReason,
   shouldApplyPrGate,
 } from "../loop/pr-evidence.js";
 import type { PrGateRejection, PrGateState } from "../loop/pr-evidence.js";
@@ -614,8 +615,12 @@ function parseRepoFullName(
   fullName: string,
   fallback: { owner: string; repo: string },
 ): { owner: string; repo: string } {
-  const [owner, repo] = fullName.split("/");
-  return owner && repo ? { owner, repo } : fallback;
+  // "owner/repo/extra" のような入力を owner/repo と誤解釈して
+  // 無関係なリポジトリへ問い合わせないよう、2 セグメント以外は不正扱いにする
+  const parts = fullName.split("/");
+  return parts.length === 2 && parts[0] && parts[1]
+    ? { owner: parts[0], repo: parts[1] }
+    : fallback;
 }
 
 // ---------------------------------------------------------------------------
@@ -757,6 +762,11 @@ export const loopCommand = new Command("loop")
             }
             const outcome = opts.outcome as LoopIterationOutcome;
             // ネットワークを伴うゲート評価より先に入力エラーを検出する
+            const overrideCheck = normalizeOverrideReason(opts.overridePrGate);
+            if (!overrideCheck.ok) {
+              throw new UsageError("--override-pr-gate には空でない理由を指定してください");
+            }
+            const overrideReason = overrideCheck.reason;
             const verify = parseVerifySpecs(opts.verify);
             const { config, tasksStore, tasksFile, loopStore, state } = await loadStores(
               process.cwd(),
@@ -772,8 +782,14 @@ export const loopCommand = new Command("loop")
               const task = open
                 ? tasksFile.tasks.find((t) => t.id === open.selectedTask)
                 : undefined;
-              // ローカルの linked_prs からは PR 番号のみ列挙する（state は live で判定: ADR-019）
-              const prNumbers = task ? extractLinkedPrNumbers(task.linked_prs) : [];
+              // ローカルの linked_prs からは PR の所在（リポジトリ + 番号）のみ列挙する
+              // （state は live で判定: ADR-019。cross-repo の closing reference に対応）
+              const targets = task
+                ? extractLinkedPrTargets(
+                    task.linked_prs,
+                    parseRepoFullName(task.github_repo, config.project.github),
+                  )
+                : [];
               const resolved = resolveLoopConfig(config.loop);
 
               let prEvidence: LoopPrEvidence[] | undefined;
@@ -783,24 +799,23 @@ export const loopCommand = new Command("loop")
                 shouldApplyPrGate({
                   outcome,
                   requirePrEvidence: resolved.requirePrEvidence,
-                  prNumbers,
+                  prNumbers: targets.map((t) => t.number),
                 })
               ) {
-                const { owner, repo } = parseRepoFullName(task.github_repo, config.project.github);
                 let fetched: PrGateState[] | null = null;
                 let fetchError: string | undefined;
                 try {
-                  fetched = await fetchPrGateStates({ owner, repo, prNumbers });
+                  fetched = await fetchPrGateStates({ targets });
                 } catch (err) {
                   // fail-closed: 取得失敗は evaluatePrEvidence で拒否として扱う
                   fetchError = err instanceof Error ? err.message : String(err);
                 }
                 const evaluation = evaluatePrEvidence({
-                  prNumbers,
+                  targets,
                   fetched,
                   fetchError,
                   checkedAt: now,
-                  overrideReason: opts.overridePrGate,
+                  overrideReason,
                 });
                 if (evaluation.kind === "accepted") {
                   prEvidence = evaluation.evidence;
@@ -815,7 +830,7 @@ export const loopCommand = new Command("loop")
                   requirePrEvidence: resolved.requirePrEvidence,
                   selectedTask: open.selectedTask,
                   taskFound: false,
-                  overrideReason: opts.overridePrGate,
+                  overrideReason,
                 });
               }
 

@@ -65,7 +65,10 @@ override した場合も evidence は記録され、各エントリに `overridd
   続行のみ許可する。
 - `Config.loop.requirePrEvidence`（既定 `true`）で機能ごと無効化できる。
 - ローカルキャッシュ（`linked_prs` の state）は判定に使わない。ローカルからは
-  PR 番号の列挙のみ行い、状態は必ず live フェッチで判定する。
+  PR の所在（リポジトリ + 番号）の列挙のみ行い、状態は必ず live フェッチで
+  判定する。cross-repo の closing reference は URL からリポジトリを解決し、
+  それぞれのリポジトリに問い合わせる（別リポジトリの同番号 PR との取り違えを
+  防ぐ）。cross-repo の evidence には `repo`（owner/repo）を記録する。
 
 ### ADR-013 / ADR-016 の責務境界との整合
 

@@ -11,12 +11,25 @@ import { PULL_REQUEST_GATE_QUERY } from "../github/queries.js";
 // - fail-closed: live 状態を取得できない場合は completed を拒否し、
 //   --override-pr-gate による意識的なバイパスだけを許可する。
 // - ローカルキャッシュ (linked_prs の state) には依存しない。
-//   ローカルからは PR 番号の列挙のみ行う。
+//   ローカルからは PR の所在 (リポジトリ + 番号) の列挙のみ行う。
+//   cross-repo の closing reference があるため、リポジトリは PR ごとに解決する。
 // ---------------------------------------------------------------------------
+
+/** ゲート評価の対象となる PR の所在。 */
+export interface PrGateTarget {
+  owner: string;
+  repo: string;
+  number: number;
+  /** タスクのリポジトリと異なるリポジトリの PR かどうか。 */
+  crossRepo: boolean;
+}
 
 /** GitHub API から取得した PR 1 件の live 状態スナップショット。 */
 export interface PrGateState {
+  owner: string;
+  repo: string;
   number: number;
+  crossRepo: boolean;
   state: "OPEN" | "MERGED" | "CLOSED";
   reviewDecision: string | null;
   /** 未解決レビュースレッド数（先頭 100 件までの集計）。 */
@@ -35,13 +48,56 @@ export type PrGateRejection =
   | Exclude<PrEvidenceEvaluation, { kind: "accepted" }>
   | { kind: "rejected_task_missing"; taskId: string };
 
+/** PR の所在を一意に識別するキー。番号は repo 単位でしか一意でない。 */
+function targetKey(t: { owner: string; repo: string; number: number }): string {
+  return `${t.owner.toLowerCase()}/${t.repo.toLowerCase()}#${t.number}`;
+}
+
+/** 診断表示用のラベル。同一リポジトリなら従来どおり番号のみ。 */
+function prLabel(t: { owner: string; repo: string; number: number; crossRepo: boolean }): string {
+  return t.crossRepo ? `${t.owner}/${t.repo}#${t.number}` : `#${t.number}`;
+}
+
+/** GitHub PR の URL から所在を解釈する。解釈できなければ null。 */
+function parsePrUrl(url: string): { owner: string; repo: string; number: number } | null {
+  const m = /^https:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:[/#?].*)?$/.exec(url);
+  if (!m) return null;
+  const number = Number(m[3]);
+  if (!Number.isInteger(number) || number <= 0) return null;
+  return { owner: m[1], repo: m[2], number };
+}
+
 /**
- * linked_prs（番号形式 / メタデータ形式の両方）から PR 番号を重複なしで列挙する。
- * メタデータ形式の state はローカルキャッシュであり、ゲート判定には使わない。
+ * linked_prs（番号形式 / メタデータ形式の両方）から PR の所在を重複なしで列挙する。
+ * メタデータ形式は url からリポジトリを解決する（cross-repo の closing reference 対応）。
+ * url がない・解釈できない場合と番号形式はタスクのリポジトリとみなす。
+ * ローカルキャッシュの state はゲート判定に使わない。
  */
-export function extractLinkedPrNumbers(refs: LinkedPullRequestRef[]): number[] {
-  const numbers = refs.map((ref) => (typeof ref === "number" ? ref : ref.number));
-  return [...new Set(numbers)].sort((a, b) => a - b);
+export function extractLinkedPrTargets(
+  refs: LinkedPullRequestRef[],
+  fallback: { owner: string; repo: string },
+): PrGateTarget[] {
+  const byKey = new Map<string, PrGateTarget>();
+  for (const ref of refs) {
+    let located: { owner: string; repo: string; number: number };
+    if (typeof ref === "number") {
+      located = { ...fallback, number: ref };
+    } else {
+      located = (ref.url ? parsePrUrl(ref.url) : null) ?? { ...fallback, number: ref.number };
+    }
+    const crossRepo =
+      located.owner.toLowerCase() !== fallback.owner.toLowerCase() ||
+      located.repo.toLowerCase() !== fallback.repo.toLowerCase();
+    const target: PrGateTarget = { ...located, crossRepo };
+    byKey.set(targetKey(target), target);
+  }
+  return [...byKey.values()].sort((a, b) =>
+    a.owner === b.owner && a.repo === b.repo
+      ? a.number - b.number
+      : targetKey(a) < targetKey(b)
+        ? -1
+        : 1,
+  );
 }
 
 /**
@@ -54,6 +110,19 @@ export function shouldApplyPrGate(params: {
   prNumbers: number[];
 }): boolean {
   return params.outcome === "completed" && params.requirePrEvidence && params.prNumbers.length > 0;
+}
+
+/**
+ * --override-pr-gate の理由を正規化する。
+ * 空文字・空白のみは「説明責任を果たしていない」として null を返す（呼び出し側で入力エラー扱い）。
+ */
+export function normalizeOverrideReason(
+  input: string | undefined,
+): { ok: true; reason: string | undefined } | { ok: false } {
+  if (input === undefined) return { ok: true, reason: undefined };
+  const trimmed = input.trim();
+  if (trimmed === "") return { ok: false };
+  return { ok: true, reason: trimmed };
 }
 
 /**
@@ -87,11 +156,29 @@ function toEvidence(
     unresolvedThreads: state.unresolvedThreads,
     checkedAt,
   };
+  if (state.crossRepo) evidence.repo = `${state.owner}/${state.repo}`;
   if (state.pendingChecks !== undefined) evidence.pendingChecks = state.pendingChecks;
   if (overrideReason !== undefined) {
     evidence.overridden = true;
     evidence.overrideReason = overrideReason;
   }
+  return evidence;
+}
+
+/** 取得できなかった PR を UNKNOWN として記録する（override 時のみ生成される）。 */
+function toUnknownEvidence(
+  target: PrGateTarget,
+  checkedAt: string,
+  overrideReason: string,
+): LoopPrEvidence {
+  const evidence: LoopPrEvidence = {
+    number: target.number,
+    state: "UNKNOWN",
+    checkedAt,
+    overridden: true,
+    overrideReason,
+  };
+  if (target.crossRepo) evidence.repo = `${target.owner}/${target.repo}`;
   return evidence;
 }
 
@@ -104,38 +191,38 @@ function toEvidence(
  *   evidence 全件に overridden / overrideReason を記録した上で受理する。
  */
 export function evaluatePrEvidence(params: {
-  prNumbers: number[];
+  targets: PrGateTarget[];
   fetched: PrGateState[] | null;
   fetchError?: string;
   checkedAt: string;
   overrideReason?: string;
 }): PrEvidenceEvaluation {
-  const { prNumbers, fetched, fetchError, checkedAt, overrideReason } = params;
+  const { targets, fetched, fetchError, checkedAt, overrideReason } = params;
 
-  const fetchedByNumber = new Map((fetched ?? []).map((s) => [s.number, s]));
-  const missing = prNumbers.filter((n) => !fetchedByNumber.has(n));
+  const fetchedByKey = new Map((fetched ?? []).map((s) => [targetKey(s), s]));
+  const missing = targets.filter((t) => !fetchedByKey.has(targetKey(t)));
 
   // fail-closed: live 状態が揃わない completed は受理しない（ADR-019）
   if (fetched === null || missing.length > 0) {
     if (overrideReason !== undefined) {
       return {
         kind: "accepted",
-        evidence: prNumbers.map((number) => {
-          const state = fetchedByNumber.get(number);
+        evidence: targets.map((target) => {
+          const state = fetchedByKey.get(targetKey(target));
           return state
             ? toEvidence(state, checkedAt, overrideReason)
-            : { number, state: "UNKNOWN" as const, checkedAt, overridden: true, overrideReason };
+            : toUnknownEvidence(target, checkedAt, overrideReason);
         }),
       };
     }
     const message =
       fetched === null
         ? (fetchError ?? "原因不明のエラー")
-        : `PR #${missing.join(", #")} の live 状態を取得できませんでした`;
+        : `PR ${missing.map(prLabel).join(", ")} の live 状態を取得できませんでした`;
     return { kind: "rejected_fetch_failed", message };
   }
 
-  const states = prNumbers.map((n) => fetchedByNumber.get(n)!);
+  const states = targets.map((t) => fetchedByKey.get(targetKey(t))!);
   const openPrs = states.filter((s) => s.state === "OPEN");
   if (openPrs.length === 0) {
     return { kind: "accepted", evidence: states.map((s) => toEvidence(s, checkedAt)) };
@@ -168,7 +255,7 @@ export function formatPrGateRejection(rejection: PrGateRejection): string {
       const checks =
         pr.pendingChecks === undefined ? "チェックなし" : `pending checks: ${pr.pendingChecks}`;
       lines.push(
-        `  - PR #${pr.number}: OPEN (reviewDecision: ${pr.reviewDecision ?? "なし"}, ` +
+        `  - PR ${prLabel(pr)}: OPEN (reviewDecision: ${pr.reviewDecision ?? "なし"}, ` +
           `未解決スレッド: ${pr.unresolvedThreads}, ${checks})`,
       );
     }
@@ -223,34 +310,36 @@ function countPendingChecks(
 
 /**
  * GitHub GraphQL API から PR の live 状態を取得する。
+ * cross-repo の PR はそれぞれのリポジトリに問い合わせる。
  * 1 件でも取得に失敗した場合は throw する（呼び出し側で fail-closed 扱いにする）。
  */
 export async function fetchPrGateStates(params: {
-  owner: string;
-  repo: string;
-  prNumbers: number[];
+  targets: PrGateTarget[];
 }): Promise<PrGateState[]> {
-  const { owner, repo, prNumbers } = params;
+  const { targets } = params;
   const client = await createGraphQLClient();
   const states: PrGateState[] = [];
-  for (const number of prNumbers) {
+  for (const target of targets) {
     const res = await client<PullRequestGateResponse>(PULL_REQUEST_GATE_QUERY, {
-      owner,
-      repo,
-      number,
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
     });
     const pr = res.repository?.pullRequest;
     if (!pr) {
-      throw new Error(`PR #${number} が ${owner}/${repo} に見つかりません`);
+      throw new Error(`PR ${prLabel(target)} が ${target.owner}/${target.repo} に見つかりません`);
     }
     const state = pr.state;
     if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") {
       // 予期しない状態でゲート判定を誤らせない（fail-closed）
-      throw new Error(`PR #${number} の状態 "${state}" を解釈できません`);
+      throw new Error(`PR ${prLabel(target)} の状態 "${state}" を解釈できません`);
     }
     const rollup = pr.commits.nodes?.[0]?.commit.statusCheckRollup ?? null;
     states.push({
+      owner: target.owner,
+      repo: target.repo,
       number: pr.number,
+      crossRepo: target.crossRepo,
       state,
       reviewDecision: pr.reviewDecision,
       unresolvedThreads: (pr.reviewThreads.nodes ?? []).filter((t) => t && !t.isResolved).length,

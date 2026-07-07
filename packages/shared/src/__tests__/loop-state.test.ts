@@ -223,6 +223,47 @@ describe("[FR-CLI-018-AC2] LoopIteration.prEvidence のスキーマ検証", () =
     ).toThrow();
   });
 
+  it("[FR-CLI-018-AC3] overrideReason だけがあり overridden がない evidence を拒否する", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [
+          {
+            ...validIteration,
+            prEvidence: [{ ...validEvidence, overrideReason: "理由だけ残っている" }],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("[FR-CLI-018-AC4] override なしの state UNKNOWN を拒否する（UNKNOWN は override 時のみ）", () => {
+    expect(() =>
+      LoopStateSchema.parse({
+        version: "1",
+        iterations: [
+          {
+            ...validIteration,
+            prEvidence: [{ number: 304, state: "UNKNOWN", checkedAt: "2026-07-07T10:00:00Z" }],
+          },
+        ],
+      }),
+    ).toThrow();
+  });
+
+  it("[FR-CLI-018-AC7] cross-repo の evidence は repo (owner/repo) を記録できる", () => {
+    const state = LoopStateSchema.parse({
+      version: "1",
+      iterations: [
+        {
+          ...validIteration,
+          prEvidence: [{ ...validEvidence, repo: "other/app" }],
+        },
+      ],
+    });
+    expect(state.iterations[0].prEvidence?.[0].repo).toBe("other/app");
+  });
+
   it("PR 番号が正の整数でない evidence を拒否する", () => {
     expect(() =>
       LoopStateSchema.parse({

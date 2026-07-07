@@ -60,6 +60,8 @@ export type LoopPrEvidenceState = (typeof LOOP_PR_EVIDENCE_STATES)[number];
 export interface LoopPrEvidence {
   /** PR 番号。 */
   number: number;
+  /** PR のリポジトリ（"owner/repo"）。タスクと同一リポジトリの場合は省略。 */
+  repo?: string;
   /** GitHub API から取得した live 状態。API 未到達の override 時は UNKNOWN。 */
   state: LoopPrEvidenceState;
   /** レビュー判定（APPROVED / CHANGES_REQUESTED / REVIEW_REQUIRED など）。 */
@@ -144,6 +146,7 @@ const LoopSelectionSchema: z.ZodType<LoopSelection> = z.object({
 export const LoopPrEvidenceSchema: z.ZodType<LoopPrEvidence> = z
   .object({
     number: z.number().int().positive(),
+    repo: z.string().min(1).optional(),
     state: z.enum(LOOP_PR_EVIDENCE_STATES),
     reviewDecision: z.string().nullable().optional(),
     unresolvedThreads: z.number().int().nonnegative().optional(),
@@ -159,6 +162,22 @@ export const LoopPrEvidenceSchema: z.ZodType<LoopPrEvidence> = z
         code: z.ZodIssueCode.custom,
         path: ["overrideReason"],
         message: "overridden が true の evidence には overrideReason が必要です",
+      });
+    }
+    // 逆方向: 理由だけが残り override の事実が消えた不整合も受理しない
+    if (ev.overrideReason !== undefined && ev.overridden !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["overridden"],
+        message: "overrideReason がある evidence は overridden が true でなければなりません",
+      });
+    }
+    // UNKNOWN は API 未到達のまま override した場合にのみ生成される
+    if (ev.state === "UNKNOWN" && ev.overridden !== true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["state"],
+        message: "state UNKNOWN の evidence は overridden が true でなければなりません",
       });
     }
   });
