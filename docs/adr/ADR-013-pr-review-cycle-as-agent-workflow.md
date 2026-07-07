@@ -52,6 +52,23 @@ PR 後レビューサイクルの責務境界と手順の正本は本 ADR と
 - この契約は `NFR-STABILITY-005` と `tests/workflow/review-cycle.test.ts` で
   trace する。
 
+### 2026-07-08 追補: 補助層としての hooks の契約 (#307)
+
+Alternatives の「hooks は補助に留め、正本は workflow skill と script に置く」を
+具体的な契約に落とす。PR #304 で「PR 作成 = 完了」と誤認した完了報告が実際に
+発生したため、ADR-010 の L2 (Claude Code hooks) にリマインダーと停止ゲートを
+追加した。hooks が満たすべき契約は以下のとおり。
+
+- hooks は正本である `pr-review-cycle-wait.sh` への**参照**（実行の督促・
+  未対応項目の検出による停止ブロック）に限る。待機ロジック（quiet window /
+  stable samples / タイムアウト）を hooks 側に再実装してはならない。
+- Stop hook は `stop_hook_active` 再入時に即座に許可し、gh / git 不在や
+  API 失敗時は静かに許可する（fail-open）。hooks はリマインドの層であり、
+  環境非依存の強制は ADR-019（loop complete の PR evidence ゲート）が担う。
+- `tests/workflow/review-cycle.test.ts` の trace は「hooks が script に言及
+  しない」ではなく「hooks が待機ロジックを再実装せず、再入・fail-open が
+  保証されている」ことを検証する。
+
 ## Alternatives
 
 ### gh-gantt CLI に review-cycle コマンドを追加する

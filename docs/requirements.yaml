@@ -1104,7 +1104,9 @@ areas:
               gh-gantt-workflow skill 付属 script と workflow が定義されている。
               セッション開始時と完了報告前はリポジトリのオープン PR 全件を確認し、
               完了報告前は quiet window と stable samples を満たすまで待つ。
-              現在ブランチの PR だけで完了扱いしない
+              現在ブランチの PR だけで完了扱いしない。
+              Claude hooks は正本 script を参照する補助リマインダー・停止ゲートに
+              限り、待機ロジックを再実装しない (#307, ADR-013 2026-07-08 追補)
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts

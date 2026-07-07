@@ -137,9 +137,43 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
       entries.flatMap((entry) => entry.hooks.map((hook) => hook.command ?? "")),
     );
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
+    const stopHook = await readRepoFile(".claude/hooks/stop-pr-review-cycle.sh");
 
-    expect(allHookCommands.join("\n")).not.toContain("pr-review-cycle");
+    // hooks は正本 script への参照（リマインド・停止ゲート）に限る
+    // (ADR-013 2026-07-08 追補 / #307)。待機ロジックの再実装は正本の二重化になる
+    expect(allHookCommands.join("\n")).toContain("pr-review-cycle-wait.sh --current-branch");
+    expect(allHookCommands.join("\n")).not.toContain("quiet_seconds");
+    expect(stopHook).not.toContain("quiet_seconds");
+    expect(stopHook).not.toContain("stable_samples");
+    expect(stopHook).not.toContain("timeout_seconds");
     expect(workflow).toContain("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+  });
+
+  it("Stop hook は stop_hook_active 再入時に即座に許可する（無限ループ防止）", async () => {
+    // exit 0 でなければ execFileAsync が throw してテストが失敗する
+    await execFileAsync(
+      "bash",
+      ["-c", `echo '{"stop_hook_active": true}' | bash .claude/hooks/stop-pr-review-cycle.sh`],
+      { cwd: repoRoot },
+    );
+  });
+
+  it("Stop hook は gh が失敗する環境では静かに許可する（fail-open）", async () => {
+    // 環境非依存の強制は ADR-019 の loop complete ゲートが担うため、
+    // hook 側は開発を妨げない fail-open とする (ADR-010 2026-07-08 追補)
+    const tempDir = await mkdtemp(join(tmpdir(), "gh-gantt-stop-hook-"));
+    try {
+      const mockGhPath = join(tempDir, "gh");
+      await writeFile(mockGhPath, "#!/usr/bin/env bash\nexit 1\n");
+      await chmod(mockGhPath, 0o755);
+      await execFileAsync(
+        "bash",
+        ["-c", "echo '{}' | bash .claude/hooks/stop-pr-review-cycle.sh"],
+        { cwd: repoRoot, env: { ...process.env, PATH: `${tempDir}:${process.env.PATH ?? ""}` } },
+      );
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("wait script が gh pr / gh api graphql で非同期 review surface の安定を待つ", async () => {
