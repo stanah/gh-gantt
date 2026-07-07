@@ -138,15 +138,89 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
     );
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
     const stopHook = await readRepoFile(".claude/hooks/stop-pr-review-cycle.sh");
+    const postHook = await readRepoFile(".claude/hooks/post-pr-create-reminder.sh");
 
     // hooks は正本 script への参照（リマインド・停止ゲート）に限る
     // (ADR-013 2026-07-08 追補 / #307)。待機ロジックの再実装は正本の二重化になる
-    expect(allHookCommands.join("\n")).toContain("pr-review-cycle-wait.sh --current-branch");
-    expect(allHookCommands.join("\n")).not.toContain("quiet_seconds");
-    expect(stopHook).not.toContain("quiet_seconds");
-    expect(stopHook).not.toContain("stable_samples");
-    expect(stopHook).not.toContain("timeout_seconds");
+    const joined = allHookCommands.join("\n");
+    expect(joined).toContain(".claude/hooks/post-pr-create-reminder.sh");
+    expect(joined).toContain(".claude/hooks/stop-pr-review-cycle.sh");
+    expect(postHook).toContain("pr-review-cycle-wait.sh --current-branch");
+    for (const content of [joined, stopHook, postHook]) {
+      expect(content).not.toContain("quiet_seconds");
+      expect(content).not.toContain("stable_samples");
+      expect(content).not.toContain("timeout_seconds");
+    }
+    // Claude Code の matcher はツール名のみ有効。コマンド判定は script 側で行う
+    const postMatchers = (settings.hooks.PostToolUse ?? []).map((entry) => entry.matcher);
+    expect(postMatchers).toContain("Bash");
+    expect(postMatchers.join("\n")).not.toContain("(");
     expect(workflow).toContain("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
+  });
+
+  it("PostToolUse hook は gh pr create の実行後にのみリマインダーを注入する", async () => {
+    const hookPath = ".claude/hooks/post-pr-create-reminder.sh";
+    // gh pr create → exit 2 でリマインダーを stderr に出す
+    await expect(
+      execFileAsync(
+        "bash",
+        [
+          "-c",
+          `printf '%s' '{"tool_input":{"command":"gh pr create --title x"}}' | bash ${hookPath}`,
+        ],
+        { cwd: repoRoot },
+      ),
+    ).rejects.toMatchObject({ code: 2 });
+    // 文字列としての言及（引数内）では発火しない
+    await execFileAsync(
+      "bash",
+      [
+        "-c",
+        `printf '%s' '{"tool_input":{"command":"echo \\"gh pr create\\""}}' | bash ${hookPath}`,
+      ],
+      { cwd: repoRoot },
+    );
+    // 無関係なコマンド・壊れた入力では発火しない
+    await execFileAsync(
+      "bash",
+      ["-c", `printf '%s' '{"tool_input":{"command":"git status"}}' | bash ${hookPath}`],
+      { cwd: repoRoot },
+    );
+    await execFileAsync("bash", ["-c", `printf '%s' 'broken' | bash ${hookPath}`], {
+      cwd: repoRoot,
+    });
+  });
+
+  it("Stop hook は未対応項目が残るオープン PR を検出したら停止をブロックする", async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), "gh-gantt-stop-block-"));
+    try {
+      const mockGhPath = join(tempDir, "gh");
+      const mockGh = `#!/usr/bin/env bash
+args="$*"
+case "$args" in
+  *"pr list"*) printf '123\\n' ;;
+  *"pr view"*) printf 'CHANGES_REQUESTED\\n' ;;
+  *"repo view"*owner*) printf 'stanah\\n' ;;
+  *"repo view"*) printf 'gh-gantt\\n' ;;
+  *"api graphql"*) printf '2\\n' ;;
+  *) exit 1 ;;
+esac
+`;
+      await writeFile(mockGhPath, mockGh);
+      await chmod(mockGhPath, 0o755);
+      // feature ブランチを持つ一時 git リポジトリで実行する（CI の detached HEAD に依存しない）
+      const repoDir = join(tempDir, "repo");
+      await execFileAsync("git", ["init", "-b", "feature-stop-hook-test", repoDir]);
+      const hookAbsPath = resolve(repoRoot, ".claude/hooks/stop-pr-review-cycle.sh");
+      await expect(
+        execFileAsync("bash", ["-c", `echo '{}' | bash "${hookAbsPath}"`], {
+          cwd: repoDir,
+          env: { ...process.env, PATH: `${tempDir}:${process.env.PATH ?? ""}` },
+        }),
+      ).rejects.toMatchObject({ code: 2 });
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   });
 
   it("Stop hook は stop_hook_active 再入時に即座に許可する（無限ループ防止）", async () => {

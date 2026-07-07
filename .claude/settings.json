@@ -35,11 +35,11 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "Bash(gh pr create*)",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",
-            "command": "echo '⚠ PR 作成は完了ではなく、レビュー監視の開始です (gh-gantt-workflow 手順14-16)。次を必ず実施すること: (1) skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch で CI と非同期レビューの安定を待つ (2) 指摘は精査して同じ PR に追加コミットで対応し、pending review で返信・resolve する (3) 完了報告の前に同スクリプトを --all-open で実行する。' >&2; exit 2"
+            "command": "\"$CLAUDE_PROJECT_DIR/.claude/hooks/post-pr-create-reminder.sh\""
           }
         ]
       }
