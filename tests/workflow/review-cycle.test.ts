@@ -263,11 +263,25 @@ esac
       const mockGhPath = join(tempDir, "gh");
       await writeFile(mockGhPath, "#!/usr/bin/env bash\nexit 1\n");
       await chmod(mockGhPath, 0o755);
-      await execFileAsync(
-        "bash",
-        ["-c", "echo '{}' | bash .claude/hooks/stop-pr-review-cycle.sh"],
-        { cwd: repoRoot, env: { ...process.env, PATH: `${tempDir}:${process.env.PATH ?? ""}` } },
-      );
+      // main / detached HEAD の早期 return で空振りしないよう、
+      // feature ブランチを持つ一時リポジトリで gh 失敗経路まで到達させる
+      const cleanEnv: NodeJS.ProcessEnv = {
+        ...process.env,
+        PATH: `${tempDir}:${process.env.PATH ?? ""}`,
+      };
+      delete cleanEnv.GIT_DIR;
+      delete cleanEnv.GIT_WORK_TREE;
+      delete cleanEnv.GIT_INDEX_FILE;
+      delete cleanEnv.GIT_COMMON_DIR;
+      const repoDir = join(tempDir, "repo");
+      await execFileAsync("git", ["init", "-b", "feature-fail-open-test", repoDir], {
+        env: cleanEnv,
+      });
+      const hookAbsPath = resolve(repoRoot, ".claude/hooks/stop-pr-review-cycle.sh");
+      await execFileAsync("bash", ["-c", `echo '{}' | bash "${hookAbsPath}"`], {
+        cwd: repoDir,
+        env: cleanEnv,
+      });
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
