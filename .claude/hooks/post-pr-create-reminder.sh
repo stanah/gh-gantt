@@ -18,7 +18,7 @@ except Exception:
 cmd = (data.get("tool_input") or {}).get("command", "")
 # コマンドの先頭または連結 (; & |) の直後に現れる gh pr create のみを対象にする。
 # echo 等の引数に文字列として現れるだけのコマンドで誤発火させない
-print("MATCH" if re.search(r"(?:^|[;&|])\s*(?:command\s+)?gh\s+pr\s+create\b", cmd) else "")
+print("MATCH" if re.search(r"(?:^|[;&|\n])\s*(?:command\s+)?gh\s+pr\s+create\b", cmd) else "")
 ' 2>/dev/null || true)
 
 case "$matched" in

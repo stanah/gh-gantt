@@ -171,6 +171,17 @@ describe("[NFR-STABILITY-005-AC1] PR 後レビューサイクル検出 workflow"
         { cwd: repoRoot },
       ),
     ).rejects.toMatchObject({ code: 2 });
+    // 改行区切りの複合コマンドでも発火する
+    await expect(
+      execFileAsync(
+        "bash",
+        [
+          "-c",
+          `printf '%s' '{"tool_input":{"command":"git push\\ngh pr create --fill"}}' | bash ${hookPath}`,
+        ],
+        { cwd: repoRoot },
+      ),
+    ).rejects.toMatchObject({ code: 2 });
     // 文字列としての言及（引数内）では発火しない
     await execFileAsync(
       "bash",
