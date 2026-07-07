@@ -33,6 +33,7 @@ import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
 import { LoopStateStore } from "../store/loop-state.js";
 import {
+  detectMissingTaskRejection,
   evaluatePrEvidence,
   extractLinkedPrNumbers,
   fetchPrGateStates,
@@ -806,6 +807,16 @@ export const loopCommand = new Command("loop")
                 } else {
                   rejection = evaluation;
                 }
+              } else if (open?.selectedTask && task === undefined) {
+                // タスク不在だと linked PR を列挙できず、ゲートが黙って
+                // スキップされる fail-open になるため completed を拒否する
+                rejection = detectMissingTaskRejection({
+                  outcome,
+                  requirePrEvidence: resolved.requirePrEvidence,
+                  selectedTask: open.selectedTask,
+                  taskFound: false,
+                  overrideReason: opts.overridePrGate,
+                });
               }
 
               result = rejection

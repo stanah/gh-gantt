@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { Config, LinkedPullRequestRef, LoopState } from "@gh-gantt/shared";
 import { resolveLoopConfig } from "@gh-gantt/shared";
 import {
+  detectMissingTaskRejection,
   evaluatePrEvidence,
   extractLinkedPrNumbers,
   formatPrGateRejection,
@@ -216,6 +217,66 @@ describe("[FR-CLI-018-AC4] API 到達不能時の fail-closed", () => {
     if (result.kind === "rejected_fetch_failed") {
       expect(result.message).toContain("#310");
     }
+  });
+});
+
+describe("[FR-CLI-018-AC4] 選定タスクがローカルに不在の場合の fail-closed", () => {
+  it("completed かつゲート有効でタスク不在なら拒否する（黙ってスキップしない）", () => {
+    const rejection = detectMissingTaskRejection({
+      outcome: "completed",
+      requirePrEvidence: true,
+      selectedTask: "stanah/gh-gantt#308",
+      taskFound: false,
+    });
+    expect(rejection).toEqual({ kind: "rejected_task_missing", taskId: "stanah/gh-gantt#308" });
+    if (rejection) {
+      const message = formatPrGateRejection(rejection);
+      expect(message).toContain("fail-closed");
+      expect(message).toContain("gh-gantt pull");
+      expect(message).toContain("--override-pr-gate");
+    }
+  });
+
+  it("タスクが見つかっていれば拒否しない", () => {
+    expect(
+      detectMissingTaskRejection({
+        outcome: "completed",
+        requirePrEvidence: true,
+        selectedTask: "stanah/gh-gantt#308",
+        taskFound: true,
+      }),
+    ).toBeNull();
+  });
+
+  it("--override-pr-gate 指定時は拒否しない", () => {
+    expect(
+      detectMissingTaskRejection({
+        outcome: "completed",
+        requirePrEvidence: true,
+        selectedTask: "stanah/gh-gantt#308",
+        taskFound: false,
+        overrideReason: "オフライン作業のため",
+      }),
+    ).toBeNull();
+  });
+
+  it("outcome が completed 以外、または requirePrEvidence=false なら拒否しない", () => {
+    expect(
+      detectMissingTaskRejection({
+        outcome: "abandoned",
+        requirePrEvidence: true,
+        selectedTask: "stanah/gh-gantt#308",
+        taskFound: false,
+      }),
+    ).toBeNull();
+    expect(
+      detectMissingTaskRejection({
+        outcome: "completed",
+        requirePrEvidence: false,
+        selectedTask: "stanah/gh-gantt#308",
+        taskFound: false,
+      }),
+    ).toBeNull();
   });
 });
 

@@ -31,7 +31,9 @@ export type PrEvidenceEvaluation =
   | { kind: "rejected_open_prs"; openPrs: PrGateState[] }
   | { kind: "rejected_fetch_failed"; message: string };
 
-export type PrGateRejection = Exclude<PrEvidenceEvaluation, { kind: "accepted" }>;
+export type PrGateRejection =
+  | Exclude<PrEvidenceEvaluation, { kind: "accepted" }>
+  | { kind: "rejected_task_missing"; taskId: string };
 
 /**
  * linked_prs（番号形式 / メタデータ形式の両方）から PR 番号を重複なしで列挙する。
@@ -52,6 +54,24 @@ export function shouldApplyPrGate(params: {
   prNumbers: number[];
 }): boolean {
   return params.outcome === "completed" && params.requirePrEvidence && params.prNumbers.length > 0;
+}
+
+/**
+ * 選定タスクがローカル tasks.json に見つからない場合の fail-closed 判定。
+ * タスクが不在だと linked PR を列挙できず、ゲートが黙ってスキップされる
+ * fail-open になってしまうため、completed は override なしでは受理しない。
+ */
+export function detectMissingTaskRejection(params: {
+  outcome: LoopIterationOutcome;
+  requirePrEvidence: boolean;
+  selectedTask: string | null | undefined;
+  taskFound: boolean;
+  overrideReason?: string;
+}): PrGateRejection | null {
+  if (params.outcome !== "completed" || !params.requirePrEvidence) return null;
+  if (!params.selectedTask || params.taskFound) return null;
+  if (params.overrideReason !== undefined) return null;
+  return { kind: "rejected_task_missing", taskId: params.selectedTask };
 }
 
 /** PrGateState を prEvidence の 1 エントリに変換する。 */
@@ -132,7 +152,13 @@ export function evaluatePrEvidence(params: {
 /** ゲート拒否時の診断メッセージ（人間向け・日本語）。 */
 export function formatPrGateRejection(rejection: PrGateRejection): string {
   const lines: string[] = [];
-  if (rejection.kind === "rejected_fetch_failed") {
+  if (rejection.kind === "rejected_task_missing") {
+    lines.push(
+      `completed を拒否しました: 選定タスク ${rejection.taskId} がローカル tasks.json に` +
+        "見つからず、linked PR を列挙できません (fail-closed)",
+    );
+    lines.push("  gh-gantt pull で同期してから再実行してください。");
+  } else if (rejection.kind === "rejected_fetch_failed") {
     lines.push("completed を拒否しました: PR の live 状態を取得できませんでした (fail-closed)");
     lines.push(`  error: ${rejection.message}`);
     lines.push("  ネットワークと認証 (GITHUB_TOKEN / gh auth) を確認して再実行してください。");
