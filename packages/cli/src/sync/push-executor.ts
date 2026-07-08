@@ -21,6 +21,7 @@ import {
   fetchRepositoryMetadata,
   fetchUserIds,
   fetchOrgIssueTypes,
+  type RepositoryMetadata,
 } from "../github/projects.js";
 import { buildIssueUpdatedAtQuery } from "../github/queries.js";
 import { getToken } from "../github/auth.js";
@@ -37,6 +38,7 @@ import {
   createGithubMilestone,
   addBlockedByIssue,
   removeBlockedByIssue,
+  type UpdateIssueFields,
 } from "../github/mutations.js";
 import { formatError } from "../util/format.js";
 
@@ -168,6 +170,16 @@ export async function executePush(
 
   const fm = config.sync.field_mapping;
   const { owner, repo } = config.project.github;
+
+  // repository metadata (labelMap / milestoneMap) の遅延 fetch キャッシュ。
+  // draft 作成経路と既存 Issue の metadata 更新経路 (#305) で共有し、
+  // metadata 変更がない push では fetch しない (NFR-SYNC-002)
+  let repositoryMetadataPromise: Promise<RepositoryMetadata> | null = null;
+  const getRepositoryMetadata = (): Promise<RepositoryMetadata> => {
+    repositoryMetadataPromise ??= fetchRepositoryMetadata(gql, owner, repo);
+    return repositoryMetadataPromise;
+  };
+
   let issueTypeIdByName: Map<string, string> | undefined;
   const usesGithubIssueTypes = Object.values(config.task_types).some((t) => t.github_issue_type);
 
@@ -201,8 +213,15 @@ export async function executePush(
   interface IssueTypeFailure {
     previousSyncFields: SyncFields | undefined;
   }
+  interface MetadataFailure {
+    fields: IssueMetadataFieldName[];
+    previousSyncFields: SyncFields | undefined;
+  }
   const failedRelations = new Map<string, RelationFailure>();
   const failedIssueTypes = new Map<string, IssueTypeFailure>();
+  // 未解決名 (label / assignee / milestone) により送信をスキップしたフィールドの記録 (#305)。
+  // snapshot 更新時に該当フィールドだけ旧値へロールバックし、次回 push で再試行可能にする
+  const failedMetadata = new Map<string, MetadataFailure>();
   // Pre-relation baseline: remote state before relation mutations were attempted
   const preRelationBaseline = new Map<
     string,
@@ -278,7 +297,7 @@ export async function executePush(
 
     const [repositoryId, metadata, userIdMap] = await Promise.all([
       fetchRepositoryId(gql, owner, repo),
-      fetchRepositoryMetadata(gql, owner, repo),
+      getRepositoryMetadata(),
       fetchUserIds(gql, [...allAssignees]),
     ]);
     const createdTaskIds: string[] = [];
@@ -544,6 +563,23 @@ export async function executePush(
     result.skipped += draftDiffs.length;
   }
 
+  // 既存 Issue の assignees 変更に必要な login を事前収集し、
+  // 1 回の fetchUserIds でまとめて解決する (NFR-SYNC-002)。
+  // 変更がない場合は fetch 自体を行わない
+  const assigneeLoginsToResolve = new Set<string>();
+  for (const diff of existingDiffs) {
+    if (diff.type === "deleted") continue;
+    const previous = syncState.snapshots[diff.id]?.syncFields;
+    if (detectIssueMetadataChanges(diff.task, previous).assignees) {
+      for (const login of diff.task.assignees) assigneeLoginsToResolve.add(login);
+    }
+  }
+  let updateUserIdMapPromise: Promise<Map<string, string>> | null = null;
+  const getUpdateUserIdMap = (): Promise<Map<string, string>> => {
+    updateUserIdMapPromise ??= fetchUserIds(gql, [...assigneeLoginsToResolve]);
+    return updateUserIdMapPromise;
+  };
+
   // Process existing task updates
   for (const diff of existingDiffs) {
     if (diff.type === "deleted") {
@@ -559,16 +595,30 @@ export async function executePush(
     }
 
     if (diff.type === "modified" || diff.type === "added") {
+      const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
+        // assignees / labels / milestone は置換セマンティクスのため、
+        // snapshot と差分があるフィールドだけを updateIssue に含める (#305)
+        const metadataUpdate = await resolveIssueMetadataUpdate(task, snapshot?.syncFields, {
+          getRepositoryMetadata,
+          getUserIdMap: getUpdateUserIdMap,
+        });
+        if (metadataUpdate.failedFields.length > 0) {
+          failedMetadata.set(task.id, {
+            fields: metadataUpdate.failedFields,
+            previousSyncFields: snapshot?.syncFields,
+          });
+        }
+
         const issueMutations: Promise<unknown>[] = [
           updateIssue(gql, idEntry.issue_node_id, {
             title: task.title,
             body: serializeTaskBodyForGithub(task),
+            ...metadataUpdate.fields,
           }),
           setIssueState(gql, idEntry.issue_node_id, task.state),
         ];
 
-        const snapshot = syncState.snapshots[task.id];
         if (usesGithubIssueTypes && snapshot?.syncFields?.type !== task.type) {
           const issueTypeId = await resolveGithubIssueTypeId(task.type);
           if (issueTypeId !== undefined) {
@@ -645,7 +695,6 @@ export async function executePush(
         }
       }
 
-      const snapshot = syncState.snapshots[task.id];
       if (idEntry.issue_node_id) {
         // Capture pre-mutation baseline for rollback on failure
         preRelationBaseline.set(task.id, {
@@ -809,6 +858,35 @@ export async function executePush(
         }
       }
 
+      // 未解決名により送信をスキップした metadata フィールドは snapshot を旧値に
+      // 留めることで computeLocalDiff が次回 push でも差分として検出できるようにする (#305)
+      const metadataFailure = failedMetadata.get(id);
+      if (metadataFailure) {
+        if (metadataFailure.previousSyncFields) {
+          if (metadataFailure.fields.includes("assignees")) {
+            syncFields = { ...syncFields, assignees: metadataFailure.previousSyncFields.assignees };
+          }
+          if (metadataFailure.fields.includes("labels")) {
+            syncFields = { ...syncFields, labels: metadataFailure.previousSyncFields.labels };
+          }
+          if (metadataFailure.fields.includes("milestone")) {
+            syncFields = { ...syncFields, milestone: metadataFailure.previousSyncFields.milestone };
+          }
+        } else {
+          // 旧値が不明 (snapshot なし) の場合は snapshot を進めず次回 push で再試行する
+          if (existing) {
+            newSnapshots[id] = {
+              ...existing,
+              synced_at: new Date().toISOString(),
+              updated_at: freshMetadata?.updatedAt ?? existing.updated_at,
+            };
+          } else {
+            delete newSnapshots[id];
+          }
+          continue;
+        }
+      }
+
       // If relationship mutations partially failed, roll back only the failed fields
       // to the pre-mutation baseline so computeLocalDiff detects the diff on next push
       const relationFailure = failedRelations.get(id);
@@ -825,7 +903,7 @@ export async function executePush(
       }
 
       // Hash must match syncFields so diff detection works correctly
-      const hasRetryableFailure = Boolean(issueTypeFailure || relationFailure);
+      const hasRetryableFailure = Boolean(issueTypeFailure || relationFailure || metadataFailure);
       const snapshotHash = hasRetryableFailure ? hashSyncFields(syncFields) : hashTask(task);
 
       newSnapshots[id] = {
@@ -1018,6 +1096,135 @@ function buildDateFieldUpdate(
  */
 function normalizeDateValue(value: string | null | undefined): string | null {
   return value === null || value === undefined || value === "" ? null : value;
+}
+
+/** updateIssue で送信する Issue metadata フィールドの名前 (#305) */
+type IssueMetadataFieldName = "assignees" | "labels" | "milestone";
+
+/** 2 つの文字列配列をソート済み集合として比較する (assignees / labels 用) */
+function stringArraysEqualSorted(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const sortedA = [...a].sort();
+  const sortedB = [...b].sort();
+  return sortedA.every((value, index) => value === sortedB[index]);
+}
+
+interface IssueMetadataChanges {
+  assignees: boolean;
+  labels: boolean;
+  milestone: boolean;
+}
+
+/**
+ * snapshot (syncFields) と比較して assignees / labels / milestone に変更があるか判定する (#305)。
+ *
+ * snapshot が無い場合 (非 draft の added 経路) はリモートの既存値が不明なため、
+ * ローカルに値があるフィールドだけを変更ありとして扱う。
+ * 空のフィールドを置換セマンティクスで送るとリモート値を意図せず剥がすため送らない。
+ */
+function detectIssueMetadataChanges(
+  task: Task,
+  previous: SyncFields | undefined,
+): IssueMetadataChanges {
+  if (!previous) {
+    return {
+      assignees: task.assignees.length > 0,
+      labels: task.labels.length > 0,
+      milestone: task.milestone !== null,
+    };
+  }
+  return {
+    assignees: !stringArraysEqualSorted(task.assignees, previous.assignees),
+    labels: !stringArraysEqualSorted(task.labels, previous.labels),
+    milestone: task.milestone !== previous.milestone,
+  };
+}
+
+interface IssueMetadataUpdateResult {
+  /** updateIssue に渡す解決済みフィールド (変更がないフィールドはキー自体を含めない) */
+  fields: Pick<UpdateIssueFields, "assigneeIds" | "labelIds" | "milestoneId">;
+  /** 未解決名により送信をスキップしたフィールド */
+  failedFields: IssueMetadataFieldName[];
+}
+
+/**
+ * 既存 Issue の assignees / labels / milestone の変更を updateIssue 用に解決する (#305)。
+ *
+ * - snapshot と差分があるフィールドだけを対象にする (不要な API 負荷と意図しない置換を避ける)
+ * - assigneeIds / labelIds は全置換のため、1 つでも未解決名があるフィールドは
+ *   送信をスキップして警告を出す (silent drop するとリモートの値が剥がれる)
+ * - milestone のローカル null 化は milestoneId: null で解除として送信する
+ * - metadata の fetch は変更があるフィールドの解決に必要な場合だけ行う (NFR-SYNC-002)
+ */
+async function resolveIssueMetadataUpdate(
+  task: Task,
+  previous: SyncFields | undefined,
+  deps: {
+    getRepositoryMetadata: () => Promise<RepositoryMetadata>;
+    getUserIdMap: () => Promise<Map<string, string>>;
+  },
+): Promise<IssueMetadataUpdateResult> {
+  const changes = detectIssueMetadataChanges(task, previous);
+  const fields: IssueMetadataUpdateResult["fields"] = {};
+  const failedFields: IssueMetadataFieldName[] = [];
+
+  // 解除・全削除は ID 解決が不要なため metadata / user の fetch を伴わずに送信する。
+  // fetch が必要なのは非空の名前を ID に解決する場合だけであり、クリア操作が
+  // 無関係な fetch の失敗に巻き込まれてブロックされることも防ぐ (NFR-SYNC-002)
+
+  if (changes.assignees) {
+    if (task.assignees.length === 0) {
+      fields.assigneeIds = [];
+    } else {
+      const userIdMap = await deps.getUserIdMap();
+      const unresolved = task.assignees.filter((login) => !userIdMap.has(login));
+      if (unresolved.length > 0) {
+        console.warn(
+          `  ⚠ assignee が解決できないため assignees の更新をスキップ (${task.id}): ${unresolved.join(", ")}`,
+        );
+        failedFields.push("assignees");
+      } else {
+        fields.assigneeIds = task.assignees.map((login) => userIdMap.get(login)!);
+      }
+    }
+  }
+
+  if (changes.labels) {
+    if (task.labels.length === 0) {
+      fields.labelIds = [];
+    } else {
+      const metadata = await deps.getRepositoryMetadata();
+      const unresolved = task.labels.filter((name) => !metadata.labelMap.has(name));
+      if (unresolved.length > 0) {
+        console.warn(
+          `  ⚠ label が解決できないため labels の更新をスキップ (${task.id}): ${unresolved.join(", ")}`,
+        );
+        failedFields.push("labels");
+      } else {
+        fields.labelIds = task.labels.map((name) => metadata.labelMap.get(name)!);
+      }
+    }
+  }
+
+  if (changes.milestone) {
+    if (task.milestone === null) {
+      // ローカルで milestone が解除された場合は null を明示的に送信して解除する
+      fields.milestoneId = null;
+    } else {
+      const metadata = await deps.getRepositoryMetadata();
+      const milestoneId = metadata.milestoneMap.get(task.milestone);
+      if (milestoneId === undefined) {
+        console.warn(
+          `  ⚠ milestone が解決できないため milestone の更新をスキップ (${task.id}): ${task.milestone}`,
+        );
+        failedFields.push("milestone");
+      } else {
+        fields.milestoneId = milestoneId;
+      }
+    }
+  }
+
+  return { fields, failedFields };
 }
 
 function buildEstimateHoursFieldUpdate(
