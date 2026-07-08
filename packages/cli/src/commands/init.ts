@@ -183,10 +183,11 @@ export const initCommand = new Command("init")
       typeHierarchy[typeName] = [];
     }
 
+    // Status フィールド名は statuses.field_name のみに書く (#315)。
+    // sync.field_mapping.status は deprecated のため新規 config には出力しない。
     const fieldMapping: Config["sync"]["field_mapping"] = {
       start_date: opts.startDateField,
       end_date: opts.endDateField,
-      status: opts.statusField,
       type: resolvedTypeFieldName,
     };
 

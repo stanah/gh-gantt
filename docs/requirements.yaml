@@ -981,6 +981,12 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-STORE-001-AC4
+            description: deprecated な sync.field_mapping.status は受理されるが無視され、statuses.field_name と食い違う場合は読み込み時に警告される
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/store.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
       - id: FR-STORE-002
         summary: タスクファイルの読み書き
         acceptance_criteria:

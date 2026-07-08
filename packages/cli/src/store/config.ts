@@ -21,6 +21,16 @@ export class ConfigStore {
         sv.starts_work = true;
       }
     }
+    // deprecated な sync.field_mapping.status が正 (statuses.field_name) と
+    // 食い違っている場合に警告する (#315)。値は無視され pull/push には影響しない。
+    const deprecatedStatus = config.sync.field_mapping.status;
+    if (deprecatedStatus !== undefined && deprecatedStatus !== config.statuses.field_name) {
+      console.warn(
+        `WARNING: sync.field_mapping.status ("${deprecatedStatus}") は deprecated であり無視されます。` +
+          `pull/push は statuses.field_name ("${config.statuses.field_name}") を使用します。` +
+          `gantt.config.json から sync.field_mapping.status を削除してください。`,
+      );
+    }
     return config;
   }
 

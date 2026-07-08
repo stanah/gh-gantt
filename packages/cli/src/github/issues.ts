@@ -83,7 +83,7 @@ export function getNextDraftNumber(tasks: Task[]): number {
 
 export function mapProjectItemToTask(
   item: RawProjectItem,
-  fieldMapping: { start_date: string; end_date: string; status: string },
+  fieldMapping: { start_date: string; end_date: string },
   taskType: string,
 ): Task | null {
   if (!item.content) return null;
