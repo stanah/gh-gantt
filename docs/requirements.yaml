@@ -58,6 +58,11 @@ areas:
             description: 未解決コンフリクトがある場合は push を拒否する
             status: uncovered
             tests: []
+          - id: FR-SYNC-003-AC4
+            description: start_date / end_date の null 化を push で ProjectV2 の日付フィールドクリアとして反映できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-executor.test.ts
       - id: FR-SYNC-004
         summary: リモートデータからローカルタスクへのマッピング
         acceptance_criteria:
@@ -1058,6 +1063,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-233-relation-node-id.test.ts
+          - id: NFR-STABILITY-002-AC3
+            description: |
+              ローカルで null 化された日付フィールド (start_date / end_date) が
+              push で無言のまま GitHub に残置されず、ProjectV2 フィールドクリア
+              として反映される (regression #306)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-306-date-clear-push.test.ts
       - id: NFR-STABILITY-003
         summary: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
         acceptance_criteria:

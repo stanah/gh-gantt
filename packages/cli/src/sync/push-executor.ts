@@ -586,28 +586,24 @@ export async function executePush(
       if (idEntry.project_item_id) {
         const fieldUpdates: Promise<unknown>[] = [];
 
-        if (task.start_date && syncState.field_ids[fm.start_date]) {
-          fieldUpdates.push(
-            updateProjectItemField(
-              gql,
-              syncState.project_node_id,
-              idEntry.project_item_id,
-              syncState.field_ids[fm.start_date],
-              { date: task.start_date },
-            ),
-          );
-        }
-        if (task.end_date && syncState.field_ids[fm.end_date]) {
-          fieldUpdates.push(
-            updateProjectItemField(
-              gql,
-              syncState.project_node_id,
-              idEntry.project_item_id,
-              syncState.field_ids[fm.end_date],
-              { date: task.end_date },
-            ),
-          );
-        }
+        const startDateUpdate = buildDateFieldUpdate(
+          gql,
+          syncState,
+          fm.start_date,
+          idEntry.project_item_id,
+          task,
+          "start_date",
+        );
+        if (startDateUpdate) fieldUpdates.push(startDateUpdate);
+        const endDateUpdate = buildDateFieldUpdate(
+          gql,
+          syncState,
+          fm.end_date,
+          idEntry.project_item_id,
+          task,
+          "end_date",
+        );
+        if (endDateUpdate) fieldUpdates.push(endDateUpdate);
         if (fm.type && syncState.field_ids[fm.type]) {
           const typeOptionId = resolveTypeOptionId(
             task.type,
@@ -984,6 +980,35 @@ function buildPriorityFieldUpdate(
       singleSelectOptionId: optionId,
     },
   );
+}
+
+/**
+ * 日付フィールド (start_date / end_date) の ProjectV2 更新 mutation を組み立てる。
+ *
+ * ローカルの日付が null の場合、snapshot (syncFields) に以前の値が残っているときだけ
+ * clearProjectV2ItemFieldValue でリモート側のフィールドをクリアする (#306)。
+ * 以前から null の場合は不要な API コールを避けるため何もしない。
+ * buildEstimateHoursFieldUpdate と同じクリア判定パターンに従う。
+ */
+function buildDateFieldUpdate(
+  gql: typeof graphql,
+  syncState: SyncState,
+  fieldName: string,
+  projectItemId: string,
+  task: Task,
+  dateKey: "start_date" | "end_date",
+): Promise<unknown> | null {
+  const fieldId = syncState.field_ids[fieldName];
+  if (!fieldId) return null;
+  const localDate = task[dateKey];
+  if (!localDate) {
+    const previousDate = syncState.snapshots[task.id]?.syncFields?.[dateKey];
+    if (!previousDate) return null;
+    return clearProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId);
+  }
+  return updateProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId, {
+    date: localDate,
+  });
 }
 
 function buildEstimateHoursFieldUpdate(

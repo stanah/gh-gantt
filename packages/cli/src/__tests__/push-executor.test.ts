@@ -1366,6 +1366,150 @@ describe("executePush", () => {
       );
     });
 
+    it("[FR-SYNC-003-AC4] start_date / end_date が null 化された場合は date フィールドを clear する", async () => {
+      const clearedFields: any[] = [];
+      const updatedFields: any[] = [];
+      // ローカルでは両方の日付が none 指定で null 化されている
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        start_date: null,
+        end_date: null,
+      });
+      // snapshot (前回同期時) には日付が設定されていた
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        start_date: "2026-07-01",
+        end_date: "2026-07-31",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { "Start Date": "FIELD_START", "End Date": "FIELD_END" },
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(previousTask),
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const mockGql = makeMockGql({
+        updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          updatedFields.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+        clearProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          clearedFields.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      // 両方の日付フィールドがクリアされる
+      expect(clearedFields).toContainEqual(expect.objectContaining({ fieldId: "FIELD_START" }));
+      expect(clearedFields).toContainEqual(expect.objectContaining({ fieldId: "FIELD_END" }));
+      // updateProjectV2ItemFieldValue で日付が送信されることはない
+      expect(updatedFields).not.toContainEqual(expect.objectContaining({ fieldId: "FIELD_START" }));
+      expect(updatedFields).not.toContainEqual(expect.objectContaining({ fieldId: "FIELD_END" }));
+    });
+
+    it("[FR-SYNC-003-AC4] 以前から null の日付フィールドには clear を呼ばない", async () => {
+      const clearedFields: any[] = [];
+      // タイトルだけ変更し、日付は以前も現在も null のまま
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        title: "更新後のタイトル",
+      });
+      const previousTask = makeTask("o/r#1", { github_issue: 1 });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { "Start Date": "FIELD_START", "End Date": "FIELD_END" },
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const mockGql = makeMockGql({
+        clearProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          clearedFields.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      // 以前から null → クリアは不要 (無駄な API コールを増やさない)
+      expect(clearedFields).toEqual([]);
+    });
+
+    it("[FR-SYNC-003-AC4] 日付に値がある場合は従来どおり update で送信する", async () => {
+      const fieldUpdates: any[] = [];
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        start_date: "2026-07-01",
+        end_date: "2026-07-31",
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { "Start Date": "FIELD_START", "End Date": "FIELD_END" },
+        snapshots: {
+          "o/r#1": {
+            hash: "stale-hash",
+            synced_at: "",
+            syncFields: extractSyncFields(makeTask("o/r#1", { github_issue: 1 })),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const mockGql = makeMockGql({
+        updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          fieldUpdates.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      expect(fieldUpdates).toContainEqual(
+        expect.objectContaining({ fieldId: "FIELD_START", value: { date: "2026-07-01" } }),
+      );
+      expect(fieldUpdates).toContainEqual(
+        expect.objectContaining({ fieldId: "FIELD_END", value: { date: "2026-07-31" } }),
+      );
+    });
+
     it("blocker mutations run in parallel", async () => {
       const concurrency: string[] = [];
       const blocker1 = makeTask("o/r#5", { github_issue: 5 });
