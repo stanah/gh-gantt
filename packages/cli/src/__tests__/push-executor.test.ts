@@ -1978,6 +1978,220 @@ describe("executePush", () => {
     });
   });
 
+  describe("[FR-SYNC-003-AC6] Status フィールドの変更を push で ProjectV2 に反映できる", () => {
+    /** Status フィールドの field_ids / option_ids を持つ既存 Issue 1 件の syncState を構築する */
+    function makeStatusSyncState(previousTask: Task): SyncState {
+      return {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { Status: "FIELD_STATUS" },
+        option_ids: {
+          Status: { Todo: "OPT_TODO", "In Progress": "OPT_IN_PROGRESS", Done: "OPT_DONE" },
+        },
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(previousTask),
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+    }
+
+    function makeStatusTasksFile(task: Task): TasksFile {
+      return { tasks: [task], cache: { comments: {}, reactions: {} } };
+    }
+
+    /** updateProjectV2ItemFieldValue / clearProjectV2ItemFieldValue の呼び出し変数を記録する handlers */
+    function makeFieldRecorder(recorded: { updated: any[]; cleared: any[] }) {
+      return {
+        updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          recorded.updated.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+        clearProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          recorded.cleared.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      };
+    }
+
+    it("Status の変更は singleSelectOptionId に解決して updateProjectV2ItemFieldValue で送信する", async () => {
+      const recorded = { updated: [] as any[], cleared: [] as any[] };
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: { Status: "Todo" },
+      });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: { Status: "In Progress" },
+      });
+
+      const mockGql = makeMockGql(makeFieldRecorder(recorded));
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeStatusTasksFile(task),
+        makeStatusSyncState(previousTask),
+      );
+
+      expect(recorded.updated).toContainEqual(
+        expect.objectContaining({
+          fieldId: "FIELD_STATUS",
+          value: { singleSelectOptionId: "OPT_IN_PROGRESS" },
+        }),
+      );
+    });
+
+    it("Status に差分がなければ Status フィールドの update を送信しない (偽 push の回避)", async () => {
+      const recorded = { updated: [] as any[], cleared: [] as any[] };
+      // Status は同一のままタイトルだけ変更する
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: { Status: "Todo" },
+      });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        title: "更新後のタイトル",
+        custom_fields: { Status: "Todo" },
+      });
+
+      const mockGql = makeMockGql(makeFieldRecorder(recorded));
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeStatusTasksFile(task),
+        makeStatusSyncState(previousTask),
+      );
+
+      expect(recorded.updated).not.toContainEqual(
+        expect.objectContaining({ fieldId: "FIELD_STATUS" }),
+      );
+      expect(recorded.cleared).not.toContainEqual(
+        expect.objectContaining({ fieldId: "FIELD_STATUS" }),
+      );
+    });
+
+    it("Status の null 化 (以前の値あり) は clearProjectV2ItemFieldValue でクリアする", async () => {
+      const recorded = { updated: [] as any[], cleared: [] as any[] };
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        custom_fields: { Status: "Todo" },
+      });
+      // 3-way merge 等でローカルの Status キーが失われた状態
+      const task = makeTask("o/r#1", { github_issue: 1, custom_fields: {} });
+
+      const mockGql = makeMockGql(makeFieldRecorder(recorded));
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeStatusTasksFile(task),
+        makeStatusSyncState(previousTask),
+      );
+
+      expect(recorded.cleared).toContainEqual(expect.objectContaining({ fieldId: "FIELD_STATUS" }));
+    });
+
+    it("未解決の Status 値は送信をスキップして警告し、snapshot の Status を旧値に留める", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const recorded = { updated: [] as any[], cleared: [] as any[] };
+        const previousTask = makeTask("o/r#1", {
+          github_issue: 1,
+          custom_fields: { Status: "Todo" },
+        });
+        const task = makeTask("o/r#1", {
+          github_issue: 1,
+          custom_fields: { Status: "no-such-status" },
+        });
+
+        const mockGql = makeMockGql(makeFieldRecorder(recorded));
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          makeStatusTasksFile(task),
+          makeStatusSyncState(previousTask),
+        );
+
+        // Status の update / clear は送信されない
+        expect(recorded.updated).not.toContainEqual(
+          expect.objectContaining({ fieldId: "FIELD_STATUS" }),
+        );
+        expect(recorded.cleared).not.toContainEqual(
+          expect.objectContaining({ fieldId: "FIELD_STATUS" }),
+        );
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("option として解決できない"));
+        // snapshot の Status は旧値に留まり、次回 push で差分として再検出される
+        expect(newSyncState.snapshots["o/r#1"].syncFields?.custom_fields).toEqual({
+          Status: "Todo",
+        });
+        const retryDiffs = computeLocalDiff([task], newSyncState);
+        expect(retryDiffs).toContainEqual(
+          expect.objectContaining({ id: "o/r#1", type: "modified" }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("draft 新規作成経路でも Status が設定されていれば作成直後に送信する", async () => {
+      const recorded: any[] = [];
+      const draft = makeTask("o/r#draft-1", {
+        custom_fields: { Status: "In Progress" },
+      });
+      const tasksFile: TasksFile = {
+        tasks: [draft],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: { Status: "FIELD_STATUS" },
+        option_ids: { Status: { "In Progress": "OPT_IN_PROGRESS" } },
+        snapshots: {},
+      };
+
+      const mockGql = vi.fn().mockImplementation(async (query: string, vars?: any) => {
+        if (query.includes("createIssue")) {
+          return { createIssue: { issue: { id: "ISSUE_99", number: 99 } } };
+        }
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "ITEM_99" } } };
+        }
+        if (query.includes("updateProjectV2ItemFieldValue")) {
+          recorded.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_99" } } };
+        }
+        if (query.includes("labels") || query.includes("milestones")) {
+          return { repository: { labels: { nodes: [] }, milestones: { nodes: [] } } };
+        }
+        if (query.includes("repository(")) {
+          return { repository: { id: "REPO_1" } };
+        }
+        if (query.includes("issue(number:")) {
+          return makeBatchIssueResponse(extractBatchIssueNumbers(query));
+        }
+        return {};
+      });
+
+      const { result } = await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      expect(result.created).toBe(1);
+      expect(recorded).toContainEqual(
+        expect.objectContaining({
+          itemId: "ITEM_99",
+          fieldId: "FIELD_STATUS",
+          value: { singleSelectOptionId: "OPT_IN_PROGRESS" },
+        }),
+      );
+    });
+  });
+
   describe("[NFR-SYNC-001-AC1] push 中に API エラーが発生しても snapshot が不整合にならない", () => {
     it("relation failure preserves old syncFields and enables retry via computeLocalDiff", async () => {
       const parentTask = makeTask("o/r#10", { github_issue: 10 });
