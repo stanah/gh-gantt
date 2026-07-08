@@ -5,6 +5,7 @@ import { createInterface } from "node:readline/promises";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
+import { resolveTaskId } from "../util/task-id.js";
 import {
   ACCEPTANCE_CRITERIA_END_MARKER,
   ACCEPTANCE_CRITERIA_START_MARKER,
@@ -207,6 +208,19 @@ export function createCreateCommand(): Command {
         return;
       }
 
+      // parent 参照の正規化と存在検証 (#302)
+      // 生の "draft-1" / "293" のまま保存すると push の replaceTaskIdReferences /
+      // id_map 照合 (正規形の完全一致) が効かず sub-issue 関係がスキップされるため、
+      // link --set-parent と同じく resolveTaskId で正規形へ解決してから保存する
+      if (parent) {
+        parent = resolveTaskId(parent, config);
+        if (!tasksFile.tasks.some((t) => t.id === parent)) {
+          console.error(`Parent task not found: ${parent}`);
+          process.exitCode = 1;
+          return;
+        }
+      }
+
       if (opts.template) {
         const resolution = await resolveExistingTaskTemplatePath(
           projectRoot,
@@ -284,14 +298,11 @@ export function createCreateCommand(): Command {
       }
 
       // Update parent's sub_tasks if parent specified
+      // (parent の存在は正規化時に検証済み)
       if (parent) {
         const parentTask = tasksFile.tasks.find((t) => t.id === parent);
-        if (parentTask) {
-          if (!parentTask.sub_tasks.includes(taskId)) {
-            parentTask.sub_tasks.push(taskId);
-          }
-        } else {
-          console.warn(`Warning: Parent task "${parent}" not found in tasks.`);
+        if (parentTask && !parentTask.sub_tasks.includes(taskId)) {
+          parentTask.sub_tasks.push(taskId);
         }
       }
 

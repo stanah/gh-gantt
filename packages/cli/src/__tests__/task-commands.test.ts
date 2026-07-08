@@ -932,6 +932,28 @@ describe("removeDependency", () => {
     const result = removeDependency(task, "owner/repo#99");
     expect(result.task.blocked_by).toHaveLength(0);
   });
+
+  it("非正規形で保存された参照も入力の生値で削除できる (#302 以前のデータ修復)", () => {
+    // 過去の create が生値 "293" のまま保存したケース。doctor の修復案内
+    // (link --unblock 293) が no-op にならないことを固定する
+    const task = makeTask({
+      blocked_by: [
+        { task: "293", type: "finish-to-start", lag: 0 },
+        { task: "owner/repo#3", type: "finish-to-start", lag: 0 },
+      ],
+    });
+    const result = removeDependency(task, "owner/repo#293", "293");
+    expect(result.task.blocked_by).toHaveLength(1);
+    expect(result.task.blocked_by[0].task).toBe("owner/repo#3");
+  });
+
+  it("# 付き入力でも非正規形の生値を削除できる", () => {
+    const task = makeTask({
+      blocked_by: [{ task: "293", type: "finish-to-start", lag: 0 }],
+    });
+    const result = removeDependency(task, "owner/repo#293", "#293");
+    expect(result.task.blocked_by).toHaveLength(0);
+  });
 });
 
 describe("[FR-HIER-001-AC1] タスクの親子関係を設定・変更・削除できる", () => {

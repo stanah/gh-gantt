@@ -220,6 +220,54 @@ function checkHashIntegrity(tasksFile: TasksFile, syncState: SyncState): CheckRe
   };
 }
 
+/**
+ * 宙ぶらりん参照の検出 [Issue #302]
+ *
+ * parent / blocked_by / sub_tasks がタスク一覧に存在しない ID を指すケースを検出する。
+ * 過去の create --parent が生の "draft-1" / "293" を保存していたバグ (#302) の残骸や、
+ * 手動編集による破損が対象。正規形でない参照は push の関係同期で解決できないため、
+ * link コマンドでの再設定 (正規形へ解決される) を案内する。
+ */
+function checkDanglingReferences(tasks: Task[]): CheckResult {
+  const taskIds = new Set(tasks.map((t) => t.id));
+  const details: string[] = [];
+
+  for (const task of tasks) {
+    if (task.parent && !taskIds.has(task.parent)) {
+      details.push(
+        `${task.id}: parent "${task.parent}" がタスク一覧に存在しません。'gh-gantt link ${task.id} --set-parent <id>' で再設定してください`,
+      );
+    }
+    for (const dep of task.blocked_by) {
+      if (!taskIds.has(dep.task)) {
+        details.push(
+          `${task.id}: blocked_by "${dep.task}" がタスク一覧に存在しません。'gh-gantt link ${task.id} --unblock ${dep.task}' で削除するか正しい ID で再設定してください`,
+        );
+      }
+    }
+    for (const subTaskId of task.sub_tasks) {
+      if (!taskIds.has(subTaskId)) {
+        details.push(`${task.id}: sub_tasks "${subTaskId}" がタスク一覧に存在しません`);
+      }
+    }
+  }
+
+  if (details.length === 0) {
+    return {
+      name: "project-dangling-references",
+      status: "PASS",
+      message: "宙ぶらりんのタスク参照はありません",
+    };
+  }
+
+  return {
+    name: "project-dangling-references",
+    status: "WARN",
+    message: `${details.length} 件の宙ぶらりんなタスク参照があります`,
+    details,
+  };
+}
+
 /** タスク間の依存関係の循環検出（shared の detectCycles を使用） */
 function checkCycles(tasks: Task[]): CheckResult {
   const cycles = detectCycles(tasks);
@@ -512,6 +560,11 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
 
     // 6. 循環依存検出
     checks.push(checkCycles(tasksFile.tasks));
+  }
+
+  // 6.5. 宙ぶらりん参照検出 [Issue #302] (tasksFile のみで判定可能)
+  if (tasksFile) {
+    checks.push(checkDanglingReferences(tasksFile.tasks));
   }
 
   // 7. プロジェクトレベルの stale 検出

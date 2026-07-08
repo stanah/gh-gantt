@@ -23,11 +23,20 @@ export function addDependency(task: Task, blockerTaskId: string): { task: Task; 
 export function removeDependency(
   task: Task,
   blockerTaskId: string,
+  rawInput?: string,
 ): { task: Task; error?: string } {
+  // 過去のバグ (#302 以前の create) で保存された非正規形の参照 ("293" 等) も
+  // 削除できるよう、正規形に加えて入力の生値 (# 付き入力は # を除いた形も) と
+  // 一致判定する
+  const removalKeys = new Set([blockerTaskId]);
+  if (rawInput !== undefined) {
+    removalKeys.add(rawInput);
+    if (rawInput.startsWith("#")) removalKeys.add(rawInput.slice(1));
+  }
   return {
     task: {
       ...task,
-      blocked_by: task.blocked_by.filter((d) => d.task !== blockerTaskId),
+      blocked_by: task.blocked_by.filter((d) => !removalKeys.has(d.task)),
       updated_at: new Date().toISOString(),
     },
   };
@@ -121,7 +130,7 @@ export function createTaskLinkCommand(): Command {
 
       if (opts.unblock) {
         const blockerId = resolveTaskId(opts.unblock, config);
-        const unblockResult = removeDependency(tasksFile.tasks[taskIndex], blockerId);
+        const unblockResult = removeDependency(tasksFile.tasks[taskIndex], blockerId, opts.unblock);
         tasksFile.tasks[taskIndex] = unblockResult.task;
         console.log(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
       }
