@@ -235,6 +235,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/draft-tasks.test.ts
+          - id: FR-CLI-004-AC3
+            description: |
+              create --parent は draft 短縮形・番号・#付きの入力を正規形
+              (owner/repo#N / owner/repo#draft-N) に解決して保存し、
+              存在しない親を指す場合はエラーになる (regression #302)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/create-parent.test.ts
       - id: FR-CLI-005
         summary: マイルストーン管理
         acceptance_criteria:
@@ -1106,6 +1114,15 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-303-status-push.test.ts
+          - id: NFR-STABILITY-002-AC6
+            description: |
+              同一 push 内で draft の親子を一括作成した場合、子の parent 参照が
+              親の新 Issue ID に置換され sub-issue 関係が GitHub に設定される。
+              create --parent の参照は正規形で保存されるため
+              replaceTaskIdReferences / id_map 照合が確実に機能する (regression #302)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-302-draft-parent-ref.test.ts
       - id: NFR-STABILITY-003
         summary: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
         acceptance_criteria:

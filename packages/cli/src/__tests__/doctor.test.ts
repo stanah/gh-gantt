@@ -621,6 +621,60 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
     });
   });
 
+  describe("[Issue #302] 宙ぶらりん参照の検出", () => {
+    it("非正規形の parent 参照 (旧 create --parent の残骸) を WARN として検出する", async () => {
+      // 過去の create --parent が生の "draft-1" / "293" を保存していたケースを再現
+      const parent = makeTask("o/r#draft-1");
+      const child1 = makeTask("o/r#draft-2", { parent: "draft-1" });
+      const child2 = makeTask("o/r#draft-3", { parent: "293" });
+
+      testDir = await setupProjectDir({
+        tasksFile: makeTasksFile([parent, child1, child2]),
+      });
+
+      const output = await runDoctorJson(testDir);
+      const check = output.checks.find((c) => c.name === "project-dangling-references");
+
+      expect(check?.status).toBe("WARN");
+      expect(check?.details).toHaveLength(2);
+      expect(check?.details?.[0]).toContain('parent "draft-1" がタスク一覧に存在しません');
+      expect(check?.details?.[1]).toContain('parent "293" がタスク一覧に存在しません');
+    });
+
+    it("存在しない blocked_by / sub_tasks 参照を WARN として検出する", async () => {
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        blocked_by: [{ task: "o/r#999", type: "finish-to-start", lag: 0 }],
+        sub_tasks: ["o/r#draft-9"],
+      });
+
+      testDir = await setupProjectDir({ tasksFile: makeTasksFile([task]) });
+
+      const output = await runDoctorJson(testDir);
+      const check = output.checks.find((c) => c.name === "project-dangling-references");
+
+      expect(check?.status).toBe("WARN");
+      expect(check?.details).toHaveLength(2);
+      expect(check?.details?.[0]).toContain('blocked_by "o/r#999" がタスク一覧に存在しません');
+      expect(check?.details?.[1]).toContain('sub_tasks "o/r#draft-9" がタスク一覧に存在しません');
+    });
+
+    it("すべての参照が正規形で解決できる場合は PASS", async () => {
+      const parent = makeTask("o/r#draft-1", { sub_tasks: ["o/r#draft-2"] });
+      const child = makeTask("o/r#draft-2", {
+        parent: "o/r#draft-1",
+        blocked_by: [{ task: "o/r#draft-1", type: "finish-to-start", lag: 0 }],
+      });
+
+      testDir = await setupProjectDir({ tasksFile: makeTasksFile([parent, child]) });
+
+      const output = await runDoctorJson(testDir);
+      const check = output.checks.find((c) => c.name === "project-dangling-references");
+
+      expect(check?.status).toBe("PASS");
+    });
+  });
+
   describe("[FR-CLI-015-AC3] doctor のタスクサイズ閾値チェック", () => {
     it("見積もりが max_task_size_hours を超えた open task を WARN として返す", async () => {
       const config = makeConfig();
