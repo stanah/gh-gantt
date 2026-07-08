@@ -101,7 +101,8 @@ const TasksWithProgressResponseSchema = z.object({
 registry.register("TasksWithProgressResponse", TasksWithProgressResponseSchema);
 
 const ReparentResponseSchema = z.object({
-  tasks: z.array(TaskSchema),
+  // 実装は attachProgress を通したタスク一覧を返す
+  tasks: z.array(TaskWithProgressSchema),
 });
 registry.register("ReparentResponse", ReparentResponseSchema);
 

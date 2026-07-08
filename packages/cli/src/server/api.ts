@@ -349,10 +349,20 @@ export function createApiRouter(projectRoot: string): Router {
         if (updates.parent === null) {
           tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
         } else {
-          // 循環検出は setParent の責務外のため reparent と同じ検査を通す
+          // 循環検出・階層制約は setParent の責務外のため reparent と同じ検査を通す
           if (wouldCreateCycle(tasksFile.tasks, taskId, updates.parent as string)) {
             res.status(400).json({ error: "This operation would create a cycle" });
             return;
+          }
+          const newParentTask = tasksFile.tasks.find((t) => t.id === updates.parent);
+          if (newParentTask) {
+            const allowed = config.type_hierarchy[newParentTask.type];
+            if (allowed && allowed.length > 0 && !allowed.includes(updatedTask.type)) {
+              res.status(400).json({
+                error: `Cannot place "${updatedTask.type}" under "${newParentTask.type}"`,
+              });
+              return;
+            }
           }
           const parentResult = setParent(tasksFile.tasks, taskId, updates.parent as string);
           if (parentResult.error) {

@@ -741,6 +741,17 @@ describe("createApiRouter", () => {
       expect(jsonPayload.error).toBe("This operation would create a cycle");
     });
 
+    it("type_hierarchy に反する parent 変更は 400 になる (reparent と同一の階層制約)", async () => {
+      const config = buildParentTestConfig();
+      config.type_hierarchy = { epic: ["feature"], task: [], feature: [] };
+      await new ConfigStore(dir).write(config);
+
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", { parent: "draft-1" });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe('Cannot place "task" under "epic"');
+    });
+
     it("短縮形の自己参照 parent は 400 になる", async () => {
       const { statusCode, jsonPayload } = await patchTask("o/r#5", { parent: "5" });
 
