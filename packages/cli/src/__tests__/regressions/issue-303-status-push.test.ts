@@ -236,6 +236,81 @@ describe("[NFR-STABILITY-002-AC5] [Issue #303] Status 変更が push で Project
     }
   });
 
+  it("draft 作成時に未解決の Status は snapshot をキーなしで確定し、次回 push で再試行される", async () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const recorded = { cleared: [] as any[], updated: [] as any[] };
+      // draft タスクに ProjectV2 の option として存在しない Status が設定されている
+      const task = makeTask("o/r#draft-1", {
+        custom_fields: { Status: "no-such-status" },
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: { Status: "FIELD_STATUS" },
+        option_ids: { Status: { Todo: "OPT_TODO" } },
+        snapshots: {},
+      };
+
+      const mockGql = vi.fn().mockImplementation(async (query: string, vars?: any) => {
+        if (query.includes("createIssue(input")) {
+          return { createIssue: { issue: { id: "ISSUE_NEW", number: 99 } } };
+        }
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "ITEM_NEW" } } };
+        }
+        if (query.includes("updateProjectV2ItemFieldValue")) {
+          recorded.updated.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_NEW" } } };
+        }
+        if (query.includes("clearProjectV2ItemFieldValue")) {
+          recorded.cleared.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_NEW" } } };
+        }
+        if (query.includes("labels(")) {
+          return {
+            repository: { labels: { nodes: [] }, milestones: { nodes: [] } },
+          };
+        }
+        if (query.includes("repository(owner")) {
+          return { repository: { id: "REPO_1" } };
+        }
+        return {};
+      });
+
+      const { syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+      );
+
+      // Status は送信されず警告が出る
+      expect(recorded.updated).not.toContainEqual(
+        expect.objectContaining({ fieldId: "FIELD_STATUS" }),
+      );
+      expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("option として解決できない"));
+
+      // snapshot は「リモートに Status がない」実態に合わせてキーなしで確定する
+      // (ローカル値のまま確定すると差分が消えて再試行不能になるリグレッション)
+      const snapshot = newSyncState.snapshots["o/r#99"];
+      expect(snapshot.syncFields?.custom_fields).not.toHaveProperty("Status");
+
+      // 次回 push でローカルの Status が差分として再検出される
+      const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+      expect(retryDiffs).toContainEqual(
+        expect.objectContaining({ id: "o/r#99", type: "modified" }),
+      );
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
   it("Status に差分がなければ Status フィールドの API コールを行わない", async () => {
     const recorded = { cleared: [] as any[], updated: [] as any[] };
     // Status は同一のままタイトルだけ変更する

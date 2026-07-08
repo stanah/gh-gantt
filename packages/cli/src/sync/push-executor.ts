@@ -398,9 +398,7 @@ export async function executePush(
       );
       if (estimateHoursUpdate) draftFieldUpdates.push(estimateHoursUpdate);
 
-      // Status フィールド (single-select) の設定 (#303)。
-      // 新規作成 Issue にはリモート値が存在しないため、未解決名は警告のみで
-      // snapshot ロールバックは行わない (draft の labels / assignees と同一挙動)
+      // Status フィールド (single-select) の設定 (#303)
       const draftStatusUpdate = resolveStatusFieldUpdate(
         gql,
         config,
@@ -419,6 +417,23 @@ export async function executePush(
       task.id = newId;
       task.github_issue = issueNumber;
       task.github_repo = `${owner}/${repo}`;
+
+      // 未解決の Status を送信しないまま snapshot をローカル値で確定すると
+      // 次回 push が差分を検出できず再試行不能になるため、snapshot 側は
+      // 「リモートに Status がない」実態 (キーなし) に合わせて確定させる
+      if (draftStatusUpdate.unresolved) {
+        const fieldsNow = extractSyncFields(task);
+        failedStatus.set(newId, {
+          previousSyncFields: {
+            ...fieldsNow,
+            custom_fields: rollbackCustomFieldValue(
+              fieldsNow.custom_fields,
+              config.statuses.field_name,
+              undefined,
+            ),
+          },
+        });
+      }
 
       // Update references in all tasks
       replaceTaskIdReferences(tasksFile.tasks, oldId, newId);
