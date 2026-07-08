@@ -693,6 +693,26 @@ describe("createApiRouter", () => {
 
       expect(statusCode).toBe(200);
       expect(jsonPayload.parent).toBeNull();
+      // 旧親の sub_tasks からも除去される (逆リンク維持)
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#draft-1")?.sub_tasks).toEqual([]);
+    });
+
+    it("parent の設定は新親の sub_tasks にも逆リンクを追加する", async () => {
+      const { statusCode } = await patchTask("o/r#5", { parent: "draft-1" });
+
+      expect(statusCode).toBe(200);
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#draft-1")?.sub_tasks).toContain("o/r#5");
+    });
+
+    it("短縮形の自己参照 parent は 400 になる", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", { parent: "5" });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("A task cannot be its own parent.");
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.parent).toBeNull();
     });
   });
 

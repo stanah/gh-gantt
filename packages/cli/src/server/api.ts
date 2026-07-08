@@ -254,6 +254,9 @@ export function createApiRouter(projectRoot: string): Router {
 
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
+        // parent は単純マージすると旧親・新親の sub_tasks 逆リンクが壊れるため、
+        // 書き込み直前に setParent / removeParent で階層ごと更新する
+        if (key === "parent") continue;
         if (key in updates) {
           (safeUpdates as Record<string, unknown>)[key] = updates[key];
         }
@@ -317,9 +320,26 @@ export function createApiRouter(projectRoot: string): Router {
       }
 
       tasksFile.tasks[idx] = updatedTask;
+
+      // parent の変更は /reparent と同一の setParent / removeParent に委譲し、
+      // 自己参照の拒否と旧親・新親の sub_tasks 逆リンク維持を保証する
+      if ("parent" in updates) {
+        if (updates.parent === null) {
+          tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
+        } else {
+          const parentResult = setParent(tasksFile.tasks, taskId, updates.parent as string);
+          if (parentResult.error) {
+            res.status(400).json({ error: parentResult.error });
+            return;
+          }
+          tasksFile.tasks = parentResult.tasks!;
+        }
+      }
+
       await tasksStore.write(tasksFile);
 
-      res.json(updatedTask);
+      const finalTask = tasksFile.tasks.find((t) => t.id === taskId) ?? updatedTask;
+      res.json(finalTask);
     } catch {
       res.status(500).json({ error: "Failed to update task" });
     }

@@ -203,6 +203,10 @@ registry.registerPath({
       description: "自己参照・循環参照・階層違反・不正な newParentId",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
+    404: {
+      description: "対象タスクまたは新しい親タスクが存在しない",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
   },
 });
 
