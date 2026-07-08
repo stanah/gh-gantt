@@ -217,11 +217,17 @@ export async function executePush(
     fields: IssueMetadataFieldName[];
     previousSyncFields: SyncFields | undefined;
   }
+  interface StatusFailure {
+    previousSyncFields: SyncFields | undefined;
+  }
   const failedRelations = new Map<string, RelationFailure>();
   const failedIssueTypes = new Map<string, IssueTypeFailure>();
   // 未解決名 (label / assignee / milestone) により送信をスキップしたフィールドの記録 (#305)。
   // snapshot 更新時に該当フィールドだけ旧値へロールバックし、次回 push で再試行可能にする
   const failedMetadata = new Map<string, MetadataFailure>();
+  // 未解決の Status 値により送信をスキップしたタスクの記録 (#303)。
+  // failedMetadata と同じく snapshot の Status だけ旧値へロールバックして次回 push で再試行する
+  const failedStatus = new Map<string, StatusFailure>();
   // Pre-relation baseline: remote state before relation mutations were attempted
   const preRelationBaseline = new Map<
     string,
@@ -391,6 +397,17 @@ export async function executePush(
         task,
       );
       if (estimateHoursUpdate) draftFieldUpdates.push(estimateHoursUpdate);
+
+      // Status フィールド (single-select) の設定 (#303)
+      const draftStatusUpdate = resolveStatusFieldUpdate(
+        gql,
+        config,
+        syncState,
+        projectItemId,
+        task,
+        syncState.snapshots[task.id]?.syncFields,
+      );
+      if (draftStatusUpdate.promise) draftFieldUpdates.push(draftStatusUpdate.promise);
       if (draftFieldUpdates.length > 0) {
         await Promise.all(draftFieldUpdates);
       }
@@ -400,6 +417,23 @@ export async function executePush(
       task.id = newId;
       task.github_issue = issueNumber;
       task.github_repo = `${owner}/${repo}`;
+
+      // 未解決の Status を送信しないまま snapshot をローカル値で確定すると
+      // 次回 push が差分を検出できず再試行不能になるため、snapshot 側は
+      // 「リモートに Status がない」実態 (キーなし) に合わせて確定させる
+      if (draftStatusUpdate.unresolved) {
+        const fieldsNow = extractSyncFields(task);
+        failedStatus.set(newId, {
+          previousSyncFields: {
+            ...fieldsNow,
+            custom_fields: rollbackCustomFieldValue(
+              fieldsNow.custom_fields,
+              config.statuses.field_name,
+              undefined,
+            ),
+          },
+        });
+      }
 
       // Update references in all tasks
       replaceTaskIdReferences(tasksFile.tasks, oldId, newId);
@@ -690,6 +724,21 @@ export async function executePush(
         );
         if (estimateHoursUpdate) fieldUpdates.push(estimateHoursUpdate);
 
+        // Status フィールド (single-select) の更新 (#303)。
+        // 未解決名は送信をスキップし、snapshot の Status を旧値に留めて次回 push で再試行する
+        const statusUpdate = resolveStatusFieldUpdate(
+          gql,
+          config,
+          syncState,
+          idEntry.project_item_id,
+          task,
+          snapshot?.syncFields,
+        );
+        if (statusUpdate.promise) fieldUpdates.push(statusUpdate.promise);
+        if (statusUpdate.unresolved) {
+          failedStatus.set(task.id, { previousSyncFields: snapshot?.syncFields });
+        }
+
         if (fieldUpdates.length > 0) {
           await Promise.all(fieldUpdates);
         }
@@ -887,6 +936,35 @@ export async function executePush(
         }
       }
 
+      // 未解決の Status 値により送信をスキップした場合は snapshot の Status を旧値に
+      // 留めることで computeLocalDiff が次回 push でも差分として検出できるようにする (#303)
+      const statusFailure = failedStatus.get(id);
+      if (statusFailure) {
+        if (statusFailure.previousSyncFields) {
+          const statusFieldName = config.statuses.field_name;
+          syncFields = {
+            ...syncFields,
+            custom_fields: rollbackCustomFieldValue(
+              syncFields.custom_fields,
+              statusFieldName,
+              statusFailure.previousSyncFields.custom_fields[statusFieldName],
+            ),
+          };
+        } else {
+          // 旧値が不明 (snapshot なし) の場合は snapshot を進めず次回 push で再試行する
+          if (existing) {
+            newSnapshots[id] = {
+              ...existing,
+              synced_at: new Date().toISOString(),
+              updated_at: freshMetadata?.updatedAt ?? existing.updated_at,
+            };
+          } else {
+            delete newSnapshots[id];
+          }
+          continue;
+        }
+      }
+
       // If relationship mutations partially failed, roll back only the failed fields
       // to the pre-mutation baseline so computeLocalDiff detects the diff on next push
       const relationFailure = failedRelations.get(id);
@@ -903,7 +981,9 @@ export async function executePush(
       }
 
       // Hash must match syncFields so diff detection works correctly
-      const hasRetryableFailure = Boolean(issueTypeFailure || relationFailure || metadataFailure);
+      const hasRetryableFailure = Boolean(
+        issueTypeFailure || relationFailure || metadataFailure || statusFailure,
+      );
       const snapshotHash = hasRetryableFailure ? hashSyncFields(syncFields) : hashTask(task);
 
       newSnapshots[id] = {
@@ -1225,6 +1305,90 @@ async function resolveIssueMetadataUpdate(
   }
 
   return { fields, failedFields };
+}
+
+interface StatusFieldUpdateResult {
+  /** 送信する mutation (差分なし・フィールド不在・未解決の場合は null) */
+  promise: Promise<unknown> | null;
+  /** ローカルの Status 値が option 名として解決できず送信をスキップしたか */
+  unresolved: boolean;
+}
+
+/**
+ * Status フィールド (single-select) の ProjectV2 更新 mutation を組み立てる (#303)。
+ *
+ * - 対象フィールド名は config.statuses.field_name (update コマンドの書き込み先と同一)
+ * - 偽 push を避けるため snapshot (syncFields) の custom_fields と差分がある場合のみ送信する
+ * - option 名 → ID の解決には pull 時に保存済みの syncState.option_ids を使う
+ * - ローカルの null 化は snapshot に以前の値があるときだけ clearProjectV2ItemFieldValue で
+ *   クリアする (#306 の日付クリアと同じ判定パターン)
+ * - option 名が解決できない場合は警告を出しフィールド単位でスキップする (#305 の未解決名パターン)
+ */
+function resolveStatusFieldUpdate(
+  gql: typeof graphql,
+  config: Config,
+  syncState: SyncState,
+  projectItemId: string,
+  task: Task,
+  previous: SyncFields | undefined,
+): StatusFieldUpdateResult {
+  const fieldName = config.statuses.field_name;
+  const fieldId = syncState.field_ids[fieldName];
+  if (!fieldId) return { promise: null, unresolved: false };
+
+  const localStatus = normalizeStatusValue(task.custom_fields[fieldName]);
+  const previousStatus = normalizeStatusValue(previous?.custom_fields[fieldName]);
+  if (localStatus === previousStatus) return { promise: null, unresolved: false };
+
+  if (localStatus === null) {
+    // previousStatus は非 null (差分なしの場合は上で除外済み) のためリモート値をクリアする
+    return {
+      promise: clearProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId),
+      unresolved: false,
+    };
+  }
+
+  const optionId = syncState.option_ids?.[fieldName]?.[localStatus];
+  if (!optionId) {
+    console.warn(
+      `  ⚠ Status "${localStatus}" が ProjectV2 の option として解決できないため Status の更新をスキップ (${task.id})`,
+    );
+    return { promise: null, unresolved: true };
+  }
+
+  return {
+    promise: updateProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId, {
+      singleSelectOptionId: optionId,
+    }),
+    unresolved: false,
+  };
+}
+
+/**
+ * Status 値を「クリア意図 (null)」か「設定する option 名」に正規化する。
+ * custom_fields は unknown を許容するため、文字列以外・空文字はクリア意図として扱う。
+ */
+function normalizeStatusValue(value: unknown): string | null {
+  return typeof value === "string" && value !== "" ? value : null;
+}
+
+/**
+ * custom_fields の特定キーだけ旧値へロールバックする (#303)。
+ *
+ * hashSyncFields は JSON.stringify ベースでキーの挿入順序に依存するため、
+ * 既存キーの置換はスプレッドで元の位置を保存し、旧値が存在しない場合はキーを
+ * 削除して extractSyncFields のソート済み出力と順序を一致させる。
+ */
+function rollbackCustomFieldValue(
+  customFields: Record<string, unknown>,
+  key: string,
+  previousValue: unknown,
+): Record<string, unknown> {
+  if (previousValue === undefined) {
+    const { [key]: _removed, ...rest } = customFields;
+    return rest;
+  }
+  return { ...customFields, [key]: previousValue };
 }
 
 function buildEstimateHoursFieldUpdate(

@@ -68,6 +68,11 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/push-executor.test.ts
+          - id: FR-SYNC-003-AC6
+            description: Status (custom_fields[statuses.field_name]) の変更 (null 化によるクリアを含む) を push で ProjectV2 の Status フィールドに反映できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-executor.test.ts
       - id: FR-SYNC-004
         summary: リモートデータからローカルタスクへのマッピング
         acceptance_criteria:
@@ -1085,6 +1090,16 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-305-metadata-push.test.ts
+          - id: NFR-STABILITY-002-AC5
+            description: |
+              ローカルで変更された Status (custom_fields[statuses.field_name]) が
+              push で無言のまま巻き戻されず ProjectV2 の Status フィールドに
+              反映される。option として解決できない Status 値は silent drop せず
+              警告を出してスキップし、snapshot を旧値に留めて次回 push で
+              再試行できる (regression #303)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-303-status-push.test.ts
       - id: NFR-STABILITY-003
         summary: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
         acceptance_criteria:
