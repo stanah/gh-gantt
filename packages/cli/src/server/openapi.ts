@@ -51,8 +51,12 @@ const TaskUpdateRequestSchema = z.object({
     description:
       "親タスク参照。短縮形は正規形に解決して保存される。存在しないタスクを指す場合は 400 を返す",
   }),
-  sub_tasks: z.array(z.string()).optional(),
-  blocked_by: z.array(DependencySchema).optional(),
+  // sub_tasks は parent から導出される逆リンクのため直接更新を受け付けない (#321)。
+  // 指定された場合は 400 を返す (親子変更は parent 更新 / POST /api/tasks/{id}/reparent 経由)
+  blocked_by: z.array(DependencySchema).optional().openapi({
+    description:
+      "依存関係。各エントリの task は短縮形なら正規形に解決して保存される。存在しないタスク・自己参照・不正なエントリ形状は 400 を返す",
+  }),
 });
 registry.register("TaskUpdateRequest", TaskUpdateRequestSchema);
 
@@ -175,7 +179,8 @@ registry.registerPath({
       content: { "application/json": { schema: TaskSchema } },
     },
     400: {
-      description: "バリデーションエラー (存在しない parent 参照を含む)",
+      description:
+        "バリデーションエラー (存在しない parent / blocked_by 参照、blocked_by の自己参照、sub_tasks の直接更新を含む)",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
     404: {
