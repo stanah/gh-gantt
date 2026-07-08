@@ -763,6 +763,224 @@ describe("createApiRouter", () => {
     });
   });
 
+  describe("[FR-API-001-AC3] PATCH /api/tasks/:id は blocked_by 参照を正規形へ解決して保存する", () => {
+    beforeEach(async () => {
+      await new ConfigStore(dir).write(buildParentTestConfig());
+      await new TasksStore(dir).write({
+        tasks: [
+          makeServerTask("o/r#draft-1", { type: "epic" }),
+          makeServerTask("o/r#293", { github_issue: 293 }),
+          makeServerTask("o/r#5", { github_issue: 5 }),
+        ],
+        cache: { comments: {}, reactions: {} },
+      });
+    });
+
+    async function patchTask(id: string, body: Record<string, unknown>) {
+      const handler = findRouteHandler(createApiRouter(dir), "/api/tasks/:id", "patch");
+      const { res, captured } = makeCapturingRes();
+      await handler({ params: { id: encodeURIComponent(id) }, body }, res);
+      return captured;
+    }
+
+    it("短縮形 (draft-1 / 293) を正規形に解決して保存する", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [
+          { task: "draft-1", type: "finish-to-start", lag: 0 },
+          { task: "293", type: "start-to-start", lag: 2 },
+        ],
+      });
+
+      expect(statusCode).toBe(200);
+      expect(jsonPayload.blocked_by).toEqual([
+        { task: "o/r#draft-1", type: "finish-to-start", lag: 0 },
+        { task: "o/r#293", type: "start-to-start", lag: 2 },
+      ]);
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.blocked_by).toEqual([
+        { task: "o/r#draft-1", type: "finish-to-start", lag: 0 },
+        { task: "o/r#293", type: "start-to-start", lag: 2 },
+      ]);
+    });
+
+    it("#付き番号形式 (#293) を正規形 o/r#293 に解決して保存する", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [{ task: "#293", type: "finish-to-start", lag: 0 }],
+      });
+
+      expect(statusCode).toBe(200);
+      expect(jsonPayload.blocked_by).toEqual([
+        { task: "o/r#293", type: "finish-to-start", lag: 0 },
+      ]);
+    });
+
+    it("正規形 (o/r#293) はそのまま受理され type / lag も保存される (UI の既存経路を壊さない)", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [{ task: "o/r#293", type: "finish-to-finish", lag: 3 }],
+      });
+
+      expect(statusCode).toBe(200);
+      expect(jsonPayload.blocked_by).toEqual([
+        { task: "o/r#293", type: "finish-to-finish", lag: 3 },
+      ]);
+    });
+
+    it("存在しないブロッカーを指すエントリは 400 になり保存されない", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [{ task: "draft-99", type: "finish-to-start", lag: 0 }],
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("Blocker task not found: o/r#draft-99");
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.blocked_by).toEqual([]);
+    });
+
+    it("blocked_by が配列でない場合は 400 になる", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: "o/r#293",
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("blocked_by must be an array of dependencies");
+    });
+
+    it("エントリがオブジェクトでない場合は 400 になる", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: ["o/r#293"],
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("blocked_by must be an array of dependency objects");
+    });
+
+    it("エントリの task が文字列以外の場合は 400 になる", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [{ task: 293, type: "finish-to-start", lag: 0 }],
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("blocked_by[].task must be a string");
+    });
+
+    it("空文字・空白のみの task は 400 になる", async () => {
+      for (const invalid of ["", "   "]) {
+        const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+          blocked_by: [{ task: invalid, type: "finish-to-start", lag: 0 }],
+        });
+        expect(statusCode).toBe(400);
+        expect(jsonPayload.error).toBe("blocked_by[].task must be a non-empty string");
+      }
+    });
+
+    it("不正な type / 非数値の lag は 400 になる (生保存すると以後の read が Zod で失敗するため)", async () => {
+      const invalidEntries = [
+        { task: "293", type: "unknown-type", lag: 0 },
+        { task: "293", type: "finish-to-start", lag: "2" },
+        { task: "293" },
+      ];
+      for (const entry of invalidEntries) {
+        const { statusCode, jsonPayload } = await patchTask("o/r#5", { blocked_by: [entry] });
+        expect(statusCode).toBe(400);
+        expect(jsonPayload.error).toBe(
+          "blocked_by entry is invalid (expected { task, type, lag })",
+        );
+      }
+    });
+
+    it("短縮形の自己参照 (5 → o/r#5) は正規化後に検出して 400 を返す", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [{ task: "5", type: "finish-to-start", lag: 0 }],
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("A task cannot be blocked by itself.");
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.blocked_by).toEqual([]);
+    });
+
+    it("正規化後に重複するエントリは最初の 1 件に dedupe される", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", {
+        blocked_by: [
+          { task: "293", type: "finish-to-start", lag: 0 },
+          { task: "o/r#293", type: "start-to-start", lag: 5 },
+        ],
+      });
+
+      expect(statusCode).toBe(200);
+      expect(jsonPayload.blocked_by).toEqual([
+        { task: "o/r#293", type: "finish-to-start", lag: 0 },
+      ]);
+    });
+
+    it("blocked_by: [] による全依存解除は従来どおり通る", async () => {
+      await new TasksStore(dir).write({
+        tasks: [
+          makeServerTask("o/r#293", { github_issue: 293 }),
+          makeServerTask("o/r#5", {
+            github_issue: 5,
+            blocked_by: [{ task: "o/r#293", type: "finish-to-start", lag: 0 }],
+          }),
+        ],
+        cache: { comments: {}, reactions: {} },
+      });
+
+      const { statusCode, jsonPayload } = await patchTask("o/r#5", { blocked_by: [] });
+
+      expect(statusCode).toBe(200);
+      expect(jsonPayload.blocked_by).toEqual([]);
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.blocked_by).toEqual([]);
+    });
+  });
+
+  describe("[FR-API-001-AC3] PATCH /api/tasks/:id は sub_tasks の直接更新を拒否する", () => {
+    beforeEach(async () => {
+      await new ConfigStore(dir).write(buildParentTestConfig());
+      await new TasksStore(dir).write({
+        tasks: [
+          makeServerTask("o/r#draft-1", { type: "epic" }),
+          makeServerTask("o/r#5", { github_issue: 5 }),
+        ],
+        cache: { comments: {}, reactions: {} },
+      });
+    });
+
+    async function patchTask(id: string, body: Record<string, unknown>) {
+      const handler = findRouteHandler(createApiRouter(dir), "/api/tasks/:id", "patch");
+      const { res, captured } = makeCapturingRes();
+      await handler({ params: { id: encodeURIComponent(id) }, body }, res);
+      return captured;
+    }
+
+    it("sub_tasks を含む PATCH は 400 になり保存されない (親子関係の正は parent 側)", async () => {
+      const { statusCode, jsonPayload } = await patchTask("o/r#draft-1", {
+        sub_tasks: ["o/r#5"],
+      });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe(
+        "sub_tasks is derived from parent and cannot be updated directly; " +
+          "update the child's parent or use POST /api/tasks/:id/reparent",
+      );
+      // 片側リンク (parent 不整合) が保存されないこと
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#draft-1")?.sub_tasks).toEqual([]);
+      expect(written.tasks.find((t) => t.id === "o/r#5")?.parent).toBeNull();
+    });
+
+    it("他フィールドと同時に sub_tasks を送った場合も 400 になり何も更新されない", async () => {
+      const { statusCode } = await patchTask("o/r#draft-1", {
+        title: "更新後タイトル",
+        sub_tasks: [],
+      });
+
+      expect(statusCode).toBe(400);
+      const written = await new TasksStore(dir).read();
+      expect(written.tasks.find((t) => t.id === "o/r#draft-1")?.title).toBe("Task o/r#draft-1");
+    });
+  });
+
   describe("[FR-API-003-AC3] POST /api/tasks/:id/reparent は newParentId を正規形へ解決する", () => {
     beforeEach(async () => {
       await new ConfigStore(dir).write(buildParentTestConfig());

@@ -12,8 +12,8 @@ import { executePull } from "../sync/pull-executor.js";
 import { createGraphQLClient } from "../github/client.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import { resolveTaskId } from "../util/task-id.js";
-import type { Task, StatusValue } from "@gh-gantt/shared";
-import { computeStatusDateUpdates } from "@gh-gantt/shared";
+import type { Task, StatusValue, Dependency } from "@gh-gantt/shared";
+import { computeStatusDateUpdates, DependencySchema } from "@gh-gantt/shared";
 
 /** newParentId から親方向へ遡り taskId に到達する場合 true (循環になる)。 */
 function wouldCreateCycle(tasks: Task[], taskId: string, newParentId: string): boolean {
@@ -210,7 +210,6 @@ export function createApiRouter(projectRoot: string): Router {
         "end_date",
         "date",
         "parent",
-        "sub_tasks",
         "blocked_by",
       ] as const;
 
@@ -272,6 +271,70 @@ export function createApiRouter(projectRoot: string): Router {
           res.status(400).json({ error: `${reviewField} must be a string or null` });
           return;
         }
+      }
+      // sub_tasks は parent から導出される逆リンクで、setParent / removeParent が
+      // parent と対で維持する。直接書き換えは child.parent と parent.sub_tasks の
+      // 食い違いを作れるため拒否し、parent 更新 / reparent へ誘導する (#321)
+      if ("sub_tasks" in updates) {
+        res.status(400).json({
+          error:
+            "sub_tasks is derived from parent and cannot be updated directly; " +
+            "update the child's parent or use POST /api/tasks/:id/reparent",
+        });
+        return;
+      }
+      // blocked_by 参照の正規化と存在検証 (#321, parent と同じ規律)
+      // TasksStore.write は無検証・read は Zod 検証のため、形状不正なエントリを
+      // 生保存すると以後の全 read が失敗する。保存前に正規形へ解決して検証する
+      if ("blocked_by" in updates) {
+        if (!Array.isArray(updates.blocked_by)) {
+          res.status(400).json({ error: "blocked_by must be an array of dependencies" });
+          return;
+        }
+        const normalizedDeps: Dependency[] = [];
+        const seenBlockers = new Set<string>();
+        for (const entry of updates.blocked_by as unknown[]) {
+          if (typeof entry !== "object" || entry === null) {
+            res.status(400).json({ error: "blocked_by must be an array of dependency objects" });
+            return;
+          }
+          const { task: blockerRef, type, lag } = entry as Record<string, unknown>;
+          if (typeof blockerRef !== "string") {
+            res.status(400).json({ error: "blocked_by[].task must be a string" });
+            return;
+          }
+          // 空文字・空白のみは resolveTaskId の fallback で "o/r#" に化けて
+          // 「存在しないブロッカー」と区別できなくなるため明示的に拒否する (parent と同一)
+          if (blockerRef.trim() === "") {
+            res.status(400).json({ error: "blocked_by[].task must be a non-empty string" });
+            return;
+          }
+          const resolvedBlocker = resolveTaskId(blockerRef, config);
+          // type / lag は shared の DependencySchema で検証し、未知プロパティは
+          // 正規形 { task, type, lag } へ落として保存する
+          const parsed = DependencySchema.safeParse({ task: resolvedBlocker, type, lag });
+          if (!parsed.success) {
+            res.status(400).json({
+              error: "blocked_by entry is invalid (expected { task, type, lag })",
+            });
+            return;
+          }
+          // 短縮形の自己参照も正規化後に検出する (CLI addDependency と同一文言)
+          if (resolvedBlocker === taskId) {
+            res.status(400).json({ error: "A task cannot be blocked by itself." });
+            return;
+          }
+          if (!tasksFile.tasks.some((t) => t.id === resolvedBlocker)) {
+            res.status(400).json({ error: `Blocker task not found: ${resolvedBlocker}` });
+            return;
+          }
+          // 正規化後に同一ブロッカーへ潰れた重複は最初の 1 件を優先する
+          // (CLI addDependency の重複 skip と同じ挙動)
+          if (seenBlockers.has(resolvedBlocker)) continue;
+          seenBlockers.add(resolvedBlocker);
+          normalizedDeps.push(parsed.data);
+        }
+        updates.blocked_by = normalizedDeps;
       }
 
       const safeUpdates: Partial<Task> = {};

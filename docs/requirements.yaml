@@ -524,6 +524,16 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/server-api.test.ts
+          - id: FR-API-001-AC3
+            description: |
+              PATCH /api/tasks/:id は blocked_by の各エントリの task 参照を
+              正規形へ解決して保存し、存在しないタスク・自己参照・
+              不正なエントリ形状 (type / lag が DependencySchema に合わない) は
+              400 を返す。sub_tasks は parent から導出される逆リンクのため
+              直接更新を 400 で拒否する (親子関係の正は parent 側、#321)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
       - id: FR-API-002
         summary: 同期操作 API
         acceptance_criteria:
