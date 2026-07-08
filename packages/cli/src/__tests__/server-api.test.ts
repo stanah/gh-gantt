@@ -718,11 +718,35 @@ describe("createApiRouter", () => {
       expect(written.tasks.find((t) => t.id === "o/r#draft-1")?.sub_tasks).toContain("o/r#5");
     });
 
+    it("空文字・空白のみの parent は 400 になる (POST と同一の対称性)", async () => {
+      for (const invalid of ["", "   "]) {
+        const { statusCode, jsonPayload } = await patchTask("o/r#5", { parent: invalid });
+        expect(statusCode).toBe(400);
+        expect(jsonPayload.error).toBe("parent must be a non-empty string or null");
+      }
+    });
+
+    it("循環を作る parent 変更は 400 になる (A→B の階層で A の parent を B にする)", async () => {
+      await new TasksStore(dir).write({
+        tasks: [
+          makeServerTask("o/r#draft-1", { type: "epic", sub_tasks: ["o/r#5"] }),
+          makeServerTask("o/r#5", { github_issue: 5, parent: "o/r#draft-1" }),
+        ],
+        cache: { comments: {}, reactions: {} },
+      });
+
+      const { statusCode, jsonPayload } = await patchTask("o/r#draft-1", { parent: "o/r#5" });
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("This operation would create a cycle");
+    });
+
     it("短縮形の自己参照 parent は 400 になる", async () => {
       const { statusCode, jsonPayload } = await patchTask("o/r#5", { parent: "5" });
 
       expect(statusCode).toBe(400);
-      expect(jsonPayload.error).toBe("A task cannot be its own parent.");
+      // 自己参照は 1 要素の循環として循環検出に先に捕まる
+      expect(jsonPayload.error).toBe("This operation would create a cycle");
       const written = await new TasksStore(dir).read();
       expect(written.tasks.find((t) => t.id === "o/r#5")?.parent).toBeNull();
     });
@@ -753,6 +777,14 @@ describe("createApiRouter", () => {
 
       expect(statusCode).toBe(400);
       expect(jsonPayload.error).toBe("newParentId is required (use null to remove parent)");
+    });
+
+    it("空文字・空白のみの newParentId は 400 になる", async () => {
+      for (const invalid of ["", "   "]) {
+        const { statusCode, jsonPayload } = await reparentTask("o/r#5", { newParentId: invalid });
+        expect(statusCode).toBe(400);
+        expect(jsonPayload.error).toBe("newParentId must be a non-empty string or null");
+      }
     });
 
     it("draft 短縮形 (draft-1) を正規形 o/r#draft-1 に解決して親子関係を設定する", async () => {

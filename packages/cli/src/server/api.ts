@@ -15,6 +15,17 @@ import { resolveTaskId } from "../util/task-id.js";
 import type { Task, StatusValue } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
+/** newParentId から親方向へ遡り taskId に到達する場合 true (循環になる)。 */
+function wouldCreateCycle(tasks: Task[], taskId: string, newParentId: string): boolean {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  let current: string | null = newParentId;
+  while (current) {
+    if (current === taskId) return true;
+    current = taskMap.get(current)?.parent ?? null;
+  }
+  return false;
+}
+
 export function createApiRouter(projectRoot: string): Router {
   const router = Router();
   router.use(json());
@@ -239,6 +250,12 @@ export function createApiRouter(projectRoot: string): Router {
           res.status(400).json({ error: "parent must be a string or null" });
           return;
         }
+        // 空文字・空白のみは resolveTaskId の fallback で "o/r#" に化けて
+        // 「存在しない親」と区別できなくなるため明示的に拒否する (POST と同一)
+        if (updates.parent.trim() === "") {
+          res.status(400).json({ error: "parent must be a non-empty string or null" });
+          return;
+        }
         const resolvedParent = resolveTaskId(updates.parent, config);
         if (!tasksFile.tasks.some((t) => t.id === resolvedParent)) {
           res.status(400).json({ error: `Parent task not found: ${resolvedParent}` });
@@ -332,6 +349,11 @@ export function createApiRouter(projectRoot: string): Router {
         if (updates.parent === null) {
           tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
         } else {
+          // 循環検出は setParent の責務外のため reparent と同じ検査を通す
+          if (wouldCreateCycle(tasksFile.tasks, taskId, updates.parent as string)) {
+            res.status(400).json({ error: "This operation would create a cycle" });
+            return;
+          }
           const parentResult = setParent(tasksFile.tasks, taskId, updates.parent as string);
           if (parentResult.error) {
             res.status(400).json({ error: parentResult.error });
@@ -377,6 +399,10 @@ export function createApiRouter(projectRoot: string): Router {
           res.status(400).json({ error: "newParentId must be a string or null" });
           return;
         }
+        if (newParentId.trim() === "") {
+          res.status(400).json({ error: "newParentId must be a non-empty string or null" });
+          return;
+        }
         newParentId = resolveTaskId(newParentId, config);
       }
 
@@ -395,17 +421,11 @@ export function createApiRouter(projectRoot: string): Router {
         }
 
         // Cycle detection: walk up from newParentId, check we don't reach taskId
-        const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
-        let current: string | null = newParentId;
-        while (current) {
-          if (current === taskId) {
-            res
-              .status(400)
-              .json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
-            return;
-          }
-          const t = taskMap.get(current);
-          current = t?.parent ?? null;
+        if (wouldCreateCycle(tasksFile.tasks, taskId, newParentId)) {
+          res
+            .status(400)
+            .json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
+          return;
         }
 
         // Type hierarchy validation
