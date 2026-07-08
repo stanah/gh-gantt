@@ -92,6 +92,11 @@ export function createApiRouter(projectRoot: string): Router {
         res.status(400).json({ error: "parent must be a string or null" });
         return;
       }
+      // 空文字・空白のみは正規化をすり抜けて参照整合性を壊すため明示的に拒否する
+      if (parent !== null && parent.trim() === "") {
+        res.status(400).json({ error: "parent must be a non-empty string or null" });
+        return;
+      }
       if (parent) {
         parent = resolveTaskId(parent, config);
         if (!tasksFile.tasks.some((t) => t.id === parent)) {
@@ -349,6 +354,12 @@ export function createApiRouter(projectRoot: string): Router {
   router.post("/api/tasks/:id/reparent", async (req, res) => {
     try {
       const taskId = decodeURIComponent(req.params.id);
+      // 親解除の意図は newParentId: null の明示を要求する。キー欠落を null と
+      // 同一視すると、無関係な body での呼び出しが意図しない親解除になる
+      if (!("newParentId" in req.body)) {
+        res.status(400).json({ error: "newParentId is required (use null to remove parent)" });
+        return;
+      }
       let { newParentId } = req.body;
 
       const config = await configStore.read();

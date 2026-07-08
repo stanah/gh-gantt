@@ -634,6 +634,18 @@ describe("createApiRouter", () => {
       expect(statusCode).toBe(201);
       expect(jsonPayload.parent).toBeNull();
     });
+
+    it("空文字・空白のみの parent は 400 になる", async () => {
+      for (const invalid of ["", "   "]) {
+        const { statusCode, jsonPayload } = await postTask({
+          title: "タスク",
+          type: "task",
+          parent: invalid,
+        });
+        expect(statusCode).toBe(400);
+        expect(jsonPayload.error).toBe("parent must be a non-empty string or null");
+      }
+    });
   });
 
   describe("[FR-API-001-AC2] PATCH /api/tasks/:id は parent 参照を正規形へ解決して保存する", () => {
@@ -735,6 +747,13 @@ describe("createApiRouter", () => {
       await handler({ params: { id: encodeURIComponent(id) }, body }, res);
       return captured;
     }
+
+    it("newParentId キーが無い body は 400 になる（意図しない親解除の防止）", async () => {
+      const { statusCode, jsonPayload } = await reparentTask("o/r#5", {});
+
+      expect(statusCode).toBe(400);
+      expect(jsonPayload.error).toBe("newParentId is required (use null to remove parent)");
+    });
 
     it("draft 短縮形 (draft-1) を正規形 o/r#draft-1 に解決して親子関係を設定する", async () => {
       const { statusCode } = await reparentTask("o/r#5", { newParentId: "draft-1" });
