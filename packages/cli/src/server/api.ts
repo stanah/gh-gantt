@@ -11,8 +11,20 @@ import { executePush } from "../sync/push-executor.js";
 import { executePull } from "../sync/pull-executor.js";
 import { createGraphQLClient } from "../github/client.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
+import { resolveTaskId } from "../util/task-id.js";
 import type { Task, StatusValue } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
+
+/** newParentId から親方向へ遡り taskId に到達する場合 true (循環になる)。 */
+function wouldCreateCycle(tasks: Task[], taskId: string, newParentId: string): boolean {
+  const taskMap = new Map(tasks.map((t) => [t.id, t]));
+  let current: string | null = newParentId;
+  while (current) {
+    if (current === taskId) return true;
+    current = taskMap.get(current)?.parent ?? null;
+  }
+  return false;
+}
 
 export function createApiRouter(projectRoot: string): Router {
   const router = Router();
@@ -70,7 +82,7 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
-      const { title, type, body, start_date, end_date, parent } = req.body;
+      const { title, type, body, start_date, end_date } = req.body;
 
       if (!title || !type) {
         res.status(400).json({ error: "title and type are required" });
@@ -80,6 +92,28 @@ export function createApiRouter(projectRoot: string): Router {
       if (!config.task_types[type]) {
         res.status(400).json({ error: `Unknown task type: "${type}"` });
         return;
+      }
+
+      // parent 参照の正規化と存在検証 (#319)
+      // 生の "draft-1" / "293" のまま保存すると push の replaceTaskIdReferences /
+      // id_map 照合 (正規形の完全一致) が効かず sub-issue 関係がスキップされるため、
+      // CLI の create --parent (#302) と同じく resolveTaskId で正規形へ解決してから保存する
+      let parent: string | null = req.body.parent ?? null;
+      if (parent !== null && typeof parent !== "string") {
+        res.status(400).json({ error: "parent must be a string or null" });
+        return;
+      }
+      // 空文字・空白のみは正規化をすり抜けて参照整合性を壊すため明示的に拒否する
+      if (parent !== null && parent.trim() === "") {
+        res.status(400).json({ error: "parent must be a non-empty string or null" });
+        return;
+      }
+      if (parent) {
+        parent = resolveTaskId(parent, config);
+        if (!tasksFile.tasks.some((t) => t.id === parent)) {
+          res.status(400).json({ error: `Parent task not found: ${parent}` });
+          return;
+        }
       }
 
       const { owner, repo } = config.project.github;
@@ -97,7 +131,7 @@ export function createApiRouter(projectRoot: string): Router {
         type,
         github_issue: null,
         github_repo: repoFullName,
-        parent: parent ?? null,
+        parent,
         sub_tasks: [],
         title,
         body: body ?? null,
@@ -124,6 +158,7 @@ export function createApiRouter(projectRoot: string): Router {
         blocked_by: [],
       };
 
+      // parent の存在は正規化時に検証済み (#319)
       if (parent) {
         const parentTask = tasksFile.tasks.find((t) => t.id === parent);
         if (parentTask && !parentTask.sub_tasks.includes(taskId)) {
@@ -209,6 +244,25 @@ export function createApiRouter(projectRoot: string): Router {
         res.status(400).json({ error: "require_review must be a boolean" });
         return;
       }
+      // parent 参照の正規化と存在検証 (#319, POST /api/tasks と同じ規律)
+      if ("parent" in updates && updates.parent !== null) {
+        if (typeof updates.parent !== "string") {
+          res.status(400).json({ error: "parent must be a string or null" });
+          return;
+        }
+        // 空文字・空白のみは resolveTaskId の fallback で "o/r#" に化けて
+        // 「存在しない親」と区別できなくなるため明示的に拒否する (POST と同一)
+        if (updates.parent.trim() === "") {
+          res.status(400).json({ error: "parent must be a non-empty string or null" });
+          return;
+        }
+        const resolvedParent = resolveTaskId(updates.parent, config);
+        if (!tasksFile.tasks.some((t) => t.id === resolvedParent)) {
+          res.status(400).json({ error: `Parent task not found: ${resolvedParent}` });
+          return;
+        }
+        updates.parent = resolvedParent;
+      }
       for (const reviewField of ["review_approved_by", "review_approved_at"] as const) {
         if (
           reviewField in updates &&
@@ -222,6 +276,9 @@ export function createApiRouter(projectRoot: string): Router {
 
       const safeUpdates: Partial<Task> = {};
       for (const key of UPDATABLE_FIELDS) {
+        // parent は単純マージすると旧親・新親の sub_tasks 逆リンクが壊れるため、
+        // 書き込み直前に setParent / removeParent で階層ごと更新する
+        if (key === "parent") continue;
         if (key in updates) {
           (safeUpdates as Record<string, unknown>)[key] = updates[key];
         }
@@ -285,9 +342,41 @@ export function createApiRouter(projectRoot: string): Router {
       }
 
       tasksFile.tasks[idx] = updatedTask;
+
+      // parent の変更は /reparent と同一の setParent / removeParent に委譲し、
+      // 自己参照の拒否と旧親・新親の sub_tasks 逆リンク維持を保証する
+      if ("parent" in updates) {
+        if (updates.parent === null) {
+          tasksFile.tasks = removeParent(tasksFile.tasks, taskId);
+        } else {
+          // 循環検出・階層制約は setParent の責務外のため reparent と同じ検査を通す
+          if (wouldCreateCycle(tasksFile.tasks, taskId, updates.parent as string)) {
+            res.status(400).json({ error: "This operation would create a cycle" });
+            return;
+          }
+          const newParentTask = tasksFile.tasks.find((t) => t.id === updates.parent);
+          if (newParentTask) {
+            const allowed = config.type_hierarchy[newParentTask.type];
+            if (allowed && allowed.length > 0 && !allowed.includes(updatedTask.type)) {
+              res.status(400).json({
+                error: `Cannot place "${updatedTask.type}" under "${newParentTask.type}"`,
+              });
+              return;
+            }
+          }
+          const parentResult = setParent(tasksFile.tasks, taskId, updates.parent as string);
+          if (parentResult.error) {
+            res.status(400).json({ error: parentResult.error });
+            return;
+          }
+          tasksFile.tasks = parentResult.tasks!;
+        }
+      }
+
       await tasksStore.write(tasksFile);
 
-      res.json(updatedTask);
+      const finalTask = tasksFile.tasks.find((t) => t.id === taskId) ?? updatedTask;
+      res.json(finalTask);
     } catch {
       res.status(500).json({ error: "Failed to update task" });
     }
@@ -297,7 +386,13 @@ export function createApiRouter(projectRoot: string): Router {
   router.post("/api/tasks/:id/reparent", async (req, res) => {
     try {
       const taskId = decodeURIComponent(req.params.id);
-      const { newParentId } = req.body;
+      // 親解除の意図は newParentId: null の明示を要求する。キー欠落を null と
+      // 同一視すると、無関係な body での呼び出しが意図しない親解除になる
+      if (!("newParentId" in req.body)) {
+        res.status(400).json({ error: "newParentId is required (use null to remove parent)" });
+        return;
+      }
+      let { newParentId } = req.body;
 
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
@@ -306,6 +401,19 @@ export function createApiRouter(projectRoot: string): Router {
       if (!task) {
         res.status(404).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
         return;
+      }
+
+      // newParentId を正規形へ解決してから検証する (#319, CLI link --set-parent と同じ規律)
+      if (newParentId != null) {
+        if (typeof newParentId !== "string") {
+          res.status(400).json({ error: "newParentId must be a string or null" });
+          return;
+        }
+        if (newParentId.trim() === "") {
+          res.status(400).json({ error: "newParentId must be a non-empty string or null" });
+          return;
+        }
+        newParentId = resolveTaskId(newParentId, config);
       }
 
       if (newParentId === taskId) {
@@ -323,17 +431,11 @@ export function createApiRouter(projectRoot: string): Router {
         }
 
         // Cycle detection: walk up from newParentId, check we don't reach taskId
-        const taskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
-        let current: string | null = newParentId;
-        while (current) {
-          if (current === taskId) {
-            res
-              .status(400)
-              .json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
-            return;
-          }
-          const t = taskMap.get(current);
-          current = t?.parent ?? null;
+        if (wouldCreateCycle(tasksFile.tasks, taskId, newParentId)) {
+          res
+            .status(400)
+            .json({ error: "This operation would create a cycle", code: "CYCLE_DETECTED" });
+          return;
         }
 
         // Type hierarchy validation
