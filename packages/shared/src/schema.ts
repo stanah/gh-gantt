@@ -175,7 +175,9 @@ export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
       field_mapping: z.object({
         start_date: z.string(),
         end_date: z.string(),
-        status: z.string(),
+        // deprecated: Status フィールド名の正は statuses.field_name (#315)。
+        // 既存 config の後方互換のため受理するが、値は無視される。
+        status: z.string().optional(),
         type: z.string().nullable().optional(),
         priority: z.string().optional(),
         estimate_hours: z.string().optional(),

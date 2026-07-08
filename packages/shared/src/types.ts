@@ -107,7 +107,12 @@ export interface SyncConfig {
   field_mapping: {
     start_date: string;
     end_date: string;
-    status: string;
+    /**
+     * @deprecated Status フィールド名の正は `statuses.field_name`。
+     * この値は後方互換のため受理されるが無視される (#315)。
+     * `statuses.field_name` と食い違う場合は config 読み込み時に警告が出る。
+     */
+    status?: string;
     type?: string | null;
     priority?: string;
     estimate_hours?: string;

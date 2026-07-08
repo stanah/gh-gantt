@@ -103,7 +103,8 @@ export interface Config {
     field_mapping: {
       start_date: string;
       end_date: string;
-      status: string;
+      /** @deprecated Status フィールド名の正は statuses.field_name (#315)。受理されるが無視される。 */
+      status?: string;
       priority?: string;
       estimate_hours?: string;
     };
