@@ -26,7 +26,7 @@ describe("createApiRouter", () => {
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+        field_mapping: { start_date: "S", end_date: "E" },
       },
       task_types: {
         task: { label: "Task", display: "bar", color: "#333333", github_label: null },
@@ -168,7 +168,7 @@ describe("createApiRouter", () => {
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+        field_mapping: { start_date: "S", end_date: "E" },
       },
       task_types: {
         epic: { label: "Epic", display: "summary", color: "#111111", github_label: null },
@@ -248,7 +248,7 @@ describe("createApiRouter", () => {
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+        field_mapping: { start_date: "S", end_date: "E" },
       },
       task_types: {
         task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
@@ -345,7 +345,7 @@ describe("createApiRouter", () => {
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+        field_mapping: { start_date: "S", end_date: "E" },
       },
       task_types: {
         task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
@@ -441,7 +441,7 @@ describe("createApiRouter", () => {
       project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
       sync: {
         auto_create_issues: false,
-        field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+        field_mapping: { start_date: "S", end_date: "E" },
       },
       task_types: {
         task: { label: "Task", display: "bar", color: "#333333", github_label: "task" },
@@ -846,7 +846,7 @@ function buildParentTestConfig(): Config {
     project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
     sync: {
       auto_create_issues: false,
-      field_mapping: { start_date: "S", end_date: "E", status: "Status" },
+      field_mapping: { start_date: "S", end_date: "E" },
     },
     task_types: {
       task: { label: "Task", display: "bar", color: "#333333", github_label: null },
