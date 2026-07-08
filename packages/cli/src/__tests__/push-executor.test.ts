@@ -1724,6 +1724,38 @@ describe("executePush", () => {
       expect(updateIssueVars[0].assigneeIds).toEqual(["USER_ALICE"]);
     });
 
+    it("labels / assignees の空配列化は全削除として空の ID 配列を送信する", async () => {
+      const updateIssueVars: any[] = [];
+      // 以前は labels / assignees が設定されていた
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        labels: ["bug"],
+        assignees: ["alice"],
+      });
+      // ローカルで両方とも空にした = 全削除の意図
+      const task = makeTask("o/r#1", { github_issue: 1, labels: [], assignees: [] });
+
+      const mockGql = makeMockGql({
+        repositoryMetadata: repositoryMetadataHandler,
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      // 空配列が silent no-op に退行せず、全削除として明示送信されることを固定する
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0].labelIds).toEqual([]);
+      expect(updateIssueVars[0].assigneeIds).toEqual([]);
+    });
+
     it("milestone の変更は milestoneId に解決して updateIssue で送信する", async () => {
       const updateIssueVars: any[] = [];
       const previousTask = makeTask("o/r#1", { github_issue: 1, milestone: null });
