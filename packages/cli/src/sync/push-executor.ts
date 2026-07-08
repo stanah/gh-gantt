@@ -1000,15 +1000,24 @@ function buildDateFieldUpdate(
 ): Promise<unknown> | null {
   const fieldId = syncState.field_ids[fieldName];
   if (!fieldId) return null;
-  const localDate = task[dateKey];
-  if (!localDate) {
-    const previousDate = syncState.snapshots[task.id]?.syncFields?.[dateKey];
-    if (!previousDate) return null;
+  const localDate = normalizeDateValue(task[dateKey]);
+  if (localDate === null) {
+    const previousDate = normalizeDateValue(syncState.snapshots[task.id]?.syncFields?.[dateKey]);
+    if (previousDate === null) return null;
     return clearProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId);
   }
   return updateProjectItemField(gql, syncState.project_node_id, projectItemId, fieldId, {
     date: localDate,
   });
+}
+
+/**
+ * 日付値を「クリア意図 (null)」か「設定する値」に正規化する。
+ * 空文字は不正値であり GraphQL に日付として送ってはならないため、null と同じ
+ * クリア意図として扱う。
+ */
+function normalizeDateValue(value: string | null | undefined): string | null {
+  return value === null || value === undefined || value === "" ? null : value;
 }
 
 function buildEstimateHoursFieldUpdate(

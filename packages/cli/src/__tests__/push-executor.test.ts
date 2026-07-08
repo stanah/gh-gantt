@@ -1423,6 +1423,59 @@ describe("executePush", () => {
       expect(updatedFields).not.toContainEqual(expect.objectContaining({ fieldId: "FIELD_END" }));
     });
 
+    it("[FR-SYNC-003-AC4] 空文字の日付はクリア意図として扱い、GraphQL に日付として送らない", async () => {
+      const clearedFields: any[] = [];
+      const updatedFields: any[] = [];
+      // 空文字は Zod 検証を通らない不正値だが、防御的にクリア意図へ正規化する契約を固定する
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        start_date: "" as unknown as string,
+        end_date: null,
+      });
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        start_date: "2026-07-01",
+        end_date: null,
+      });
+      const tasksFile: TasksFile = {
+        tasks: [task],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: { "Start Date": "FIELD_START", "End Date": "FIELD_END" },
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(previousTask),
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+
+      const mockGql = makeMockGql({
+        updateProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          updatedFields.push(vars);
+          return { updateProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+        clearProjectV2ItemFieldValue: async (_q: string, vars: any) => {
+          clearedFields.push(vars);
+          return { clearProjectV2ItemFieldValue: { projectV2Item: { id: "ITEM_1" } } };
+        },
+      });
+
+      await executePush(mockGql as any, makeConfig(), tasksFile, syncState);
+
+      // 空文字はクリアとして送信され、update で "" が日付として送られることはない
+      expect(clearedFields).toContainEqual(expect.objectContaining({ fieldId: "FIELD_START" }));
+      expect(updatedFields).not.toContainEqual(expect.objectContaining({ fieldId: "FIELD_START" }));
+    });
+
     it("[FR-SYNC-003-AC4] 以前から null の日付フィールドには clear を呼ばない", async () => {
       const clearedFields: any[] = [];
       // タイトルだけ変更し、日付は以前も現在も null のまま
