@@ -22,8 +22,8 @@ const ADD_PROJECT_V2_ITEM_MUTATION = `
 `;
 
 const UPDATE_ISSUE_MUTATION = `
-  mutation($issueId: ID!, $title: String, $body: String) {
-    updateIssue(input: { id: $issueId, title: $title, body: $body }) {
+  mutation($issueId: ID!, $title: String, $body: String, $assigneeIds: [ID!], $labelIds: [ID!], $milestoneId: ID) {
+    updateIssue(input: { id: $issueId, title: $title, body: $body, assigneeIds: $assigneeIds, labelIds: $labelIds, milestoneId: $milestoneId }) {
       issue { id }
     }
   }
@@ -73,10 +73,28 @@ const CLEAR_PROJECT_ITEM_FIELD = `
   }
 `;
 
+/**
+ * updateIssue mutation に渡すフィールド。
+ *
+ * assigneeIds / labelIds は GitHub 側で **全置換** されるため、
+ * 未指定 (undefined) のフィールドは JSON シリアライズ時に落ちて「変更なし」となる。
+ * milestoneId は null を明示的に渡すと milestone が解除される。
+ */
+export interface UpdateIssueFields {
+  title?: string;
+  body?: string;
+  /** 置換セマンティクス: 指定すると Issue の assignees がこの配列で全置換される */
+  assigneeIds?: string[];
+  /** 置換セマンティクス: 指定すると Issue の labels がこの配列で全置換される */
+  labelIds?: string[];
+  /** null で milestone を解除する。undefined は変更しない */
+  milestoneId?: string | null;
+}
+
 export async function updateIssue(
   gql: typeof graphql,
   issueNodeId: string,
-  fields: { title?: string; body?: string },
+  fields: UpdateIssueFields,
 ): Promise<void> {
   await gql(UPDATE_ISSUE_MUTATION, {
     issueId: issueNodeId,

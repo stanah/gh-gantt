@@ -63,6 +63,11 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/push-executor.test.ts
+          - id: FR-SYNC-003-AC5
+            description: 既存 Issue の assignees / labels / milestone の変更 (milestone の解除を含む) を push で GitHub に反映できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/push-executor.test.ts
       - id: FR-SYNC-004
         summary: リモートデータからローカルタスクへのマッピング
         acceptance_criteria:
@@ -1071,6 +1076,15 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-306-date-clear-push.test.ts
+          - id: NFR-STABILITY-002-AC4
+            description: |
+              push の既存 Issue 更新で assignees / labels / milestone に
+              未解決名が含まれる場合、silent drop でリモート値を剥がさず、
+              該当フィールドだけ送信をスキップして警告を出し、snapshot を
+              旧値に留めて次回 push で再試行できる (regression #305)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-305-metadata-push.test.ts
       - id: NFR-STABILITY-003
         summary: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
         acceptance_criteria:

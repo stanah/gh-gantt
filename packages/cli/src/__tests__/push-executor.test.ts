@@ -140,6 +140,16 @@ function makeMockGql(handlers?: Partial<Record<string, (query: string, vars?: an
       if (handlers?.["removeBlockedBy"]) return handlers["removeBlockedBy"](query, vars);
       return { removeIssueRelation: { issue: { id: "ISSUE_1" } } };
     }
+    // repository metadata クエリ (labelMap / milestoneMap)
+    if (query.includes("labels(first")) {
+      if (handlers?.["repositoryMetadata"]) return handlers["repositoryMetadata"](query, vars);
+      return { repository: { labels: { nodes: [] }, milestones: { nodes: [] } } };
+    }
+    // fetchUserIds クエリ (u0: user(login: "x") { id login })
+    if (query.includes("user(login:")) {
+      if (handlers?.["userIds"]) return handlers["userIds"](query, vars);
+      return {};
+    }
     return {};
   });
 }
@@ -1624,6 +1634,309 @@ describe("executePush", () => {
       const end5 = concurrency.indexOf("addBlockedBy:ISSUE_5:end");
       const end6 = concurrency.indexOf("addBlockedBy:ISSUE_6:end");
       expect(Math.max(start5, start6)).toBeLessThan(Math.min(end5, end6));
+    });
+  });
+
+  describe("[FR-SYNC-003-AC5] 既存 Issue の assignees / labels / milestone の変更を push で反映できる", () => {
+    /** 既存 Issue 1 件 (o/r#1) の snapshot を previousTask の状態で構築する */
+    function makeUpdateSyncState(previousTask: Task): SyncState {
+      return {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(previousTask),
+            synced_at: "",
+            syncFields: extractSyncFields(previousTask),
+            updated_at: "2026-01-01T00:00:00Z",
+          },
+        },
+      };
+    }
+
+    function makeTasksFile(task: Task): TasksFile {
+      return { tasks: [task], cache: { comments: {}, reactions: {} } };
+    }
+
+    /** labelMap: bug/feature, milestoneMap: v1.0 を返す repository metadata handler */
+    const repositoryMetadataHandler = async () => ({
+      repository: {
+        labels: {
+          nodes: [
+            { id: "LABEL_BUG", name: "bug" },
+            { id: "LABEL_FEATURE", name: "feature" },
+          ],
+        },
+        milestones: { nodes: [{ id: "MS_1", title: "v1.0", number: 1 }] },
+      },
+    });
+
+    it("labels の変更は labelIds に解決して updateIssue で送信する", async () => {
+      const updateIssueVars: any[] = [];
+      const previousTask = makeTask("o/r#1", { github_issue: 1, labels: ["bug"] });
+      const task = makeTask("o/r#1", { github_issue: 1, labels: ["bug", "feature"] });
+
+      const mockGql = makeMockGql({
+        repositoryMetadata: repositoryMetadataHandler,
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      // 置換セマンティクス: ローカルの labels 全体が labelIds として送信される
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0].labelIds).toEqual(["LABEL_BUG", "LABEL_FEATURE"]);
+    });
+
+    it("assignees の変更は assigneeIds に解決して updateIssue で送信する", async () => {
+      const updateIssueVars: any[] = [];
+      const previousTask = makeTask("o/r#1", { github_issue: 1, assignees: [] });
+      const task = makeTask("o/r#1", { github_issue: 1, assignees: ["alice"] });
+
+      const mockGql = makeMockGql({
+        userIds: async () => ({ u0: { id: "USER_ALICE", login: "alice" } }),
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0].assigneeIds).toEqual(["USER_ALICE"]);
+    });
+
+    it("milestone の変更は milestoneId に解決して updateIssue で送信する", async () => {
+      const updateIssueVars: any[] = [];
+      const previousTask = makeTask("o/r#1", { github_issue: 1, milestone: null });
+      const task = makeTask("o/r#1", { github_issue: 1, milestone: "v1.0" });
+
+      const mockGql = makeMockGql({
+        repositoryMetadata: repositoryMetadataHandler,
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0].milestoneId).toBe("MS_1");
+    });
+
+    it("milestone のローカル null 化は milestoneId: null で解除として送信する", async () => {
+      const updateIssueVars: any[] = [];
+      const previousTask = makeTask("o/r#1", { github_issue: 1, milestone: "v1.0" });
+      const task = makeTask("o/r#1", { github_issue: 1, milestone: null });
+
+      const mockGql = makeMockGql({
+        repositoryMetadata: repositoryMetadataHandler,
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      // null は「未指定」ではなく「解除」として明示的に送信される
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0]).toHaveProperty("milestoneId", null);
+    });
+
+    it("metadata に差分がない場合はフィールドを送信せず metadata の fetch も行わない", async () => {
+      const updateIssueVars: any[] = [];
+      let metadataFetchCount = 0;
+      let userIdsFetchCount = 0;
+      // assignees / labels / milestone は同一のままタイトルだけ変更する
+      const previousTask = makeTask("o/r#1", {
+        github_issue: 1,
+        assignees: ["alice"],
+        labels: ["bug"],
+        milestone: "v1.0",
+      });
+      const task = makeTask("o/r#1", {
+        github_issue: 1,
+        title: "更新後のタイトル",
+        assignees: ["alice"],
+        labels: ["bug"],
+        milestone: "v1.0",
+      });
+
+      const mockGql = makeMockGql({
+        repositoryMetadata: async () => {
+          metadataFetchCount++;
+          return repositoryMetadataHandler();
+        },
+        userIds: async () => {
+          userIdsFetchCount++;
+          return {};
+        },
+        updateIssue: async (_q: string, vars: any) => {
+          updateIssueVars.push(vars);
+          return { updateIssue: { issue: { id: "ISSUE_1" } } };
+        },
+      });
+
+      await executePush(
+        mockGql as any,
+        makeConfig(),
+        makeTasksFile(task),
+        makeUpdateSyncState(previousTask),
+      );
+
+      // 差分がないフィールドは UpdateIssueInput に含めない (不要な置換を避ける)
+      expect(updateIssueVars).toHaveLength(1);
+      expect(updateIssueVars[0]).not.toHaveProperty("assigneeIds");
+      expect(updateIssueVars[0]).not.toHaveProperty("labelIds");
+      expect(updateIssueVars[0]).not.toHaveProperty("milestoneId");
+      // metadata 変更がない push では fetch 自体を行わない (NFR-SYNC-002)
+      expect(metadataFetchCount).toBe(0);
+      expect(userIdsFetchCount).toBe(0);
+    });
+
+    it("未解決の label 名があるフィールドは送信をスキップして警告し、snapshot を旧値に留めて再試行できる", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const updateIssueVars: any[] = [];
+        const previousTask = makeTask("o/r#1", { github_issue: 1, labels: ["bug"] });
+        const task = makeTask("o/r#1", {
+          github_issue: 1,
+          labels: ["bug", "unknown-label"],
+        });
+        const tasksFile = makeTasksFile(task);
+
+        const mockGql = makeMockGql({
+          repositoryMetadata: repositoryMetadataHandler,
+          updateIssue: async (_q: string, vars: any) => {
+            updateIssueVars.push(vars);
+            return { updateIssue: { issue: { id: "ISSUE_1" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          tasksFile,
+          makeUpdateSyncState(previousTask),
+        );
+
+        // labelIds は送信されない (silent drop で unknown-label 以外まで剥がさない)
+        expect(updateIssueVars).toHaveLength(1);
+        expect(updateIssueVars[0]).not.toHaveProperty("labelIds");
+        // 警告が出る
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("label が解決できない"));
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("unknown-label"));
+        // snapshot は旧値に留まり、次回 push で再試行される
+        expect(newSyncState.snapshots["o/r#1"].syncFields?.labels).toEqual(["bug"]);
+        const retryDiffs = computeLocalDiff(tasksFile.tasks, newSyncState);
+        expect(retryDiffs).toContainEqual(
+          expect.objectContaining({ id: "o/r#1", type: "modified" }),
+        );
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("未解決の assignee があっても labels など解決できたフィールドは送信される", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const updateIssueVars: any[] = [];
+        const previousTask = makeTask("o/r#1", { github_issue: 1 });
+        const task = makeTask("o/r#1", {
+          github_issue: 1,
+          assignees: ["ghost"],
+          labels: ["bug"],
+        });
+
+        const mockGql = makeMockGql({
+          repositoryMetadata: repositoryMetadataHandler,
+          userIds: async () => ({}),
+          updateIssue: async (_q: string, vars: any) => {
+            updateIssueVars.push(vars);
+            return { updateIssue: { issue: { id: "ISSUE_1" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          makeTasksFile(task),
+          makeUpdateSyncState(previousTask),
+        );
+
+        expect(updateIssueVars).toHaveLength(1);
+        // 未解決の assignees だけスキップされ、labels は送信される
+        expect(updateIssueVars[0]).not.toHaveProperty("assigneeIds");
+        expect(updateIssueVars[0].labelIds).toEqual(["LABEL_BUG"]);
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("assignee が解決できない"));
+        // snapshot は assignees だけ旧値に留まり、labels は新値へ進む
+        expect(newSyncState.snapshots["o/r#1"].syncFields?.assignees).toEqual([]);
+        expect(newSyncState.snapshots["o/r#1"].syncFields?.labels).toEqual(["bug"]);
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+
+    it("未解決の milestone 名は milestone の更新をスキップして警告する", async () => {
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+      try {
+        const updateIssueVars: any[] = [];
+        const previousTask = makeTask("o/r#1", { github_issue: 1, milestone: null });
+        const task = makeTask("o/r#1", { github_issue: 1, milestone: "no-such-milestone" });
+
+        const mockGql = makeMockGql({
+          repositoryMetadata: repositoryMetadataHandler,
+          updateIssue: async (_q: string, vars: any) => {
+            updateIssueVars.push(vars);
+            return { updateIssue: { issue: { id: "ISSUE_1" } } };
+          },
+        });
+
+        const { syncState: newSyncState } = await executePush(
+          mockGql as any,
+          makeConfig(),
+          makeTasksFile(task),
+          makeUpdateSyncState(previousTask),
+        );
+
+        expect(updateIssueVars).toHaveLength(1);
+        expect(updateIssueVars[0]).not.toHaveProperty("milestoneId");
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("milestone が解決できない"));
+        // snapshot の milestone は旧値 (null) に留まる
+        expect(newSyncState.snapshots["o/r#1"].syncFields?.milestone).toBeNull();
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
   });
 
