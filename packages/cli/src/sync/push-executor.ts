@@ -1168,23 +1168,32 @@ async function resolveIssueMetadataUpdate(
   const fields: IssueMetadataUpdateResult["fields"] = {};
   const failedFields: IssueMetadataFieldName[] = [];
 
+  // 解除・全削除は ID 解決が不要なため metadata / user の fetch を伴わずに送信する。
+  // fetch が必要なのは非空の名前を ID に解決する場合だけであり、クリア操作が
+  // 無関係な fetch の失敗に巻き込まれてブロックされることも防ぐ (NFR-SYNC-002)
+
   if (changes.assignees) {
-    const userIdMap = await deps.getUserIdMap();
-    const unresolved = task.assignees.filter((login) => !userIdMap.has(login));
-    if (unresolved.length > 0) {
-      console.warn(
-        `  ⚠ assignee が解決できないため assignees の更新をスキップ (${task.id}): ${unresolved.join(", ")}`,
-      );
-      failedFields.push("assignees");
+    if (task.assignees.length === 0) {
+      fields.assigneeIds = [];
     } else {
-      fields.assigneeIds = task.assignees.map((login) => userIdMap.get(login)!);
+      const userIdMap = await deps.getUserIdMap();
+      const unresolved = task.assignees.filter((login) => !userIdMap.has(login));
+      if (unresolved.length > 0) {
+        console.warn(
+          `  ⚠ assignee が解決できないため assignees の更新をスキップ (${task.id}): ${unresolved.join(", ")}`,
+        );
+        failedFields.push("assignees");
+      } else {
+        fields.assigneeIds = task.assignees.map((login) => userIdMap.get(login)!);
+      }
     }
   }
 
-  if (changes.labels || changes.milestone) {
-    const metadata = await deps.getRepositoryMetadata();
-
-    if (changes.labels) {
+  if (changes.labels) {
+    if (task.labels.length === 0) {
+      fields.labelIds = [];
+    } else {
+      const metadata = await deps.getRepositoryMetadata();
       const unresolved = task.labels.filter((name) => !metadata.labelMap.has(name));
       if (unresolved.length > 0) {
         console.warn(
@@ -1195,21 +1204,22 @@ async function resolveIssueMetadataUpdate(
         fields.labelIds = task.labels.map((name) => metadata.labelMap.get(name)!);
       }
     }
+  }
 
-    if (changes.milestone) {
-      if (task.milestone === null) {
-        // ローカルで milestone が解除された場合は null を明示的に送信して解除する
-        fields.milestoneId = null;
+  if (changes.milestone) {
+    if (task.milestone === null) {
+      // ローカルで milestone が解除された場合は null を明示的に送信して解除する
+      fields.milestoneId = null;
+    } else {
+      const metadata = await deps.getRepositoryMetadata();
+      const milestoneId = metadata.milestoneMap.get(task.milestone);
+      if (milestoneId === undefined) {
+        console.warn(
+          `  ⚠ milestone が解決できないため milestone の更新をスキップ (${task.id}): ${task.milestone}`,
+        );
+        failedFields.push("milestone");
       } else {
-        const milestoneId = metadata.milestoneMap.get(task.milestone);
-        if (milestoneId === undefined) {
-          console.warn(
-            `  ⚠ milestone が解決できないため milestone の更新をスキップ (${task.id}): ${task.milestone}`,
-          );
-          failedFields.push("milestone");
-        } else {
-          fields.milestoneId = milestoneId;
-        }
+        fields.milestoneId = milestoneId;
       }
     }
   }

@@ -1726,6 +1726,7 @@ describe("executePush", () => {
 
     it("labels / assignees の空配列化は全削除として空の ID 配列を送信する", async () => {
       const updateIssueVars: any[] = [];
+      let metadataFetchCount = 0;
       // 以前は labels / assignees が設定されていた
       const previousTask = makeTask("o/r#1", {
         github_issue: 1,
@@ -1736,7 +1737,10 @@ describe("executePush", () => {
       const task = makeTask("o/r#1", { github_issue: 1, labels: [], assignees: [] });
 
       const mockGql = makeMockGql({
-        repositoryMetadata: repositoryMetadataHandler,
+        repositoryMetadata: async () => {
+          metadataFetchCount++;
+          return repositoryMetadataHandler();
+        },
         updateIssue: async (_q: string, vars: any) => {
           updateIssueVars.push(vars);
           return { updateIssue: { issue: { id: "ISSUE_1" } } };
@@ -1754,6 +1758,8 @@ describe("executePush", () => {
       expect(updateIssueVars).toHaveLength(1);
       expect(updateIssueVars[0].labelIds).toEqual([]);
       expect(updateIssueVars[0].assigneeIds).toEqual([]);
+      // 全削除は ID 解決が不要であり、metadata fetch の失敗に巻き込まれない
+      expect(metadataFetchCount).toBe(0);
     });
 
     it("milestone の変更は milestoneId に解決して updateIssue で送信する", async () => {
