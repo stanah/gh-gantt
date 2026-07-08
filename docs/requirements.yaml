@@ -515,6 +515,15 @@ areas:
             description: GET/POST/PATCH/DELETE でタスクを操作できる
             status: uncovered
             tests: []
+          - id: FR-API-001-AC2
+            description: |
+              POST /api/tasks と PATCH /api/tasks/:id は parent 参照を正規形
+              (owner/repo#N / owner/repo#draft-N) に解決して保存し、
+              存在しない親を指す場合は 400 を返す
+              (CLI create --parent の FR-CLI-004-AC3 と同挙動、#319)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
       - id: FR-API-002
         summary: 同期操作 API
         acceptance_criteria:
@@ -533,6 +542,14 @@ areas:
             description: 自己参照・循環・階層違反を API レベルで拒否する
             status: uncovered
             tests: []
+          - id: FR-API-003-AC3
+            description: |
+              POST /api/tasks/:id/reparent は newParentId を正規形へ解決してから
+              自己参照・存在・循環・階層の検証を行う
+              (CLI link --set-parent と同じ規律、#319)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
       - id: FR-API-004
         summary: Sprint 設定取得
         acceptance_criteria:

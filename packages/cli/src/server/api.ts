@@ -11,6 +11,7 @@ import { executePush } from "../sync/push-executor.js";
 import { executePull } from "../sync/pull-executor.js";
 import { createGraphQLClient } from "../github/client.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
+import { resolveTaskId } from "../util/task-id.js";
 import type { Task, StatusValue } from "@gh-gantt/shared";
 import { computeStatusDateUpdates } from "@gh-gantt/shared";
 
@@ -70,7 +71,7 @@ export function createApiRouter(projectRoot: string): Router {
     try {
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
-      const { title, type, body, start_date, end_date, parent } = req.body;
+      const { title, type, body, start_date, end_date } = req.body;
 
       if (!title || !type) {
         res.status(400).json({ error: "title and type are required" });
@@ -80,6 +81,23 @@ export function createApiRouter(projectRoot: string): Router {
       if (!config.task_types[type]) {
         res.status(400).json({ error: `Unknown task type: "${type}"` });
         return;
+      }
+
+      // parent 参照の正規化と存在検証 (#319)
+      // 生の "draft-1" / "293" のまま保存すると push の replaceTaskIdReferences /
+      // id_map 照合 (正規形の完全一致) が効かず sub-issue 関係がスキップされるため、
+      // CLI の create --parent (#302) と同じく resolveTaskId で正規形へ解決してから保存する
+      let parent: string | null = req.body.parent ?? null;
+      if (parent !== null && typeof parent !== "string") {
+        res.status(400).json({ error: "parent must be a string or null" });
+        return;
+      }
+      if (parent) {
+        parent = resolveTaskId(parent, config);
+        if (!tasksFile.tasks.some((t) => t.id === parent)) {
+          res.status(400).json({ error: `Parent task not found: ${parent}` });
+          return;
+        }
       }
 
       const { owner, repo } = config.project.github;
@@ -97,7 +115,7 @@ export function createApiRouter(projectRoot: string): Router {
         type,
         github_issue: null,
         github_repo: repoFullName,
-        parent: parent ?? null,
+        parent,
         sub_tasks: [],
         title,
         body: body ?? null,
@@ -124,6 +142,7 @@ export function createApiRouter(projectRoot: string): Router {
         blocked_by: [],
       };
 
+      // parent の存在は正規化時に検証済み (#319)
       if (parent) {
         const parentTask = tasksFile.tasks.find((t) => t.id === parent);
         if (parentTask && !parentTask.sub_tasks.includes(taskId)) {
@@ -208,6 +227,19 @@ export function createApiRouter(projectRoot: string): Router {
       if ("require_review" in updates && typeof updates.require_review !== "boolean") {
         res.status(400).json({ error: "require_review must be a boolean" });
         return;
+      }
+      // parent 参照の正規化と存在検証 (#319, POST /api/tasks と同じ規律)
+      if ("parent" in updates && updates.parent !== null) {
+        if (typeof updates.parent !== "string") {
+          res.status(400).json({ error: "parent must be a string or null" });
+          return;
+        }
+        const resolvedParent = resolveTaskId(updates.parent, config);
+        if (!tasksFile.tasks.some((t) => t.id === resolvedParent)) {
+          res.status(400).json({ error: `Parent task not found: ${resolvedParent}` });
+          return;
+        }
+        updates.parent = resolvedParent;
       }
       for (const reviewField of ["review_approved_by", "review_approved_at"] as const) {
         if (
@@ -297,7 +329,7 @@ export function createApiRouter(projectRoot: string): Router {
   router.post("/api/tasks/:id/reparent", async (req, res) => {
     try {
       const taskId = decodeURIComponent(req.params.id);
-      const { newParentId } = req.body;
+      let { newParentId } = req.body;
 
       const config = await configStore.read();
       const tasksFile = await tasksStore.read();
@@ -306,6 +338,15 @@ export function createApiRouter(projectRoot: string): Router {
       if (!task) {
         res.status(404).json({ error: "Task not found", code: "TASK_NOT_FOUND" });
         return;
+      }
+
+      // newParentId を正規形へ解決してから検証する (#319, CLI link --set-parent と同じ規律)
+      if (newParentId != null) {
+        if (typeof newParentId !== "string") {
+          res.status(400).json({ error: "newParentId must be a string or null" });
+          return;
+        }
+        newParentId = resolveTaskId(newParentId, config);
       }
 
       if (newParentId === taskId) {

@@ -22,7 +22,10 @@ const TaskCreateRequestSchema = z.object({
   body: z.string().nullable().optional(),
   start_date: z.string().nullable().optional(),
   end_date: z.string().nullable().optional(),
-  parent: z.string().nullable().optional(),
+  parent: z.string().nullable().optional().openapi({
+    description:
+      "親タスク参照。draft-1 / 293 / #293 などの短縮形は正規形 (owner/repo#N / owner/repo#draft-N) に解決して保存される。存在しないタスクを指す場合は 400 を返す",
+  }),
 });
 registry.register("TaskCreateRequest", TaskCreateRequestSchema);
 
@@ -44,14 +47,19 @@ const TaskUpdateRequestSchema = z.object({
   start_date: z.string().nullable().optional(),
   end_date: z.string().nullable().optional(),
   date: z.string().nullable().optional(),
-  parent: z.string().nullable().optional(),
+  parent: z.string().nullable().optional().openapi({
+    description:
+      "親タスク参照。短縮形は正規形に解決して保存される。存在しないタスクを指す場合は 400 を返す",
+  }),
   sub_tasks: z.array(z.string()).optional(),
   blocked_by: z.array(DependencySchema).optional(),
 });
 registry.register("TaskUpdateRequest", TaskUpdateRequestSchema);
 
 const ReparentRequestSchema = z.object({
-  newParentId: z.string().nullable(),
+  newParentId: z.string().nullable().openapi({
+    description: "新しい親タスク参照 (null で親を外す)。短縮形は正規形に解決してから存在検証される",
+  }),
 });
 registry.register("ReparentRequest", ReparentRequestSchema);
 
@@ -165,6 +173,10 @@ registry.registerPath({
       description: "更新されたタスク",
       content: { "application/json": { schema: TaskSchema } },
     },
+    400: {
+      description: "バリデーションエラー (存在しない parent 参照を含む)",
+      content: { "application/json": { schema: ErrorResponseSchema } },
+    },
     404: {
       description: "タスクが見つからない",
       content: { "application/json": { schema: ErrorResponseSchema } },
@@ -188,7 +200,7 @@ registry.registerPath({
       content: { "application/json": { schema: ReparentResponseSchema } },
     },
     400: {
-      description: "循環参照・階層違反",
+      description: "自己参照・循環参照・階層違反・不正な newParentId",
       content: { "application/json": { schema: ErrorResponseSchema } },
     },
   },
