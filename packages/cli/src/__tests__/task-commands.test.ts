@@ -946,6 +946,14 @@ describe("removeDependency", () => {
     expect(result.task.blocked_by).toHaveLength(1);
     expect(result.task.blocked_by[0].task).toBe("owner/repo#3");
   });
+
+  it("# 付き入力でも非正規形の生値を削除できる", () => {
+    const task = makeTask({
+      blocked_by: [{ task: "293", type: "finish-to-start", lag: 0 }],
+    });
+    const result = removeDependency(task, "owner/repo#293", "#293");
+    expect(result.task.blocked_by).toHaveLength(0);
+  });
 });
 
 describe("[FR-HIER-001-AC1] タスクの親子関係を設定・変更・削除できる", () => {
