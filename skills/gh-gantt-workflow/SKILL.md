@@ -57,15 +57,21 @@ Evidence: コマンド出力をそのまま提示する。
 各ステップの **★フック** は `.gantt-sync/workflow.md` の対応セクションを実行するタイミング。
 
 0. **★`on_session_start`** — workflow.md の該当セクションを実行。セッション開始確認は
-   workflow.md 側に一元化し、ここで同じ確認を重ねて実行してはならない。ユーザーが特定 PR だけを
-   明示した場合を除き、現在ブランチの PR だけで確認済み扱いしてはならない
+   workflow.md 側に一元化し、ここで同じ確認を重ねて実行してはならない
 1. **REQUIRED:** `gh-gantt-sync`（pull）を invoke
 2. **OPTIONAL:** `gh-gantt-progress` でタスクの状態を確認
-3. タスク確認 — `gh-gantt list --state open` を実行する。
+3. タスク確認 — `gh-gantt list --state open --json | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs`
+   を実行し、project-local な context budget に収まる bounded evidence を提示する。既定 limit は 50 件で、
+   各 task は `id`, `github_issue`, `title`, `status`, `state` だけに射影され、証跡には `total`,
+   `limit`, `truncated`, `tasks` を含める。Status field 名が異なる project は `--status-field <name>`、
+   context budget を指定する場合は `--limit <n>` を helper に渡す。limit の優先順位は
+   `project workflow の指定 > ユーザーの明示指定 > default 50` とする。
    件数が多い場合は CLI でサポートされているフィルタ（例: `--backlog`, `--scheduled`, `--type`, `--sort`）の併用を提案する。
-   注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用し、利用できない場合（コマンドがエラーになる場合）はこれらのオプションを外した `gh-gantt list --state open` にフォールバックする。
-   **CLI の出力をそのまま表示すること。要約・再フォーマット・独自テーブルへの変換・一部タスクの省略は一切禁止。**
-   ユーザーに選択を促す。
+   注: `--unblocked` および `--sort` オプションが利用中の `gh-gantt` のバージョンで利用可能な場合はそれらを使用する。
+   利用できない場合（コマンドがエラーになる場合）は、オプションを外した場合も `gh-gantt list --state open --json | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs`
+   を使い、JSON projection helper と同じ `--limit <n>` / `--status-field <name>` を維持する。
+   `truncated: true` の場合は search/filter で候補を絞り込み、ユーザーに選択を促す。task body は候補を絞り込んだ後に
+   `gh-gantt show <id>` で取得する。body を含む全件 export はユーザーが exhaustive audit を明示した場合だけ opt-in で行う。
 4. タスクのステータスを作業中に更新 — config に `statuses` が定義されていれば `gh-gantt update <number> --status <作業中ステータス>`（`done: false` のステータスを使用）。未定義ならスキップ
 5. **★`on_task_selected`** — workflow.md の該当セクションを実行
 6. ブランチ作成 — Issue から branch 名を標準化する場合は `gh-gantt-pr` の命名規則（`<prefix>/issue-<number>-<slug>`）に従う
@@ -80,13 +86,10 @@ Evidence: コマンド出力をそのまま提示する。
 13. `gh pr create` — PR 作成のみを標準化する場合は `gh-gantt-pr` を使い、PR の description に `Closes #<number>` または `Fixes #<number>` を記載する
 14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で CI と非同期レビューコメントの安定を待つ。PR 作成は完了ではなく、レビュー監視の開始である
 15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応後は push し、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
-16. 完了報告前 hard gate — `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open`
-    を実行し、リポジトリのオープン PR 全件を列挙する。各 PR について `CHANGES_REQUESTED`、
-    未 resolve thread、未観測 check、pending/blocking check、CodeRabbit rate limit、
-    API 取得失敗による UNKNOWN 判定を確認し、追対応条件が 0 件の PR 番号だけを
-    「確認済み」と報告する。完了報告前は `--no-wait` を使わず、quiet window と stable samples を
-    満たすまで待つ。オープン PR が残っている状況で現在ブランチの PR だけを確認して完了扱いしては
-    ならない
+16. 完了報告前 hard gate — 現在タスクの PR を `--pr <number>` または `--current-branch` で確認し、
+    `CHANGES_REQUESTED`、未 resolve thread、未観測 check、pending/blocking check、CodeRabbit rate limit、
+    API 取得失敗による UNKNOWN 判定がないことを確認する。リポジトリ全体の監査をユーザーが明示した場合だけ、
+    `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open` を opt-in で実行する
 17. **★`on_session_end`** — workflow.md の該当セクションを実行
 18. **REQUIRED:** `gh-gantt-sync`（push）を invoke。タスクの close は PR マージ時に GitHub が自動で行う
 
@@ -116,7 +119,7 @@ Evidence: コマンド出力をそのまま提示する。
 | `Dev-Role Config` があるのに executor gate を省略する          | ロール分離が無効化され、動作確認なし PR 作成を再発させる         |
 | PR review 操作を gh-gantt CLI に追加する                       | GitHub PR の責務であり、`gh` / GraphQL workflow で扱う           |
 | `.claude/hooks` をレビューサイクルの正本にする                 | Codex など hook を自動実行できない環境では保証にならない         |
-| 現在ブランチの PR だけを確認して完了報告する                   | 別のオープン PR の未解決レビューを見落とす                       |
+| 明示要求なしに全 open PR を監査する                            | 現在タスクから scope drift し、context budget を圧迫する         |
 | レビュー返信を個別投稿する                                     | pending review にまとめて submit し、通知を 1 回に抑える         |
 | PR マージ前に手動で Issue を close する                        | `Closes #N` で自動クローズに任せる                               |
 | 振る舞い変更なのに要件ファイルを更新しない (Living Doc 採用時) | トレーサビリティが欠ける。`gh-gantt-living-documentation` を使う |
@@ -127,7 +130,7 @@ Evidence: コマンド出力をそのまま提示する。
 | 「さっき pull したばかり」            | status の出力を確認すること。記憶は evidence ではない |
 | 「小さい変更だからタスク不要」        | 追跡されない変更はプロジェクトの盲点になる            |
 | 「後で push する」                    | 後では来ない。コミットと push はセットで行う          |
-| 「見やすくまとめた」                  | CLI 出力の加工は情報の欠落。そのまま出すこと          |
+| 「全件なら見落とさない」              | bounded evidence と段階的な detail 取得で対象を絞る   |
 | 「レビュー指摘だから Issue にしよう」 | Issue は新しい作業単位。レビュー修正は既存 PR の一部  |
 
 ## リファレンス

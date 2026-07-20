@@ -24,10 +24,10 @@ print("MATCH" if re.search(r"(?:^|[;&|\n])\s*(?:command\s+)?gh\s+pr\s+create\b",
 case "$matched" in
   MATCH)
     {
-      echo "⚠ PR 作成は完了ではなく、レビュー監視の開始です (gh-gantt-workflow 手順14-16)。次を必ず実施すること:"
+      echo "⚠ PR 作成は完了ではなく、現在タスクの PR のレビュー監視開始です (gh-gantt-workflow 手順14-16):"
       echo "  1. skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch で CI と非同期レビューの安定を待つ"
       echo "  2. 指摘は精査して同じ PR に追加コミットで対応し、pending review で返信・対応済み thread を resolve する"
-      echo "  3. 完了報告の前に同スクリプトを --all-open で実行する"
+      echo "  3. 完了報告の前に同じ現在タスクの PR を再確認する"
     } >&2
     exit 2
     ;;

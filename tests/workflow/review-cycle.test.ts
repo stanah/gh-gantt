@@ -349,13 +349,18 @@ esac
     expect(failure?.stdout).toContain("- active CodeRabbit rate limit: 1");
   });
 
-  it("セッションをまたぐ入口として all-open sweep を固定する", async () => {
+  it("現在タスク PR を既定入口にし、all-open sweep は明示 opt-in にする", async () => {
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
 
-    expect(reference).toContain("--all-open --no-wait");
+    expect(reference).toContain("現在タスクの PR");
+    expect(reference).toContain("--current-branch");
+    expect(reference).toContain("--pr <number>");
+    expect(reference).toContain("--all-open");
+    expect(reference).toContain("明示");
+    expect(reference).toContain("opt-in");
   });
 
-  it("完了判定前にリポジトリのオープン PR 全件 sweep を必須にする", async () => {
+  it("workflow・template・hook・Living Documentation が current task default で一致する", async () => {
     const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
     const reference = await readRepoFile("skills/gh-gantt-workflow/references/pr-review-cycle.md");
     const script = await readRepoFile("skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh");
@@ -371,36 +376,57 @@ esac
       "0. **★`on_session_start`",
       "\n1. **REQUIRED:**",
     );
+    const postHook = await readRepoFile(".claude/hooks/post-pr-create-reminder.sh");
+    const stopHook = await readRepoFile(".claude/hooks/stop-pr-review-cycle.sh");
+    const adr020 = await readRepoFile("docs/adr/ADR-020-bounded-agent-workflow-scope.md");
+    const requirements = await readRepoFile("docs/requirements.yaml");
+    const basicAfterCreate = extractMarkdownSection(basicTemplate, "## after_pr_create");
     const basicReviewReceived = extractMarkdownSection(basicTemplate, "## on_review_received");
-    const basicSessionEnd = extractMarkdownSection(basicTemplate, "## on_session_end");
-    const superpowersSessionEnd = extractMarkdownSection(superpowersTemplate, "## on_session_end");
+    const superpowersAfterCreate = extractMarkdownSection(
+      superpowersTemplate,
+      "## after_pr_create",
+    );
+    const superpowersReviewReceived = extractMarkdownSection(
+      superpowersTemplate,
+      "## on_review_received",
+    );
 
-    expect(workflow).toContain("リポジトリのオープン PR 全件");
-    expect(workflow).toContain("pr-review-cycle-wait.sh --all-open");
-    expect(workflow).toContain("`CHANGES_REQUESTED`");
-    expect(workflow).toContain("追対応条件が 0 件");
-    expect(workflow).toContain("quiet window と stable samples");
-    expect(reference).toContain("完了報告前");
-    expect(reference).toContain(
-      "完了報告前: `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open`",
-    );
-    expect(reference).not.toContain(
-      "完了報告前: `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait`",
-    );
-    expect(reference).toContain("リポジトリのオープン PR 全件");
+    for (const content of [workflow, reference, basicTemplate, superpowersTemplate, adr020]) {
+      expect(content).toContain("現在タスクの PR");
+      expect(content).toContain("--all-open");
+      expect(content).toContain("明示");
+      expect(content).toContain("opt-in");
+    }
+    for (const section of [
+      basicAfterCreate,
+      basicReviewReceived,
+      superpowersAfterCreate,
+      superpowersReviewReceived,
+    ]) {
+      expect(section).toContain("--current-branch");
+      expect(section).not.toContain("--all-open");
+    }
+    for (const hook of [postHook, stopHook]) {
+      expect(hook).toContain("--current-branch");
+      expect(hook).not.toContain("必ず実施");
+      expect(hook).not.toContain("完了報告の前に同スクリプトを --all-open");
+    }
+    expect(workflow).not.toContain("現在ブランチの PR だけを確認して完了扱いしては");
+    expect(reference).not.toContain("オープン PR が残っているなら全て確認対象にする");
+    expect(requirements).toContain("NFR-STABILITY-005-AC1");
+    expect(requirements).toContain("現在タスクの PR");
+    expect(requirements).toContain("明示的な opt-in");
+    expect(requirements).toContain("NFR-STABILITY-012");
+    expect(adr020).toContain("ADR-013");
+    expect(adr020).toContain("scope-selection");
+    expect(adr020).toContain("supersede");
     expect(reference).toContain("`NONE`");
     expect(reference).toContain("API 取得失敗を示す `UNKNOWN`");
     expect(script).toContain("failed to list open PRs for repository");
     expect(allOpenBlock).toContain("gh api --paginate");
     expect(allOpenBlock).toContain("pulls?state=open&per_page=100");
     expect(allOpenBlock).not.toContain("--author @me");
-    expect(basicTemplate).toContain("gh api --paginate");
-    expect(superpowersTemplate).toContain("gh api --paginate");
-    expect(basicTemplate).not.toContain("gh pr list --state open");
-    expect(superpowersTemplate).not.toContain("gh pr list --state open");
     expect(skillSessionStartStep).not.toContain("pr-review-cycle-wait.sh --all-open");
-    expect(basicSessionEnd).not.toContain("pr-review-cycle-wait.sh --all-open");
-    expect(superpowersSessionEnd).not.toContain("pr-review-cycle-wait.sh --all-open");
     expect(basicReviewReceived).not.toContain("\n\n- **軽微な修正**");
     expect(basicReviewReceived).toContain("\n    - **軽微な修正**");
   });
@@ -408,12 +434,29 @@ esac
   it("ADR-010 は PR 後レビューサイクルの正本を ADR-013 に委譲する", async () => {
     const adr010 = await readRepoFile("docs/adr/ADR-010-three-layer-workflow-guard.md");
     const adr013 = await readRepoFile("docs/adr/ADR-013-pr-review-cycle-as-agent-workflow.md");
+    const adr020 = await readRepoFile("docs/adr/ADR-020-bounded-agent-workflow-scope.md");
+    const requirements = await readRepoFile("docs/requirements.yaml");
 
     expect(adr010).toContain("ADR-013");
     expect(adr010).toContain("正本");
     expect(adr010).not.toContain("addPullRequestReviewThreadReply");
     expect(adr013).toContain("ADR-010");
     expect(adr013).toContain("supersede");
+    for (const adr of [adr010, adr013]) {
+      expect(adr).toContain("2026-07-21 追補");
+      expect(adr).toContain("ADR-020");
+      expect(adr).toContain("scope-selection");
+      expect(adr).toContain("現在タスクの PR");
+      expect(adr).toContain("--all-open");
+      expect(adr).toContain("歴史的な契約");
+      expect(adr).toContain("明示的な opt-in");
+    }
+    expect(requirements).toContain("ADR-020");
+    expect(adr020).toContain("## Alternatives");
+    expect(adr020).toContain("### 製品 CLI に projection / limit を実装する");
+    expect(adr020).toContain("### skill 内で要約だけを指示する");
+    expect(adr020).toContain("### repository-wide `--all-open` を既定のまま維持する");
+    expect(adr020.match(/採用しない/g)).toHaveLength(3);
   });
 });
 

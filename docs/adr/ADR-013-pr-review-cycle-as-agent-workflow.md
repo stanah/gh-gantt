@@ -69,6 +69,19 @@ Alternatives の「hooks は補助に留め、正本は workflow skill と scrip
   しない」ではなく「hooks が待機ロジックを再実装せず、再入・fail-open が
   保証されている」ことを検証する。
 
+### 2026-07-21 追補: PR scope-selection の部分 supersede (#324)
+
+Decision と Consequences にある、セッション開始時・完了報告前にリポジトリの
+オープン PR 全件を `--all-open` で確認する記述は、当時の**歴史的な契約**であり、
+現行契約ではない。[ADR-020](ADR-020-bounded-agent-workflow-scope.md) が本 ADR の
+scope-selection 部分だけを supersede する。
+
+現行の default は現在タスクの PR であり、`--pr <number>` または `--current-branch` で
+確認する。repository-wide `--all-open` audit はユーザーが明示した場合だけの
+明示的な opt-in とする。未解決 thread、checks、quiet window、stable samples、
+GraphQL による返信・resolve、PR review 操作を製品 CLI に追加しない責務境界は、
+本 ADR の決定を引き続き正本とする。
+
 ## Alternatives
 
 ### gh-gantt CLI に review-cycle コマンドを追加する
