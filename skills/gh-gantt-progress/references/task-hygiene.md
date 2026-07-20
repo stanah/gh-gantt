@@ -27,8 +27,14 @@
 
 ### 2. 各タスクの詳細確認
 
-オープンタスクについて `gh-gantt show <id>` で parent, body, sub_tasks を確認する。
-件数が多い場合は `--type` 等で絞り込む。
+共通 Step 2 の bounded evidence で `total` と `truncated` を確認する。
+`truncated: true` の間は、一覧に見えている task へ無条件に `gh-gantt show <id>` を実行しない。
+先に `--type`, `--status`, `--search` などの filter / search で候補を十分に絞り込み、
+bounded evidence を再取得する。リポジトリ全体を検査する必要がある場合は、ユーザーが
+exhaustive audit を明示的に opt-in してから detail を取得する。
+
+`truncated: false`、または検査対象が十分に絞り込まれた後で、候補 task に限って
+`gh-gantt show <id>` を実行し、parent, body, sub_tasks を確認する。
 
 ### 3. 結果提示
 

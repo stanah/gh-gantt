@@ -390,6 +390,11 @@ esac
       superpowersTemplate,
       "## on_review_received",
     );
+    const basicSessionStart = extractMarkdownSection(basicTemplate, "## on_session_start");
+    const superpowersSessionStart = extractMarkdownSection(
+      superpowersTemplate,
+      "## on_session_start",
+    );
 
     for (const content of [workflow, reference, basicTemplate, superpowersTemplate, adr020]) {
       expect(content).toContain("現在タスクの PR");
@@ -405,6 +410,14 @@ esac
     ]) {
       expect(section).toContain("--current-branch");
       expect(section).not.toContain("--all-open");
+    }
+    for (const section of [basicSessionStart, superpowersSessionStart]) {
+      expect(section).toContain(
+        "skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --pr <number>",
+      );
+      expect(section).toContain(
+        "skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch --no-wait",
+      );
     }
     for (const hook of [postHook, stopHook]) {
       expect(hook).toContain("--current-branch");

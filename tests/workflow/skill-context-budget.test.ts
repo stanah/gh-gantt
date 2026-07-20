@@ -198,6 +198,17 @@ describe("[NFR-STABILITY-012-AC2] workflow skill の段階的 task detail 取得
       expect(skill).toContain("project workflow の指定 > ユーザーの明示指定 > default 50");
     }
   });
+
+  it("task hygiene は truncated な一覧から無条件に body を取得しない", async () => {
+    const hygiene = await readRepoFile("skills/gh-gantt-progress/references/task-hygiene.md");
+
+    expect(hygiene).toContain("truncated: true");
+    expect(hygiene).toContain("gh-gantt show");
+    expect(hygiene).toContain("実行しない");
+    expect(hygiene).toContain("filter / search");
+    expect(hygiene).toContain("exhaustive audit");
+    expect(hygiene).toContain("明示的に opt-in");
+  });
 });
 
 describe("[NFR-STABILITY-012-AC3] 既知単一タスクの状態補正", () => {

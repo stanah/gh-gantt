@@ -14,7 +14,7 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. 継続中の現在タスクの PR が分かる場合は、`--pr <number>` または `--current-branch --no-wait` で状態を確認する
+3. 継続中の現在タスクの PR が分かる場合は、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --pr <number>` または `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch --no-wait` で状態を確認する
 
 リポジトリ全体の監査は、ユーザーが明示した場合だけ `--all-open` を opt-in で使う。
 
