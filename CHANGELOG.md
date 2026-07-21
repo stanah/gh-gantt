@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.3.0-alpha](https://github.com/stanah/gh-gantt/compare/v0.2.1-alpha...v0.3.0-alpha) (2026-07-21)
+
+
+### Features
+
+* **cli:** loop complete に PR レビューサイクルの evidence ゲートを追加 ([#309](https://github.com/stanah/gh-gantt/issues/309)) ([ea79f98](https://github.com/stanah/gh-gantt/commit/ea79f9834628dfcd3367b05d73c5a14225a5dd94))
+* **cli:** loop next/complete と時間軸結線・ready 枯渇分類を実装 ([#285](https://github.com/stanah/gh-gantt/issues/285)) ([#288](https://github.com/stanah/gh-gantt/issues/288)) ([42c77a4](https://github.com/stanah/gh-gantt/commit/42c77a424ee31dfea16c0b9d7255b72e8ef8d2cc))
+* **cli:** エフェメラル環境からのブートストラップに対応 ([#286](https://github.com/stanah/gh-gantt/issues/286)) ([#289](https://github.com/stanah/gh-gantt/issues/289)) ([c6e5cf1](https://github.com/stanah/gh-gantt/commit/c6e5cf1085b324b9a0bcc60c3e65d091ca92c506))
+* **cli:** ループメトリクスとセンサー結線の明文化を追加 ([#278](https://github.com/stanah/gh-gantt/issues/278)) ([#292](https://github.com/stanah/gh-gantt/issues/292)) ([125ab02](https://github.com/stanah/gh-gantt/commit/125ab02ef8ed65c5bfe543c52c78517702b7537a))
+* **cli:** 外側ループの状態永続化と loop status コマンドを追加 ([#276](https://github.com/stanah/gh-gantt/issues/276)) ([#287](https://github.com/stanah/gh-gantt/issues/287)) ([d205005](https://github.com/stanah/gh-gantt/commit/d205005cdda810808b9cc24c8cb69e4ede066947))
+* **cli:** 自律ループの同期鮮度チェックと status 更新、スキル手順を追加 ([#277](https://github.com/stanah/gh-gantt/issues/277)) ([#290](https://github.com/stanah/gh-gantt/issues/290)) ([0dc322f](https://github.com/stanah/gh-gantt/commit/0dc322febbaa04ded73c199d28fe0884043bfa27))
+* **cli:** 誤作成Issue削除コマンドを追加 ([#283](https://github.com/stanah/gh-gantt/issues/283)) ([#291](https://github.com/stanah/gh-gantt/issues/291)) ([ca8d594](https://github.com/stanah/gh-gantt/commit/ca8d5940e116225fa6040d397f391da3bc93eaa3))
+* **harness:** PR 後レビューサイクルを Claude Code hooks で機械的に強制する ([#311](https://github.com/stanah/gh-gantt/issues/311)) ([93dbe2d](https://github.com/stanah/gh-gantt/commit/93dbe2da24095155844d5ae1d37a7e8c2a712cc8))
+* **shared:** Group by 軸のラベル prefix を自動検出する ([#269](https://github.com/stanah/gh-gantt/issues/269)) ([d0814aa](https://github.com/stanah/gh-gantt/commit/d0814aa06452091fd521cf1cff9271364b047859))
+* **skill:** gh-gantt-dev-role を追加 ([#246](https://github.com/stanah/gh-gantt/issues/246)) ([2dba710](https://github.com/stanah/gh-gantt/commit/2dba710f10ef723aff66f3e17abe5568d98ae785))
+* **ui:** Project Map / Task Landscape ビューを追加 ([#251](https://github.com/stanah/gh-gantt/issues/251)) ([cd4d076](https://github.com/stanah/gh-gantt/commit/cd4d07624650775a4d2343bc4efdbdb6b36ea4a2)), closes [#252](https://github.com/stanah/gh-gantt/issues/252) [#253](https://github.com/stanah/gh-gantt/issues/253) [#254](https://github.com/stanah/gh-gantt/issues/254) [#255](https://github.com/stanah/gh-gantt/issues/255) [#256](https://github.com/stanah/gh-gantt/issues/256) [#257](https://github.com/stanah/gh-gantt/issues/257) [#258](https://github.com/stanah/gh-gantt/issues/258) [#259](https://github.com/stanah/gh-gantt/issues/259) [#260](https://github.com/stanah/gh-gantt/issues/260) [#261](https://github.com/stanah/gh-gantt/issues/261)
+* **ui:** Project Map に Group by 軸セレクタと多ファセット分類を追加 ([#263](https://github.com/stanah/gh-gantt/issues/263)) ([188c513](https://github.com/stanah/gh-gantt/commit/188c513600f41bc5f1c78b81167f63cfafa3ca03)), closes [#264](https://github.com/stanah/gh-gantt/issues/264) [#265](https://github.com/stanah/gh-gantt/issues/265) [#266](https://github.com/stanah/gh-gantt/issues/266) [#267](https://github.com/stanah/gh-gantt/issues/267)
+* **ui:** マイルストーンを専用レーン + 全行貫通の縦線で表示する ([#249](https://github.com/stanah/gh-gantt/issues/249)) ([700dc9f](https://github.com/stanah/gh-gantt/commit/700dc9f4937e8d8af6bad8caacb57e34b8a1fbb9))
+
+
+### Bug Fixes
+
+* **api:** PATCH の blocked_by / sub_tasks 参照を正規化・存在検証する ([#321](https://github.com/stanah/gh-gantt/issues/321)) ([#323](https://github.com/stanah/gh-gantt/issues/323)) ([74a9464](https://github.com/stanah/gh-gantt/commit/74a94641736941d5c1f66d2fd66fc57fc566c5ff))
+* **api:** POST /api/tasks の parent 参照を正規化・存在検証する ([#322](https://github.com/stanah/gh-gantt/issues/322)) ([3bf200c](https://github.com/stanah/gh-gantt/commit/3bf200c26c209570bfdd885d068dda7fc168328f))
+* **cli:** create --parent の参照を正規化し draft→実Issue 変換での親子関係スキップを解消 ([#320](https://github.com/stanah/gh-gantt/issues/320)) ([8ea0558](https://github.com/stanah/gh-gantt/commit/8ea0558e96682deb4392d4154ec534a9adc12fdc))
+* **harness:** 発火していなかった PreToolUse hooks を実発火する形に修正 ([#312](https://github.com/stanah/gh-gantt/issues/312)) ([117bac9](https://github.com/stanah/gh-gantt/commit/117bac95ed0e50a0a19a1dfbf2b0d2705116b97a))
+* **sync:** start_date / end_date のクリアを ProjectV2 に反映する ([#313](https://github.com/stanah/gh-gantt/issues/313)) ([78a7365](https://github.com/stanah/gh-gantt/commit/78a736561e2e4b43f1a1eced548120c7e3e0b8fd))
+* **sync:** Status フィールドの変更を push で ProjectV2 に反映する ([#316](https://github.com/stanah/gh-gantt/issues/316)) ([d6a3ed1](https://github.com/stanah/gh-gantt/commit/d6a3ed1a9aee77154cf3c92dcc7344fae0c2d7b7))
+* **sync:** 既存 Issue の assignees / labels / milestone の変更を push で反映する ([#314](https://github.com/stanah/gh-gantt/issues/314)) ([3c310fe](https://github.com/stanah/gh-gantt/commit/3c310fe4e1a3925ac0954ea12e81c4ff3b182141))
+* **ui:** 未保存 Markdown preview のリンク化を防ぐ ([#271](https://github.com/stanah/gh-gantt/issues/271)) ([#273](https://github.com/stanah/gh-gantt/issues/273)) ([14f170f](https://github.com/stanah/gh-gantt/commit/14f170fbe72f74e33dcd85dd3951579275990c7b))
+* **workflow:** agent証跡とPR監視範囲を限定する ([#324](https://github.com/stanah/gh-gantt/issues/324)) ([#325](https://github.com/stanah/gh-gantt/issues/325)) ([f9b4a1d](https://github.com/stanah/gh-gantt/commit/f9b4a1d2a76cdab1a0019703d021c6eae7c7f719))
+
 ## [0.2.1-alpha](https://github.com/stanah/gh-gantt/compare/v0.2.0-alpha...v0.2.1-alpha) (2026-05-04)
 
 
