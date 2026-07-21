@@ -57,7 +57,7 @@ if [ "$decision" = "CHANGES_REQUESTED" ] || { [ -n "$unresolved" ] && [ "$unreso
     echo "  1. skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch で状態を確認する"
     echo "  2. 指摘を精査し、妥当なものは同じ PR に追加コミットで対応する"
     echo "  3. 対応結果を pending review で返信し、対応済み thread を resolve する"
-    echo "  4. 完了報告の前に同スクリプトを --all-open で実行する"
+    echo "  4. 完了報告の前に同じ現在タスクの PR を --current-branch で再確認する"
     echo "ユーザーが明示的に中断を指示している場合はその旨を伝えて終了してよい。"
   } >&2
   exit 2

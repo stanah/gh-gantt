@@ -17,8 +17,9 @@
 
 1. `gh-gantt status` で同期状態を確認する
 2. 作業中のタスク（in-progress 状態）がないか確認する
-3. リポジトリのオープン PR 全件を確認する。手動一覧が必要なら `gh api --paginate "repos/OWNER/REPO/pulls?state=open&per_page=100" --jq '.[].number'` を使い、デフォルト page に依存しない
-4. オープン PR があれば `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open --no-wait` を実行する
+3. 継続中の現在タスクの PR が分かる場合は、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --pr <number>` または `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch --no-wait` で状態を確認する
+
+リポジトリ全体の監査は、ユーザーが明示した場合だけ `--all-open` を opt-in で使う。
 
 プロジェクトが特別な確認手順を要求する場合はここに追記する。
 
@@ -124,7 +125,7 @@
 
 1. `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を実行する
 2. script は CI/checks の完了、review thread pagination、PR comments/reviews の quiet window をまとめて待つ
-3. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open` を実行し、リポジトリのオープン PR 全件が安定するまで待つ
+3. 完了報告前に現在タスクの PR を `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で再確認する
 4. 完了条件は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 
 ## on_review_received
@@ -136,7 +137,7 @@
 5. 対応結果は GitHub GraphQL の pending review に返信を積み、submit で 1 回だけ通知する
 6. 対応済み thread は GraphQL alias mutation で一括 resolve する
 7. push 後に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する
-8. 完了報告前に `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --all-open` を実行し、リポジトリのオープン PR 全件が安定するまで待つ
+8. 完了報告前に現在タスクの PR を `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で再確認する
 9. 詳細は `skills/gh-gantt-workflow/references/pr-review-cycle.md` に従う
 10. **対応後の再検証**（修正規模により段階的）:
     - **軽微な修正**（typo、コメント、フォーマット、変数名変更、lint 対応のみ）: 基準 1〜3（lint / typecheck / test）の再実行 + 基準 5（ユーザー承認）のみでよい。基準 4（外部レビュー）は省略可。**Living Doc 採用時**: 要件ファイル / テスト名に触れた場合は基準 6 も再実行
@@ -163,7 +164,7 @@
 | PR 作成で作業完了扱いする              | 非同期レビューサイクルが始まっている               |
 | PR review 操作を gh-gantt CLI に入れる | GitHub PR は `gh` / GraphQL workflow で扱う        |
 | `.claude/hooks` を完了保証に使う       | Codex では自動実行されない。skill script を使う    |
-| 現在ブランチの PR だけ確認する         | 別のオープン PR に残ったレビューを見落とす         |
+| 明示要求なしに全 open PR を監査する    | 現在タスクから scope drift する                    |
 | レビュー返信を個別投稿する             | pending review にまとめて submit する              |
 | before_commit のレビューを省略する     | 手戻りが発生する                                   |
 | ユーザー承認前にコミット・プッシュする | レビュー指摘を取りこぼす                           |

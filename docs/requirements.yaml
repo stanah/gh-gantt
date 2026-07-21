@@ -1190,15 +1190,17 @@ areas:
         acceptance_criteria:
           - id: NFR-STABILITY-005-AC1
             description: |
-              PR 作成後・push 後・次セッション開始時に、Bot と人間の未解決
+              PR 作成後・push 後・次セッション開始時に、現在タスクの PR について Bot と人間の未解決
               review thread / changes requested review / pending または blocking
               checks / PR activity の quiet window を gh で検出し、対応を促す
               gh-gantt-workflow skill 付属 script と workflow が定義されている。
-              セッション開始時と完了報告前はリポジトリのオープン PR 全件を確認し、
-              完了報告前は quiet window と stable samples を満たすまで待つ。
-              現在ブランチの PR だけで完了扱いしない。
+              既定 scope は現在タスクの PR とし、完了報告前は quiet window と
+              stable samples を満たすまで待つ。リポジトリのオープン PR 全件を
+              対象にする repository-wide audit は明示的な opt-in とする。
               Claude hooks は正本 script を参照する補助リマインダー・停止ゲートに
-              限り、待機ロジックを再実装しない (#307, ADR-013 2026-07-08 追補)
+              限り、待機ロジックを再実装しない。scope-selection の現行決定は
+              ADR-020 を優先し、検出・待機の責務境界は ADR-013 を維持する
+              (#307, ADR-013 2026-07-08 追補, #324, ADR-020)
             status: covered
             tests:
               - tests/workflow/review-cycle.test.ts
@@ -1352,3 +1354,31 @@ areas:
               - packages/shared/src/__tests__/managed-block.test.ts
               - packages/shared/src/__tests__/task-review.test.ts
               - packages/shared/src/__tests__/task-roles.test.ts
+      - id: NFR-STABILITY-012
+        summary: agent workflow の context budget と対象 scope の安定化
+        acceptance_criteria:
+          - id: NFR-STABILITY-012-AC1
+            description: |
+              gh-gantt list の JSON envelope を tool 境界で bounded projection し、
+              task は id / github_issue / title / status / state の 5 項目だけ、
+              証跡は total / limit / truncated / tasks を持つ。既定 limit は 50 件で、
+              body その他の追加フィールドをモデルコンテキストへ流さない
+            status: covered
+            tests:
+              - tests/workflow/skill-context-budget.test.ts
+          - id: NFR-STABILITY-012-AC2
+            description: |
+              workflow と progress skill は search / filter / ユーザー選択で候補を
+              絞り込んだ後にだけ task body を取得し、本文を含む exhaustive export は
+              ユーザーが明示した場合だけ opt-in で実行する
+            status: covered
+            tests:
+              - tests/workflow/skill-context-budget.test.ts
+          - id: NFR-STABILITY-012-AC3
+            description: |
+              Issue 番号などで既知の単一タスクを状態補正するときは、その Issue の
+              受入基準と関連 commit / diff に scope を限定でき、リポジトリ全体の
+              git log 監査を必須にしない
+            status: covered
+            tests:
+              - tests/workflow/skill-context-budget.test.ts

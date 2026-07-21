@@ -7,12 +7,16 @@
 ### 1. 着手可能なタスクの絞り込み
 
 ```bash
-gh-gantt list --state open --unblocked --sort end_date
+gh-gantt list --state open --unblocked --sort end_date --json \
+  | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs
 ```
 
 ブロッカーが解消済みで期限が近い順にタスクを表示する。
 
-注: `--unblocked` や `--sort` がエラーになる場合は、これらのオプションを外した `gh-gantt list --state open` にフォールバックする。
+注: `--unblocked` や `--sort` がエラーになる場合は、これらのオプションだけを外した
+`gh-gantt list --state open --json | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs`
+にフォールバックする。fallback でも helper の `--limit <n>` / `--status-field <name>` を維持する。
+limit の優先順位は `project workflow の指定 > ユーザーの明示指定 > default 50` とする。
 
 ### 2. 候補タスクの詳細確認
 

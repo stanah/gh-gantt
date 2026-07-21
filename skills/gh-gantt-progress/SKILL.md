@@ -13,13 +13,20 @@ description: Use when updating task states, finding tasks to close, checking imp
 
 `gh-gantt-sync`（pull）を invoke する。
 
-### Step 2: オープンタスク一覧の表示
+### Step 2: オープンタスク一覧の bounded evidence
 
 ```bash
-gh-gantt list --state open
+gh-gantt list --state open --json \
+  | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs
 ```
 
-結果をそのまま表示する。
+共通 helper で各 task を `id`, `github_issue`, `title`, `status`, `state` のみに射影し、
+既定 50 件と `total`, `limit`, `truncated`, `tasks` を提示する。project の Status field 名が
+異なる場合は `--status-field <name>` を指定する。`truncated: true` なら search/filter で候補を
+絞り込み、task body は候補を絞り込んだ後に `gh-gantt show <id>` で取得する。
+body を含む全件 export は、ユーザーが exhaustive audit を明示した場合だけ opt-in で行う。
+context budget を指定する場合は helper に `--limit <n>` を渡す。limit の優先順位は
+`project workflow の指定 > ユーザーの明示指定 > default 50` とする。
 
 ### Step 3: ユーザーの意図に応じた分岐
 
@@ -36,7 +43,7 @@ gh-gantt list --state open
 
 ## エピック進捗
 
-`gh-gantt list --state open --type epic` でエピック一覧を表示し、各エピックについて `gh-gantt show <id>` で子タスクの完了率を確認する。
+`gh-gantt list --state open --type epic --json | node skills/gh-gantt-workflow/scripts/project-task-list-evidence.mjs` で bounded なエピック一覧を表示し、各エピックについて `gh-gantt show <id>` で子タスクの完了率を確認する。helper の `--limit <n>` / `--status-field <name>` と共通ステップの優先順位を維持する。
 
 ## リスク評価
 
