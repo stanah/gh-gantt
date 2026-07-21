@@ -29,12 +29,12 @@
 
 共通 Step 2 の bounded evidence で `total` と `truncated` を確認する。
 `truncated: true` の間は、一覧に見えている task へ無条件に `gh-gantt show <id>` を実行しない。
-先に `--type`, `--status`, `--search` などの filter / search で候補を十分に絞り込み、
-bounded evidence を再取得する。リポジトリ全体を検査する必要がある場合は、ユーザーが
-exhaustive audit を明示的に opt-in してから detail を取得する。
-
-`truncated: false`、または検査対象が十分に絞り込まれた後で、候補 task に限って
-`gh-gantt show <id>` を実行し、parent, body, sub_tasks を確認する。
+先に `--type`, `--status`, `--search` などの filter / search で候補を絞り込む。
+filter / search 後に bounded evidence を再取得し、`truncated: false` を確認できた場合に限って、
+候補 task の `gh-gantt show <id>` を実行し、parent, body, sub_tasks を確認する。
+それでも `truncated: true` の場合は、さらに絞り込むか、ユーザーの `exhaustive audit` opt-in を取得する。
+リポジトリ全体を検査する必要がある場合も、ユーザーが exhaustive audit を明示的に opt-in してから
+detail を取得する。
 
 ### 3. 結果提示
 

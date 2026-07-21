@@ -208,6 +208,13 @@ describe("[NFR-STABILITY-012-AC2] workflow skill の段階的 task detail 取得
     expect(hygiene).toContain("filter / search");
     expect(hygiene).toContain("exhaustive audit");
     expect(hygiene).toContain("明示的に opt-in");
+    expect(hygiene).toContain(
+      "filter / search 後に bounded evidence を再取得し、`truncated: false` を確認できた場合に限って",
+    );
+    expect(hygiene).toContain(
+      "それでも `truncated: true` の場合は、さらに絞り込むか、ユーザーの `exhaustive audit` opt-in を取得する",
+    );
+    expect(hygiene).not.toContain("`truncated: false`、または検査対象が十分に絞り込まれた後");
   });
 });
 
