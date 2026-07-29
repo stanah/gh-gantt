@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
+import { parse } from "yaml";
 import { z } from "zod";
 import { describe, expect, it } from "vitest";
 import { ConfigSchema } from "../../packages/shared/src/schema.js";
@@ -9,6 +10,16 @@ const repoRoot = resolve(import.meta.dirname, "../..");
 async function readRepoFile(path: string): Promise<string> {
   const content = await readFile(resolve(repoRoot, path), "utf-8");
   return z.string().min(1).parse(content);
+}
+
+const DevRoleConfigSchema = z.object({
+  verifyCommands: z.array(z.string().min(1)),
+});
+
+function parseDevRoleConfig(workflow: string): z.infer<typeof DevRoleConfigSchema> {
+  const fencedYaml = workflow.match(/## Dev-Role Config[\s\S]*?```yaml\n([\s\S]*?)\n```/)?.[1];
+  const parsedYaml = parse(z.string().min(1).parse(fencedYaml));
+  return DevRoleConfigSchema.parse(parsedYaml);
 }
 
 describe("[NFR-STABILITY-013-AC1] 共有 project config は schema 検証を通過し、確定した階層とコンフリクトポリシーだけを保持する", () => {
@@ -39,19 +50,29 @@ describe("[NFR-STABILITY-013-AC1] 共有 project config は schema 検証を通�
   });
 });
 
-describe("[NFR-STABILITY-013-AC2] 共有 workflow は Living Documentation と CI / pre-push を包含する PR 前 gate を定義する", () => {
-  it("追跡中のADRと追加検査を含むPR前gateを参照する", async () => {
+describe("[NFR-STABILITY-013-AC2] 共有 workflow は Living Documentation の機能領域と8段の Dev-Role PR前gateを定義する", () => {
+  it("STABILITY領域と順序を含む8個のverifyCommandsを定義する", async () => {
     const workflow = await readRepoFile(".gantt-sync/workflow.md");
+    const devRoleConfig = parseDevRoleConfig(workflow);
 
     expect(workflow).toContain("docs/adr/ADR-012-living-documentation-four-layer-system.md");
-    expect(workflow).toContain('- "pnpm lint"');
     expect(workflow).toContain(
-      "CI / pre-push の検査を包含し、`typecheck` / `lint` も加えた PR 前 gate",
+      "- **機能領域コード**: `SYNC`, `HIER`, `VIS`, `CLI`, `API`, `STORE`, `STABILITY`",
     );
+    expect(devRoleConfig.verifyCommands).toEqual([
+      "pnpm typecheck",
+      "pnpm lint",
+      "pnpm test:json",
+      "pnpm build",
+      "pnpm req:trace",
+      "git diff --exit-code docs/requirements.yaml",
+      "pnpm req:validate",
+      "pnpm docs:gen",
+    ]);
   });
 });
 
-describe("[NFR-STABILITY-013-AC3] 新品クローンは build 後に local CLI だけで初期化・同期・状態確認できる", () => {
+describe("[NFR-STABILITY-013-AC3] AGENTS.md の新品クローン bootstrap 手順は build 後の local CLI init / pull / status / loop status を定義する", () => {
   it("build後のbootstrap手順がlocal CLI entrypointで完結する", async () => {
     const agents = await readRepoFile("AGENTS.md");
 

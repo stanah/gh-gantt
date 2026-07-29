@@ -47,7 +47,7 @@
 
 - **要件ファイル**: `docs/requirements.yaml`
 - **ADR ディレクトリ**: `docs/adr/`（Markdown + frontmatter, `ADR-NNN-slug.md`）
-- **機能領域コード**: `SYNC`, `HIER`, `VIS`, `CLI`, `API`, `STORE`
+- **機能領域コード**: `SYNC`, `HIER`, `VIS`, `CLI`, `API`, `STORE`, `STABILITY`
 - **言語**: 日本語（`description` フィールドとテスト名は日本語、ID プレフィックスは英語）
 - **スクリプト**:
   - テスト (JSON reporter): `pnpm run test:json`

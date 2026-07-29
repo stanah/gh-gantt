@@ -1391,12 +1391,12 @@ areas:
             tests:
               - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-013-AC2
-            description: 共有 workflow は Living Documentation と CI / pre-push を包含する PR 前 gate を定義する
+            description: 共有 workflow は Living Documentation の機能領域と8段の Dev-Role PR前gateを定義する
             status: covered
             tests:
               - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-013-AC3
-            description: 新品クローンは build 後に local CLI だけで初期化・同期・状態確認できる
+            description: AGENTS.md の新品クローン bootstrap 手順は build 後の local CLI init / pull / status / loop status を定義する
             status: covered
             tests:
               - tests/workflow/project-config.test.ts
