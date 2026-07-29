@@ -4,6 +4,7 @@ title: キャッシュファースト同期モデルへの移行 (ADR-003/005 �
 date: 2026-07-07
 status: accepted
 related_requirements:
+  - FR-SYNC-001
   - FR-SYNC-002
   - FR-SYNC-003
   - FR-STORE-001
@@ -137,6 +138,15 @@ draft タスクは既定で即座に GitHub Issue化する (オフライン時�
 フィールド単位の解決ポリシー (例: `state` はローカル優先、`start_date` は
 リモート優先) を設定で宣言し、`gh-gantt resolve --auto` で機械的に適用できる
 ようにする。真の同時編集だけが人間・エージェントの判断に残る。
+
+宣言は `sync.conflict_policy` の部分 map とし、同期対象フィールドごとに `ours` /
+`theirs` / `manual` のいずれかを指定する。未定義フィールドと `manual` は同じく
+自動解決せず marker を保持する。`resolve --auto` は明示的に実行された場合だけ
+この map を適用し、pull の途中で暗黙に自動解決しない。
+
+過去の設定に含まれうる `sync.conflict_strategy` は読み込み互換性のため保持するが、
+実装されたことのない全体ポリシーへ新しい意味を与えない。`resolve --auto` では値を
+無視して移行警告を stderr に出し、`sync.conflict_policy` への明示的な移行を促す。
 
 ## Alternatives
 

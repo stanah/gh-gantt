@@ -3,11 +3,18 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
-import { extractSyncFields } from "../sync/hash.js";
+import { ConfigStore } from "../store/config.js";
+import {
+  applyConflictPolicy,
+  detectMarkers,
+  resolveMarker,
+  hasUnresolvedMarkers,
+  type PolicyResolution,
+} from "../sync/conflict-marker.js";
+import { extractSyncFields, hashSyncFields, hashTask } from "../sync/hash.js";
 import { formatConflictList, buildConflictJson } from "./conflicts.js";
 import { formatValue } from "../util/format.js";
-import type { Task } from "@gh-gantt/shared";
+import type { ConflictPolicy, SyncFieldKey, SyncFields, Task } from "@gh-gantt/shared";
 
 /**
  * Extract issue number from task id (e.g. "owner/repo#8" -> 8).
@@ -61,19 +68,68 @@ export function resolveAll(
   return theirsResolutions;
 }
 
-export const resolveCommand = new Command("resolve")
-  .description("Resolve sync conflicts")
-  .argument("[issue]", "Filter by issue number", parseInt)
-  .option("--ours", "Resolve all conflicts with local values")
-  .option("--theirs", "Resolve all conflicts with remote values")
-  .option("--field <field>", "Resolve only specific field")
-  .option("--json", "Output remaining conflicts as JSON (batch mode only)")
-  .action(
-    async (
-      issue?: number,
-      opts?: { ours?: boolean; theirs?: boolean; field?: string; json?: boolean },
-    ) => {
-      const projectRoot = process.cwd();
+/** 宣言的ポリシーを issue / field filter 後に適用する純粋関数。 */
+export function resolveAllByPolicy(
+  tasks: Record<string, unknown>[],
+  policy: ConflictPolicy,
+  filterIssue?: number,
+  filterField?: string,
+): Map<string, PolicyResolution> {
+  const resolutions = new Map<string, PolicyResolution>();
+  for (const task of tasks) {
+    const id = task.id as string;
+    if (filterIssue !== undefined && extractIssueNumber(id) !== filterIssue) continue;
+    if (detectMarkers(task).length === 0) continue;
+    resolutions.set(id, applyConflictPolicy(task, policy, filterField));
+  }
+  return resolutions;
+}
+
+/**
+ * theirs で解決したフィールドだけ snapshot baseline をリモート値へ進める。
+ * ours とコンフリクト外の local-only 差分は旧 baseline に残し、後続 push で検出する。
+ */
+function advanceSnapshotBaseline(
+  existing: SyncFields | undefined,
+  resolved: SyncFields,
+  theirsFields: ReadonlySet<string>,
+): SyncFields | undefined {
+  if (!existing) return undefined;
+  const next = { ...existing };
+  for (const field of theirsFields) {
+    (next as unknown as Record<string, unknown>)[field] = resolved[field as SyncFieldKey];
+  }
+  return next;
+}
+
+interface ResolveCommandDependencies {
+  projectRoot?: () => string;
+}
+
+interface ResolveOptions {
+  ours?: boolean;
+  theirs?: boolean;
+  auto?: boolean;
+  field?: string;
+  json?: boolean;
+}
+
+export function createResolveCommand(dependencies: ResolveCommandDependencies = {}): Command {
+  return new Command("resolve")
+    .description("Resolve sync conflicts")
+    .argument("[issue]", "Filter by issue number", parseInt)
+    .option("--ours", "Resolve all conflicts with local values")
+    .option("--theirs", "Resolve all conflicts with remote values")
+    .option("--auto", "Resolve conflicts using sync.conflict_policy")
+    .option("--field <field>", "Resolve only specific field")
+    .option("--json", "Output remaining conflicts as JSON (batch mode only)")
+    .action(async (issue?: number, opts?: ResolveOptions) => {
+      const selectedModes = [opts?.ours, opts?.theirs, opts?.auto].filter(Boolean).length;
+      if (selectedModes > 1) {
+        throw new Error("--auto / --ours / --theirs は排他的なオプションです");
+      }
+
+      const projectRoot = dependencies.projectRoot?.() ?? process.cwd();
       const tasksStore = new TasksStore(projectRoot);
       const stateStore = new SyncStateStore(projectRoot);
 
@@ -82,30 +138,46 @@ export const resolveCommand = new Command("resolve")
 
       const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
 
-      // Track conflict resolution choices for each task
-      // Map: task id -> { totalConflicts: number, theirsCount: number }
-      const resolutionStats = new Map<string, { totalConflicts: number; theirsCount: number }>();
+      const theirsResolutionFields = new Map<string, Set<string>>();
+      const snapshotTargetTaskIds = new Set<string>();
 
-      // Count initial conflicts for each task
+      // 開始時に marker を持ち、Issue filter に一致する task だけを更新対象として固定する。
       for (const task of tasks) {
         const id = task.id as string;
         const markers = detectMarkers(task);
-        if (markers.length > 0) {
-          resolutionStats.set(id, { totalConflicts: markers.length, theirsCount: 0 });
+        const matchesIssue = issue === undefined || extractIssueNumber(id) === issue;
+        if (markers.length > 0 && matchesIssue) {
+          snapshotTargetTaskIds.add(id);
         }
       }
 
-      if (opts?.ours || opts?.theirs) {
+      if (opts?.auto) {
+        const config = await new ConfigStore(projectRoot).read();
+        const legacyStrategy = (config.sync as unknown as Record<string, unknown>)[
+          "conflict_strategy"
+        ];
+        if (legacyStrategy !== undefined) {
+          console.warn(
+            "WARNING: sync.conflict_strategy は deprecated であり resolve --auto では無視されます。sync.conflict_policy にフィールド単位の ours / theirs / manual を設定してください。",
+          );
+        }
+        const policyResolutions = resolveAllByPolicy(
+          tasks,
+          config.sync.conflict_policy ?? {},
+          issue,
+          opts.field,
+        );
+        for (const [id, resolution] of policyResolutions) {
+          theirsResolutionFields.set(id, resolution.theirs);
+        }
+      } else if (opts?.ours || opts?.theirs) {
         // Batch mode
         const choice = opts.ours ? "ours" : "theirs";
         const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
 
-        // Update theirsCount based on resolutions
+        // snapshot baseline を進める theirs フィールドを記録する
         for (const [id, fields] of batchResolutions) {
-          const stats = resolutionStats.get(id);
-          if (stats) {
-            stats.theirsCount = fields.size;
-          }
+          theirsResolutionFields.set(id, fields);
         }
       } else {
         // Interactive mode
@@ -144,10 +216,9 @@ export const resolveCommand = new Command("resolve")
 
               // Track fields resolved with "theirs"
               if (choice === "theirs") {
-                const stats = resolutionStats.get(id);
-                if (stats) {
-                  stats.theirsCount++;
-                }
+                const fields = theirsResolutionFields.get(id) ?? new Set<string>();
+                fields.add(marker.field);
+                theirsResolutionFields.set(id, fields);
               }
             }
           }
@@ -158,9 +229,10 @@ export const resolveCommand = new Command("resolve")
 
       // Update snapshots for fully resolved tasks
       for (const task of tasks) {
+        const id = task.id as string;
+        if (!snapshotTargetTaskIds.has(id)) continue;
         if (hasUnresolvedMarkers(task)) continue;
 
-        const id = task.id as string;
         // Skip draft tasks (no issue number)
         if (!id.includes("#")) continue;
 
@@ -169,27 +241,30 @@ export const resolveCommand = new Command("resolve")
           if (!existing) continue;
 
           const taskTyped = task as unknown as Task;
-          const stats = resolutionStats.get(id);
+          const resolvedTaskSyncFields = extractSyncFields(taskTyped);
+          const resolvedTaskHash = hashTask(taskTyped);
 
-          // すべてのコンフリクトが --theirs で解決された場合のみ、
-          // snapshot.hash をリモート値に揃える
-          // これによりタスクがリモートと同一状態になり、status/push で検出されなくなる
-          const allResolvedWithTheirs =
-            stats && stats.theirsCount > 0 && stats.theirsCount === stats.totalConflicts;
-
-          if (allResolvedWithTheirs && existing.remoteHash) {
-            // remoteHash をそのまま使用してタスクをリモートと同一状態にする
+          if (existing.remoteHash && resolvedTaskHash === existing.remoteHash) {
+            // task 全体が remote と一致するときだけ snapshot 全体を remote へ進める。
             syncState.snapshots[id] = {
               ...existing,
               hash: existing.remoteHash,
-              syncFields: extractSyncFields(taskTyped),
+              syncFields: resolvedTaskSyncFields,
             };
-          } else {
-            // --ours で解決された場合、または一部のみ --theirs で解決された場合は、
-            // hash を更新しない（ローカル変更として push 可能にするため）
+            continue;
+          }
+
+          const conservativeSyncFields = advanceSnapshotBaseline(
+            existing.syncFields,
+            resolvedTaskSyncFields,
+            theirsResolutionFields.get(id) ?? new Set(),
+          );
+          if (conservativeSyncFields) {
+            // baseline を進める場合は hash と syncFields を必ず同じ内容に揃える。
             syncState.snapshots[id] = {
               ...existing,
-              syncFields: extractSyncFields(taskTyped),
+              hash: hashSyncFields(conservativeSyncFields),
+              syncFields: conservativeSyncFields,
             };
           }
         } catch {
@@ -217,5 +292,7 @@ export const resolveCommand = new Command("resolve")
         const remaining = formatConflictList(tasks, syncState.snapshots, issue);
         console.log(remaining);
       }
-    },
-  );
+    });
+}
+
+export const resolveCommand = createResolveCommand();

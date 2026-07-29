@@ -1,28 +1,7 @@
+import { SYNC_FIELD_KEYS } from "@gh-gantt/shared";
 import type { SyncFields } from "@gh-gantt/shared";
 
-export const SYNC_FIELD_KEYS: (keyof SyncFields)[] = [
-  "title",
-  "body",
-  "acceptance_criteria",
-  "acceptance_criteria_slot",
-  "implementer",
-  "reviewer",
-  "require_review",
-  "review_approved_by",
-  "review_approved_at",
-  "state",
-  "type",
-  "assignees",
-  "labels",
-  "milestone",
-  "custom_fields",
-  "parent",
-  "sub_tasks",
-  "start_date",
-  "end_date",
-  "date",
-  "blocked_by",
-];
+export { SYNC_FIELD_KEYS };
 
 export interface FieldConflict {
   field: string;

@@ -1,5 +1,6 @@
-import type { Task } from "@gh-gantt/shared";
-import { SYNC_FIELD_KEYS, type FieldConflict } from "./three-way-merge.js";
+import { SYNC_FIELD_KEYS } from "@gh-gantt/shared";
+import type { ConflictPolicy, Task } from "@gh-gantt/shared";
+import type { FieldConflict } from "./three-way-merge.js";
 
 const SYNC_FIELD_KEY_SET: Set<string> = new Set(SYNC_FIELD_KEYS);
 
@@ -77,4 +78,42 @@ export function resolveMarker(
  */
 export function hasUnresolvedMarkers(task: Record<string, unknown>): boolean {
   return detectMarkers(task).length > 0;
+}
+
+export interface PolicyResolution {
+  ours: Set<string>;
+  theirs: Set<string>;
+  unresolved: Set<string>;
+}
+
+/**
+ * 検出済み marker に宣言的ポリシーを適用する。
+ * manual・未定義は marker を保持する。marker 契約の対象は既知の SyncFields のみ。
+ */
+export function applyConflictPolicy(
+  task: Record<string, unknown>,
+  policy: ConflictPolicy,
+  filterField?: string,
+): PolicyResolution {
+  const result: PolicyResolution = {
+    ours: new Set(),
+    theirs: new Set(),
+    unresolved: new Set(),
+  };
+
+  for (const marker of detectMarkers(task)) {
+    if (filterField !== undefined && marker.field !== filterField) {
+      result.unresolved.add(marker.field);
+      continue;
+    }
+    const choice = policy[marker.field as keyof ConflictPolicy];
+    if (choice !== "ours" && choice !== "theirs") {
+      result.unresolved.add(marker.field);
+      continue;
+    }
+    resolveMarker(task, marker.field, choice);
+    result[choice].add(marker.field);
+  }
+
+  return result;
 }
