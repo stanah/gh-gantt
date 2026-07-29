@@ -138,3 +138,9 @@ score =
 ## 9. 循環依存の扱い
 
 `blocked_by` に循環がある場合、`calculateCriticalPath()` は timing を計算できない。Project Map は ViewModel の `warnings` に循環を記録し、Dependency Map で警告表示する。循環があっても他パネルはクラッシュしない。
+
+## 10. Graph Contractとの関係
+
+Project MapはWork Graphの派生viewであり、graph contractの正典はADR-021とする。
+本viewは実行履歴を生成せず、taskを暗黙に変更しない。planned-vs-actual表示は#330まで未実装である。
+後続拡張は、#329のclaim/lease/joinと#331のapproval proposal/new plan versionをADR-021で確認する。

@@ -39,21 +39,20 @@ Evidence: sync status、conflict status、Issue 番号、config path、verify co
 12. PR 作成後は `gh-gantt-workflow` の PR 後レビューサイクルを開始する。
 13. 最終判断を `99-orchestrator-decision.md` に保存する。
 
-## 終了条件
+## 固定 Plan Graph
 
-| 条件                                                       | 判定                                          |
-| ---------------------------------------------------------- | --------------------------------------------- |
-| executor passed かつ reviewer approve                      | PR 作成へ進む                                 |
-| executor が `maxExecutorRetries` 回連続 failed             | `BLOCKED`                                     |
-| reviewer が critical finding を残した                      | `ESCALATED`                                   |
-| `maxImprovementIterations` 到達後に minor finding のみ残る | PR description に残課題を書いて人間レビューへ |
-| Issue / config / artifact が欠落                           | `BLOCKED`                                     |
+ADR-021のFixed dev-role transitionを正典とする。orchestratorは同ADRのBudget計数規則に従い、
+各artifactとevidenceを検証してからedgeを選ぶ。終了結果は`BLOCKED`、`ESCALATED`、
+`READY_FOR_PR`、`CONDITIONAL_HANDOFF`、`COMPLETED`のいずれかとし、独自の遷移や計数規則を加えない。
+
+現行は外部orchestratorがこの判断を行う。#328以後に製品control planeがeventを受理する場合も、
+必須human gateと独立executor/reviewerをbypassしない。
 
 ## 出力契約
 
 `99-orchestrator-decision.md` に以下を含める。
 
-- `status`: `READY_FOR_PR` / `BLOCKED` / `ESCALATED`
+- `status`: `READY_FOR_PR` / `CONDITIONAL_HANDOFF` / `BLOCKED` / `ESCALATED` / `COMPLETED`
 - 対象 Issue
 - 使用 config path
 - 実行した pass 数

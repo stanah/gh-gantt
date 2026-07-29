@@ -73,6 +73,13 @@ Evidence: 読み込んだ config path、role 名、検証した artifact path、
 4. reference の HARD-GATE を満たしてから role を実行する。
 5. 出力を `scratchpadDir/<issue-number>/` に schema 準拠で保存する。
 
+## Graph Contract 上の位置づけ
+
+正典はADR-021とする。本スキル固有の責務はrole artifactを受け渡すことだけである。
+
+- **現行 (#327)**: 外部orchestratorが`.dev-flow`のJSON/schema/manual gateを運用する。
+- **#328以後**: 製品control planeがeventを受理し、本スキルを使う外部runnerはexecutionだけを担う。
+
 ## 共通 Artifact
 
 | ファイル                         | 作成 role    | schema                                                                                             |

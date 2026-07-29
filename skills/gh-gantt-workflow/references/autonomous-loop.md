@@ -4,6 +4,9 @@
 決定論的な部分（選定・停止判定・実績記録）は gh-gantt CLI が行い、
 エージェントは設計・実装だけを担う（ADR-016 / ADR-017）。
 
+外側のWork Graph iterationと内側の固定dev-role graphは区別する。意味論の正典はADR-021とし、
+現行の`.dev-flow`はartifact handoffに留まる。durable Run Graphは#328で追加する。
+
 ## 1 イテレーションの手順
 
 1. **observe** — `gh-gantt pull` で最新化する。コンフリクト検出時は
