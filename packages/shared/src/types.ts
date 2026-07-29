@@ -104,6 +104,7 @@ export interface GithubConfig {
 
 export interface SyncConfig {
   auto_create_issues: boolean;
+  conflict_policy?: ConflictPolicy;
   field_mapping: {
     start_date: string;
     end_date: string;
@@ -222,6 +223,45 @@ export interface SyncFields {
   date: string | null;
   blocked_by: Dependency[];
 }
+
+/** 3-way merge と宣言的コンフリクト解決が対象にする同期フィールドの正本。 */
+export type SyncFieldKey = keyof SyncFields;
+export const SYNC_FIELD_KEYS: readonly SyncFieldKey[] = [
+  "title",
+  "body",
+  "acceptance_criteria",
+  "acceptance_criteria_slot",
+  "implementer",
+  "reviewer",
+  "require_review",
+  "review_approved_by",
+  "review_approved_at",
+  "state",
+  "type",
+  "assignees",
+  "labels",
+  "milestone",
+  "custom_fields",
+  "parent",
+  "sub_tasks",
+  "start_date",
+  "end_date",
+  "date",
+  "blocked_by",
+];
+
+export type ConflictPolicyChoice = "ours" | "theirs" | "manual";
+export type ConflictPolicy = Partial<Record<SyncFieldKey, ConflictPolicyChoice>>;
+
+/** init が生成する、安全側の既定ポリシー。未列挙フィールドは manual と同義。 */
+export const DEFAULT_CONFLICT_POLICY: Readonly<ConflictPolicy> = Object.freeze({
+  state: "ours",
+  start_date: "theirs",
+  end_date: "theirs",
+  milestone: "theirs",
+  assignees: "theirs",
+  labels: "theirs",
+});
 
 export interface Snapshot {
   hash: string;

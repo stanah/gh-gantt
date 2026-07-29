@@ -3,11 +3,18 @@ import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
-import { detectMarkers, resolveMarker, hasUnresolvedMarkers } from "../sync/conflict-marker.js";
+import { ConfigStore } from "../store/config.js";
+import {
+  applyConflictPolicy,
+  detectMarkers,
+  resolveMarker,
+  hasUnresolvedMarkers,
+  type PolicyResolution,
+} from "../sync/conflict-marker.js";
 import { extractSyncFields } from "../sync/hash.js";
 import { formatConflictList, buildConflictJson } from "./conflicts.js";
 import { formatValue } from "../util/format.js";
-import type { Task } from "@gh-gantt/shared";
+import type { ConflictPolicy, Task } from "@gh-gantt/shared";
 
 /**
  * Extract issue number from task id (e.g. "owner/repo#8" -> 8).
@@ -61,19 +68,51 @@ export function resolveAll(
   return theirsResolutions;
 }
 
-export const resolveCommand = new Command("resolve")
-  .description("Resolve sync conflicts")
-  .argument("[issue]", "Filter by issue number", parseInt)
-  .option("--ours", "Resolve all conflicts with local values")
-  .option("--theirs", "Resolve all conflicts with remote values")
-  .option("--field <field>", "Resolve only specific field")
-  .option("--json", "Output remaining conflicts as JSON (batch mode only)")
-  .action(
-    async (
-      issue?: number,
-      opts?: { ours?: boolean; theirs?: boolean; field?: string; json?: boolean },
-    ) => {
-      const projectRoot = process.cwd();
+/** 宣言的ポリシーを issue / field filter 後に適用する純粋関数。 */
+export function resolveAllByPolicy(
+  tasks: Record<string, unknown>[],
+  policy: ConflictPolicy,
+  filterIssue?: number,
+  filterField?: string,
+): Map<string, PolicyResolution> {
+  const resolutions = new Map<string, PolicyResolution>();
+  for (const task of tasks) {
+    const id = task.id as string;
+    if (filterIssue !== undefined && extractIssueNumber(id) !== filterIssue) continue;
+    if (detectMarkers(task).length === 0) continue;
+    resolutions.set(id, applyConflictPolicy(task, policy, filterField));
+  }
+  return resolutions;
+}
+
+interface ResolveCommandDependencies {
+  projectRoot?: () => string;
+}
+
+interface ResolveOptions {
+  ours?: boolean;
+  theirs?: boolean;
+  auto?: boolean;
+  field?: string;
+  json?: boolean;
+}
+
+export function createResolveCommand(dependencies: ResolveCommandDependencies = {}): Command {
+  return new Command("resolve")
+    .description("Resolve sync conflicts")
+    .argument("[issue]", "Filter by issue number", parseInt)
+    .option("--ours", "Resolve all conflicts with local values")
+    .option("--theirs", "Resolve all conflicts with remote values")
+    .option("--auto", "Resolve conflicts using sync.conflict_policy")
+    .option("--field <field>", "Resolve only specific field")
+    .option("--json", "Output remaining conflicts as JSON (batch mode only)")
+    .action(async (issue?: number, opts?: ResolveOptions) => {
+      const selectedModes = [opts?.ours, opts?.theirs, opts?.auto].filter(Boolean).length;
+      if (selectedModes > 1) {
+        throw new Error("--auto / --ours / --theirs は排他的なオプションです");
+      }
+
+      const projectRoot = dependencies.projectRoot?.() ?? process.cwd();
       const tasksStore = new TasksStore(projectRoot);
       const stateStore = new SyncStateStore(projectRoot);
 
@@ -85,17 +124,40 @@ export const resolveCommand = new Command("resolve")
       // Track conflict resolution choices for each task
       // Map: task id -> { totalConflicts: number, theirsCount: number }
       const resolutionStats = new Map<string, { totalConflicts: number; theirsCount: number }>();
+      const snapshotTargetTaskIds = new Set<string>();
 
-      // Count initial conflicts for each task
+      // 開始時に marker を持ち、Issue filter に一致する task だけを更新対象として固定する。
       for (const task of tasks) {
         const id = task.id as string;
         const markers = detectMarkers(task);
-        if (markers.length > 0) {
+        const matchesIssue = issue === undefined || extractIssueNumber(id) === issue;
+        if (markers.length > 0 && matchesIssue) {
           resolutionStats.set(id, { totalConflicts: markers.length, theirsCount: 0 });
+          snapshotTargetTaskIds.add(id);
         }
       }
 
-      if (opts?.ours || opts?.theirs) {
+      if (opts?.auto) {
+        const config = await new ConfigStore(projectRoot).read();
+        const legacyStrategy = (config.sync as unknown as Record<string, unknown>)[
+          "conflict_strategy"
+        ];
+        if (legacyStrategy !== undefined) {
+          console.warn(
+            "WARNING: sync.conflict_strategy は deprecated であり resolve --auto では無視されます。sync.conflict_policy にフィールド単位の ours / theirs / manual を設定してください。",
+          );
+        }
+        const policyResolutions = resolveAllByPolicy(
+          tasks,
+          config.sync.conflict_policy ?? {},
+          issue,
+          opts.field,
+        );
+        for (const [id, resolution] of policyResolutions) {
+          const stats = resolutionStats.get(id);
+          if (stats) stats.theirsCount = resolution.theirs.size;
+        }
+      } else if (opts?.ours || opts?.theirs) {
         // Batch mode
         const choice = opts.ours ? "ours" : "theirs";
         const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
@@ -158,9 +220,10 @@ export const resolveCommand = new Command("resolve")
 
       // Update snapshots for fully resolved tasks
       for (const task of tasks) {
+        const id = task.id as string;
+        if (!snapshotTargetTaskIds.has(id)) continue;
         if (hasUnresolvedMarkers(task)) continue;
 
-        const id = task.id as string;
         // Skip draft tasks (no issue number)
         if (!id.includes("#")) continue;
 
@@ -217,5 +280,7 @@ export const resolveCommand = new Command("resolve")
         const remaining = formatConflictList(tasks, syncState.snapshots, issue);
         console.log(remaining);
       }
-    },
-  );
+    });
+}
+
+export const resolveCommand = createResolveCommand();

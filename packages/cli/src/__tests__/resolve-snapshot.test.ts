@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { resolveAll } from "../commands/resolve.js";
+import { resolveAllByPolicy } from "../commands/resolve.js";
 import { hashTask, extractSyncFields } from "../sync/hash.js";
 import type { Task, SyncState } from "@gh-gantt/shared";
 
@@ -239,5 +240,14 @@ describe("[Issue #152] resolve --theirs 後の snapshot.hash 更新", () => {
     // 検証: 一部のみ --theirs なので hash は元のまま（ローカル変更として push 可能）
     expect(syncState.snapshots[id]?.hash).toBe("local-hash-123");
     expect(syncState.snapshots[id]?.hash).not.toBe(remoteHash);
+  });
+
+  it("auto で manual が残る間は snapshot を更新しない", () => {
+    const before = structuredClone(syncState.snapshots["owner/repo#8"]);
+
+    resolveAllByPolicy(tasks, { title: "theirs", body: "manual", state: "ours" });
+
+    expect(tasks[0]).toHaveProperty("body_current");
+    expect(syncState.snapshots["owner/repo#8"]).toEqual(before);
   });
 });

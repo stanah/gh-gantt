@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { resolveAll } from "../commands/resolve.js";
+import { resolveAllByPolicy } from "../commands/resolve.js";
 
 describe("resolveAll", () => {
   it("resolves all markers with --ours", () => {
@@ -112,5 +113,46 @@ describe("resolveAll", () => {
     // state のみ --theirs で解決
     expect(theirsResolutions.size).toBe(1);
     expect(theirsResolutions.get("owner/repo#8")).toEqual(new Set(["state"]));
+  });
+});
+
+describe("[FR-SYNC-001-AC6] resolveAllByPolicy", () => {
+  it("policy と issue/field filter に従って ours/theirs/manual を集計する", () => {
+    const tasks: Record<string, unknown>[] = [
+      {
+        id: "owner/repo#8",
+        title: "Task 8",
+        title_current: "Task 8",
+        title_incoming: "Remote title",
+        state: "open",
+        state_current: "open",
+        state_incoming: "closed",
+        labels: [],
+        labels_current: [],
+        labels_incoming: ["remote"],
+      },
+      {
+        id: "owner/repo#9",
+        state: "open",
+        state_current: "open",
+        state_incoming: "closed",
+      },
+    ];
+
+    const result = resolveAllByPolicy(
+      tasks,
+      { title: "manual", state: "ours", labels: "theirs" },
+      8,
+    );
+
+    expect(tasks[0]).toHaveProperty("title_current");
+    expect(tasks[0]).not.toHaveProperty("state_current");
+    expect(tasks[0].labels).toEqual(["remote"]);
+    expect(tasks[1]).toHaveProperty("state_current");
+    expect(result.get("owner/repo#8")).toEqual({
+      ours: new Set(["state"]),
+      theirs: new Set(["labels"]),
+      unresolved: new Set(["title"]),
+    });
   });
 });

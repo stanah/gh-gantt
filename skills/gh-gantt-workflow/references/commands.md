@@ -114,14 +114,19 @@ gh-gantt conflicts [issue]
 同期コンフリクトを解決する。
 
 ```bash
-gh-gantt resolve [issue] [--ours] [--theirs] [--field <field>]
+gh-gantt resolve [issue] [--auto | --ours | --theirs] [--field <field>] [--json]
 ```
 
 **オプション:**
 
 - `--ours` — ローカル側の値を採用
 - `--theirs` — リモート側の値を採用
+- `--auto` — `sync.conflict_policy` の ours / theirs だけを適用。manual・未定義は残す
 - `--field <field>` — 特定フィールドのみ解決
+- `--json` — 解決後に残ったコンフリクトを既存の ConflictJson 形式で出力
+
+`--auto` / `--ours` / `--theirs` は排他的。`[issue]` と `--field` は先に対象範囲を
+絞り、範囲外を変更しない。部分解決は正常終了し、残件は text または JSON で確認できる。
 
 引数なしで実行するとインタラクティブモード。
 

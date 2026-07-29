@@ -12,6 +12,7 @@ import { resolveTaskType } from "../sync/type-resolver.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { SyncStateStore } from "../store/state.js";
+import { DEFAULT_CONFLICT_POLICY } from "@gh-gantt/shared";
 import type { Config, TaskType, TaskDisplay, Task, SyncState } from "@gh-gantt/shared";
 
 const KNOWN_TYPE_DEFAULTS: Record<
@@ -199,6 +200,7 @@ export const initCommand = new Command("init")
       },
       sync: {
         auto_create_issues: false,
+        conflict_policy: { ...DEFAULT_CONFLICT_POLICY },
         field_mapping: fieldMapping,
       },
       task_types: taskTypes,

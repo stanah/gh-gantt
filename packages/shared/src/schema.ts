@@ -14,6 +14,7 @@ import type {
   Task,
   TasksFile,
 } from "./types.js";
+import { SYNC_FIELD_KEYS } from "./types.js";
 
 const TaskDisplaySchema = z.enum(["bar", "summary", "milestone"]);
 const DependencyTypeSchema = z.enum([
@@ -157,6 +158,15 @@ const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
   stale_in_progress_days: z.number().int().positive().optional(),
 });
 
+const ConflictPolicyChoiceSchema = z.enum(["ours", "theirs", "manual"]);
+const ConflictPolicySchema = z
+  .object(
+    Object.fromEntries(
+      SYNC_FIELD_KEYS.map((field) => [field, ConflictPolicyChoiceSchema.optional()]),
+    ) as Record<(typeof SYNC_FIELD_KEYS)[number], z.ZodOptional<typeof ConflictPolicyChoiceSchema>>,
+  )
+  .strict();
+
 // `default_view` の z.preprocess が input 型を unknown に広げるため、
 // Input 引数を unknown に明示して TS の input 型不整合を回避する。
 export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
@@ -172,6 +182,7 @@ export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
   sync: z
     .object({
       auto_create_issues: z.boolean(),
+      conflict_policy: ConflictPolicySchema.optional(),
       field_mapping: z.object({
         start_date: z.string(),
         end_date: z.string(),

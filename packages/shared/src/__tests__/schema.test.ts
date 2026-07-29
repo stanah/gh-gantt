@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ConfigSchema, TasksFileSchema, TasksFileWithConflictsSchema } from "../schema.js";
+import { DEFAULT_CONFLICT_POLICY, SYNC_FIELD_KEYS } from "../types.js";
 
 const validTask = {
   id: "owner/repo#1",
@@ -399,6 +400,61 @@ describe("[NFR-STORE-001-AC1] 不正な形式のファイルを読み込んだ�
     };
     const parsed = ConfigSchema.parse(config);
     expect(parsed.gantt.default_view).toBe("week");
+  });
+});
+
+describe("[FR-SYNC-001-AC5] フィールド単位のコンフリクト解決ポリシーを検証できる", () => {
+  it("21個の同期フィールドすべてで ours / theirs / manual を受理する", () => {
+    expect(SYNC_FIELD_KEYS).toHaveLength(21);
+    const conflictPolicy = Object.fromEntries(
+      SYNC_FIELD_KEYS.map((field, index) => [
+        field,
+        (["ours", "theirs", "manual"] as const)[index % 3],
+      ]),
+    );
+
+    const parsed = ConfigSchema.parse({
+      ...validConfig,
+      sync: { ...validConfig.sync, conflict_policy: conflictPolicy },
+    });
+
+    expect(parsed.sync.conflict_policy).toEqual(conflictPolicy);
+  });
+
+  it("ポリシー全体と個別フィールドを省略できる", () => {
+    expect(ConfigSchema.parse(validConfig).sync.conflict_policy).toBeUndefined();
+
+    const parsed = ConfigSchema.parse({
+      ...validConfig,
+      sync: { ...validConfig.sync, conflict_policy: { state: "manual" } },
+    });
+    expect(parsed.sync.conflict_policy).toEqual({ state: "manual" });
+  });
+
+  it("未知のフィールドと値を拒否する", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        ...validConfig,
+        sync: { ...validConfig.sync, conflict_policy: { unknown_field: "ours" } },
+      }),
+    ).toThrow();
+    expect(() =>
+      ConfigSchema.parse({
+        ...validConfig,
+        sync: { ...validConfig.sync, conflict_policy: { state: "remote-wins" } },
+      }),
+    ).toThrow();
+  });
+
+  it("init用の既定ポリシーは判断ガイドの6フィールドだけを宣言する", () => {
+    expect(DEFAULT_CONFLICT_POLICY).toEqual({
+      state: "ours",
+      start_date: "theirs",
+      end_date: "theirs",
+      milestone: "theirs",
+      assignees: "theirs",
+      labels: "theirs",
+    });
   });
 });
 
