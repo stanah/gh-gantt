@@ -11,10 +11,10 @@ import {
   hasUnresolvedMarkers,
   type PolicyResolution,
 } from "../sync/conflict-marker.js";
-import { extractSyncFields } from "../sync/hash.js";
+import { extractSyncFields, hashSyncFields, hashTask } from "../sync/hash.js";
 import { formatConflictList, buildConflictJson } from "./conflicts.js";
 import { formatValue } from "../util/format.js";
-import type { ConflictPolicy, Task } from "@gh-gantt/shared";
+import type { ConflictPolicy, SyncFieldKey, SyncFields, Task } from "@gh-gantt/shared";
 
 /**
  * Extract issue number from task id (e.g. "owner/repo#8" -> 8).
@@ -85,6 +85,23 @@ export function resolveAllByPolicy(
   return resolutions;
 }
 
+/**
+ * theirs で解決したフィールドだけ snapshot baseline をリモート値へ進める。
+ * ours とコンフリクト外の local-only 差分は旧 baseline に残し、後続 push で検出する。
+ */
+function advanceSnapshotBaseline(
+  existing: SyncFields | undefined,
+  resolved: SyncFields,
+  theirsFields: ReadonlySet<string>,
+): SyncFields | undefined {
+  if (!existing) return undefined;
+  const next = { ...existing };
+  for (const field of theirsFields) {
+    (next as unknown as Record<string, unknown>)[field] = resolved[field as SyncFieldKey];
+  }
+  return next;
+}
+
 interface ResolveCommandDependencies {
   projectRoot?: () => string;
 }
@@ -121,9 +138,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
 
       const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
 
-      // Track conflict resolution choices for each task
-      // Map: task id -> { totalConflicts: number, theirsCount: number }
-      const resolutionStats = new Map<string, { totalConflicts: number; theirsCount: number }>();
+      const theirsResolutionFields = new Map<string, Set<string>>();
       const snapshotTargetTaskIds = new Set<string>();
 
       // 開始時に marker を持ち、Issue filter に一致する task だけを更新対象として固定する。
@@ -132,7 +147,6 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
         const markers = detectMarkers(task);
         const matchesIssue = issue === undefined || extractIssueNumber(id) === issue;
         if (markers.length > 0 && matchesIssue) {
-          resolutionStats.set(id, { totalConflicts: markers.length, theirsCount: 0 });
           snapshotTargetTaskIds.add(id);
         }
       }
@@ -154,20 +168,16 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
           opts.field,
         );
         for (const [id, resolution] of policyResolutions) {
-          const stats = resolutionStats.get(id);
-          if (stats) stats.theirsCount = resolution.theirs.size;
+          theirsResolutionFields.set(id, resolution.theirs);
         }
       } else if (opts?.ours || opts?.theirs) {
         // Batch mode
         const choice = opts.ours ? "ours" : "theirs";
         const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
 
-        // Update theirsCount based on resolutions
+        // snapshot baseline を進める theirs フィールドを記録する
         for (const [id, fields] of batchResolutions) {
-          const stats = resolutionStats.get(id);
-          if (stats) {
-            stats.theirsCount = fields.size;
-          }
+          theirsResolutionFields.set(id, fields);
         }
       } else {
         // Interactive mode
@@ -206,10 +216,9 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
 
               // Track fields resolved with "theirs"
               if (choice === "theirs") {
-                const stats = resolutionStats.get(id);
-                if (stats) {
-                  stats.theirsCount++;
-                }
+                const fields = theirsResolutionFields.get(id) ?? new Set<string>();
+                fields.add(marker.field);
+                theirsResolutionFields.set(id, fields);
               }
             }
           }
@@ -232,27 +241,30 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
           if (!existing) continue;
 
           const taskTyped = task as unknown as Task;
-          const stats = resolutionStats.get(id);
+          const resolvedTaskSyncFields = extractSyncFields(taskTyped);
+          const resolvedTaskHash = hashTask(taskTyped);
 
-          // すべてのコンフリクトが --theirs で解決された場合のみ、
-          // snapshot.hash をリモート値に揃える
-          // これによりタスクがリモートと同一状態になり、status/push で検出されなくなる
-          const allResolvedWithTheirs =
-            stats && stats.theirsCount > 0 && stats.theirsCount === stats.totalConflicts;
-
-          if (allResolvedWithTheirs && existing.remoteHash) {
-            // remoteHash をそのまま使用してタスクをリモートと同一状態にする
+          if (existing.remoteHash && resolvedTaskHash === existing.remoteHash) {
+            // task 全体が remote と一致するときだけ snapshot 全体を remote へ進める。
             syncState.snapshots[id] = {
               ...existing,
               hash: existing.remoteHash,
-              syncFields: extractSyncFields(taskTyped),
+              syncFields: resolvedTaskSyncFields,
             };
-          } else {
-            // --ours で解決された場合、または一部のみ --theirs で解決された場合は、
-            // hash を更新しない（ローカル変更として push 可能にするため）
+            continue;
+          }
+
+          const conservativeSyncFields = advanceSnapshotBaseline(
+            existing.syncFields,
+            resolvedTaskSyncFields,
+            theirsResolutionFields.get(id) ?? new Set(),
+          );
+          if (conservativeSyncFields) {
+            // baseline を進める場合は hash と syncFields を必ず同じ内容に揃える。
             syncState.snapshots[id] = {
               ...existing,
-              syncFields: extractSyncFields(taskTyped),
+              hash: hashSyncFields(conservativeSyncFields),
+              syncFields: conservativeSyncFields,
             };
           }
         } catch {

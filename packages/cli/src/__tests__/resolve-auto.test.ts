@@ -3,7 +3,8 @@ import { mkdtemp, readFile, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createResolveCommand } from "../commands/resolve.js";
-import { extractSyncFields } from "../sync/hash.js";
+import { computeLocalDiff } from "../sync/diff.js";
+import { extractSyncFields, hashSyncFields, hashTask } from "../sync/hash.js";
 import type { Config, SyncState, Task, TasksFile } from "@gh-gantt/shared";
 
 function makeTask(issue: number, overrides: Partial<Task> = {}): Task {
@@ -216,7 +217,7 @@ describe("[FR-SYNC-001-AC6] resolve --auto は設定済みフィールドだけ�
     expect(afterState.snapshots[task9.id]?.syncFields?.title).toBe("古いsnapshot title");
   });
 
-  it("全フィールド theirs の完全解決だけ snapshot.hash を remoteHash に揃える", async () => {
+  it("解決後task全体がremoteHashと一致するとsnapshot全体をremoteへ進める", async () => {
     const task = Object.assign(makeTask(8), {
       state_current: "open",
       state_incoming: "closed",
@@ -224,15 +225,25 @@ describe("[FR-SYNC-001-AC6] resolve --auto は設定済みフィールドだけ�
       labels_incoming: ["remote"],
     });
     await writeFixture([task], { state: "theirs", labels: "theirs" });
+    const seededState = await readState();
+    const remoteTask = makeTask(8, { state: "closed", labels: ["remote"] });
+    seededState.snapshots[task.id]!.remoteHash = hashTask(remoteTask);
+    await writeFile(join(root, ".gantt-sync/sync-state.json"), `${JSON.stringify(seededState)}\n`);
 
     await run(["8", "--auto"]);
 
-    expect((await readState()).snapshots[task.id]?.hash).toBe("remote-8");
+    const tasksFile = await readTasks();
+    const state = await readState();
+    expect(state.snapshots[task.id]?.hash).toBe(hashTask(remoteTask));
+    expect(state.snapshots[task.id]?.hash).toBe(
+      hashSyncFields(state.snapshots[task.id]!.syncFields!),
+    );
+    expect(computeLocalDiff(tasksFile.tasks, state)).toHaveLength(0);
     expect((await readTasks()).has_conflicts).toBeUndefined();
     expect(logSpy).toHaveBeenCalledWith("No conflicts.");
   });
 
-  it("ours が混在した完全解決では snapshot.hash を維持する", async () => {
+  it("ours が混在した完全解決では remoteHash へ進めず push 差分を維持する", async () => {
     const task = Object.assign(makeTask(8), {
       state_current: "open",
       state_incoming: "closed",
@@ -243,7 +254,62 @@ describe("[FR-SYNC-001-AC6] resolve --auto は設定済みフィールドだけ�
 
     await run(["8", "--auto"]);
 
-    expect((await readState()).snapshots[task.id]?.hash).toBe("local-8");
+    const snapshot = (await readState()).snapshots[task.id]!;
+    expect(snapshot.hash).toBe(hashSyncFields(snapshot.syncFields!));
+    expect(snapshot.hash).not.toBe(snapshot.remoteHash);
+  });
+
+  it("oursで解決したbaseline-sensitive fieldを後続pushの差分として保持する", async () => {
+    const task = Object.assign(makeTask(8, { labels: ["local-label"] }), {
+      labels_current: ["local-label"],
+      labels_incoming: ["remote-label"],
+    });
+    await writeFixture([task], { labels: "ours" });
+    const seededState = await readState();
+    seededState.snapshots[task.id]!.syncFields!.labels = [];
+    await writeFile(join(root, ".gantt-sync/sync-state.json"), `${JSON.stringify(seededState)}\n`);
+
+    await run(["8", "--auto"]);
+
+    const tasksFile = await readTasks();
+    const state = await readState();
+    expect(state.snapshots[task.id]?.syncFields?.labels).toEqual([]);
+    expect(state.snapshots[task.id]?.hash).toBe(
+      hashSyncFields(state.snapshots[task.id]!.syncFields!),
+    );
+    expect(computeLocalDiff(tasksFile.tasks, state)[0]?.changedFields).toContain("labels");
+  });
+
+  it("all-theirs解決でも無関係なlocal-only差分をsnapshotへ吸収しない", async () => {
+    const task = Object.assign(
+      makeTask(8, { title: "remote-only title", labels: ["local-only"] }),
+      {
+        state_current: "open",
+        state_incoming: "closed",
+      },
+    );
+    await writeFixture([task], { state: "theirs" });
+    const seededState = await readState();
+    seededState.snapshots[task.id]!.syncFields!.title = "Task 8";
+    seededState.snapshots[task.id]!.syncFields!.labels = [];
+    seededState.snapshots[task.id]!.remoteHash = hashTask(
+      makeTask(8, { title: "remote-only title", state: "closed" }),
+    );
+    await writeFile(join(root, ".gantt-sync/sync-state.json"), `${JSON.stringify(seededState)}\n`);
+
+    await run(["8", "--auto"]);
+
+    const tasksFile = await readTasks();
+    const state = await readState();
+    expect(state.snapshots[task.id]?.syncFields?.state).toBe("closed");
+    expect(state.snapshots[task.id]?.syncFields?.labels).toEqual([]);
+    expect(state.snapshots[task.id]?.hash).toBe(
+      hashSyncFields(state.snapshots[task.id]!.syncFields!),
+    );
+    expect(state.snapshots[task.id]?.hash).not.toBe(state.snapshots[task.id]?.remoteHash);
+    const changedFields = computeLocalDiff(tasksFile.tasks, state)[0]?.changedFields;
+    expect(changedFields).toContain("labels");
+    expect(changedFields).not.toContain("state");
   });
 
   it("--auto と --ours/--theirs の競合はファイルを書き換える前に拒否する", async () => {
