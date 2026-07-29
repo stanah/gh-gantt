@@ -123,6 +123,8 @@ describe("Graph Contract の公開文書契約", () => {
     expect(binding).toContain("waiting_human");
     expect(binding).toContain("現行#327");
     expect(binding).toContain("#328以後");
+    expect(body).toContain("Issue #328以後");
+    expect(body).not.toMatch(/^#328/m);
   });
 
   it("run/node/attemptの正準状態集合を完全一致で定義する", async () => {
@@ -451,35 +453,7 @@ describe("Graph Contract の公開文書契約", () => {
       ),
       devTransition(
         "reviewer",
-        "approve",
-        "human / PR",
-        "READY_FOR_PR",
-        "independent review artifact",
-      ),
-      devTransition(
-        "reviewer",
-        "request-changes + no critical + improvement_count < maxImprovementIterations",
-        "implementer",
-        "IMPROVE",
-        "findings + new implementer Run node ID",
-      ),
-      devTransition(
-        "reviewer",
-        "budget exhausted + only minor remains",
-        "human / PR",
-        "CONDITIONAL_HANDOFF",
-        "remaining findings in PR description",
-      ),
-      devTransition(
-        "reviewer",
-        "budget exhausted + major remains",
-        "waiting_human",
-        "BLOCKED",
-        "remaining major findings",
-      ),
-      devTransition(
-        "reviewer",
-        "critical finding",
+        "critical finding present",
         "waiting_human",
         "ESCALATED",
         "critical finding evidence",
@@ -490,6 +464,48 @@ describe("Graph Contract の公開文書契約", () => {
         "waiting_human",
         "BLOCKED",
         "missing evidence list",
+      ),
+      devTransition(
+        "reviewer",
+        "verify-result inconsistency or verdict/finding semantic contract mismatch",
+        "waiting_human",
+        "BLOCKED",
+        "review validation evidence",
+      ),
+      devTransition(
+        "reviewer",
+        "approve + findings empty",
+        "human / PR",
+        "READY_FOR_PR",
+        "independent review artifact",
+      ),
+      devTransition(
+        "reviewer",
+        "request-changes + (major or plan/implementation mismatch) + improvement_count < maxImprovementIterations",
+        "implementer",
+        "IMPROVE",
+        "findings + new implementer Run node ID",
+      ),
+      devTransition(
+        "reviewer",
+        "comment + minor/nit only",
+        "human / PR",
+        "CONDITIONAL_HANDOFF",
+        "remaining findings evidence",
+      ),
+      devTransition(
+        "reviewer",
+        "budget exhausted + request-changes remains",
+        "waiting_human",
+        "BLOCKED",
+        "remaining request-changes evidence",
+      ),
+      devTransition(
+        "reviewer",
+        "block + blocking reason/evidence + no critical",
+        "waiting_human",
+        "BLOCKED",
+        "blocking evidence",
       ),
       devTransition(
         "human / PR",
@@ -505,33 +521,122 @@ describe("Graph Contract の公開文書契約", () => {
     expect(budget).toContain("追加retry回数");
     expect(budget).toContain("初回reviewer passはimprovement_count=0");
     expect(budget).toContain("reviewer起点の追加改善回数");
-    expect(orchestrator).toContain("ADR-021のFixed dev-role transitionを正典とする");
+    expect(budget).toContain("schema-valid `comment`");
+    expect(budget).toContain("request-changesが残れば");
+    expect(budget).toContain("severityだけで`comment`へ降格せずBLOCKED");
+    const safetyPreflight = [
+      preflight(
+        "1",
+        "critical finding present",
+        "approve",
+        "ESCALATED",
+        "critical finding evidence",
+      ),
+      preflight(
+        "1",
+        "critical finding present",
+        "comment",
+        "ESCALATED",
+        "critical finding evidence",
+      ),
+      preflight(
+        "1",
+        "critical finding present",
+        "request-changes",
+        "ESCALATED",
+        "critical finding evidence",
+      ),
+      preflight("1", "critical finding present", "block", "ESCALATED", "critical finding evidence"),
+      preflight("2", "required evidence missing", "any", "BLOCKED", "missing evidence list"),
+      preflight(
+        "2",
+        "verify-result inconsistency",
+        "any",
+        "BLOCKED",
+        "verification inconsistency evidence",
+      ),
+      preflight(
+        "2",
+        "verdict/finding semantic contract mismatch",
+        "any",
+        "BLOCKED",
+        "semantic validation evidence",
+      ),
+      preflight(
+        "3",
+        "all safety guards passed",
+        "contract-valid verdict",
+        "apply normal verdict edge",
+        "validated review artifact",
+      ),
+    ];
+    expect(parseMarkdownTable(adr, "### Safety preflight precedence")).toEqual(safetyPreflight);
+    expect(parseMarkdownTable(orchestrator, "### Safety preflight precedence")).toEqual(
+      safetyPreflight,
+    );
+    const fixedTransition = extractMarkdownSection(adr, "### Fixed dev-role transition");
+    expect(fixedTransition).toContain("cross-cutting guard");
+    expect(fixedTransition).toContain("通常verdict edgeより先");
+    expect(orchestrator).toContain("Project Contract Discovery");
+    expect(orchestrator).toContain("schema-valid `comment`");
+    expect(orchestrator).toContain("`request-changes`が残れば");
+    expect(orchestrator).toContain("severityだけで`comment`へ降格せず");
+    expect(parseMarkdownTable(orchestrator, "### Reviewer verdict operation")).toEqual([
+      reviewerOperation("approve", "contract-valid + findings empty", "human / PR", "READY_FOR_PR"),
+      reviewerOperation(
+        "comment",
+        "contract-valid + minor/nit only",
+        "preserve remaining findings evidence",
+        "CONDITIONAL_HANDOFF",
+      ),
+      reviewerOperation(
+        "request-changes",
+        "contract-valid + (major or plan/implementation mismatch) + improvement budget available",
+        "implementer improvement",
+        "IMPROVE",
+      ),
+      reviewerOperation(
+        "request-changes",
+        "contract-valid + (major or plan/implementation mismatch) + improvement budget exhausted",
+        "waiting_human",
+        "BLOCKED",
+      ),
+      reviewerOperation(
+        "block",
+        "contract-valid + blocking reason/evidence + no critical",
+        "waiting_human",
+        "BLOCKED",
+      ),
+    ]);
     const outputContract = extractMarkdownSection(orchestrator, "## 出力契約");
     expect(outputContract).toContain(
       "`status`: `READY_FOR_PR` / `CONDITIONAL_HANDOFF` / `BLOCKED` / `ESCALATED` / `COMPLETED`",
     );
   });
 
-  it("active workflowは現行manual gateと#328後の製品control planeを区別する", async () => {
-    const paths = [
-      ".gantt-sync/workflow.md",
+  it("project workflowだけがrepo固有contractを持ちshared skillsはproject contractをdiscoverする", async () => {
+    const projectWorkflow = await readRepoFile(".gantt-sync/workflow.md");
+    expect(projectWorkflow).toContain("ADR-021");
+    expect(projectWorkflow).toContain("現行 (#327)");
+    expect(projectWorkflow).toContain("外部orchestrator");
+    expect(projectWorkflow).toContain("JSON/schema/manual gate");
+    expect(projectWorkflow).toContain("#328以後");
+    expect(projectWorkflow).toContain("製品control plane");
+
+    const sharedSkillPaths = [
       "skills/gh-gantt-dev-role/SKILL.md",
+      "skills/gh-gantt-dev-role/references/orchestrator.md",
       "skills/gh-gantt-workflow/SKILL.md",
+      "skills/gh-gantt-workflow/references/autonomous-loop.md",
     ] as const;
 
-    for (const path of paths) {
+    for (const path of sharedSkillPaths) {
       const content = await readRepoFile(path);
-      expect(content).toContain("ADR-021");
-      expect(content).toContain("現行 (#327)");
-      expect(content).toContain("外部orchestrator");
-      expect(content).toContain("JSON/schema/manual gate");
-      expect(content).toContain("#328以後");
-      expect(content).toContain("製品control plane");
+      expect(content).toContain("Project Contract Discovery");
+      expect(content).toContain(".gantt-sync/workflow.md");
+      expect(content).not.toContain("ADR-021");
+      expect(content).not.toMatch(/#(?:327|328|329|330|331)\b/);
     }
-
-    const workflowSkill = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
-    expect(workflowSkill).toContain("#329のclaim/lease/join");
-    expect(workflowSkill).toContain("#331のapproval proposal/new plan version");
 
     const projectMap = await readRepoFile("docs/project-map.md");
     const mapSection = extractMarkdownSection(projectMap, "## 10. Graph Contractとの関係");
@@ -653,5 +758,25 @@ function propagation(
     target,
     "run effect": runEffect,
     "identity / lineage": identityOrLineage,
+  };
+}
+
+function reviewerOperation(verdict: string, guard: string, action: string, status: string) {
+  return { verdict, guard, action, status };
+}
+
+function preflight(
+  priority: string,
+  condition: string,
+  declaredVerdict: string,
+  result: string,
+  evidence: string,
+) {
+  return {
+    priority,
+    condition,
+    "declared verdict": declaredVerdict,
+    result,
+    evidence,
   };
 }

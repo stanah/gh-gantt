@@ -150,6 +150,22 @@ retryableなfailed、timed_out、stalledでは、終端attemptを変更せずnod
 単調増加する新attempt IDとlineageを作る。attempt budgetを使い切ったretryable failureはnodeとrunを
 `waiting_human` checkpointへ送り、non-retryable failureだけがnodeとrunを`failed` terminalへ送る。
 
+### Safety preflight precedence
+
+review artifactのdeclared verdictを適用する前に、次のpriority順で安全性を評価する。同じpriority内の
+BLOCKED条件は同じ停止結果へ集約し、priority 3へ到達した場合だけ通常verdict edgeを選ぶ。
+
+| priority | condition                                  | declared verdict       | result                    | evidence                            |
+| -------- | ------------------------------------------ | ---------------------- | ------------------------- | ----------------------------------- |
+| 1        | critical finding present                   | approve                | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | comment                | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | request-changes        | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | block                  | ESCALATED                 | critical finding evidence           |
+| 2        | required evidence missing                  | any                    | BLOCKED                   | missing evidence list               |
+| 2        | verify-result inconsistency                | any                    | BLOCKED                   | verification inconsistency evidence |
+| 2        | verdict/finding semantic contract mismatch | any                    | BLOCKED                   | semantic validation evidence        |
+| 3        | all safety guards passed                   | contract-valid verdict | apply normal verdict edge | validated review artifact           |
+
 ### Fixed dev-role transition
 
 このtableは最初のPlan Graphを定義する。`waiting_human`は停止handoffであり、外部runnerが必須human gateを
@@ -160,22 +176,28 @@ bypassできない。限定bypassはcontractが許可したedgeだけをauthorit
 表す。`verify_failed`と`request-changes`でもterminalなsource nodeを再openせず、新しいtarget role Run node IDを
 作る。
 
-| source      | event or guard                                                               | target        | outcome             | evidence                                       |
-| ----------- | ---------------------------------------------------------------------------- | ------------- | ------------------- | ---------------------------------------------- |
-| planner     | plan_valid + schema-valid                                                    | implementer   | CONTINUE            | plan artifact                                  |
-| planner     | plan_invalid or evidence_missing                                             | waiting_human | BLOCKED             | validation evidence                            |
-| implementer | implementation_valid + evidence present                                      | executor      | CONTINUE            | implementation artifact                        |
-| implementer | implementation_invalid or evidence_missing                                   | waiting_human | BLOCKED             | validation evidence                            |
-| executor    | verify_passed                                                                | reviewer      | CONTINUE            | all command evidence                           |
-| executor    | verify_failed + retry_count < maxExecutorRetries                             | implementer   | RETRY               | failure evidence + new implementer Run node ID |
-| executor    | verify_failed + retry_count >= maxExecutorRetries                            | waiting_human | BLOCKED             | failure evidence                               |
-| reviewer    | approve                                                                      | human / PR    | READY_FOR_PR        | independent review artifact                    |
-| reviewer    | request-changes + no critical + improvement_count < maxImprovementIterations | implementer   | IMPROVE             | findings + new implementer Run node ID         |
-| reviewer    | budget exhausted + only minor remains                                        | human / PR    | CONDITIONAL_HANDOFF | remaining findings in PR description           |
-| reviewer    | budget exhausted + major remains                                             | waiting_human | BLOCKED             | remaining major findings                       |
-| reviewer    | critical finding                                                             | waiting_human | ESCALATED           | critical finding evidence                      |
-| any role    | required evidence missing                                                    | waiting_human | BLOCKED             | missing evidence list                          |
-| human / PR  | approved / merged                                                            | terminal      | COMPLETED           | human decision + PR evidence                   |
+Safety preflight precedenceはcross-cutting guardであり、declared verdictに関係なく通常verdict edgeより先に
+適用する。`any role + required evidence missing`もnormal verdictのfallbackではなく、criticalの次に通常edgeを
+preemptする。Fixed transition tableはpreflightで受理される停止edgeと、その通過後だけ選べる通常edgeを示す。
+
+| source      | event or guard                                                                                           | target        | outcome             | evidence                                       |
+| ----------- | -------------------------------------------------------------------------------------------------------- | ------------- | ------------------- | ---------------------------------------------- |
+| planner     | plan_valid + schema-valid                                                                                | implementer   | CONTINUE            | plan artifact                                  |
+| planner     | plan_invalid or evidence_missing                                                                         | waiting_human | BLOCKED             | validation evidence                            |
+| implementer | implementation_valid + evidence present                                                                  | executor      | CONTINUE            | implementation artifact                        |
+| implementer | implementation_invalid or evidence_missing                                                               | waiting_human | BLOCKED             | validation evidence                            |
+| executor    | verify_passed                                                                                            | reviewer      | CONTINUE            | all command evidence                           |
+| executor    | verify_failed + retry_count < maxExecutorRetries                                                         | implementer   | RETRY               | failure evidence + new implementer Run node ID |
+| executor    | verify_failed + retry_count >= maxExecutorRetries                                                        | waiting_human | BLOCKED             | failure evidence                               |
+| reviewer    | critical finding present                                                                                 | waiting_human | ESCALATED           | critical finding evidence                      |
+| any role    | required evidence missing                                                                                | waiting_human | BLOCKED             | missing evidence list                          |
+| reviewer    | verify-result inconsistency or verdict/finding semantic contract mismatch                                | waiting_human | BLOCKED             | review validation evidence                     |
+| reviewer    | approve + findings empty                                                                                 | human / PR    | READY_FOR_PR        | independent review artifact                    |
+| reviewer    | request-changes + (major or plan/implementation mismatch) + improvement_count < maxImprovementIterations | implementer   | IMPROVE             | findings + new implementer Run node ID         |
+| reviewer    | comment + minor/nit only                                                                                 | human / PR    | CONDITIONAL_HANDOFF | remaining findings evidence                    |
+| reviewer    | budget exhausted + request-changes remains                                                               | waiting_human | BLOCKED             | remaining request-changes evidence             |
+| reviewer    | block + blocking reason/evidence + no critical                                                           | waiting_human | BLOCKED             | blocking evidence                              |
+| human / PR  | approved / merged                                                                                        | terminal      | COMPLETED           | human decision + PR evidence                   |
 
 ### Budget計数規則
 
@@ -184,7 +206,8 @@ bypassできない。限定bypassはcontractが許可したedgeだけをauthorit
 - 初回reviewer passはimprovement_count=0とする。reviewerの`request-changes`からimplementerへ戻るedgeを
   受理すると1増やす。`maxImprovementIterations`はreviewer起点の追加改善回数であり、値3ならreviewerは最大4回。
 - evidence欠落はbudgetを消費せずBLOCKED、critical findingは残budgetに関係なくESCALATEDとする。
-- improvement budget超過時、minorだけならCONDITIONAL_HANDOFF、majorが残ればBLOCKEDとする。
+- CONDITIONAL_HANDOFFはreviewerがschema-valid `comment`を返した場合だけ選ぶ。improvement budget超過時に
+  request-changesが残れば、major findingまたはplan/implementation mismatchをseverityだけで`comment`へ降格せずBLOCKEDとする。
 - retryは古いattemptを再開せず、単調増加する新しいattempt IDとlineageを作る。terminal/stale attemptの
   updateは拒否する。
 
@@ -193,7 +216,7 @@ bypassできない。限定bypassはcontractが許可したedgeだけをauthorit
 現行(#327)は外部orchestratorがworkspace、agent subprocess、tool/command、JSON artifact、schema validation、
 manual gateを運用する。`.dev-flow`はignored evidenceであり、durable Run Graphでも製品control planeでもない。
 
-#328以後、gh-ganttの製品control planeがbinding validation、stable ID、transition、budget、authority、
+Issue #328以後、gh-ganttの製品control planeがbinding validation、stable ID、transition、budget、authority、
 human gate、checkpoint、idempotent event受付、bounded status viewを担う。外部runnerはexecution planeとして
 処理し、schema-valid outcome/artifact/evidence eventを返す。provider SDK、agent subprocess、任意shell
 executor、PR reply/resolve/mergeは製品へ内蔵しない。

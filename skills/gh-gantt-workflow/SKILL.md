@@ -16,14 +16,11 @@ description: gh-gantt の開発サイクル全体を回すオーケストレー�
 
 注: `gh-gantt init` がワークフローファイルの自動生成に対応している場合はそちらを使用する。
 
-## Graph Contract との責務境界
+## Project Contract Discovery
 
-正典はADR-021とする。本スキルはWork Graphからtaskを選び、dev-roleへ引き継ぐ。
-
-- **現行 (#327)**: 外部orchestratorがJSON/schema/manual gateを運用する。
-- **#328以後**: 製品control planeがeventを受理し、外部runnerはexecutionだけを担う。
-
-後続拡張は、#329のclaim/lease/joinと#331のapproval proposal/new plan versionをADR-021で確認する。
+`.gantt-sync/workflow.md`にproject-owned Graph Contractセクションや設計文書への参照がある場合は、
+task選定とdev-roleへの引き継ぎ前に読み、project固有のbinding、段階境界、roadmapへ従う。
+本スキルは特定projectのcontract IDやIssue番号をhard-codeしない。
 
 ## ライフサイクルフック
 
