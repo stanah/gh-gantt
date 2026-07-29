@@ -71,7 +71,7 @@ node packages/cli/dist/index.js loop status
 - **`gantt.config.json` と `workflow.md` はコミット対象**（`.gitignore` に除外例外が設定済み）。
   コミットしておけば新品クローンでも `pull` 一発で作業を再開できる
 - config が未コミット・未作成の場合のみ
-  `gh-gantt init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
+  `node packages/cli/dist/index.js init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
   （既存 config がある場合 init は中止する。上書きは `--force`）
 - `tasks.json` と `sync-state.json` は、GitHub に反映済みのデータであれば `pull` で再構築できるキャッシュ。
   一方、未 push の draft、date フィールド、その他のローカル専用データは失われ得るため、

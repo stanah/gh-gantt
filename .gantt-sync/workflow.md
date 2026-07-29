@@ -55,7 +55,7 @@
   - 整合性検証: `pnpm run req:validate`
   - 自動生成ドキュメント: `pnpm run docs:gen`
 - **自動生成物の出力先**: `docs/generated/`（gitignore 済み、CI で毎回生成）
-- **設計仕様**: `docs/superpowers/specs/2026-04-04-living-documentation-design.md`
+- **設計仕様**: `docs/adr/ADR-012-living-documentation-four-layer-system.md`
 
 振る舞い変更を伴う開発では、Issue 作成時または実装中に `gh-gantt-living-documentation` スキルを invoke して、要件 AC の追加とテスト名への `[ID]` 付与を行うこと。
 
@@ -66,6 +66,7 @@
 ```yaml
 verifyCommands:
   - "pnpm typecheck"
+  - "pnpm lint"
   - "pnpm test:json"
   - "pnpm build"
   - "pnpm req:trace"
@@ -80,7 +81,7 @@ prCreator: "gh pr create"
 allowImplementerCommit: true
 ```
 
-- `verifyCommands` は CI (`.github/workflows/ci.yml`) と `lefthook` pre-push と等価のチェックを並べる
+- `verifyCommands` は CI / pre-push の検査を包含し、`typecheck` / `lint` も加えた PR 前 gate
 - `scratchpadDir` (`.dev-flow/`) は gitignore 済み — role の中間 artifact はコミットしない
 - `allowImplementerCommit: true` で implementer がコミット可 (lefthook の pre-commit が一段ガードする)
 

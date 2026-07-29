@@ -1382,3 +1382,21 @@ areas:
             status: covered
             tests:
               - tests/workflow/skill-context-budget.test.ts
+      - id: NFR-STABILITY-013
+        summary: 共有 project config と新品クローン bootstrap の安定化
+        acceptance_criteria:
+          - id: NFR-STABILITY-013-AC1
+            description: 共有 project config は schema 検証を通過し、確定した階層とコンフリクトポリシーだけを保持する
+            status: covered
+            tests:
+              - tests/workflow/project-config.test.ts
+          - id: NFR-STABILITY-013-AC2
+            description: 共有 workflow は Living Documentation と CI / pre-push を包含する PR 前 gate を定義する
+            status: covered
+            tests:
+              - tests/workflow/project-config.test.ts
+          - id: NFR-STABILITY-013-AC3
+            description: 新品クローンは build 後に local CLI だけで初期化・同期・状態確認できる
+            status: covered
+            tests:
+              - tests/workflow/project-config.test.ts

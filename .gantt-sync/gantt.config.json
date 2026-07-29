@@ -9,12 +9,18 @@
     }
   },
   "sync": {
-    "conflict_strategy": "remote-wins",
     "auto_create_issues": true,
+    "conflict_policy": {
+      "state": "ours",
+      "start_date": "theirs",
+      "end_date": "theirs",
+      "milestone": "theirs",
+      "assignees": "theirs",
+      "labels": "theirs"
+    },
     "field_mapping": {
       "start_date": "Start Date",
       "end_date": "End Date",
-      "status": "Status",
       "priority": "Priority"
     }
   },
@@ -52,8 +58,8 @@
   },
   "type_hierarchy": {
     "task": [],
-    "epic": [],
-    "feature": [],
+    "epic": ["bug", "feature", "task"],
+    "feature": ["feature", "task"],
     "bug": [],
     "milestone": []
   },
