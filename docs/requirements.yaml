@@ -1396,7 +1396,12 @@ areas:
             tests:
               - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-013-AC3
-            description: AGENTS.md の新品クローン bootstrap 手順は build 後の local CLI init / pull / status / loop status を定義する
+            description: AGENTS.md の新品クローン標準 bootstrap は build 後の local CLI pull / status / loop status だけを復元手順として定義する
+            status: covered
+            tests:
+              - tests/workflow/project-config.test.ts
+          - id: NFR-STABILITY-013-AC4
+            description: AGENTS.md は config 未作成時だけ local CLI init を使い、既存 config では中止し、上書き時だけ --force を使う fallback を定義する
             status: covered
             tests:
               - tests/workflow/project-config.test.ts
