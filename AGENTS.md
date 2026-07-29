@@ -73,8 +73,11 @@ pnpm --filter @gh-gantt/cli exec gh-gantt loop status
 - config が未コミット・未作成の場合のみ
   `gh-gantt init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
   （既存 config がある場合 init は中止する。上書きは `--force`）
-- `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーであり、
-  不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できる
+- `tasks.json` と `sync-state.json` は、GitHub に反映済みのデータであれば `pull` で再構築できるキャッシュ。
+  一方、未 push の draft、date フィールド、その他のローカル専用データは失われ得るため、
+  #298 と関連する永続化ギャップが解消されるまでは、破棄前に `push` または必要な退避を行う
+- `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーで、`pull` では再構築できない。
+  不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できるが、過去の観測履歴は失われる
 - グローバル install（`pnpm add -g ./packages/cli`）は任意。
   エフェメラル環境では `pnpm --filter @gh-gantt/cli exec gh-gantt` で十分
 
