@@ -1,0 +1,107 @@
+{
+  "version": "1",
+  "project": {
+    "name": "gh-gantt development",
+    "github": {
+      "owner": "stanah",
+      "repo": "gh-gantt",
+      "project_number": 3
+    }
+  },
+  "sync": {
+    "auto_create_issues": true,
+    "conflict_policy": {
+      "state": "ours",
+      "start_date": "theirs",
+      "end_date": "theirs",
+      "milestone": "theirs",
+      "assignees": "theirs",
+      "labels": "theirs"
+    },
+    "field_mapping": {
+      "start_date": "Start Date",
+      "end_date": "End Date",
+      "priority": "Priority"
+    }
+  },
+  "task_types": {
+    "task": {
+      "label": "Task",
+      "display": "bar",
+      "color": "#27AE60",
+      "github_label": null
+    },
+    "epic": {
+      "label": "Epic",
+      "display": "summary",
+      "color": "#8E44AD",
+      "github_label": "epic"
+    },
+    "feature": {
+      "label": "Feature",
+      "display": "bar",
+      "color": "#3498DB",
+      "github_label": "enhancement"
+    },
+    "bug": {
+      "label": "Bug",
+      "display": "bar",
+      "color": "#d73a4a",
+      "github_label": "bug"
+    },
+    "milestone": {
+      "label": "Milestone",
+      "display": "milestone",
+      "color": "#E74C3C",
+      "github_label": "milestone"
+    }
+  },
+  "type_hierarchy": {
+    "task": [],
+    "epic": ["bug", "feature", "task"],
+    "feature": ["feature", "task"],
+    "bug": [],
+    "milestone": []
+  },
+  "statuses": {
+    "field_name": "Status",
+    "values": {
+      "Todo": {
+        "color": "#3498DB",
+        "done": false
+      },
+      "In Progress": {
+        "color": "#3498DB",
+        "done": false
+      },
+      "Done": {
+        "color": "#3498DB",
+        "done": true
+      }
+    }
+  },
+  "gantt": {
+    "default_view": "month",
+    "working_days": [1, 2, 3, 4, 5],
+    "colors": {
+      "critical_path": "#E74C3C",
+      "on_track": "#2ECC71",
+      "at_risk": "#F39C12",
+      "overdue": "#E74C3C"
+    }
+  },
+  "grouping": {
+    "facets": [
+      {
+        "key": "system",
+        "label": "システム",
+        "label_prefix": "system:"
+      },
+      {
+        "key": "feature",
+        "label": "機能",
+        "label_prefix": "feature:"
+      }
+    ]
+  }
+}

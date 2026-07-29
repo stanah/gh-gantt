@@ -61,22 +61,25 @@ pnpm install && pnpm build
 export GITHUB_TOKEN=<token>
 
 # 同期データの再構成（tasks.json / sync-state.json 不在なら GitHub から初回同期する）
-pnpm --filter @gh-gantt/cli exec gh-gantt pull
+node packages/cli/dist/index.js pull
 
 # 現在地の確認
-pnpm --filter @gh-gantt/cli exec gh-gantt status
-pnpm --filter @gh-gantt/cli exec gh-gantt loop status
+node packages/cli/dist/index.js status
+node packages/cli/dist/index.js loop status
 ```
 
 - **`gantt.config.json` と `workflow.md` はコミット対象**（`.gitignore` に除外例外が設定済み）。
   コミットしておけば新品クローンでも `pull` 一発で作業を再開できる
 - config が未コミット・未作成の場合のみ
-  `gh-gantt init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
+  `node packages/cli/dist/index.js init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
   （既存 config がある場合 init は中止する。上書きは `--force`）
-- `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーであり、
-  不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できる
+- `tasks.json` と `sync-state.json` は、GitHub に反映済みのデータであれば `pull` で再構築できるキャッシュ。
+  一方、未 push の draft、date フィールド、その他のローカル専用データは失われ得るため、
+  #298 と関連する永続化ギャップが解消されるまでは、破棄前に `push` または必要な退避を行う
+- `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーで、`pull` では再構築できない。
+  不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できるが、過去の観測履歴は失われる
 - グローバル install（`pnpm add -g ./packages/cli`）は任意。
-  エフェメラル環境では `pnpm --filter @gh-gantt/cli exec gh-gantt` で十分
+  エフェメラル環境ではリポジトリルートから `node packages/cli/dist/index.js` を実行すれば十分
 
 ## 開発コマンド
 
