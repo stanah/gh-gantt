@@ -61,11 +61,11 @@ pnpm install && pnpm build
 export GITHUB_TOKEN=<token>
 
 # 同期データの再構成（tasks.json / sync-state.json 不在なら GitHub から初回同期する）
-pnpm --filter @gh-gantt/cli exec gh-gantt pull
+node packages/cli/dist/index.js pull
 
 # 現在地の確認
-pnpm --filter @gh-gantt/cli exec gh-gantt status
-pnpm --filter @gh-gantt/cli exec gh-gantt loop status
+node packages/cli/dist/index.js status
+node packages/cli/dist/index.js loop status
 ```
 
 - **`gantt.config.json` と `workflow.md` はコミット対象**（`.gitignore` に除外例外が設定済み）。
@@ -79,7 +79,7 @@ pnpm --filter @gh-gantt/cli exec gh-gantt loop status
 - `loop-state.json`（外側ループのジャーナル）はワークスペース単位の観測レイヤーで、`pull` では再構築できない。
   不在でも `gh-gantt loop next` は GitHub 由来の状態だけから次タスクを選定できるが、過去の観測履歴は失われる
 - グローバル install（`pnpm add -g ./packages/cli`）は任意。
-  エフェメラル環境では `pnpm --filter @gh-gantt/cli exec gh-gantt` で十分
+  エフェメラル環境ではリポジトリルートから `node packages/cli/dist/index.js` を実行すれば十分
 
 ## 開発コマンド
 
