@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { FIXED_DEV_ROLE_GRAPH_CONTRACT } from "@gh-gantt/shared";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { GraphContractStore } from "../store/graph-contract.js";
+import { RunGraphEventStore } from "../store/run-graph.js";
 
 const timestamp = "2026-07-30T00:00:00.000Z";
 
@@ -444,6 +445,302 @@ describe("[NFR-STABILITY-014-AC6] fixed dev-role transition は accepted outcome
       stateUnchanged: true,
       view: { revision: 3 },
     });
+  });
+
+  it("active attempt と異なる actor による node outcome を拒否する", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-actor-lineage");
+    const started = await control.inspect(runId);
+    if (!started.currentNode) throw new Error("current node がありません");
+    const nodeId = started.currentNode.id;
+
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "actor-lineage-attempt-start",
+      runId,
+      actor: { id: "planner-1", role: "planner" },
+      command: { type: "attempt_started", nodeId, attemptId: "actor-lineage-attempt" },
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "actor-lineage-attempt-finish",
+      runId,
+      actor: { id: "planner-1", role: "planner" },
+      command: {
+        type: "attempt_finished",
+        nodeId,
+        attemptId: "actor-lineage-attempt",
+        outcome: "succeeded",
+        artifactIds: [],
+        evidenceIds: ["actor-lineage-command-evidence"],
+      },
+      evidence: [
+        {
+          id: "actor-lineage-command-evidence",
+          kind: "command_execution",
+          artifactIds: [],
+          provenance: "external-runner",
+          reference: reference("actor-lineage-command"),
+        },
+      ],
+    });
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "actor-lineage-outcome",
+        runId,
+        actor: { id: "planner-2", role: "planner" },
+        command: {
+          type: "node_outcome_submitted",
+          nodeId,
+          attemptId: "actor-lineage-attempt",
+          outcome: "plan_valid",
+          artifactIds: ["actor-lineage-artifact"],
+          evidenceIds: ["actor-lineage-validation"],
+        },
+        artifacts: [
+          {
+            id: "actor-lineage-artifact",
+            schemaId: "dev-role.plan",
+            schemaVersion: "1",
+            derivedFromArtifactIds: [],
+            reference: reference("actor-lineage-artifact"),
+          },
+        ],
+        evidence: [
+          {
+            id: "actor-lineage-validation",
+            kind: "artifact_validation",
+            artifactIds: ["actor-lineage-artifact"],
+            provenance: "schema-validator",
+            reference: reference("actor-lineage-validation"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "authority_denied",
+      stateUnchanged: true,
+      view: { revision: 3, currentNode: { id: nodeId, state: "running" } },
+    });
+
+    const validOutcome = await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "actor-lineage-outcome-valid",
+      runId,
+      actor: { id: "planner-1", role: "planner" },
+      command: {
+        type: "node_outcome_submitted",
+        nodeId,
+        attemptId: "actor-lineage-attempt",
+        outcome: "plan_valid",
+        artifactIds: ["actor-lineage-artifact"],
+        evidenceIds: ["actor-lineage-validation"],
+      },
+      artifacts: [
+        {
+          id: "actor-lineage-artifact",
+          schemaId: "dev-role.plan",
+          schemaVersion: "1",
+          derivedFromArtifactIds: [],
+          reference: reference("actor-lineage-artifact"),
+        },
+      ],
+      evidence: [
+        {
+          id: "actor-lineage-validation",
+          kind: "artifact_validation",
+          artifactIds: ["actor-lineage-artifact"],
+          provenance: "schema-validator",
+          reference: reference("actor-lineage-validation"),
+        },
+      ],
+    });
+    expect(validOutcome).toMatchObject({ accepted: true, view: { revision: 4 } });
+    if (!validOutcome.accepted) throw new Error("正しい actor の outcome が拒否されました");
+    expect(validOutcome.view.artifacts.items).toEqual([
+      expect.objectContaining({
+        producerAttemptId: "actor-lineage-attempt",
+        actor: { id: "planner-1", role: "planner" },
+      }),
+    ]);
+    expect(validOutcome.view.evidence.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "actor-lineage-validation",
+          producerAttemptId: "actor-lineage-attempt",
+          actor: { id: "planner-1", role: "planner" },
+        }),
+      ]),
+    );
+  });
+
+  it("過去 attempt の evidence/artifact を attempt finish と node outcome に再利用できない", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-stale-lineage");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_valid",
+      schemaId: "dev-role.plan",
+      prefix: "stale-lineage-plan",
+    });
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "implementer",
+      outcome: "implementation_valid",
+      schemaId: "dev-role.implementation",
+      prefix: "stale-lineage-old-implementation",
+    });
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "executor",
+      outcome: "verify_failed",
+      schemaId: "dev-role.verify",
+      prefix: "stale-lineage-verify",
+    });
+
+    const retry = await control.inspect(runId);
+    if (!retry.currentNode) throw new Error("retry node がありません");
+    const nodeId = retry.currentNode.id;
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-lineage-retry-start",
+      runId,
+      actor: { id: "implementer-agent", role: "implementer" },
+      command: {
+        type: "attempt_started",
+        nodeId,
+        attemptId: "stale-lineage-current-attempt",
+      },
+    });
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "stale-lineage-reused-finish",
+        runId,
+        actor: { id: "implementer-agent", role: "implementer" },
+        command: {
+          type: "attempt_finished",
+          nodeId,
+          attemptId: "stale-lineage-current-attempt",
+          outcome: "succeeded",
+          artifactIds: [],
+          evidenceIds: ["stale-lineage-old-implementation-command-evidence"],
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+      view: {
+        revision: 11,
+        activeAttempt: { id: "stale-lineage-current-attempt", state: "running" },
+      },
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-lineage-retry-finish",
+      runId,
+      actor: { id: "implementer-agent", role: "implementer" },
+      command: {
+        type: "attempt_finished",
+        nodeId,
+        attemptId: "stale-lineage-current-attempt",
+        outcome: "succeeded",
+        artifactIds: [],
+        evidenceIds: ["stale-lineage-current-command"],
+      },
+      evidence: [
+        {
+          id: "stale-lineage-current-command",
+          kind: "command_execution",
+          artifactIds: [],
+          provenance: "external-runner",
+          reference: reference("stale-lineage-current-command"),
+        },
+      ],
+    });
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "stale-lineage-reused-outcome",
+        runId,
+        actor: { id: "implementer-agent", role: "implementer" },
+        command: {
+          type: "node_outcome_submitted",
+          nodeId,
+          attemptId: "stale-lineage-current-attempt",
+          outcome: "implementation_valid",
+          artifactIds: ["stale-lineage-old-implementation-artifact"],
+          evidenceIds: ["stale-lineage-old-implementation-outcome-evidence"],
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+      view: { revision: 12, currentNode: { id: nodeId, state: "running" } },
+    });
+    await expect(control.inspect(runId)).resolves.toMatchObject({
+      revision: 12,
+      currentNode: { id: nodeId, activeAttemptId: "stale-lineage-current-attempt" },
+    });
+  });
+
+  it("過去と重複する attempt ID を accepted journal に追記しない", async () => {
+    const { root, control } = await createControlPlane();
+    const runId = await startRun(control, "start-duplicate-attempt-id");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_valid",
+      schemaId: "dev-role.plan",
+      prefix: "duplicate-attempt-id",
+    });
+    const implementer = await control.inspect(runId);
+    if (!implementer.currentNode) throw new Error("implementer node がありません");
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "duplicate-attempt-id-reuse",
+        runId,
+        actor: { id: "implementer-agent", role: "implementer" },
+        command: {
+          type: "attempt_started",
+          nodeId: implementer.currentNode.id,
+          attemptId: "duplicate-attempt-id-attempt",
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+      view: {
+        revision: 4,
+        currentNode: { id: implementer.currentNode.id, state: "ready", activeAttemptId: null },
+      },
+    });
+    await expect(control.inspect(runId)).resolves.toMatchObject({
+      revision: 4,
+      currentNode: { id: implementer.currentNode.id, state: "ready", activeAttemptId: null },
+    });
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(journal.acceptedEvents).toHaveLength(4);
+    expect(
+      journal.acceptedEvents.filter(
+        (event) =>
+          event.command.type === "attempt_started" &&
+          event.command.attemptId === "duplicate-attempt-id-attempt",
+      ),
+    ).toHaveLength(1);
   });
 });
 

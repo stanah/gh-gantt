@@ -178,6 +178,17 @@ export class RunGraphControlPlane {
         view,
       );
     }
+    if (input.command.type === "attempt_started") {
+      const { attemptId } = input.command;
+      if (projection.attempts.some((attempt) => attempt.id === attemptId)) {
+        return this.reject(
+          input,
+          "stale_attempt",
+          `attempt ID は Run 内で受理済みです: ${attemptId}`,
+          view,
+        );
+      }
+    }
     const activeAttempt = currentNode.activeAttemptId
       ? projection.attempts.find((attempt) => attempt.id === currentNode.activeAttemptId)
       : undefined;
@@ -190,6 +201,24 @@ export class RunGraphControlPlane {
         input,
         "stale_attempt",
         "command の attempt は current attempt ではありません",
+        view,
+      );
+    }
+    const attemptBoundCommand =
+      input.command.type === "attempt_finished" || input.command.type === "node_outcome_submitted";
+    const contractNode = contract.nodes.find((node) => node.id === currentNode.contractNodeId);
+    if (
+      attemptBoundCommand &&
+      activeAttempt &&
+      (!contractNode ||
+        activeAttempt.actor.id !== input.actor.id ||
+        activeAttempt.actor.role !== input.actor.role ||
+        activeAttempt.actor.role !== contractNode.role)
+    ) {
+      return this.reject(
+        input,
+        "authority_denied",
+        "command actor は active attempt と Graph Contract の authority に一致しません",
         view,
       );
     }
@@ -307,9 +336,45 @@ export class RunGraphControlPlane {
       );
     }
 
+    const artifactsForCommand = references.artifactIds
+      .map((id) => allArtifacts.find((artifact) => artifact.id === id))
+      .filter((artifact): artifact is RunGraphArtifact => artifact !== undefined);
     const evidenceForCommand = references.evidenceIds
       .map((id) => allEvidence.find((item) => item.id === id))
       .filter((item): item is RunGraphEvidence => item !== undefined);
+    if (attemptBoundCommand) {
+      if (!activeAttempt) {
+        return this.reject(
+          input,
+          "stale_attempt",
+          "attempt-bound command に対応する active attempt がありません",
+          view,
+        );
+      }
+      if (
+        artifactsForCommand.some(
+          (artifact) =>
+            artifact.nodeId !== currentNode.id ||
+            artifact.producerAttemptId !== activeAttempt.id ||
+            artifact.actor.id !== activeAttempt.actor.id ||
+            artifact.actor.role !== activeAttempt.actor.role,
+        ) ||
+        evidenceForCommand.some(
+          (item) =>
+            item.nodeId !== currentNode.id ||
+            item.producerAttemptId !== activeAttempt.id ||
+            item.actor.id !== activeAttempt.actor.id ||
+            item.actor.role !== activeAttempt.actor.role,
+        )
+      ) {
+        return this.reject(
+          input,
+          "stale_attempt",
+          "attempt-bound command の artifact/evidence は active attempt の lineage に属していません",
+          view,
+        );
+      }
+    }
     if (
       input.command.type === "attempt_finished" &&
       evidenceForCommand.some((item) => item.kind !== "command_execution")
@@ -409,12 +474,9 @@ export class RunGraphControlPlane {
       const expectedSchemas =
         contract.nodes.find((node) => node.id === currentNode.contractNodeId)
           ?.outputArtifactSchemas ?? [];
-      const outputArtifacts = references.artifactIds
-        .map((id) => allArtifacts.find((artifact) => artifact.id === id))
-        .filter((artifact): artifact is RunGraphArtifact => artifact !== undefined);
       if (
-        outputArtifacts.length === 0 ||
-        outputArtifacts.some(
+        artifactsForCommand.length === 0 ||
+        artifactsForCommand.some(
           (artifact) =>
             !expectedSchemas.includes(contractSchemaKey(artifact.schemaId, artifact.schemaVersion)),
         )
