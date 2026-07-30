@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
@@ -159,6 +159,92 @@ describe("[FR-VIS-026-AC4] [NFR-STABILITY-014-AC4] RunGraphEventStore は immuta
         limit: 20,
       }),
     ).rejects.toThrow();
+  });
+
+  it("index の事前検証に失敗した場合は accepted journal を増やさない", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    const started = startEventFor("run-preflight", 330, "2026-07-30T00:00:00.000Z");
+    await store.appendAccepted(started);
+    const taskSegment = Buffer.from("stanah/gh-gantt#330", "utf8").toString("base64url");
+    await writeFile(
+      join(root, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "tasks", `${taskSegment}.json`),
+      JSON.stringify({ schemaVersion: "1", total: "破損" }),
+    );
+
+    await expect(
+      store.appendAccepted({
+        ...started,
+        eventId: "attempt-after-corruption",
+        sequence: 2,
+        acceptedAt: "2026-07-30T00:01:00.000Z",
+        command: {
+          type: "attempt_started",
+          nodeId: "node-planner-1",
+          attemptId: "attempt-planner-1",
+        },
+      }),
+    ).rejects.toThrow();
+    await expect(store.readJournal(started.runId)).resolves.toMatchObject({
+      acceptedEvents: [{ eventId: started.eventId }],
+    });
+  });
+
+  it("event 確定直後の中断を pending transaction から bounded 自動修復する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const interrupted = new RunGraphEventStore(root, {
+      afterJournalCommit: async () => {
+        throw new Error("process kill 境界の模擬");
+      },
+    });
+    const event = startEventFor("run-interrupted", 330, "2026-07-30T00:00:00.000Z");
+
+    await expect(interrupted.appendAccepted(event)).resolves.toBeUndefined();
+    const recovered = new RunGraphEventStore(root);
+    vi.spyOn(recovered, "listRunIds").mockRejectedValue(new Error("WAL修復で全Run走査は禁止"));
+    await expect(
+      recovered.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).resolves.toMatchObject({ total: 1, items: [{ runId: event.runId }] });
+    await expect(recovered.readJournal(event.runId)).resolves.toMatchObject({
+      acceptedEvents: [{ eventId: event.eventId }],
+    });
+  });
+
+  it("stale recovery claimant ごと死亡 owner lease を再回収する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const lockDir = join(root, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "LOCK");
+    await mkdir(lockDir, { recursive: true });
+    const ownerNonce = "00000000-0000-4000-8000-000000000001";
+    await writeFile(
+      join(lockDir, "owner.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        pid: 2_147_483_647,
+        hostname: hostname(),
+        nonce: ownerNonce,
+      }),
+    );
+    await writeFile(
+      join(lockDir, "recovery-claim.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        expectedOwnerNonce: ownerNonce,
+        claimant: {
+          pid: 2_147_483_646,
+          hostname: hostname(),
+          nonce: "00000000-0000-4000-8000-000000000002",
+          claimedAt: "2026-07-30T00:00:00.000Z",
+        },
+      }),
+    );
+
+    const store = new RunGraphEventStore(root);
+    await expect(
+      store.appendAccepted(startEventFor("run-after-stale-claim", 330, "2026-07-30T00:00:00.000Z")),
+    ).resolves.toBeUndefined();
   });
 
   it("既存 journal の locator index を request path 外で一度だけ再構築する", async () => {

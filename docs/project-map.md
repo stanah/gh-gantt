@@ -166,7 +166,10 @@ JSON は shared の `ProjectMapRunGraphViewModel` を共用し、別々の状態
 レスポンスは run と planned node/edge に `total / limit / truncated / items` を持つ。accepted event の
 append 時に Zod 検証済みの task locator index を更新し、API request は task 単位の最大50件の summary と
 選択 run の locator だけを読む。既存 journal の index 再構築は server 起動時に request path 外で行い、
-journal 全文の replay は最大 `limit` 件に限定する。全 run history や log 本文は既定で返さない。
+journal 全文の replay は最大 `limit` 件に限定する。append は event 確定前に index を検証して pending
+transaction を永続化し、event 確定後の中断は次の append / 一覧取得 / server 起動時に bounded 修復する。
+locator writer は process 間 lease で直列化し、死亡 owner と死亡・期限切れ recovery claimant を再回収する。
+全 run history や log 本文は既定で返さない。
 URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時は古い node 選択を除去する。
 
 ### 11.2 状態と差分

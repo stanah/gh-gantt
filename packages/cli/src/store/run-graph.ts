@@ -36,8 +36,22 @@ interface RunGraphTaskLocatorIndex {
   items: RunGraphRunLocator[];
 }
 
+interface RunGraphPendingLocatorTransaction {
+  schemaVersion: "1";
+  event: { runId: string; eventId: string; sequence: number };
+  locator: RunGraphRunLocator;
+  taskIndex: RunGraphTaskLocatorIndex;
+  restoreCompleteState: boolean;
+}
+
+export interface RunGraphEventStoreDependencies {
+  /** test only: journal commit と派生 index commit の境界を模擬する。 */
+  afterJournalCommit?: () => Promise<void>;
+}
+
 const RUN_GRAPH_LOCATOR_INDEX_DIR = "locator-index";
 const RUN_GRAPH_LOCATOR_INDEX_LIMIT = 50;
+const RECOVERY_CLAIM_STALE_MS = 60_000;
 
 const RunGraphTaskSchema = z
   .object({
@@ -107,9 +121,44 @@ const RunGraphLocatorIndexRecoveryClaimSchema = z
   .object({
     schemaVersion: z.literal("1"),
     expectedOwnerNonce: z.string().uuid(),
-    claimantNonce: z.string().uuid(),
+    claimant: z
+      .object({
+        pid: z.number().int().positive(),
+        hostname: z.string().min(1),
+        nonce: z.string().uuid(),
+        claimedAt: z.string().datetime({ offset: true }),
+      })
+      .strict(),
   })
   .strict();
+
+const RunGraphPendingLocatorTransactionSchema: z.ZodType<RunGraphPendingLocatorTransaction> = z
+  .object({
+    schemaVersion: z.literal("1"),
+    event: z
+      .object({
+        runId: z.string().min(1),
+        eventId: z.string().min(1),
+        sequence: z.number().int().positive(),
+      })
+      .strict(),
+    locator: RunGraphRunLocatorSchema,
+    taskIndex: RunGraphTaskLocatorIndexSchema,
+    restoreCompleteState: z.boolean(),
+  })
+  .strict()
+  .superRefine((transaction, context) => {
+    if (
+      transaction.event.runId !== transaction.locator.runId ||
+      !sameTask(transaction.locator.task, transaction.taskIndex.task)
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["locator"],
+        message: "pending transaction の event・locator・task index は一致する必要があります",
+      });
+    }
+  });
 
 function safeSegment(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
@@ -210,11 +259,56 @@ async function acquireLocatorIndexLease(locatorIndexRoot: string): Promise<() =>
         claimPath,
         RunGraphLocatorIndexRecoveryClaimSchema,
       );
+      if (recoveryClaim && recoveryClaim.expectedOwnerNonce !== existing.nonce) {
+        throw new Error("Run Graph locator index の recovery claim が owner と一致しません");
+      }
+      const claimAge = recoveryClaim
+        ? Date.now() - Date.parse(recoveryClaim.claimant.claimedAt)
+        : 0;
+      const claimantDead =
+        recoveryClaim?.claimant.hostname === owner.hostname &&
+        !isProcessAlive(recoveryClaim.claimant.pid);
+      if (recoveryClaim && (claimantDead || claimAge >= RECOVERY_CLAIM_STALE_MS)) {
+        const confirmedOwner = await readJsonOptional(
+          join(lockDir, "owner.json"),
+          RunGraphLocatorIndexLockOwnerSchema,
+        );
+        const confirmedClaim = await readJsonOptional(
+          claimPath,
+          RunGraphLocatorIndexRecoveryClaimSchema,
+        );
+        if (
+          confirmedOwner?.nonce === recoveryClaim.expectedOwnerNonce &&
+          confirmedClaim?.claimant.nonce === recoveryClaim.claimant.nonce
+        ) {
+          const recovered = `${lockDir}.recovered-${existing.nonce}-${randomUUID()}`;
+          try {
+            await rename(lockDir, recovered);
+            await rm(recovered, { recursive: true, force: true });
+            continue;
+          } catch (recoveryError) {
+            const recoveryCode = (recoveryError as NodeJS.ErrnoException).code;
+            if (
+              recoveryCode !== "ENOENT" &&
+              recoveryCode !== "EEXIST" &&
+              recoveryCode !== "ENOTEMPTY"
+            ) {
+              throw recoveryError;
+            }
+            continue;
+          }
+        }
+      }
       if (!recoveryClaim && existing.hostname === owner.hostname && !isProcessAlive(existing.pid)) {
         const claim = RunGraphLocatorIndexRecoveryClaimSchema.parse({
           schemaVersion: "1",
           expectedOwnerNonce: existing.nonce,
-          claimantNonce: owner.nonce,
+          claimant: {
+            pid: owner.pid,
+            hostname: owner.hostname,
+            nonce: owner.nonce,
+            claimedAt: new Date().toISOString(),
+          },
         });
         try {
           await writeFile(claimPath, JSON.stringify(claim, null, 2) + "\n", { flag: "wx" });
@@ -287,8 +381,9 @@ async function listJsonFiles(path: string): Promise<string[]> {
 export class RunGraphEventStore {
   private readonly root: string;
   private readonly locatorIndexRoot: string;
+  private readonly dependencies: RunGraphEventStoreDependencies;
 
-  constructor(projectRoot: string) {
+  constructor(projectRoot: string, dependencies: RunGraphEventStoreDependencies = {}) {
     this.root = join(projectRoot, GANTT_DIR, RUN_GRAPH_DIR, RUN_GRAPH_RUNS_DIR);
     this.locatorIndexRoot = join(
       projectRoot,
@@ -296,6 +391,7 @@ export class RunGraphEventStore {
       RUN_GRAPH_DIR,
       RUN_GRAPH_LOCATOR_INDEX_DIR,
     );
+    this.dependencies = dependencies;
   }
 
   private runDir(runId: string): string {
@@ -304,8 +400,12 @@ export class RunGraphEventStore {
 
   async appendAccepted(input: RunGraphAcceptedEvent): Promise<void> {
     const event = RunGraphAcceptedEventSchema.parse(input);
-    await withLocatorIndexLease(this.locatorIndexRoot, async () => {
+    const release = await acquireLocatorIndexLease(this.locatorIndexRoot);
+    let journalCommitted = false;
+    let failure: unknown = null;
+    try {
       await mkdir(this.locatorIndexRoot, { recursive: true });
+      await this.recoverPendingLocatorTransaction();
       const eventsDir = join(this.runDir(event.runId), "events");
       await mkdir(eventsDir, { recursive: true });
       const journal = await this.readJournalOrEmpty(event.runId);
@@ -323,6 +423,12 @@ export class RunGraphEventStore {
       if (first?.command.type !== "run_started") {
         throw new Error(`Run Graph の先頭 event が run_started ではありません: ${event.runId}`);
       }
+      const transaction = await this.prepareLocatorTransaction(event, {
+        runId: event.runId,
+        task: first.command.task,
+        updatedAt: event.acceptedAt,
+      });
+      await writeJsonAtomic(this.pendingLocatorTransactionPath(), transaction);
       await rm(this.locatorIndexStatePath(), { force: true });
       const filePath = join(eventsDir, `${String(event.sequence).padStart(12, "0")}.json`);
       try {
@@ -333,12 +439,22 @@ export class RunGraphEventStore {
         }
         throw error;
       }
-      await this.updateRunLocator({
-        runId: event.runId,
-        task: first.command.task,
-        updatedAt: event.acceptedAt,
-      });
-    });
+      journalCommitted = true;
+      await this.dependencies.afterJournalCommit?.();
+      await this.applyPendingLocatorTransaction(transaction);
+    } catch (error) {
+      failure = error;
+      if (!journalCommitted) {
+        await rm(this.pendingLocatorTransactionPath(), { force: true }).catch(() => undefined);
+      }
+    }
+    try {
+      await release();
+    } catch (error) {
+      failure ??= error;
+    }
+    // event segment が確定した後は accepted を正本とし、残った WAL を次回 bounded 修復する。
+    if (failure && !journalCommitted) throw failure;
   }
 
   async appendRejection(input: RunGraphRejection): Promise<void> {
@@ -400,12 +516,20 @@ export class RunGraphEventStore {
     return join(this.locatorIndexRoot, "runs", `${safeSegment(runId)}.json`);
   }
 
+  private eventPath(runId: string, sequence: number): string {
+    return join(this.runDir(runId), "events", `${String(sequence).padStart(12, "0")}.json`);
+  }
+
   private taskLocatorIndexPath(task: RunGraphRunLocator["task"]): string {
     return join(this.locatorIndexRoot, "tasks", `${safeSegment(taskKey(task))}.json`);
   }
 
   private locatorIndexStatePath(): string {
     return join(this.locatorIndexRoot, "state.json");
+  }
+
+  private pendingLocatorTransactionPath(): string {
+    return join(this.locatorIndexRoot, "pending-transaction.json");
   }
 
   private async readJournalLocator(runId: string): Promise<RunGraphRunLocator | null> {
@@ -429,7 +553,10 @@ export class RunGraphEventStore {
     return { runId, task: first.command.task, updatedAt: last.acceptedAt };
   }
 
-  private async updateRunLocator(input: RunGraphRunLocator): Promise<void> {
+  private async prepareLocatorTransaction(
+    event: RunGraphAcceptedEvent,
+    input: RunGraphRunLocator,
+  ): Promise<RunGraphPendingLocatorTransaction> {
     const locator = RunGraphRunLocatorSchema.parse(input);
     const locatorPath = this.locatorPath(locator.runId);
     const previousLocator = await readJsonOptional(locatorPath, RunGraphRunLocatorSchema);
@@ -452,10 +579,64 @@ export class RunGraphEventStore {
       total: (current?.total ?? 0) + (previousLocator ? 0 : 1),
       items,
     });
+    const state = await readJsonOptional(
+      this.locatorIndexStatePath(),
+      RunGraphLocatorIndexStateSchema,
+    );
+    return RunGraphPendingLocatorTransactionSchema.parse({
+      schemaVersion: "1",
+      event: { runId: event.runId, eventId: event.eventId, sequence: event.sequence },
+      locator,
+      taskIndex: index,
+      restoreCompleteState: state !== null,
+    });
+  }
+
+  private async applyPendingLocatorTransaction(
+    input: RunGraphPendingLocatorTransaction,
+  ): Promise<void> {
+    const transaction = RunGraphPendingLocatorTransactionSchema.parse(input);
     await mkdir(join(this.locatorIndexRoot, "runs"), { recursive: true });
     await mkdir(join(this.locatorIndexRoot, "tasks"), { recursive: true });
-    await writeJsonAtomic(locatorPath, locator);
-    await writeJsonAtomic(indexPath, index);
+    await writeJsonAtomic(this.locatorPath(transaction.locator.runId), transaction.locator);
+    await writeJsonAtomic(
+      this.taskLocatorIndexPath(transaction.taskIndex.task),
+      transaction.taskIndex,
+    );
+    if (transaction.restoreCompleteState) {
+      await writeJsonAtomic(
+        this.locatorIndexStatePath(),
+        RunGraphLocatorIndexStateSchema.parse({
+          schemaVersion: "1",
+          rebuiltAt: new Date().toISOString(),
+        }),
+      );
+    }
+    await rm(this.pendingLocatorTransactionPath(), { force: true });
+  }
+
+  private async recoverPendingLocatorTransaction(): Promise<void> {
+    const transaction = await readJsonOptional(
+      this.pendingLocatorTransactionPath(),
+      RunGraphPendingLocatorTransactionSchema,
+    );
+    if (!transaction) return;
+    const event = (await readJsonOptional(
+      this.eventPath(transaction.event.runId, transaction.event.sequence),
+      RunGraphAcceptedEventReadSchema,
+    )) as RunGraphAcceptedEvent | null;
+    if (!event) {
+      await rm(this.pendingLocatorTransactionPath(), { force: true });
+      return;
+    }
+    if (
+      event.runId !== transaction.event.runId ||
+      event.eventId !== transaction.event.eventId ||
+      event.sequence !== transaction.event.sequence
+    ) {
+      throw new Error("Run Graph pending transaction と accepted event が一致しません");
+    }
+    await this.applyPendingLocatorTransaction(transaction);
   }
 
   private async rebuildRunLocatorIndex(): Promise<void> {
@@ -502,6 +683,7 @@ export class RunGraphEventStore {
   /** 旧 journal の locator を server 起動時に再構築し、request path の全 Run 走査を避ける。 */
   async ensureRunLocatorIndex(): Promise<void> {
     await withLocatorIndexLease(this.locatorIndexRoot, async () => {
+      await this.recoverPendingLocatorTransaction();
       const state = await readJsonOptional(
         this.locatorIndexStatePath(),
         RunGraphLocatorIndexStateSchema,
@@ -519,30 +701,33 @@ export class RunGraphEventStore {
     total: number;
     items: RunGraphRunLocator[];
   }> {
-    const limit = Math.min(50, Math.max(1, input.limit));
-    const index = await readJsonOptional(
-      this.taskLocatorIndexPath(input.task),
-      RunGraphTaskLocatorIndexSchema,
-    );
-    if (index && !sameTask(index.task, input.task)) {
-      throw new Error(`Run Graph task locator index が一致しません: ${taskKey(input.task)}`);
-    }
-    let items = (index?.items ?? []).slice(0, limit);
-    if (input.selectedRunId && !items.some((item) => item.runId === input.selectedRunId)) {
-      const selected = await readJsonOptional(
-        this.locatorPath(input.selectedRunId),
-        RunGraphRunLocatorSchema,
+    return withLocatorIndexLease(this.locatorIndexRoot, async () => {
+      await this.recoverPendingLocatorTransaction();
+      const limit = Math.min(50, Math.max(1, input.limit));
+      const index = await readJsonOptional(
+        this.taskLocatorIndexPath(input.task),
+        RunGraphTaskLocatorIndexSchema,
       );
-      if (selected && sameTask(selected.task, input.task)) {
-        if (!index || index.total < 1) {
-          throw new Error(`Run Graph locator index が不完全です: ${taskKey(input.task)}`);
-        }
-        items = [selected, ...items.filter((item) => item.runId !== selected.runId)].slice(
-          0,
-          limit,
-        );
+      if (index && !sameTask(index.task, input.task)) {
+        throw new Error(`Run Graph task locator index が一致しません: ${taskKey(input.task)}`);
       }
-    }
-    return { total: index?.total ?? 0, items };
+      let items = (index?.items ?? []).slice(0, limit);
+      if (input.selectedRunId && !items.some((item) => item.runId === input.selectedRunId)) {
+        const selected = await readJsonOptional(
+          this.locatorPath(input.selectedRunId),
+          RunGraphRunLocatorSchema,
+        );
+        if (selected && sameTask(selected.task, input.task)) {
+          if (!index || index.total < 1) {
+            throw new Error(`Run Graph locator index が不完全です: ${taskKey(input.task)}`);
+          }
+          items = [selected, ...items.filter((item) => item.runId !== selected.runId)].slice(
+            0,
+            limit,
+          );
+        }
+      }
+      return { total: index?.total ?? 0, items };
+    });
   }
 }
