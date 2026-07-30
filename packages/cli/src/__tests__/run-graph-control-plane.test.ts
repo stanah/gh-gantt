@@ -1,8 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { FIXED_DEV_ROLE_GRAPH_CONTRACT } from "@gh-gantt/shared";
+import {
+  FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  GANTT_DIR,
+  RUN_GRAPH_DIR,
+  RUN_GRAPH_RUNS_DIR,
+} from "@gh-gantt/shared";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { GraphContractStore } from "../store/graph-contract.js";
 import { RunGraphEventStore } from "../store/run-graph.js";
@@ -125,6 +130,102 @@ async function startRun(control: RunGraphControlPlane, eventId: string) {
   });
   if (!result.accepted) throw new Error(result.message);
   return result.view.runId;
+}
+
+async function advanceToHumanPr(control: RunGraphControlPlane, runId: string): Promise<void> {
+  await completeCurrentNode({
+    control,
+    runId,
+    role: "planner",
+    outcome: "plan_valid",
+    schemaId: "dev-role.plan",
+    prefix: "legacy-plan",
+  });
+  await completeCurrentNode({
+    control,
+    runId,
+    role: "implementer",
+    outcome: "implementation_valid",
+    schemaId: "dev-role.implementation",
+    prefix: "legacy-implementation",
+  });
+  await completeCurrentNode({
+    control,
+    runId,
+    role: "executor",
+    outcome: "verify_passed",
+    schemaId: "dev-role.verify",
+    prefix: "legacy-verification",
+  });
+  await completeCurrentNode({
+    control,
+    runId,
+    role: "reviewer",
+    outcome: "approve",
+    schemaId: "dev-role.review",
+    prefix: "legacy-review",
+  });
+  const approved = await control.applyEvent({
+    schemaVersion: "1",
+    eventId: "legacy-human-approved",
+    runId,
+    actor: { id: "maintainer-1", role: "human" },
+    command: {
+      type: "human_decision",
+      decision: "approved",
+      reason: null,
+      evidenceIds: ["legacy-human-evidence"],
+    },
+    evidence: [
+      {
+        id: "legacy-human-evidence",
+        kind: "human_decision",
+        artifactIds: [],
+        provenance: "maintainer-1",
+        reference: reference("legacy-human-evidence"),
+      },
+    ],
+  });
+  if (!approved.accepted) throw new Error(approved.message);
+}
+
+async function writeLegacyPrObservedEvent(params: {
+  root: string;
+  runId: string;
+  sequence: number;
+}): Promise<void> {
+  const eventId = "legacy-pr-observed";
+  const runSegment = Buffer.from(params.runId, "utf8").toString("base64url");
+  const eventSegment = Buffer.from(eventId, "utf8").toString("base64url");
+  const eventsDir = join(
+    params.root,
+    GANTT_DIR,
+    RUN_GRAPH_DIR,
+    RUN_GRAPH_RUNS_DIR,
+    runSegment,
+    "events",
+  );
+  await mkdir(eventsDir, { recursive: true });
+  await writeFile(
+    join(eventsDir, `${String(params.sequence).padStart(12, "0")}-${eventSegment}.json`),
+    JSON.stringify({
+      recordType: "accepted",
+      eventId,
+      sequence: params.sequence,
+      runId: params.runId,
+      acceptedAt: "2026-07-30T00:05:00.000Z",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "pr_observed",
+        repository: "stanah/gh-gantt",
+        pullRequestNumber: 334,
+        state: "merged",
+        evidenceIds: ["legacy-pr-evidence"],
+      },
+      artifactIds: [],
+      evidenceIds: ["legacy-pr-evidence"],
+    }),
+  );
 }
 
 describe("[NFR-STABILITY-014-AC2] RunGraphControlPlane は start/applyEvent/inspect に統制を隠す", () => {
@@ -1655,5 +1756,38 @@ describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence 
       accepted: true,
       view: { state: "completed", currentNode: { state: "completed" } },
     });
+  });
+});
+
+describe("[NFR-STABILITY-014-AC7] 旧 PR observation は未証明 linkage として replay する", () => {
+  it("旧 merged event を読んでも Run を completed へ昇格せず、別 Run も start できる", async () => {
+    const { root, control } = await createControlPlane();
+    const runId = await startRun(control, "legacy-run-start");
+    await advanceToHumanPr(control, runId);
+    const beforeLegacyEvent = await control.inspect(runId);
+    expect(beforeLegacyEvent).toMatchObject({
+      state: "running",
+      currentNode: { contractNodeId: "human-pr", state: "running" },
+    });
+    await writeLegacyPrObservedEvent({
+      root,
+      runId,
+      sequence: beforeLegacyEvent.revision + 1,
+    });
+
+    await expect(control.inspect(runId)).resolves.toMatchObject({
+      revision: beforeLegacyEvent.revision + 1,
+      state: "running",
+      currentNode: { contractNodeId: "human-pr", state: "running" },
+    });
+    await expect(
+      control.start({
+        schemaVersion: "1",
+        eventId: "fresh-run-after-legacy-journal",
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 329 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      }),
+    ).resolves.toMatchObject({ accepted: true, view: { state: "running", revision: 1 } });
   });
 });

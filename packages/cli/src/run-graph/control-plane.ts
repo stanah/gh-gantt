@@ -1124,7 +1124,13 @@ export class RunGraphControlPlane {
         continue;
       }
       if (command.type === "pr_observed") {
-        if (command.state === "merged" || command.state === "closed") {
+        const linkedIssue = command.linkedIssue;
+        const hasExactTaskLinkage =
+          linkedIssue !== null &&
+          linkedIssue.owner.toLowerCase() === projection.run.task.owner.toLowerCase() &&
+          linkedIssue.repo.toLowerCase() === projection.run.task.repo.toLowerCase() &&
+          linkedIssue.issueNumber === projection.run.task.issueNumber;
+        if (hasExactTaskLinkage && (command.state === "merged" || command.state === "closed")) {
           projection.run.state = "completed";
           currentNode.state = "completed";
           projection.run.outputArtifactIds.push(

@@ -911,6 +911,33 @@ export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
     }
   });
 
+/**
+ * immutable な旧 schema v1 segment を読むときだけ、追加前の PR observation を
+ * fail-closed な未証明 linkage へ正規化する。新規 append は厳格な write schema を使い続ける。
+ */
+export const RunGraphAcceptedEventReadSchema: z.ZodType<
+  RunGraphAcceptedEvent,
+  z.ZodTypeDef,
+  unknown
+> = z.preprocess((input) => {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return input;
+  const event = input as Record<string, unknown>;
+  const command = event.command;
+  if (!command || typeof command !== "object" || Array.isArray(command)) return input;
+  const commandRecord = command as Record<string, unknown>;
+  if (commandRecord.type !== "pr_observed") return input;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(commandRecord, key);
+  return {
+    ...event,
+    command: {
+      ...commandRecord,
+      isDraft: has("isDraft") ? commandRecord.isDraft : false,
+      linkedIssue: has("linkedIssue") ? commandRecord.linkedIssue : null,
+      linkageComplete: has("linkageComplete") ? commandRecord.linkageComplete : false,
+    },
+  };
+}, RunGraphAcceptedEventSchema);
+
 export const RunGraphRejectionSchema: z.ZodType<RunGraphRejection> = z
   .object({
     recordType: z.literal("rejected"),

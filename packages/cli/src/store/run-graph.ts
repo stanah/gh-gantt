@@ -4,6 +4,7 @@ import {
   GANTT_DIR,
   RUN_GRAPH_DIR,
   RUN_GRAPH_RUNS_DIR,
+  RunGraphAcceptedEventReadSchema,
   RunGraphAcceptedEventSchema,
   RunGraphJournalSchema,
   RunGraphRejectionSchema,
@@ -94,7 +95,7 @@ export class RunGraphEventStore {
     const runDir = this.runDir(runId);
     const acceptedEvents = await Promise.all(
       (await listJsonFiles(join(runDir, "events"))).map(async (name) =>
-        RunGraphAcceptedEventSchema.parse(
+        RunGraphAcceptedEventReadSchema.parse(
           JSON.parse(await readFile(join(runDir, "events", name), "utf8")),
         ),
       ),

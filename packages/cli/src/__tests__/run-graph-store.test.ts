@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  GANTT_DIR,
+  RUN_GRAPH_DIR,
+  RUN_GRAPH_RUNS_DIR,
   type RunGraphAcceptedEvent,
   type RunGraphRejection,
 } from "@gh-gantt/shared";
@@ -96,5 +99,57 @@ describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segm
       }),
     ).rejects.toThrow(/sequence/i);
     expect((await store.readJournal(startEvent.runId)).acceptedEvents).toHaveLength(1);
+  });
+
+  it("旧 schema v1 の pr_observed accepted event を不変のまま安全な未証明 linkage へ read migration する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEvent);
+    const runSegment = Buffer.from(startEvent.runId, "utf8").toString("base64url");
+    const eventId = "legacy-pr-observed";
+    const eventSegment = Buffer.from(eventId, "utf8").toString("base64url");
+    const eventsDir = join(
+      root,
+      GANTT_DIR,
+      RUN_GRAPH_DIR,
+      RUN_GRAPH_RUNS_DIR,
+      runSegment,
+      "events",
+    );
+    await mkdir(eventsDir, { recursive: true });
+    await writeFile(
+      join(eventsDir, `000000000002-${eventSegment}.json`),
+      JSON.stringify({
+        recordType: "accepted",
+        eventId,
+        sequence: 2,
+        runId: startEvent.runId,
+        acceptedAt: "2026-07-30T00:01:00.000Z",
+        actor,
+        command: {
+          type: "pr_observed",
+          repository: "stanah/gh-gantt",
+          pullRequestNumber: 334,
+          state: "merged",
+          evidenceIds: ["legacy-pr-evidence"],
+        },
+        artifactIds: [],
+        evidenceIds: ["legacy-pr-evidence"],
+      }),
+    );
+
+    await expect(store.readJournal(startEvent.runId)).resolves.toMatchObject({
+      acceptedEvents: [
+        {},
+        {
+          command: {
+            type: "pr_observed",
+            isDraft: false,
+            linkedIssue: null,
+            linkageComplete: false,
+          },
+        },
+      ],
+    });
   });
 });
