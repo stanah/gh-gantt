@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
+import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Config, Task } from "@gh-gantt/shared";
 import {
@@ -74,7 +73,7 @@ export function applyTaskUpdate(
   if (opts.title) updated.title = opts.title;
   if (opts.body !== undefined) updated.body = opts.body;
   if (opts.type) {
-    // Remove old type's github_label, add new type's github_label
+    // 旧typeのgithub_labelを除去し、新typeのgithub_labelを追加する
     const oldTypeDef = config.task_types[task.type];
     const newTypeDef = config.task_types[opts.type];
     if (oldTypeDef?.github_label) {
@@ -363,117 +362,123 @@ export function createTaskUpdateCommand(): Command {
     .action(async (id: string | undefined, opts) => {
       try {
         const projectRoot = process.cwd();
-        const configStore = new ConfigStore(projectRoot);
-        const tasksStore = new TasksStore(projectRoot);
+        await withProjectStorage(
+          projectRoot,
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const tasksFile = await tasksStore.read();
 
-        const config = await configStore.read();
-        const tasksFile = await tasksStore.read();
+            const updateOpts: TaskUpdateOptions = {
+              title: opts.title,
+              body: opts.body,
+              type: opts.type,
+              state: opts.state,
+              status: opts.status,
+              priority: opts.priority,
+              startDate: opts.startDate,
+              endDate: opts.endDate,
+              assignee: opts.assignee,
+              removeAssignee: opts.removeAssignee,
+              assignImplementer: opts.assignImplementer,
+              assignReviewer: opts.assignReviewer,
+              requireReview: opts.requireReview,
+              approveReview: opts.approveReview,
+              clearReviewApproval: opts.clearReviewApproval,
+              evidence: undefined,
+              milestone: opts.milestone,
+              label: opts.label,
+              removeLabel: opts.removeLabel,
+            };
 
-        const updateOpts: TaskUpdateOptions = {
-          title: opts.title,
-          body: opts.body,
-          type: opts.type,
-          state: opts.state,
-          status: opts.status,
-          priority: opts.priority,
-          startDate: opts.startDate,
-          endDate: opts.endDate,
-          assignee: opts.assignee,
-          removeAssignee: opts.removeAssignee,
-          assignImplementer: opts.assignImplementer,
-          assignReviewer: opts.assignReviewer,
-          requireReview: opts.requireReview,
-          approveReview: opts.approveReview,
-          clearReviewApproval: opts.clearReviewApproval,
-          evidence: undefined,
-          milestone: opts.milestone,
-          label: opts.label,
-          removeLabel: opts.removeLabel,
-        };
+            if (id) {
+              // 単一taskを更新する
+              const resolvedId = resolveTaskId(id, config);
+              const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
 
-        if (id) {
-          // Single task update
-          const resolvedId = resolveTaskId(id, config);
-          const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
+              if (taskIndex === -1) {
+                console.error(`Task not found: ${resolvedId}`);
+                process.exitCode = 1;
+                return;
+              }
 
-          if (taskIndex === -1) {
-            console.error(`Task not found: ${resolvedId}`);
-            process.exitCode = 1;
-            return;
-          }
+              const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
 
-          const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
+              if (result.error) {
+                console.error(result.error);
+                process.exitCode = 1;
+                return;
+              }
 
-          if (result.error) {
-            console.error(result.error);
-            process.exitCode = 1;
-            return;
-          }
+              tasksFile.tasks[taskIndex] = result.task;
+              await tasksStore.write(tasksFile);
+              await storage.flush();
 
-          tasksFile.tasks[taskIndex] = result.task;
-          await tasksStore.write(tasksFile);
+              if (opts.json) {
+                console.log(JSON.stringify(result.task, null, 2));
+              } else {
+                console.log(`Updated task: ${resolvedId}`);
+              }
+            } else {
+              // 複数taskを一括更新する
+              const filters: BulkFilterOptions = {
+                filterState: opts.filterState,
+                filterType: opts.filterType,
+                filterMilestone: opts.filterMilestone,
+                filterLabel: opts.filterLabel,
+              };
 
-          if (opts.json) {
-            console.log(JSON.stringify(result.task, null, 2));
-          } else {
-            console.log(`Updated task: ${resolvedId}`);
-          }
-        } else {
-          // Bulk update
-          const filters: BulkFilterOptions = {
-            filterState: opts.filterState,
-            filterType: opts.filterType,
-            filterMilestone: opts.filterMilestone,
-            filterLabel: opts.filterLabel,
-          };
+              const hasFilter =
+                filters.filterState ||
+                filters.filterType ||
+                filters.filterMilestone ||
+                filters.filterLabel;
+              if (!hasFilter) {
+                console.error("Bulk update requires at least one --filter-* option.");
+                process.exitCode = 1;
+                return;
+              }
 
-          const hasFilter =
-            filters.filterState ||
-            filters.filterType ||
-            filters.filterMilestone ||
-            filters.filterLabel;
-          if (!hasFilter) {
-            console.error("Bulk update requires at least one --filter-* option.");
-            process.exitCode = 1;
-            return;
-          }
+              const matched = filterTasksForUpdate(tasksFile.tasks, filters);
+              if (matched.length === 0) {
+                console.log("No tasks matched the filters.");
+                return;
+              }
 
-          const matched = filterTasksForUpdate(tasksFile.tasks, filters);
-          if (matched.length === 0) {
-            console.log("No tasks matched the filters.");
-            return;
-          }
+              const updatedTasks: Task[] = [];
+              for (const task of matched) {
+                const idx = tasksFile.tasks.findIndex((t) => t.id === task.id);
+                const result = applyTaskUpdate(tasksFile.tasks[idx], updateOpts, config);
+                if (result.error) {
+                  console.error(`Error updating ${task.id}: ${result.error}`);
+                  continue;
+                }
+                tasksFile.tasks[idx] = result.task;
+                updatedTasks.push(result.task);
+              }
 
-          const updatedTasks: Task[] = [];
-          for (const task of matched) {
-            const idx = tasksFile.tasks.findIndex((t) => t.id === task.id);
-            const result = applyTaskUpdate(tasksFile.tasks[idx], updateOpts, config);
-            if (result.error) {
-              console.error(`Error updating ${task.id}: ${result.error}`);
-              continue;
+              if (updatedTasks.length === 0) {
+                console.error("All matched tasks failed to update.");
+                process.exitCode = 1;
+                return;
+              }
+
+              await tasksStore.write(tasksFile);
+              await storage.flush();
+
+              if (opts.json) {
+                console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
+              } else {
+                console.log(`Updated ${updatedTasks.length} task(s).`);
+                for (const t of updatedTasks) {
+                  const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
+                  console.log(`  ${shortId}: ${t.title}`);
+                }
+              }
             }
-            tasksFile.tasks[idx] = result.task;
-            updatedTasks.push(result.task);
-          }
-
-          if (updatedTasks.length === 0) {
-            console.error("All matched tasks failed to update.");
-            process.exitCode = 1;
-            return;
-          }
-
-          await tasksStore.write(tasksFile);
-
-          if (opts.json) {
-            console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
-          } else {
-            console.log(`Updated ${updatedTasks.length} task(s).`);
-            for (const t of updatedTasks) {
-              const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
-              console.log(`  ${shortId}: ${t.title}`);
-            }
-          }
-        }
+          },
+        );
       } catch (err) {
         console.error("Failed to update task:", err instanceof Error ? err.message : String(err));
         process.exitCode = 1;

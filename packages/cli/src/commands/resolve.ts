@@ -1,9 +1,8 @@
 import { Command } from "commander";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
 import { ConfigStore } from "../store/config.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import {
   applyConflictPolicy,
   detectMarkers,
@@ -41,7 +40,7 @@ export function resolveAll(
   for (const task of tasks) {
     const id = task.id as string;
 
-    // Filter by issue number if specified
+    // 指定された場合はIssue番号で絞り込む
     if (filterIssue !== undefined) {
       const issueNum = extractIssueNumber(id);
       if (issueNum !== filterIssue) continue;
@@ -51,11 +50,11 @@ export function resolveAll(
     if (markers.length === 0) continue;
 
     for (const marker of markers) {
-      // Filter by field if specified
+      // 指定された場合はfieldで絞り込む
       if (filterField !== undefined && marker.field !== filterField) continue;
       resolveMarker(task, marker.field, choice);
 
-      // Track fields resolved with "theirs"
+      // "theirs"で解決したfieldを記録する
       if (choice === "theirs") {
         if (!theirsResolutions.has(id)) {
           theirsResolutions.set(id, new Set());
@@ -130,168 +129,173 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
       }
 
       const projectRoot = dependencies.projectRoot?.() ?? process.cwd();
-      const tasksStore = new TasksStore(projectRoot);
-      const stateStore = new SyncStateStore(projectRoot);
+      return withProjectStorage(
+        projectRoot,
+        { mode: "write", scope: "shared-cache" },
+        async (storage) => {
+          const { tasksStore, stateStore } = storage;
+          const tasksFile = await tasksStore.read();
+          const syncState = await stateStore.read();
 
-      const tasksFile = await tasksStore.read();
-      const syncState = await stateStore.read();
+          const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
 
-      const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
+          const theirsResolutionFields = new Map<string, Set<string>>();
+          const snapshotTargetTaskIds = new Set<string>();
 
-      const theirsResolutionFields = new Map<string, Set<string>>();
-      const snapshotTargetTaskIds = new Set<string>();
-
-      // 開始時に marker を持ち、Issue filter に一致する task だけを更新対象として固定する。
-      for (const task of tasks) {
-        const id = task.id as string;
-        const markers = detectMarkers(task);
-        const matchesIssue = issue === undefined || extractIssueNumber(id) === issue;
-        if (markers.length > 0 && matchesIssue) {
-          snapshotTargetTaskIds.add(id);
-        }
-      }
-
-      if (opts?.auto) {
-        const config = await new ConfigStore(projectRoot).read();
-        const legacyStrategy = (config.sync as unknown as Record<string, unknown>)[
-          "conflict_strategy"
-        ];
-        if (legacyStrategy !== undefined) {
-          console.warn(
-            "WARNING: sync.conflict_strategy は deprecated であり resolve --auto では無視されます。sync.conflict_policy にフィールド単位の ours / theirs / manual を設定してください。",
-          );
-        }
-        const policyResolutions = resolveAllByPolicy(
-          tasks,
-          config.sync.conflict_policy ?? {},
-          issue,
-          opts.field,
-        );
-        for (const [id, resolution] of policyResolutions) {
-          theirsResolutionFields.set(id, resolution.theirs);
-        }
-      } else if (opts?.ours || opts?.theirs) {
-        // Batch mode
-        const choice = opts.ours ? "ours" : "theirs";
-        const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
-
-        // snapshot baseline を進める theirs フィールドを記録する
-        for (const [id, fields] of batchResolutions) {
-          theirsResolutionFields.set(id, fields);
-        }
-      } else {
-        // Interactive mode
-        const rl = readline.createInterface({ input, output });
-
-        try {
+          // 開始時に marker を持ち、Issue filter に一致する task だけを更新対象として固定する。
           for (const task of tasks) {
             const id = task.id as string;
-
-            if (issue !== undefined) {
-              const issueNum = extractIssueNumber(id);
-              if (issueNum !== issue) continue;
-            }
-
             const markers = detectMarkers(task);
-            if (markers.length === 0) continue;
-
-            const title = task.title as string;
-            const issueNum = extractIssueNumber(id);
-            console.log(`\n#${issueNum}: ${title}`);
-
-            for (const marker of markers) {
-              if (opts?.field !== undefined && marker.field !== opts.field) continue;
-
-              console.log(`  ${marker.field}:`);
-              console.log(`    [o]urs   = ${formatValue(marker.current)}`);
-              console.log(`    [t]heirs = ${formatValue(marker.incoming)}`);
-
-              let answer = "";
-              while (answer !== "o" && answer !== "t") {
-                answer = (await rl.question("  Choose [o/t]: ")).trim().toLowerCase();
-              }
-
-              const choice = answer === "o" ? "ours" : "theirs";
-              resolveMarker(task, marker.field, choice);
-
-              // Track fields resolved with "theirs"
-              if (choice === "theirs") {
-                const fields = theirsResolutionFields.get(id) ?? new Set<string>();
-                fields.add(marker.field);
-                theirsResolutionFields.set(id, fields);
-              }
+            const matchesIssue = issue === undefined || extractIssueNumber(id) === issue;
+            if (markers.length > 0 && matchesIssue) {
+              snapshotTargetTaskIds.add(id);
             }
           }
-        } finally {
-          rl.close();
-        }
-      }
 
-      // Update snapshots for fully resolved tasks
-      for (const task of tasks) {
-        const id = task.id as string;
-        if (!snapshotTargetTaskIds.has(id)) continue;
-        if (hasUnresolvedMarkers(task)) continue;
+          if (opts?.auto) {
+            const config = await new ConfigStore(projectRoot).read();
+            const legacyStrategy = (config.sync as unknown as Record<string, unknown>)[
+              "conflict_strategy"
+            ];
+            if (legacyStrategy !== undefined) {
+              console.warn(
+                "WARNING: sync.conflict_strategy は deprecated であり resolve --auto では無視されます。sync.conflict_policy にフィールド単位の ours / theirs / manual を設定してください。",
+              );
+            }
+            const policyResolutions = resolveAllByPolicy(
+              tasks,
+              config.sync.conflict_policy ?? {},
+              issue,
+              opts.field,
+            );
+            for (const [id, resolution] of policyResolutions) {
+              theirsResolutionFields.set(id, resolution.theirs);
+            }
+          } else if (opts?.ours || opts?.theirs) {
+            // 一括解決mode
+            const choice = opts.ours ? "ours" : "theirs";
+            const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
 
-        // Skip draft tasks (no issue number)
-        if (!id.includes("#")) continue;
+            // snapshot baseline を進める theirs フィールドを記録する
+            for (const [id, fields] of batchResolutions) {
+              theirsResolutionFields.set(id, fields);
+            }
+          } else {
+            // 対話解決mode
+            const rl = readline.createInterface({ input, output });
 
-        try {
-          const existing = syncState.snapshots[id];
-          if (!existing) continue;
+            try {
+              for (const task of tasks) {
+                const id = task.id as string;
 
-          const taskTyped = task as unknown as Task;
-          const resolvedTaskSyncFields = extractSyncFields(taskTyped);
-          const resolvedTaskHash = hashTask(taskTyped);
+                if (issue !== undefined) {
+                  const issueNum = extractIssueNumber(id);
+                  if (issueNum !== issue) continue;
+                }
 
-          if (existing.remoteHash && resolvedTaskHash === existing.remoteHash) {
-            // task 全体が remote と一致するときだけ snapshot 全体を remote へ進める。
-            syncState.snapshots[id] = {
-              ...existing,
-              hash: existing.remoteHash,
-              syncFields: resolvedTaskSyncFields,
-            };
-            continue;
+                const markers = detectMarkers(task);
+                if (markers.length === 0) continue;
+
+                const title = task.title as string;
+                const issueNum = extractIssueNumber(id);
+                console.log(`\n#${issueNum}: ${title}`);
+
+                for (const marker of markers) {
+                  if (opts?.field !== undefined && marker.field !== opts.field) continue;
+
+                  console.log(`  ${marker.field}:`);
+                  console.log(`    [o]urs   = ${formatValue(marker.current)}`);
+                  console.log(`    [t]heirs = ${formatValue(marker.incoming)}`);
+
+                  let answer = "";
+                  while (answer !== "o" && answer !== "t") {
+                    answer = (await rl.question("  Choose [o/t]: ")).trim().toLowerCase();
+                  }
+
+                  const choice = answer === "o" ? "ours" : "theirs";
+                  resolveMarker(task, marker.field, choice);
+
+                  // "theirs"で解決したfieldを記録する
+                  if (choice === "theirs") {
+                    const fields = theirsResolutionFields.get(id) ?? new Set<string>();
+                    fields.add(marker.field);
+                    theirsResolutionFields.set(id, fields);
+                  }
+                }
+              }
+            } finally {
+              rl.close();
+            }
           }
 
-          const conservativeSyncFields = advanceSnapshotBaseline(
-            existing.syncFields,
-            resolvedTaskSyncFields,
-            theirsResolutionFields.get(id) ?? new Set(),
-          );
-          if (conservativeSyncFields) {
-            // baseline を進める場合は hash と syncFields を必ず同じ内容に揃える。
-            syncState.snapshots[id] = {
-              ...existing,
-              hash: hashSyncFields(conservativeSyncFields),
-              syncFields: conservativeSyncFields,
-            };
+          // 完全に解決済みのtaskについてsnapshotを更新する
+          for (const task of tasks) {
+            const id = task.id as string;
+            if (!snapshotTargetTaskIds.has(id)) continue;
+            if (hasUnresolvedMarkers(task)) continue;
+
+            // Issue番号を持たないdraft taskは除外する
+            if (!id.includes("#")) continue;
+
+            try {
+              const existing = syncState.snapshots[id];
+              if (!existing) continue;
+
+              const taskTyped = task as unknown as Task;
+              const resolvedTaskSyncFields = extractSyncFields(taskTyped);
+              const resolvedTaskHash = hashTask(taskTyped);
+
+              if (existing.remoteHash && resolvedTaskHash === existing.remoteHash) {
+                // task 全体が remote と一致するときだけ snapshot 全体を remote へ進める。
+                syncState.snapshots[id] = {
+                  ...existing,
+                  hash: existing.remoteHash,
+                  syncFields: resolvedTaskSyncFields,
+                };
+                continue;
+              }
+
+              const conservativeSyncFields = advanceSnapshotBaseline(
+                existing.syncFields,
+                resolvedTaskSyncFields,
+                theirsResolutionFields.get(id) ?? new Set(),
+              );
+              if (conservativeSyncFields) {
+                // baseline を進める場合は hash と syncFields を必ず同じ内容に揃える。
+                syncState.snapshots[id] = {
+                  ...existing,
+                  hash: hashSyncFields(conservativeSyncFields),
+                  syncFields: conservativeSyncFields,
+                };
+              }
+            } catch {
+              // conflict解決後のfield欠損などでhashを計算できないtaskは
+              // snapshot更新を行わない
+            }
           }
-        } catch {
-          // If task can't be hashed (e.g. missing fields after conflict resolution),
-          // skip snapshot update
-        }
-      }
 
-      // Update global has_conflicts flag
-      const anyConflicts = tasks.some((t) => hasUnresolvedMarkers(t));
-      if (anyConflicts) {
-        (tasksFile as unknown as Record<string, unknown>).has_conflicts = true;
-      } else {
-        delete (tasksFile as unknown as Record<string, unknown>).has_conflicts;
-      }
+          // 全体のhas_conflicts flagを更新する
+          const anyConflicts = tasks.some((t) => hasUnresolvedMarkers(t));
+          if (anyConflicts) {
+            (tasksFile as unknown as Record<string, unknown>).has_conflicts = true;
+          } else {
+            delete (tasksFile as unknown as Record<string, unknown>).has_conflicts;
+          }
 
-      await tasksStore.write(tasksFile);
-      await stateStore.write(syncState);
+          await tasksStore.write(tasksFile);
+          await stateStore.write(syncState);
+          await storage.flush();
 
-      // Print remaining conflicts or success
-      if (opts?.json) {
-        const json = buildConflictJson(tasks, syncState.snapshots, issue);
-        console.log(JSON.stringify(json, null, 2));
-      } else {
-        const remaining = formatConflictList(tasks, syncState.snapshots, issue);
-        console.log(remaining);
-      }
+          // 残りのconflictまたは成功結果を出力する
+          if (opts?.json) {
+            const json = buildConflictJson(tasks, syncState.snapshots, issue);
+            console.log(JSON.stringify(json, null, 2));
+          } else {
+            const remaining = formatConflictList(tasks, syncState.snapshots, issue);
+            console.log(remaining);
+          }
+        },
+      );
     });
 }
 

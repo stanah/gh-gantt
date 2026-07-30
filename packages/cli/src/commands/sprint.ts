@@ -1,9 +1,9 @@
 import { Command } from "commander";
 import Table from "cli-table3";
 import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
-import type { Config, SprintConfig, Task, TasksFile } from "@gh-gantt/shared";
+import type { Config, SprintConfig, Task } from "@gh-gantt/shared";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const HEX_COLOR_RE = /^#[0-9a-fA-F]{6}$/;
@@ -251,18 +251,6 @@ async function readConfig(): Promise<{ store: ConfigStore; config: Config }> {
   return { store, config };
 }
 
-async function readProject(): Promise<{
-  config: Config;
-  tasksStore: TasksStore;
-  tasksFile: TasksFile;
-}> {
-  const projectRoot = process.cwd();
-  const config = await new ConfigStore(projectRoot).read();
-  const tasksStore = new TasksStore(projectRoot);
-  const tasksFile = await tasksStore.read();
-  return { config, tasksStore, tasksFile };
-}
-
 function shortTaskId(task: Task): string {
   return task.id.includes("#") ? task.id.split("#")[1]! : task.id;
 }
@@ -399,22 +387,40 @@ export function createSprintCommand(): Command {
     .option("--json", "Output updated tasks as JSON")
     .action(async (sprintName: string, taskIds: string[], opts) => {
       try {
-        const { config, tasksStore, tasksFile } = await readProject();
-        const resolvedTaskIds = taskIds.map((id) => resolveTaskId(id, config));
-        const result = assignTasksToSprint(config, tasksFile.tasks, sprintName, resolvedTaskIds);
-        if (result.error || !result.sprint || !result.updated) {
-          fail(result.error ?? "Failed to assign tasks to sprint.");
-          return;
-        }
-        await tasksStore.write({ ...tasksFile, tasks: result.tasks });
-        if (opts.json) {
-          console.log(JSON.stringify({ sprint: result.sprint, updated: result.updated }, null, 2));
-        } else {
-          console.log(`Assigned ${result.updated.length} task(s) to sprint: ${result.sprint.name}`);
-          for (const task of result.updated) {
-            console.log(`  ${shortTaskId(task)}: ${task.title}`);
-          }
-        }
+        await withProjectStorage(
+          process.cwd(),
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const tasksFile = await tasksStore.read();
+            const resolvedTaskIds = taskIds.map((id) => resolveTaskId(id, config));
+            const result = assignTasksToSprint(
+              config,
+              tasksFile.tasks,
+              sprintName,
+              resolvedTaskIds,
+            );
+            if (result.error || !result.sprint || !result.updated) {
+              fail(result.error ?? "Failed to assign tasks to sprint.");
+              return;
+            }
+            await tasksStore.write({ ...tasksFile, tasks: result.tasks });
+            await storage.flush();
+            if (opts.json) {
+              console.log(
+                JSON.stringify({ sprint: result.sprint, updated: result.updated }, null, 2),
+              );
+            } else {
+              console.log(
+                `Assigned ${result.updated.length} task(s) to sprint: ${result.sprint.name}`,
+              );
+              for (const task of result.updated) {
+                console.log(`  ${shortTaskId(task)}: ${task.title}`);
+              }
+            }
+          },
+        );
       } catch (err) {
         fail(`Failed to assign sprint: ${err instanceof Error ? err.message : String(err)}`);
       }
@@ -428,27 +434,40 @@ export function createSprintCommand(): Command {
     .option("--json", "Output carried-over tasks as JSON")
     .action(async (fromName: string, toName: string, opts) => {
       try {
-        const { config, tasksStore, tasksFile } = await readProject();
-        const result = carryOverSprintTasks(config, tasksFile.tasks, fromName, toName);
-        if (result.error || !result.from || !result.to || !result.updated) {
-          fail(result.error ?? "Failed to carry over sprint tasks.");
-          return;
-        }
-        await tasksStore.write({ ...tasksFile, tasks: result.tasks });
-        if (opts.json) {
-          console.log(
-            JSON.stringify({ from: result.from, to: result.to, updated: result.updated }, null, 2),
-          );
-        } else if (result.updated.length === 0) {
-          console.log(`No unfinished tasks found in sprint: ${result.from.name}`);
-        } else {
-          console.log(
-            `Carried over ${result.updated.length} task(s): ${result.from.name} → ${result.to.name}`,
-          );
-          for (const task of result.updated) {
-            console.log(`  ${shortTaskId(task)}: ${task.title}`);
-          }
-        }
+        await withProjectStorage(
+          process.cwd(),
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const tasksFile = await tasksStore.read();
+            const result = carryOverSprintTasks(config, tasksFile.tasks, fromName, toName);
+            if (result.error || !result.from || !result.to || !result.updated) {
+              fail(result.error ?? "Failed to carry over sprint tasks.");
+              return;
+            }
+            await tasksStore.write({ ...tasksFile, tasks: result.tasks });
+            await storage.flush();
+            if (opts.json) {
+              console.log(
+                JSON.stringify(
+                  { from: result.from, to: result.to, updated: result.updated },
+                  null,
+                  2,
+                ),
+              );
+            } else if (result.updated.length === 0) {
+              console.log(`No unfinished tasks found in sprint: ${result.from.name}`);
+            } else {
+              console.log(
+                `Carried over ${result.updated.length} task(s): ${result.from.name} → ${result.to.name}`,
+              );
+              for (const task of result.updated) {
+                console.log(`  ${shortTaskId(task)}: ${task.title}`);
+              }
+            }
+          },
+        );
       } catch (err) {
         fail(`Failed to carry over sprint: ${err instanceof Error ? err.message : String(err)}`);
       }

@@ -54,6 +54,12 @@ resume command は `not_started` / `committed` / `reconciled` / `unknown` の si
 Issue #328 は single writer の固定 dev-role profile だけを実装する。parallel claim / lease / join と
 multi-process compare-and-append は #329、動的 plan version は #331 で追加する。
 
+ADR-023 / Issue #299 が導入する read/write 共通の exclusive repository lease と atomic snapshot-set は、GitHub が正本の
+Work Graph Cache (`tasks.json`, `sync-state.json`, `comments.json`) だけを対象とする。Graph Contract と
+Run Graph event journal は #299 では移動せず、`<workspace>/.gantt-sync/run-graph/` に残す。Run Graph の
+repository共有は、#329 の entity version、claim、lease、multi-process compare-and-append が実装・検証された
+後に、accepted event lineage を維持する別の意思決定として扱う。
+
 ## Alternatives
 
 ### loop-state.json を Run Graph snapshot へ拡張する

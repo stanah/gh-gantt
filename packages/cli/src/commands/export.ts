@@ -8,8 +8,7 @@ import {
   type GanttExportScope,
   type ViewScale,
 } from "@gh-gantt/shared";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
+import { withProjectStorage } from "../store/project-storage.js";
 
 export interface PngRenderInput {
   svg: string;
@@ -97,34 +96,40 @@ export async function runExportCommand(
   options: ExportCommandOptions,
   deps: ExportCommandDeps = {},
 ): Promise<void> {
-  const config = await new ConfigStore(projectRoot).read();
-  const tasksFile = await new TasksStore(projectRoot).read();
-  const format = normalizeFormat(options.format);
-  const scope = normalizeScope(options.scope);
-  const viewScale = normalizeScale(options.scale, config.gantt.default_view);
-  const outputPath = resolve(projectRoot, options.output ?? `gh-gantt-export.${format}`);
-  const rendered = renderGanttExportSvg({
-    nodes: buildExportTaskNodes(tasksFile.tasks),
-    config,
-    scope,
-    viewScale,
-  });
+  return withProjectStorage(
+    projectRoot,
+    { mode: "read", scope: "shared-cache" },
+    async ({ configStore, tasksStore }) => {
+      const config = await configStore.read();
+      const tasksFile = await tasksStore.read();
+      const format = normalizeFormat(options.format);
+      const scope = normalizeScope(options.scope);
+      const viewScale = normalizeScale(options.scale, config.gantt.default_view);
+      const outputPath = resolve(projectRoot, options.output ?? `gh-gantt-export.${format}`);
+      const rendered = renderGanttExportSvg({
+        nodes: buildExportTaskNodes(tasksFile.tasks),
+        config,
+        scope,
+        viewScale,
+      });
 
-  await mkdir(dirname(outputPath), { recursive: true });
-  if (format === "svg") {
-    await writeFile(outputPath, rendered.svg);
-  } else {
-    const pngRenderer = deps.pngRenderer ?? renderPngWithPlaywright;
-    const png = await pngRenderer({
-      svg: rendered.svg,
-      width: rendered.width,
-      height: rendered.height,
-      scaleFactor: options.highResolution ? 2 : 1,
-    });
-    await writeFile(outputPath, png);
-  }
+      await mkdir(dirname(outputPath), { recursive: true });
+      if (format === "svg") {
+        await writeFile(outputPath, rendered.svg);
+      } else {
+        const pngRenderer = deps.pngRenderer ?? renderPngWithPlaywright;
+        const png = await pngRenderer({
+          svg: rendered.svg,
+          width: rendered.width,
+          height: rendered.height,
+          scaleFactor: options.highResolution ? 2 : 1,
+        });
+        await writeFile(outputPath, png);
+      }
 
-  console.log(`Exported ${format.toUpperCase()} to ${outputPath}`);
+      console.log(`Exported ${format.toUpperCase()} to ${outputPath}`);
+    },
+  );
 }
 
 export function createExportCommand(): Command {

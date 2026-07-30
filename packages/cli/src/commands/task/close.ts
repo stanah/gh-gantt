@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
+import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { applyTaskUpdate, type TaskUpdateOptions } from "./update.js";
 
@@ -14,45 +13,50 @@ export function createTaskCloseCommand(): Command {
     .action(async (id: string, opts) => {
       try {
         const projectRoot = process.cwd();
-        const configStore = new ConfigStore(projectRoot);
-        const tasksStore = new TasksStore(projectRoot);
+        await withProjectStorage(
+          projectRoot,
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const tasksFile = await tasksStore.read();
+            const resolvedId = resolveTaskId(id, config);
+            const taskIndex = tasksFile.tasks.findIndex((task) => task.id === resolvedId);
 
-        const config = await configStore.read();
-        const tasksFile = await tasksStore.read();
-        const resolvedId = resolveTaskId(id, config);
-        const taskIndex = tasksFile.tasks.findIndex((task) => task.id === resolvedId);
+            if (taskIndex === -1) {
+              console.error(`Task not found: ${resolvedId}`);
+              process.exitCode = 1;
+              return;
+            }
 
-        if (taskIndex === -1) {
-          console.error(`Task not found: ${resolvedId}`);
-          process.exitCode = 1;
-          return;
-        }
+            const updateOpts: TaskUpdateOptions = {
+              state: "closed",
+              approveReview: opts.approveReview,
+              evidence: opts.evidence,
+            };
+            const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
+            if (result.error) {
+              console.error(result.error);
+              process.exitCode = 1;
+              return;
+            }
 
-        const updateOpts: TaskUpdateOptions = {
-          state: "closed",
-          approveReview: opts.approveReview,
-          evidence: opts.evidence,
-        };
-        const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
-        if (result.error) {
-          console.error(result.error);
-          process.exitCode = 1;
-          return;
-        }
+            tasksFile.tasks[taskIndex] = result.task;
+            await tasksStore.write(tasksFile);
+            await storage.flush();
 
-        tasksFile.tasks[taskIndex] = result.task;
-        await tasksStore.write(tasksFile);
+            const evidence = typeof opts.evidence === "string" ? opts.evidence.trim() : "";
+            if (evidence.length === 0 && config.require_close_evidence !== true) {
+              console.warn('Warning: closing without evidence. Use --evidence "<summary>".');
+            }
 
-        const evidence = typeof opts.evidence === "string" ? opts.evidence.trim() : "";
-        if (evidence.length === 0 && config.require_close_evidence !== true) {
-          console.warn('Warning: closing without evidence. Use --evidence "<summary>".');
-        }
-
-        if (opts.json) {
-          console.log(JSON.stringify(result.task, null, 2));
-        } else {
-          console.log(`Closed task: ${resolvedId}`);
-        }
+            if (opts.json) {
+              console.log(JSON.stringify(result.task, null, 2));
+            } else {
+              console.log(`Closed task: ${resolvedId}`);
+            }
+          },
+        );
       } catch (err) {
         console.error("Failed to close task:", err instanceof Error ? err.message : String(err));
         process.exitCode = 1;

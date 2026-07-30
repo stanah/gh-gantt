@@ -13,9 +13,8 @@ import {
   type RunGraphPrObservation,
 } from "../loop/pr-evidence.js";
 import { RunGraphControlPlane, type RunGraphCommandResult } from "../run-graph/control-plane.js";
-import { ConfigStore } from "../store/config.js";
 import { GraphContractStore } from "../store/graph-contract.js";
-import { TasksStore } from "../store/tasks.js";
+import { withProjectStorage } from "../store/project-storage.js";
 
 const SIDE_EFFECT_STATES = ["not_started", "committed", "reconciled", "unknown"] as const;
 const HUMAN_DECISIONS = ["approved", "rejected", "override"] as const;
@@ -163,66 +162,72 @@ async function startRun(
   projectRoot: string,
   options: { issue: string; eventId: string; actor: string },
 ): Promise<RunGraphCommandResult> {
-  const issueNumber = parsePositiveInteger(options.issue, "--issue");
-  const eventId = parseRequiredText(options.eventId, "--event-id");
-  const actorId = parseRequiredText(options.actor, "--actor");
-  const config = await new ConfigStore(projectRoot).read();
-  const binding = config.run_graph;
-  if (!binding) {
-    throw new RunCommandError(
-      "unsupported_contract_binding",
-      "repository config に run_graph binding がありません",
-    );
-  }
-  const expected = {
-    plan_id: FIXED_DEV_ROLE_GRAPH_CONTRACT.planId,
-    plan_version: FIXED_DEV_ROLE_GRAPH_CONTRACT.planVersion,
-    schema_version: FIXED_DEV_ROLE_GRAPH_CONTRACT.schemaVersion,
-  };
-  if (
-    binding.plan_id !== expected.plan_id ||
-    binding.plan_version !== expected.plan_version ||
-    binding.schema_version !== expected.schema_version
-  ) {
-    throw new RunCommandError(
-      "unsupported_contract_binding",
-      "repository config は fixed dev-role Graph Contract と exact binding していません",
-    );
-  }
+  return withProjectStorage(
+    projectRoot,
+    { mode: "read", scope: "shared-cache" },
+    async ({ configStore, tasksStore }) => {
+      const issueNumber = parsePositiveInteger(options.issue, "--issue");
+      const eventId = parseRequiredText(options.eventId, "--event-id");
+      const actorId = parseRequiredText(options.actor, "--actor");
+      const config = await configStore.read();
+      const binding = config.run_graph;
+      if (!binding) {
+        throw new RunCommandError(
+          "unsupported_contract_binding",
+          "repository config に run_graph binding がありません",
+        );
+      }
+      const expected = {
+        plan_id: FIXED_DEV_ROLE_GRAPH_CONTRACT.planId,
+        plan_version: FIXED_DEV_ROLE_GRAPH_CONTRACT.planVersion,
+        schema_version: FIXED_DEV_ROLE_GRAPH_CONTRACT.schemaVersion,
+      };
+      if (
+        binding.plan_id !== expected.plan_id ||
+        binding.plan_version !== expected.plan_version ||
+        binding.schema_version !== expected.schema_version
+      ) {
+        throw new RunCommandError(
+          "unsupported_contract_binding",
+          "repository config は fixed dev-role Graph Contract と exact binding していません",
+        );
+      }
 
-  const tasks = await new TasksStore(projectRoot).read();
-  const repository = `${config.project.github.owner}/${config.project.github.repo}`;
-  const task = tasks.tasks.find(
-    (candidate) =>
-      candidate.github_issue === issueNumber &&
-      candidate.github_repo.toLowerCase() === repository.toLowerCase(),
+      const tasks = await tasksStore.read();
+      const repository = `${config.project.github.owner}/${config.project.github.repo}`;
+      const task = tasks.tasks.find(
+        (candidate) =>
+          candidate.github_issue === issueNumber &&
+          candidate.github_repo.toLowerCase() === repository.toLowerCase(),
+      );
+      if (!task) {
+        throw new RunCommandError(
+          "issue_not_found",
+          `repository の同期済み task に Issue #${issueNumber} がありません`,
+        );
+      }
+      if (task.state !== "open") {
+        throw new RunCommandError("issue_not_open", `Issue #${issueNumber} は OPEN ではありません`);
+      }
+
+      await new GraphContractStore(projectRoot).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+      return new RunGraphControlPlane(projectRoot).start({
+        schemaVersion: "1",
+        eventId,
+        actor: { id: actorId, role: "orchestrator" },
+        task: {
+          owner: config.project.github.owner,
+          repo: config.project.github.repo,
+          issueNumber,
+        },
+        contract: {
+          planId: binding.plan_id,
+          planVersion: binding.plan_version,
+          schemaVersion: binding.schema_version,
+        },
+      });
+    },
   );
-  if (!task) {
-    throw new RunCommandError(
-      "issue_not_found",
-      `repository の同期済み task に Issue #${issueNumber} がありません`,
-    );
-  }
-  if (task.state !== "open") {
-    throw new RunCommandError("issue_not_open", `Issue #${issueNumber} は OPEN ではありません`);
-  }
-
-  await new GraphContractStore(projectRoot).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
-  return new RunGraphControlPlane(projectRoot).start({
-    schemaVersion: "1",
-    eventId,
-    actor: { id: actorId, role: "orchestrator" },
-    task: {
-      owner: config.project.github.owner,
-      repo: config.project.github.repo,
-      issueNumber,
-    },
-    contract: {
-      planId: binding.plan_id,
-      planVersion: binding.plan_version,
-      schemaVersion: binding.schema_version,
-    },
-  });
 }
 
 export function createRunCommand(dependencies: RunCommandDependencies = {}): Command {

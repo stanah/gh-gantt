@@ -28,10 +28,7 @@ import type {
   Task,
   TasksFile,
 } from "@gh-gantt/shared";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
-import { LoopStateStore } from "../store/loop-state.js";
+import { withProjectStorage, type ProjectStorageSession } from "../store/project-storage.js";
 import {
   detectMissingTaskRejection,
   evaluatePrEvidence,
@@ -641,14 +638,13 @@ function reportCommandError(context: string, err: unknown): void {
   process.exitCode = 1;
 }
 
-async function loadStores(projectRoot: string) {
-  const config = await new ConfigStore(projectRoot).read();
-  const tasksStore = new TasksStore(projectRoot);
+async function loadStores(storage: ProjectStorageSession) {
+  const { configStore, tasksStore, stateStore, loopStore } = storage;
+  const config = await configStore.read();
   // 新品クローン等で tasks.json 不在でも例外にせず空状態で開始する。
   // last_synced_at が空のままなので loop next は sync_required で pull を要求する
   const tasksFile = await tasksStore.readOrDefault();
-  const syncState = await new SyncStateStore(projectRoot).readOrDefault();
-  const loopStore = new LoopStateStore(projectRoot);
+  const syncState = await stateStore.readOrDefault();
   const state = await loopStore.readOrNull();
   return { config, tasksStore, tasksFile, syncState, loopStore, state };
 }
@@ -663,14 +659,20 @@ export const loopCommand = new Command("loop")
       .option("--json", "Output as JSON")
       .action(async (opts: { json?: boolean }) => {
         try {
-          const { config, tasksFile, state } = await loadStores(process.cwd());
-          const report = buildLoopStatusReport(
-            state,
-            config,
-            tasksFile.tasks,
-            tasksFile.has_conflicts === true,
+          await withProjectStorage(
+            process.cwd(),
+            { mode: "read", scope: "shared-cache" },
+            async (storage) => {
+              const { config, tasksFile, state } = await loadStores(storage);
+              const report = buildLoopStatusReport(
+                state,
+                config,
+                tasksFile.tasks,
+                tasksFile.has_conflicts === true,
+              );
+              console.log(opts.json ? JSON.stringify(report, null, 2) : formatLoopStatus(report));
+            },
           );
-          console.log(opts.json ? JSON.stringify(report, null, 2) : formatLoopStatus(report));
         } catch (err) {
           reportCommandError("loop status", err);
         }
@@ -683,39 +685,45 @@ export const loopCommand = new Command("loop")
       .option("--decision <text>", "このイテレーションでやることの要約を上書きする")
       .action(async (opts: { json?: boolean; decision?: string }) => {
         try {
-          const { config, tasksFile, syncState, loopStore, state } = await loadStores(
+          await withProjectStorage(
             process.cwd(),
+            { mode: "write", scope: "workspace" },
+            async (storage) => {
+              const { config, tasksFile, syncState, loopStore, state } = await loadStores(storage);
+              const now = new Date().toISOString();
+              // observe: 同期の鮮度確認（stale なら警告して続行、never は選定を拒否）
+              if (assessSyncFreshness(syncState.last_synced_at, now) === "stale") {
+                console.warn(
+                  `⚠ 最終同期から ${SYNC_STALE_THRESHOLD_HOURS} 時間を超えて経過しています。gh-gantt pull の実行を推奨します。`,
+                );
+              }
+              const current = state ?? createEmptyLoopState();
+              const result = decideNextIteration({
+                state: current,
+                config,
+                tasks: tasksFile.tasks,
+                hasConflicts: tasksFile.has_conflicts === true,
+                now,
+                lastSyncedAt: syncState.last_synced_at,
+                decision: opts.decision,
+              });
+
+              if (result.kind === "selected") {
+                current.iterations.push(result.iteration);
+                await loopStore.write(current);
+                await storage.flush();
+              } else if (result.kind === "stopped" && result.iteration) {
+                current.iterations.push(result.iteration);
+                await loopStore.write(current);
+                await storage.flush();
+              }
+
+              console.log(opts.json ? JSON.stringify(result, null, 2) : formatLoopNext(result));
+              if (result.kind === "open_iteration" || result.kind === "sync_required") {
+                process.exitCode = 1;
+              }
+            },
           );
-          const now = new Date().toISOString();
-          // observe: 同期の鮮度確認（stale なら警告して続行、never は選定を拒否）
-          if (assessSyncFreshness(syncState.last_synced_at, now) === "stale") {
-            console.warn(
-              `⚠ 最終同期から ${SYNC_STALE_THRESHOLD_HOURS} 時間を超えて経過しています。gh-gantt pull の実行を推奨します。`,
-            );
-          }
-          const current = state ?? createEmptyLoopState();
-          const result = decideNextIteration({
-            state: current,
-            config,
-            tasks: tasksFile.tasks,
-            hasConflicts: tasksFile.has_conflicts === true,
-            now,
-            lastSyncedAt: syncState.last_synced_at,
-            decision: opts.decision,
-          });
-
-          if (result.kind === "selected") {
-            current.iterations.push(result.iteration);
-            await loopStore.write(current);
-          } else if (result.kind === "stopped" && result.iteration) {
-            current.iterations.push(result.iteration);
-            await loopStore.write(current);
-          }
-
-          console.log(opts.json ? JSON.stringify(result, null, 2) : formatLoopNext(result));
-          if (result.kind === "open_iteration" || result.kind === "sync_required") {
-            process.exitCode = 1;
-          }
         } catch (err) {
           reportCommandError("loop next", err);
         }
@@ -768,103 +776,117 @@ export const loopCommand = new Command("loop")
             }
             const overrideReason = overrideCheck.reason;
             const verify = parseVerifySpecs(opts.verify);
-            const { config, tasksStore, tasksFile, loopStore, state } = await loadStores(
+            await withProjectStorage(
               process.cwd(),
-            );
-            const now = new Date().toISOString();
+              { mode: "write", scope: "all" },
+              async (storage) => {
+                const { config, tasksStore, tasksFile, loopStore, state } =
+                  await loadStores(storage);
+                const now = new Date().toISOString();
 
-            // state 未初期化でも --json の出力形式は state ありの場合と揃える
-            let result: LoopCompleteResult;
-            if (!state) {
-              result = { kind: "no_open_iteration" };
-            } else {
-              const open = findOpenIteration(state);
-              const task = open
-                ? tasksFile.tasks.find((t) => t.id === open.selectedTask)
-                : undefined;
-              // ローカルの linked_prs からは PR の所在（リポジトリ + 番号）のみ列挙する
-              // （state は live で判定: ADR-019。cross-repo の closing reference に対応）
-              const targets = task
-                ? extractLinkedPrTargets(
-                    task.linked_prs,
-                    parseRepoFullName(task.github_repo, config.project.github),
-                  )
-                : [];
-              const resolved = resolveLoopConfig(config.loop);
-
-              let prEvidence: LoopPrEvidence[] | undefined;
-              let rejection: PrGateRejection | null = null;
-              if (
-                task &&
-                shouldApplyPrGate({
-                  outcome,
-                  requirePrEvidence: resolved.requirePrEvidence,
-                  prNumbers: targets.map((t) => t.number),
-                })
-              ) {
-                let fetched: PrGateState[] | null = null;
-                let fetchError: string | undefined;
-                try {
-                  fetched = await fetchPrGateStates({ targets });
-                } catch (err) {
-                  // fail-closed: 取得失敗は evaluatePrEvidence で拒否として扱う
-                  fetchError = err instanceof Error ? err.message : String(err);
-                }
-                const evaluation = evaluatePrEvidence({
-                  targets,
-                  fetched,
-                  fetchError,
-                  checkedAt: now,
-                  overrideReason,
-                });
-                if (evaluation.kind === "accepted") {
-                  prEvidence = evaluation.evidence;
+                // state 未初期化でも --json の出力形式は state ありの場合と揃える
+                let result: LoopCompleteResult;
+                if (!state) {
+                  result = { kind: "no_open_iteration" };
                 } else {
-                  rejection = evaluation;
-                }
-              } else if (open?.selectedTask && task === undefined) {
-                // タスク不在だと linked PR を列挙できず、ゲートが黙って
-                // スキップされる fail-open になるため completed を拒否する
-                rejection = detectMissingTaskRejection({
-                  outcome,
-                  requirePrEvidence: resolved.requirePrEvidence,
-                  selectedTask: open.selectedTask,
-                  taskFound: false,
-                  overrideReason,
-                });
-              }
+                  const open = findOpenIteration(state);
+                  const task = open
+                    ? tasksFile.tasks.find((t) => t.id === open.selectedTask)
+                    : undefined;
+                  // ローカルの linked_prs からは PR の所在（リポジトリ + 番号）のみ列挙する
+                  // （state は live で判定: ADR-019。cross-repo の closing reference に対応）
+                  const targets = task
+                    ? extractLinkedPrTargets(
+                        task.linked_prs,
+                        parseRepoFullName(task.github_repo, config.project.github),
+                      )
+                    : [];
+                  const resolved = resolveLoopConfig(config.loop);
 
-              result = rejection
-                ? { kind: "pr_gate_rejected", rejection }
-                : completeIteration({
-                    state,
-                    config,
-                    tasks: tasksFile.tasks,
-                    now,
-                    outcome,
-                    reviewOutcome: opts.review,
-                    verify,
-                    prEvidence,
-                  });
-            }
-            if (result.kind === "completed" && state) {
-              // journal 記録と status 更新は別ファイルへの書き込みでありトランザクションではない。
-              // 先に tasks.json を書き込むことで、途中失敗時は「イテレーション未完了」のまま残り、
-              // loop complete の再実行で復旧できる（逆順だと journal だけ完了して status が失われる）
-              if (opts.taskStatus && result.iteration.selectedTask) {
-                applyTaskStatus(tasksFile, result.iteration.selectedTask, opts.taskStatus, config);
-                await tasksStore.write(tasksFile);
-              }
-              await loopStore.write(state);
-            } else {
-              process.exitCode = 1;
-            }
-            console.log(opts.json ? JSON.stringify(result, null, 2) : formatLoopComplete(result));
-            if (result.kind === "completed" && opts.taskStatus) {
-              console.log(
-                `task status を "${opts.taskStatus}" に更新しました。gh-gantt push で GitHub に反映してください。`,
-              );
-            }
+                  let prEvidence: LoopPrEvidence[] | undefined;
+                  let rejection: PrGateRejection | null = null;
+                  if (
+                    task &&
+                    shouldApplyPrGate({
+                      outcome,
+                      requirePrEvidence: resolved.requirePrEvidence,
+                      prNumbers: targets.map((t) => t.number),
+                    })
+                  ) {
+                    let fetched: PrGateState[] | null = null;
+                    let fetchError: string | undefined;
+                    try {
+                      fetched = await fetchPrGateStates({ targets });
+                    } catch (err) {
+                      // fail-closed: 取得失敗は evaluatePrEvidence で拒否として扱う
+                      fetchError = err instanceof Error ? err.message : String(err);
+                    }
+                    const evaluation = evaluatePrEvidence({
+                      targets,
+                      fetched,
+                      fetchError,
+                      checkedAt: now,
+                      overrideReason,
+                    });
+                    if (evaluation.kind === "accepted") {
+                      prEvidence = evaluation.evidence;
+                    } else {
+                      rejection = evaluation;
+                    }
+                  } else if (open?.selectedTask && task === undefined) {
+                    // タスク不在だと linked PR を列挙できず、ゲートが黙って
+                    // スキップされる fail-open になるため completed を拒否する
+                    rejection = detectMissingTaskRejection({
+                      outcome,
+                      requirePrEvidence: resolved.requirePrEvidence,
+                      selectedTask: open.selectedTask,
+                      taskFound: false,
+                      overrideReason,
+                    });
+                  }
+
+                  result = rejection
+                    ? { kind: "pr_gate_rejected", rejection }
+                    : completeIteration({
+                        state,
+                        config,
+                        tasks: tasksFile.tasks,
+                        now,
+                        outcome,
+                        reviewOutcome: opts.review,
+                        verify,
+                        prEvidence,
+                      });
+                }
+                if (result.kind === "completed" && state) {
+                  // journal 記録と status 更新は別ファイルへの書き込みでありトランザクションではない。
+                  // 先に tasks.json を書き込むことで、途中失敗時は「イテレーション未完了」のまま残り、
+                  // loop complete の再実行で復旧できる（逆順だと journal だけ完了して status が失われる）
+                  if (opts.taskStatus && result.iteration.selectedTask) {
+                    applyTaskStatus(
+                      tasksFile,
+                      result.iteration.selectedTask,
+                      opts.taskStatus,
+                      config,
+                    );
+                    await tasksStore.write(tasksFile);
+                    await storage.flush();
+                  }
+                  await loopStore.write(state);
+                  await storage.flush();
+                } else {
+                  process.exitCode = 1;
+                }
+                console.log(
+                  opts.json ? JSON.stringify(result, null, 2) : formatLoopComplete(result),
+                );
+                if (result.kind === "completed" && opts.taskStatus) {
+                  console.log(
+                    `task status を "${opts.taskStatus}" に更新しました。gh-gantt push で GitHub に反映してください。`,
+                  );
+                }
+              },
+            );
           } catch (err) {
             reportCommandError("loop complete", err);
           }

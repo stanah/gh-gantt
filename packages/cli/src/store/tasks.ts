@@ -16,14 +16,34 @@ async function writeAtomic(filePath: string, content: string): Promise<void> {
 }
 
 export class TasksStore {
-  private path: string;
+  private path: string | null;
+  private binding: {
+    readText(slot: "tasks"): Promise<string | null>;
+    writeText(slot: "tasks", content: string): Promise<void>;
+  } | null;
 
-  constructor(projectRoot: string) {
-    this.path = join(projectRoot, GANTT_DIR, TASKS_FILE);
+  constructor(
+    projectRootOrBinding:
+      | string
+      | {
+          readText(slot: "tasks"): Promise<string | null>;
+          writeText(slot: "tasks", content: string): Promise<void>;
+        },
+  ) {
+    this.path =
+      typeof projectRootOrBinding === "string"
+        ? join(projectRootOrBinding, GANTT_DIR, TASKS_FILE)
+        : null;
+    this.binding = typeof projectRootOrBinding === "string" ? null : projectRootOrBinding;
   }
 
   async read(): Promise<TasksFile> {
-    const raw = await readFile(this.path, "utf-8");
+    const raw = this.binding
+      ? await this.binding.readText("tasks")
+      : await readFile(this.path!, "utf-8");
+    if (raw === null) {
+      throw Object.assign(new Error("tasks.json が見つかりません"), { code: "ENOENT" });
+    }
     return TasksFileWithConflictsSchema.parse(JSON.parse(raw)) as TasksFile;
   }
 
@@ -43,14 +63,20 @@ export class TasksStore {
   }
 
   async write(data: TasksFile): Promise<void> {
-    await mkdir(join(this.path, ".."), { recursive: true });
-    await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
+    const content = JSON.stringify(data, null, 2) + "\n";
+    if (this.binding) {
+      await this.binding.writeText("tasks", content);
+      return;
+    }
+    await mkdir(join(this.path!, ".."), { recursive: true });
+    await writeAtomic(this.path!, content);
   }
 
   /** ファイルの存在判定。ENOENT のみ false とし、権限エラー等は再 throw する。 */
   async exists(): Promise<boolean> {
+    if (this.binding) return (await this.binding.readText("tasks")) !== null;
     try {
-      await readFile(this.path);
+      await readFile(this.path!);
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;

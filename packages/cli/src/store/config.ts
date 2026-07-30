@@ -6,14 +6,34 @@ import type { Config } from "@gh-gantt/shared";
 const DEFAULT_STARTS_WORK_NAMES = ["in progress", "in review", "active", "working"];
 
 export class ConfigStore {
-  private path: string;
+  private path: string | null;
+  private binding: {
+    readText(slot: "config"): Promise<string | null>;
+    writeText(slot: "config", content: string): Promise<void>;
+  } | null;
 
-  constructor(projectRoot: string) {
-    this.path = join(projectRoot, GANTT_DIR, CONFIG_FILE);
+  constructor(
+    projectRootOrBinding:
+      | string
+      | {
+          readText(slot: "config"): Promise<string | null>;
+          writeText(slot: "config", content: string): Promise<void>;
+        },
+  ) {
+    this.path =
+      typeof projectRootOrBinding === "string"
+        ? join(projectRootOrBinding, GANTT_DIR, CONFIG_FILE)
+        : null;
+    this.binding = typeof projectRootOrBinding === "string" ? null : projectRootOrBinding;
   }
 
   async read(): Promise<Config> {
-    const raw = await readFile(this.path, "utf-8");
+    const raw = this.binding
+      ? await this.binding.readText("config")
+      : await readFile(this.path!, "utf-8");
+    if (raw === null) {
+      throw Object.assign(new Error("gantt.config.json が見つかりません"), { code: "ENOENT" });
+    }
     const config = ConfigSchema.parse(JSON.parse(raw));
     // Auto-migrate: fill in starts_work for known status names
     for (const [name, sv] of Object.entries(config.statuses.values)) {
@@ -35,14 +55,20 @@ export class ConfigStore {
   }
 
   async write(config: Config): Promise<void> {
-    await mkdir(join(this.path, ".."), { recursive: true });
-    await writeFile(this.path, JSON.stringify(config, null, 2) + "\n");
+    const content = JSON.stringify(config, null, 2) + "\n";
+    if (this.binding) {
+      await this.binding.writeText("config", content);
+      return;
+    }
+    await mkdir(join(this.path!, ".."), { recursive: true });
+    await writeFile(this.path!, content);
   }
 
   /** ファイルの存在判定。ENOENT のみ false とし、権限エラー等は再 throw する。 */
   async exists(): Promise<boolean> {
+    if (this.binding) return (await this.binding.readText("config")) !== null;
     try {
-      await readFile(this.path);
+      await readFile(this.path!);
       return true;
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return false;

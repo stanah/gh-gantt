@@ -1,11 +1,9 @@
 import { Command } from "commander";
+import type { CommentsFile } from "@gh-gantt/shared";
 import { createGraphQLClient } from "../github/client.js";
 import { isDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
 import { fetchAllComments } from "../github/comments.js";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
-import { CommentsStore } from "../store/comments.js";
+import { withProjectStorage, type ProjectStorageSession } from "../store/project-storage.js";
 import { executePull } from "../sync/pull-executor.js";
 import { formatValue } from "../util/format.js";
 
@@ -22,207 +20,226 @@ export const pullCommand = new Command("pull")
   .option("--full-fetch", "Skip pre-check and always fetch all project data")
   .action(async (opts) => {
     const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
+    return withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async (storage) => {
+        const { configStore, tasksStore, stateStore } = storage;
+        const config = await (async () => {
+          try {
+            return await configStore.read();
+          } catch (err) {
+            if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+              console.error(".gantt-sync/gantt.config.json がありません。");
+              console.error(
+                "  設定をコミットしてあるリポジトリなら checkout 漏れを確認してください。",
+              );
+              console.error(
+                "  未初期化なら gh-gantt init --owner <owner> --repo <repo> --project <N> を実行してください。",
+              );
+              process.exitCode = 1;
+              return null;
+            }
+            throw err;
+          }
+        })();
+        if (config === null) return;
+        // tasks.json / sync-state.json は不在なら空から開始し、GitHub だけから再構成する
+        const bootstrapping = !(await tasksStore.exists());
+        const tasksFile = await tasksStore.readOrDefault();
+        const syncState = await stateStore.readOrDefault();
 
-    const config = await (async () => {
-      try {
-        return await configStore.read();
-      } catch (err) {
-        if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-          console.error(".gantt-sync/gantt.config.json がありません。");
-          console.error("  設定をコミットしてあるリポジトリなら checkout 漏れを確認してください。");
-          console.error(
-            "  未初期化なら gh-gantt init --owner <owner> --repo <repo> --project <N> を実行してください。",
-          );
-          process.exit(1);
+        // 未解決conflictがある場合は次のpullを拒否する
+        if (tasksFile.has_conflicts) {
+          console.error("未解決のコンフリクトがあります。先に resolve してください");
+          process.exitCode = 1;
+          return;
         }
-        throw err;
-      }
-    })();
-    // tasks.json / sync-state.json は不在なら空から開始し、GitHub だけから再構成する
-    const bootstrapping = !(await tasksStore.exists());
-    const tasksFile = await tasksStore.readOrDefault();
-    const syncState = await stateStore.readOrDefault();
 
-    // Guard: Unresolved conflicts must be resolved before next pull
-    if (tasksFile.has_conflicts) {
-      console.error("未解決のコンフリクトがあります。先に resolve してください");
-      process.exit(1);
-    }
+        const gql = await createGraphQLClient();
+        const {
+          result,
+          tasksFile: newTasksFile,
+          syncState: newSyncState,
+        } = await executePull(gql, config, tasksFile, syncState, {
+          force: opts.force,
+          fullFetch: opts.fullFetch,
+        });
 
-    const gql = await createGraphQLClient();
-    const {
-      result,
-      tasksFile: newTasksFile,
-      syncState: newSyncState,
-    } = await executePull(gql, config, tasksFile, syncState, {
-      force: opts.force,
-      fullFetch: opts.fullFetch,
-    });
+        // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 情報 ℹ / 警告 ⚠)
+        if (!opts.json) {
+          for (const finding of result.syncStateFindings) {
+            const prefix = finding.autoFixed
+              ? "  ↻ 自動修復"
+              : finding.level === "info"
+                ? "  ℹ"
+                : "  ⚠";
+            const log = finding.level === "info" ? console.log : console.warn;
+            log(`${prefix}: ${finding.message}`);
+          }
+        }
 
-    // sync-state 整合性検証の findings を表示 (自動修復 ↻ / 情報 ℹ / 警告 ⚠)
-    if (!opts.json) {
-      for (const finding of result.syncStateFindings) {
-        const prefix = finding.autoFixed
-          ? "  ↻ 自動修復"
-          : finding.level === "info"
-            ? "  ℹ"
-            : "  ⚠";
-        const log = finding.level === "info" ? console.log : console.warn;
-        log(`${prefix}: ${finding.message}`);
-      }
-    }
+        if (result.skipped) {
+          if (!opts.dryRun) {
+            // task変更がなくても更新済みfield・option metadataを保存する
+            await stateStore.write(newSyncState);
+            // bootstrap（tasks.json 不在）では空プロジェクトでも quick-skip され得るため、
+            // 後続の status / list が ENOENT にならないよう初期ファイルを永続化する
+            if (bootstrapping) {
+              await tasksStore.write(newTasksFile);
+            }
+            await storage.flush();
+          }
 
-    if (result.skipped) {
-      // Save updated field/option metadata even when no task changes
-      await stateStore.write(newSyncState);
-      // bootstrap（tasks.json 不在）では空プロジェクトでも quick-skip され得るため、
-      // 後続の status / list が ENOENT にならないよう初期ファイルを永続化する
-      if (bootstrapping && !opts.dryRun) {
-        await tasksStore.write(newTasksFile);
-      }
+          if (opts.dryRun || (!opts.withComments && !opts.forceComments)) {
+            if (opts.json) {
+              console.log(
+                JSON.stringify(
+                  {
+                    skipped: true,
+                    dry_run: !!opts.dryRun,
+                    summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+                    details: [],
+                    sync_state_findings: result.syncStateFindings,
+                  },
+                  null,
+                  2,
+                ),
+              );
+            } else {
+              console.log("No remote changes detected, skipping sub-issues fetch.");
+              console.log(`Pull summary: +0 ~0 !0 -0`);
+              console.log("Pull complete.");
+            }
+            return;
+          }
+          if (opts.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  skipped: true,
+                  dry_run: !!opts.dryRun,
+                  summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
+                  details: [],
+                  sync_state_findings: result.syncStateFindings,
+                },
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.log("No remote changes detected, but fetching comments as requested.");
+            console.log(`Pull summary: +0 ~0 !0 -0`);
+            console.log("Pull complete.");
+          }
+          await fetchAndSaveComments(gql, tasksFile.tasks, storage, opts);
+          return;
+        }
 
-      if (!opts.withComments && !opts.forceComments) {
         if (opts.json) {
+          if (!opts.dryRun) {
+            await tasksStore.write(newTasksFile);
+            await stateStore.write(newSyncState);
+            await storage.flush();
+            await fetchAndSaveComments(gql, newTasksFile.tasks, storage, opts);
+          }
+
+          // JSON 出力（dry-run 含む）。永続化が必要な場合はcommit成功後だけ出力する。
           console.log(
             JSON.stringify(
               {
-                skipped: true,
+                skipped: false,
                 dry_run: !!opts.dryRun,
-                summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
-                details: [],
+                summary: {
+                  added: result.added,
+                  updated: result.updated,
+                  conflicts: result.conflicts,
+                  removed: result.removed,
+                },
+                details: result.details,
                 sync_state_findings: result.syncStateFindings,
               },
               null,
               2,
             ),
           );
-        } else {
-          console.log("No remote changes detected, skipping sub-issues fetch.");
-          console.log(`Pull summary: +0 ~0 !0 -0`);
-          console.log("Pull complete.");
+
+          return;
         }
-        return;
-      }
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            {
-              skipped: true,
-              dry_run: !!opts.dryRun,
-              summary: { added: 0, updated: 0, conflicts: 0, removed: 0 },
-              details: [],
-              sync_state_findings: result.syncStateFindings,
-            },
-            null,
-            2,
-          ),
-        );
-      } else {
-        console.log("No remote changes detected, but fetching comments as requested.");
-        console.log(`Pull summary: +0 ~0 !0 -0`);
-        console.log("Pull complete.");
-      }
-      await fetchAndSaveComments(gql, tasksFile.tasks, projectRoot, opts);
-      return;
-    }
 
-    if (opts.json) {
-      // JSON 出力（dry-run 含む）
-      console.log(
-        JSON.stringify(
-          {
-            skipped: false,
-            dry_run: !!opts.dryRun,
-            summary: {
-              added: result.added,
-              updated: result.updated,
-              conflicts: result.conflicts,
-              removed: result.removed,
-            },
-            details: result.details,
-            sync_state_findings: result.syncStateFindings,
-          },
-          null,
-          2,
-        ),
-      );
+        console.log(`Fetched items from GitHub`);
 
-      if (!opts.dryRun) {
+        // dry-run結果を表示する
+        if (opts.dryRun) {
+          for (const d of result.details) {
+            switch (d.type) {
+              case "added":
+                console.log(`  + ${d.id}: ${d.title}`);
+                break;
+              case "updated":
+                console.log(`  ~ ${d.id}: ${d.title}`);
+                break;
+              case "removed":
+                console.log(`  - ${d.id}: ${d.title}`);
+                break;
+              case "conflict":
+                console.log(
+                  `  ! ${d.id}: ${d.title} (${d.conflictFields?.length ?? 0} conflict(s))`,
+                );
+                for (const c of d.conflictFields ?? []) {
+                  console.log(
+                    `      ${c.field}: local=${formatValue(c.local)} remote=${formatValue(c.remote)}`,
+                  );
+                }
+                break;
+              case "kept-local":
+                console.warn(
+                  `  ⚠ ${d.id}: ${d.title} (locally modified but changed remotely — keeping local)`,
+                );
+                break;
+            }
+          }
+        }
+
+        if (opts.dryRun) {
+          console.log(
+            `Pull summary: +${result.added} ~${result.updated} !${result.conflicts} -${result.removed}`,
+          );
+          console.log("Dry run — no changes applied.");
+          return;
+        }
+
         await tasksStore.write(newTasksFile);
         await stateStore.write(newSyncState);
-        await fetchAndSaveComments(gql, newTasksFile.tasks, projectRoot, opts);
-      }
-      return;
-    }
+        await storage.flush();
 
-    console.log(`Fetched items from GitHub`);
+        console.log(
+          `Pull summary: +${result.added} ~${result.updated} !${result.conflicts} -${result.removed}`,
+        );
 
-    // Dry-run reporting
-    if (opts.dryRun) {
-      for (const d of result.details) {
-        switch (d.type) {
-          case "added":
-            console.log(`  + ${d.id}: ${d.title}`);
-            break;
-          case "updated":
-            console.log(`  ~ ${d.id}: ${d.title}`);
-            break;
-          case "removed":
-            console.log(`  - ${d.id}: ${d.title}`);
-            break;
-          case "conflict":
-            console.log(`  ! ${d.id}: ${d.title} (${d.conflictFields?.length ?? 0} conflict(s))`);
-            for (const c of d.conflictFields ?? []) {
-              console.log(
-                `      ${c.field}: local=${formatValue(c.local)} remote=${formatValue(c.remote)}`,
-              );
-            }
-            break;
-          case "kept-local":
-            console.warn(
-              `  ⚠ ${d.id}: ${d.title} (locally modified but changed remotely — keeping local)`,
-            );
-            break;
+        if (result.hasConflicts) {
+          console.warn(
+            `\n${result.conflicts} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`,
+          );
         }
-      }
-    }
 
-    console.log(
-      `Pull summary: +${result.added} ~${result.updated} !${result.conflicts} -${result.removed}`,
+        console.log("Pull complete.");
+
+        await fetchAndSaveComments(gql, newTasksFile.tasks, storage, opts);
+      },
     );
-
-    if (opts.dryRun) {
-      console.log("Dry run — no changes applied.");
-      return;
-    }
-
-    await tasksStore.write(newTasksFile);
-    await stateStore.write(newSyncState);
-
-    if (result.hasConflicts) {
-      console.warn(
-        `\n${result.conflicts} task(s) have conflicts. Run 'gh-gantt resolve' to resolve them.`,
-      );
-    }
-
-    console.log("Pull complete.");
-
-    await fetchAndSaveComments(gql, newTasksFile.tasks, projectRoot, opts);
   });
 
 async function fetchAndSaveComments(
   gql: Awaited<ReturnType<typeof createGraphQLClient>>,
   tasks: import("@gh-gantt/shared").Task[],
-  projectRoot: string,
+  storage: Pick<ProjectStorageSession, "commentsStore" | "flush">,
   opts: { withComments?: boolean; forceComments?: boolean },
 ): Promise<void> {
   if (!opts.withComments && !opts.forceComments) return;
 
   try {
-    const commentsStore = new CommentsStore(projectRoot);
+    const { commentsStore } = storage;
     const commentsFile = await commentsStore.read();
 
     const commentItems = tasks
@@ -238,11 +255,13 @@ async function fetchAndSaveComments(
       gql,
       commentItems,
       commentsFile,
-      (data) => commentsStore.write(data),
+      async (data) => {
+        await saveCommentsCheckpoint(storage, data);
+      },
       { force: !!opts.forceComments },
     );
 
-    // Clean up comments for deleted tasks
+    // 削除済みtaskのコメントを除去する
     const taskIds = new Set(tasks.map((t) => t.id));
     for (const key of Object.keys(updatedComments.fetched_at)) {
       if (!taskIds.has(key)) {
@@ -251,10 +270,22 @@ async function fetchAndSaveComments(
       }
     }
 
-    await commentsStore.write(updatedComments);
+    await saveCommentsCheckpoint(storage, updatedComments);
   } catch (err) {
     console.warn(
       `Warning: failed to fetch comments: ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+/** remote取得の各batchを再開可能なdurable checkpointとしてpublishする。 */
+export async function saveCommentsCheckpoint(
+  storage: {
+    commentsStore: { write(data: CommentsFile): Promise<void> };
+    flush(): Promise<void>;
+  },
+  data: CommentsFile,
+): Promise<void> {
+  await storage.commentsStore.write(data);
+  await storage.flush();
 }

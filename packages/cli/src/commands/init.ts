@@ -10,8 +10,7 @@ import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
 import { mapProjectItemToTask, applySubIssueLinks, milestoneToTask } from "../github/issues.js";
 import { resolveTaskType } from "../sync/type-resolver.js";
 import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { DEFAULT_CONFLICT_POLICY } from "@gh-gantt/shared";
 import type { Config, TaskType, TaskDisplay, Task, SyncState } from "@gh-gantt/shared";
 
@@ -94,14 +93,15 @@ export const initCommand = new Command("init")
       console.error(".gantt-sync/gantt.config.json が既に存在します。");
       console.error("  同期データの再構成だけなら gh-gantt pull を使ってください。");
       console.error("  設定ごと作り直す場合は --force を指定してください。");
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     console.log(`Initializing gh-gantt for ${opts.owner}/${opts.repo} project #${opts.project}...`);
 
     const gql = await createGraphQLClient();
 
-    // Detect owner type first, then fetch project + org issue types in parallel
+    // owner種別を先に判定し、projectとorganizationのIssue Typeを並列取得する
     const ownerType = await detectOwnerType(gql, opts.owner);
     const [projectData, orgIssueTypes] = await Promise.all([
       fetchProject(gql, opts.owner, opts.project, ownerType),
@@ -165,7 +165,7 @@ export const initCommand = new Command("init")
       }
     }
 
-    // Build task types from sources (priority: issue types > custom field > labels)
+    // 情報源の優先順（Issue Type > custom field > label）でtask typeを組み立てる
     const taskTypes: Config["task_types"] = {
       task: { label: "Task", display: "bar", color: "#27AE60", github_label: null },
     };
@@ -237,7 +237,7 @@ export const initCommand = new Command("init")
       if (task) tasks.push(task);
     }
 
-    // Fetch native GitHub Milestones and create synthetic milestone tasks
+    // GitHub native milestoneを取得し、synthetic milestone taskを作る
     const repoFullName = `${opts.owner}/${opts.repo}`;
     const repoMetadata = await fetchRepositoryMetadata(gql, opts.owner, opts.repo);
     const milestonesWithDueDate = repoMetadata.milestones.filter((m) => m.dueOn);
@@ -254,7 +254,7 @@ export const initCommand = new Command("init")
       console.log(`Added ${milestonesWithDueDate.length} milestone(s) from GitHub`);
     }
 
-    // Fetch sub-issue relationships
+    // sub-issue関係を取得する
     console.log("Fetching sub-issue relationships...");
     const issueItems = projectData.items
       .filter((i) => i.content)
@@ -266,7 +266,7 @@ export const initCommand = new Command("init")
     applySubIssueLinks(tasks, subIssueLinks);
     console.log(`Found ${subIssueLinks.length} sub-issue relationships`);
 
-    // Build sync state
+    // sync stateを組み立てる
     const idMap: SyncState["id_map"] = {};
     for (const item of projectData.items) {
       if (!item.content) continue;
@@ -285,7 +285,7 @@ export const initCommand = new Command("init")
       }
     }
 
-    // Build option_ids map from fields with options
+    // optionを持つfieldからoption_ids mapを組み立てる
     const optionIds: Record<string, Record<string, string>> = {};
     for (const field of projectData.fields) {
       if (field.options && field.options.length > 0) {
@@ -308,16 +308,17 @@ export const initCommand = new Command("init")
 
     // Write files
     const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
-
     await configStore.write(config);
-    await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
-    await stateStore.write(syncState);
+    await withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async ({ tasksStore, stateStore }) => {
+        await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
+        await stateStore.write(syncState);
+      },
+    );
 
     console.log(`Initialized gh-gantt with ${tasks.length} tasks`);
-    console.log("Files created in .gantt-sync/:");
-    console.log("  - gantt.config.json");
-    console.log("  - tasks.json");
-    console.log("  - sync-state.json");
+    console.log("Workspace config: .gantt-sync/gantt.config.json");
+    console.log("Work Graph Cache を初期化しました。");
   });

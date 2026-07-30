@@ -2,9 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { Command } from "commander";
 import { z } from "zod";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import type { Config, SyncState, Task } from "@gh-gantt/shared";
 import { isInProgressTask, readStatus } from "../utils/status.js";
 
@@ -205,47 +203,52 @@ export function createContextCommand(deps: ContextCommandDeps = {}): Command {
     )
     .action(async (opts) => {
       const projectRoot = process.cwd();
-      const configStore = new ConfigStore(projectRoot);
-      const tasksStore = new TasksStore(projectRoot);
-      const stateStore = new SyncStateStore(projectRoot);
+      return withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "shared-cache" },
+        async ({ configStore, tasksStore, stateStore }) => {
+          const config = await configStore.read();
+          const tasksFile = await tasksStore.read();
+          const syncState = await stateStore.read();
+          const warnings: string[] = [];
+          const recentDays = parseRecentDays(opts.recentDays);
+          const prLimit = parsePrLimit(opts.prLimit);
 
-      const config = await configStore.read();
-      const tasksFile = await tasksStore.read();
-      const syncState = await stateStore.read();
-      const warnings: string[] = [];
-      const recentDays = parseRecentDays(opts.recentDays);
-      const prLimit = parsePrLimit(opts.prLimit);
+          let openPullRequests: OpenPullRequestSummary[] = [];
+          if (opts.offline) {
+            warnings.push("open PR の取得を --offline でスキップしました");
+          } else {
+            try {
+              openPullRequests = await (deps.fetchOpenPullRequests ?? fetchOpenPullRequests)(
+                config,
+                {
+                  limit: prLimit,
+                },
+              );
+            } catch (err) {
+              warnings.push(
+                `open PR の取得に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+              );
+            }
+          }
 
-      let openPullRequests: OpenPullRequestSummary[] = [];
-      if (opts.offline) {
-        warnings.push("open PR の取得を --offline でスキップしました");
-      } else {
-        try {
-          openPullRequests = await (deps.fetchOpenPullRequests ?? fetchOpenPullRequests)(config, {
-            limit: prLimit,
+          const summary = buildContextSummary({
+            config,
+            tasks: tasksFile.tasks,
+            syncState,
+            openPullRequests,
+            now: deps.now?.() ?? new Date(),
+            recentDays,
+            warnings,
           });
-        } catch (err) {
-          warnings.push(
-            `open PR の取得に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
-          );
-        }
-      }
 
-      const summary = buildContextSummary({
-        config,
-        tasks: tasksFile.tasks,
-        syncState,
-        openPullRequests,
-        now: deps.now?.() ?? new Date(),
-        recentDays,
-        warnings,
-      });
-
-      if (opts.json) {
-        console.log(JSON.stringify(summary, null, 2));
-      } else {
-        console.log(formatContextSummary(summary));
-      }
+          if (opts.json) {
+            console.log(JSON.stringify(summary, null, 2));
+          } else {
+            console.log(formatContextSummary(summary));
+          }
+        },
+      );
     });
 }
 

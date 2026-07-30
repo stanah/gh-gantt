@@ -30,7 +30,8 @@ gh-gantt CLI はグローバルにインストール済み。`gh-gantt` コマ�
 代わりに GitHub Labels でタスクの種類を管理している（`gantt.config.json` の `task_types` で定義）。
 利用可能なタイプ: `task`, `epic`, `feature`, `milestone`
 
-**IMPORTANT: `.gantt-sync/` 配下の同期データ（`tasks.json`, `sync-state.json`, `loop-state.json`）を直接読み書きしてはならない。**
+**IMPORTANT: git-common-dir 配下の Work Graph Cache（`tasks.json`, `sync-state.json`, `comments.json`）と、
+`.gantt-sync/` 配下の workspace-local journal（`loop-state.json`, Run Graph）を直接読み書きしてはならない。**
 常に `gh-gantt` CLI コマンドを使うこと。直接操作はバリデーションをバイパスし、同期状態を破損させる。
 設定ファイル（`gantt.config.json`, `workflow.md`）は直接編集してよい。
 
@@ -51,7 +52,7 @@ gh-gantt CLI はグローバルにインストール済み。`gh-gantt` コマ�
 
 ## エフェメラル環境でのブートストラップ
 
-Claude Code on the web や CI などの新品コンテナには `.gantt-sync/` の同期データも
+Claude Code on the web や CI などの新品コンテナには git-common-dir 配下の Work Graph Cache も
 グローバル install 済みの gh-gantt CLI も存在しない。以下の手順でゼロから再構成できる。
 
 ```bash
@@ -60,7 +61,7 @@ pnpm install && pnpm build
 # 認証: gh CLI がない環境では GITHUB_TOKEN（または GH_TOKEN）を設定する
 export GITHUB_TOKEN=<token>
 
-# 同期データの再構成（tasks.json / sync-state.json 不在なら GitHub から初回同期する）
+# Work Graph Cache の再構成（tasks.json / sync-state.json 不在なら GitHub から初回同期する）
 node packages/cli/dist/index.js pull
 
 # 現在地の確認
@@ -193,5 +194,6 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 - ビルド: vp pack (cli/shared)、vp build (ui) — すべて vite-plus 統合
 - テスト: vp test (Vitest 4.1 ベース、vite-plus 同梱)
 - リント: vp check (Oxlint + Oxfmt)
-- ローカルデータ: `.gantt-sync/`（gitignore 済み）
+- Work Graph Cache: git-common-dir 配下の `gh-gantt/cache/project-storage/`（worktree 間共有、Git 管理外）
+- workspace-local データ: `.gantt-sync/`（config / workflow を除き gitignore 済み）
 - 秘密情報スキャン: docker 前提の `betterleaks` を pre-commit + CI で実行 (詳細は ADR-011)

@@ -16,6 +16,13 @@ _Avoid_: Run plan, workflow state
 GitHub Issues / Projects が正本となる、人間の仕事とその親子・依存関係の graph。
 _Avoid_: Run state, execution queue
 
+**Work Graph Cache**:
+GitHub が正本の Work Graph をローカルに再構築する projection と同期用 merge base。
+同じ Git repository と GitHub Project identity の worktree 間で共有できるが、Run Graph や workspace-local journal ではない。
+最初の shared slot access で lazy initialize し、初版は read/write 共通の exclusive repository lease を callback 終了まで保持する。
+分岐した legacy cache は fail-closed で停止し、operator が `gh-gantt storage migrate --from <worktree>` で正本を明示する。
+_Avoid_: Task database, Run Graph store
+
 **Org Graph**:
 role と、遷移・承認・override を行える authority の graph。
 _Avoid_: Assignee list, agent roster

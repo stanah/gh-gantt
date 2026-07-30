@@ -4,8 +4,7 @@ import { promisify } from "node:util";
 import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
 import { detectCycles, getTaskSizeExcess } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage, type ProjectStorageSession } from "../store/project-storage.js";
 import { hashTask } from "../sync/hash.js";
 import { validateSyncState, type SyncStateFinding } from "../sync/validate-sync-state.js";
 import { isInProgressTask } from "../utils/status.js";
@@ -70,10 +69,10 @@ async function checkConfig(
 
 /** tasks.json の schema 妥当性をチェック */
 async function checkTasksFile(
-  projectRoot: string,
+  tasksStore: ProjectStorageSession["tasksStore"],
 ): Promise<{ result: CheckResult; data: TasksFile | null }> {
   try {
-    const data = await new TasksStore(projectRoot).read();
+    const data = await tasksStore.read();
     return {
       result: { name: "tasks-file", status: "PASS", message: "tasks.json は有効です" },
       data,
@@ -103,10 +102,10 @@ async function checkTasksFile(
 
 /** sync-state.json の schema 妥当性をチェック */
 async function checkSyncStateFile(
-  projectRoot: string,
+  stateStore: ProjectStorageSession["stateStore"],
 ): Promise<{ result: CheckResult; data: SyncState | null }> {
   try {
-    const data = await new SyncStateStore(projectRoot).read();
+    const data = await stateStore.read();
     return {
       result: { name: "sync-state-file", status: "PASS", message: "sync-state.json は有効です" },
       data,
@@ -525,7 +524,11 @@ interface DoctorOptions {
   offline: boolean;
 }
 
-async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<DoctorResult> {
+async function runDoctor(
+  projectRoot: string,
+  storage: Pick<ProjectStorageSession, "tasksStore" | "stateStore">,
+  opts: DoctorOptions,
+): Promise<DoctorResult> {
   const checks: CheckResult[] = [];
 
   // 1. config チェック
@@ -533,11 +536,11 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
   checks.push(configResult);
 
   // 2. tasks.json チェック
-  const { result: tasksResult, data: tasksFile } = await checkTasksFile(projectRoot);
+  const { result: tasksResult, data: tasksFile } = await checkTasksFile(storage.tasksStore);
   checks.push(tasksResult);
 
   // 3. sync-state.json チェック
-  const { result: stateResult, data: syncState } = await checkSyncStateFile(projectRoot);
+  const { result: stateResult, data: syncState } = await checkSyncStateFile(storage.stateStore);
   checks.push(stateResult);
 
   // tasks と syncState が両方読めた場合のみ整合性チェックを実行
@@ -552,7 +555,7 @@ async function runDoctor(projectRoot: string, opts: DoctorOptions): Promise<Doct
 
     // --fix で修復した場合、書き戻し
     if (fixedSyncState && opts.fix) {
-      await new SyncStateStore(projectRoot).write(fixedSyncState);
+      await storage.stateStore.write(fixedSyncState);
     }
 
     // 5. hash 整合性 (修復後の syncState があればそちらを使用)
@@ -595,40 +598,47 @@ export const doctorCommand = new Command("doctor")
   .option("--json", "JSON 形式で出力")
   .action(async (opts) => {
     const projectRoot = process.cwd();
-    const result = await runDoctor(projectRoot, {
-      fix: !!opts.fix,
-      offline: !!opts.offline,
-    });
+    return withProjectStorage(
+      projectRoot,
+      { mode: opts.fix ? "write" : "read", scope: "shared-cache" },
+      async (storage) => {
+        const result = await runDoctor(projectRoot, storage, {
+          fix: !!opts.fix,
+          offline: !!opts.offline,
+        });
+        await storage.flush();
 
-    if (opts.json) {
-      console.log(JSON.stringify(result, null, 2));
-      process.exitCode = result.summary.fail > 0 ? 1 : 0;
-      return;
-    }
-
-    // テキスト出力
-    const statusIcon = (s: CheckStatus) => (s === "PASS" ? "✓" : s === "WARN" ? "⚠" : "✗");
-    const statusLabel = (s: CheckStatus) =>
-      s === "PASS" ? "[PASS]" : s === "WARN" ? "[WARN]" : "[FAIL]";
-
-    for (const check of result.checks) {
-      const fixedTag = check.fixed ? " (修復済み)" : "";
-      console.log(
-        `${statusIcon(check.status)} ${statusLabel(check.status)} ${check.message}${fixedTag}`,
-      );
-      if (check.details) {
-        for (const detail of check.details) {
-          console.log(`    ${detail}`);
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          process.exitCode = result.summary.fail > 0 ? 1 : 0;
+          return;
         }
-      }
-    }
 
-    console.log();
-    console.log(
-      `結果: ${result.summary.pass} passed, ${result.summary.warn} warnings, ${result.summary.fail} failures`,
+        // テキスト出力
+        const statusIcon = (s: CheckStatus) => (s === "PASS" ? "✓" : s === "WARN" ? "⚠" : "✗");
+        const statusLabel = (s: CheckStatus) =>
+          s === "PASS" ? "[PASS]" : s === "WARN" ? "[WARN]" : "[FAIL]";
+
+        for (const check of result.checks) {
+          const fixedTag = check.fixed ? " (修復済み)" : "";
+          console.log(
+            `${statusIcon(check.status)} ${statusLabel(check.status)} ${check.message}${fixedTag}`,
+          );
+          if (check.details) {
+            for (const detail of check.details) {
+              console.log(`    ${detail}`);
+            }
+          }
+        }
+
+        console.log();
+        console.log(
+          `結果: ${result.summary.pass} passed, ${result.summary.warn} warnings, ${result.summary.fail} failures`,
+        );
+
+        if (result.summary.fail > 0) {
+          process.exitCode = 1;
+        }
+      },
     );
-
-    if (result.summary.fail > 0) {
-      process.exitCode = 1;
-    }
   });

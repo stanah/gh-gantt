@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import Table from "cli-table3";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
+import { withProjectStorage } from "../../store/project-storage.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import type { Config, Task } from "@gh-gantt/shared";
 
@@ -341,55 +340,58 @@ export function createTaskListCommand(): Command {
     .option("--json", "Output as JSON")
     .action(async (opts) => {
       const projectRoot = process.cwd();
-      const configStore = new ConfigStore(projectRoot);
-      const tasksStore = new TasksStore(projectRoot);
+      return withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "shared-cache" },
+        async ({ configStore, tasksStore }) => {
+          const config = await configStore.read();
+          const tasksFile = await tasksStore.read();
 
-      const config = await configStore.read();
-      const tasksFile = await tasksStore.read();
+          if (opts.type && !config.task_types[opts.type] && !isReservedType(opts.type)) {
+            const typeKeys = Object.keys(config.task_types);
+            console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
+            process.exitCode = 1;
+            return;
+          }
 
-      if (opts.type && !config.task_types[opts.type] && !isReservedType(opts.type)) {
-        const typeKeys = Object.keys(config.task_types);
-        console.error(`Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`);
-        process.exitCode = 1;
-        return;
-      }
+          const updatedSinceTimestamp =
+            opts.updatedSince != null ? parseUpdatedSince(opts.updatedSince) : undefined;
+          if (opts.updatedSince != null && updatedSinceTimestamp == null) {
+            console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
+            process.exitCode = 1;
+            return;
+          }
 
-      const updatedSinceTimestamp =
-        opts.updatedSince != null ? parseUpdatedSince(opts.updatedSince) : undefined;
-      if (opts.updatedSince != null && updatedSinceTimestamp == null) {
-        console.error(`Invalid --updated-since date: "${opts.updatedSince}"`);
-        process.exitCode = 1;
-        return;
-      }
+          let filtered = filterTasks(tasksFile.tasks, {
+            backlog: opts.backlog,
+            scheduled: opts.scheduled,
+            type: opts.type,
+            state: opts.state,
+            unblocked: opts.unblocked,
+            assignee: opts.assignee,
+            unassigned: opts.unassigned,
+            status: opts.status,
+            statusFieldName: config.statuses.field_name,
+            label: opts.label,
+            search: opts.search,
+            updatedSinceTimestamp: updatedSinceTimestamp ?? undefined,
+          });
 
-      let filtered = filterTasks(tasksFile.tasks, {
-        backlog: opts.backlog,
-        scheduled: opts.scheduled,
-        type: opts.type,
-        state: opts.state,
-        unblocked: opts.unblocked,
-        assignee: opts.assignee,
-        unassigned: opts.unassigned,
-        status: opts.status,
-        statusFieldName: config.statuses.field_name,
-        label: opts.label,
-        search: opts.search,
-        updatedSinceTimestamp: updatedSinceTimestamp ?? undefined,
-      });
+          if (opts.sort) {
+            filtered = sortTasks(filtered, opts.sort, config);
+          }
 
-      if (opts.sort) {
-        filtered = sortTasks(filtered, opts.sort, config);
-      }
-
-      if (opts.json) {
-        console.log(JSON.stringify({ tasks: filtered }, null, 2));
-      } else {
-        if (filtered.length === 0) {
-          console.log("No tasks found.");
-        } else {
-          console.log(formatTable(filtered));
-        }
-      }
+          if (opts.json) {
+            console.log(JSON.stringify({ tasks: filtered }, null, 2));
+          } else {
+            if (filtered.length === 0) {
+              console.log("No tasks found.");
+            } else {
+              console.log(formatTable(filtered));
+            }
+          }
+        },
+      );
     });
 }
 

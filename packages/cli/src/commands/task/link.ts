@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
+import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Task } from "@gh-gantt/shared";
 
@@ -101,63 +100,75 @@ export function createTaskLinkCommand(): Command {
     .option("--json", "Output updated task as JSON")
     .action(async (id: string, opts) => {
       const projectRoot = process.cwd();
-      const configStore = new ConfigStore(projectRoot);
-      const tasksStore = new TasksStore(projectRoot);
+      return withProjectStorage(
+        projectRoot,
+        { mode: "write", scope: "shared-cache" },
+        async (storage) => {
+          const { configStore, tasksStore } = storage;
+          const config = await configStore.read();
+          const tasksFile = await tasksStore.read();
+          const messages: string[] = [];
 
-      const config = await configStore.read();
-      const tasksFile = await tasksStore.read();
+          const resolvedId = resolveTaskId(id, config);
+          const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
 
-      const resolvedId = resolveTaskId(id, config);
-      const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
+          if (taskIndex === -1) {
+            console.error(`Task not found: ${resolvedId}`);
+            process.exitCode = 1;
+            return;
+          }
 
-      if (taskIndex === -1) {
-        console.error(`Task not found: ${resolvedId}`);
-        process.exitCode = 1;
-        return;
-      }
+          if (opts.blockedBy) {
+            const blockerId = resolveTaskId(opts.blockedBy, config);
+            const depResult = addDependency(tasksFile.tasks[taskIndex], blockerId);
+            if (depResult.error) {
+              console.error(depResult.error);
+              process.exitCode = 1;
+              return;
+            }
+            tasksFile.tasks[taskIndex] = depResult.task;
+            messages.push(`Added dependency: ${resolvedId} blocked by ${blockerId}`);
+          }
 
-      if (opts.blockedBy) {
-        const blockerId = resolveTaskId(opts.blockedBy, config);
-        const depResult = addDependency(tasksFile.tasks[taskIndex], blockerId);
-        if (depResult.error) {
-          console.error(depResult.error);
-          process.exitCode = 1;
-          return;
-        }
-        tasksFile.tasks[taskIndex] = depResult.task;
-        console.log(`Added dependency: ${resolvedId} blocked by ${blockerId}`);
-      }
+          if (opts.unblock) {
+            const blockerId = resolveTaskId(opts.unblock, config);
+            const unblockResult = removeDependency(
+              tasksFile.tasks[taskIndex],
+              blockerId,
+              opts.unblock,
+            );
+            tasksFile.tasks[taskIndex] = unblockResult.task;
+            messages.push(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
+          }
 
-      if (opts.unblock) {
-        const blockerId = resolveTaskId(opts.unblock, config);
-        const unblockResult = removeDependency(tasksFile.tasks[taskIndex], blockerId, opts.unblock);
-        tasksFile.tasks[taskIndex] = unblockResult.task;
-        console.log(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
-      }
+          if (opts.setParent) {
+            const parentId = resolveTaskId(opts.setParent, config);
+            const parentResult = setParent(tasksFile.tasks, resolvedId, parentId);
+            if (parentResult.error) {
+              console.error(parentResult.error);
+              process.exitCode = 1;
+              return;
+            }
+            tasksFile.tasks = parentResult.tasks!;
+            messages.push(`Set parent: ${resolvedId} → ${parentId}`);
+          }
 
-      if (opts.setParent) {
-        const parentId = resolveTaskId(opts.setParent, config);
-        const parentResult = setParent(tasksFile.tasks, resolvedId, parentId);
-        if (parentResult.error) {
-          console.error(parentResult.error);
-          process.exitCode = 1;
-          return;
-        }
-        tasksFile.tasks = parentResult.tasks!;
-        console.log(`Set parent: ${resolvedId} → ${parentId}`);
-      }
+          if (opts.removeParent) {
+            tasksFile.tasks = removeParent(tasksFile.tasks, resolvedId);
+            messages.push(`Removed parent from: ${resolvedId}`);
+          }
 
-      if (opts.removeParent) {
-        tasksFile.tasks = removeParent(tasksFile.tasks, resolvedId);
-        console.log(`Removed parent from: ${resolvedId}`);
-      }
+          await tasksStore.write(tasksFile);
+          await storage.flush();
 
-      await tasksStore.write(tasksFile);
-
-      if (opts.json) {
-        const updated = tasksFile.tasks.find((t) => t.id === resolvedId);
-        console.log(JSON.stringify(updated, null, 2));
-      }
+          if (opts.json) {
+            const updated = tasksFile.tasks.find((t) => t.id === resolvedId);
+            console.log(JSON.stringify(updated, null, 2));
+          } else {
+            for (const message of messages) console.log(message);
+          }
+        },
+      );
     });
 }
 

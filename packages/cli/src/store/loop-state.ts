@@ -22,26 +22,49 @@ async function writeAtomic(filePath: string, content: string): Promise<void> {
  * `gh-gantt loop` コマンド経由でのみ操作する（ADR-016）。
  */
 export class LoopStateStore {
-  private path: string;
+  private path: string | null;
+  private binding: {
+    readText(slot: "loop-state"): Promise<string | null>;
+    writeText(slot: "loop-state", content: string): Promise<void>;
+  } | null;
 
-  constructor(projectRoot: string) {
-    this.path = join(projectRoot, GANTT_DIR, LOOP_STATE_FILE);
+  constructor(
+    projectRootOrBinding:
+      | string
+      | {
+          readText(slot: "loop-state"): Promise<string | null>;
+          writeText(slot: "loop-state", content: string): Promise<void>;
+        },
+  ) {
+    this.path =
+      typeof projectRootOrBinding === "string"
+        ? join(projectRootOrBinding, GANTT_DIR, LOOP_STATE_FILE)
+        : null;
+    this.binding = typeof projectRootOrBinding === "string" ? null : projectRootOrBinding;
   }
 
   /** ファイル不在（未初期化）は null を返す。破損・スキーマ不一致は例外を投げる。 */
   async readOrNull(): Promise<LoopState | null> {
-    let raw: string;
+    let raw: string | null;
     try {
-      raw = await readFile(this.path, "utf-8");
+      raw = this.binding
+        ? await this.binding.readText("loop-state")
+        : await readFile(this.path!, "utf-8");
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === "ENOENT") return null;
       throw err;
     }
+    if (raw === null) return null;
     return LoopStateSchema.parse(JSON.parse(raw));
   }
 
   async write(state: LoopState): Promise<void> {
-    await mkdir(join(this.path, ".."), { recursive: true });
-    await writeAtomic(this.path, JSON.stringify(state, null, 2) + "\n");
+    const content = JSON.stringify(state, null, 2) + "\n";
+    if (this.binding) {
+      await this.binding.writeText("loop-state", content);
+      return;
+    }
+    await mkdir(join(this.path!, ".."), { recursive: true });
+    await writeAtomic(this.path!, content);
   }
 }

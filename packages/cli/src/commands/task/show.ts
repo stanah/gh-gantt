@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { ConfigStore } from "../../store/config.js";
-import { TasksStore } from "../../store/tasks.js";
+import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import {
@@ -77,26 +76,29 @@ export function createTaskShowCommand(): Command {
     .action(async (id: string, opts) => {
       try {
         const projectRoot = process.cwd();
-        const configStore = new ConfigStore(projectRoot);
-        const tasksStore = new TasksStore(projectRoot);
+        await withProjectStorage(
+          projectRoot,
+          { mode: "read", scope: "shared-cache" },
+          async ({ configStore, tasksStore }) => {
+            const config = await configStore.read();
+            const tasksFile = await tasksStore.read();
 
-        const config = await configStore.read();
-        const tasksFile = await tasksStore.read();
+            const resolvedId = resolveTaskId(id, config);
+            const task = tasksFile.tasks.find((t) => t.id === resolvedId);
 
-        const resolvedId = resolveTaskId(id, config);
-        const task = tasksFile.tasks.find((t) => t.id === resolvedId);
+            if (!task) {
+              console.error(`Task not found: ${resolvedId}`);
+              process.exitCode = 1;
+              return;
+            }
 
-        if (!task) {
-          console.error(`Task not found: ${resolvedId}`);
-          process.exitCode = 1;
-          return;
-        }
-
-        if (opts.json) {
-          console.log(JSON.stringify(task, null, 2));
-        } else {
-          console.log(formatTask(task));
-        }
+            if (opts.json) {
+              console.log(JSON.stringify(task, null, 2));
+            } else {
+              console.log(formatTask(task));
+            }
+          },
+        );
       } catch (err) {
         console.error("Failed to show task:", err instanceof Error ? err.message : String(err));
         process.exitCode = 1;
