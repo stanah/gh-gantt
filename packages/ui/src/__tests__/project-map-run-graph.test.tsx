@@ -146,7 +146,7 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
 });
 
-function DeepLinkProbe() {
+function DeepLinkProbe({ displayedRunId = null }: { displayedRunId?: string | null }) {
   const { selectedRunId, selectedNodeId, setSelectedRunId, setSelectedNodeId } =
     useRunGraphDeepLink();
   return (
@@ -158,6 +158,9 @@ function DeepLinkProbe() {
       </button>
       <button type="button" onClick={() => setSelectedNodeId("node-next")}>
         node
+      </button>
+      <button type="button" onClick={() => setSelectedNodeId("node-default", displayedRunId)}>
+        default node
       </button>
     </div>
   );
@@ -263,6 +266,17 @@ describe("[FR-VIS-026-AC4] run/node の URL deep link", () => {
 
     fireEvent.click(getByText("node"));
     expect(new URL(window.location.href).searchParams.get("node")).toBe("node-next");
+  });
+
+  it("URL に run がなくても表示中の既定 run と node を一緒に deep link へ保存する", () => {
+    window.history.replaceState({}, "", "/?view=project-map&task=stanah%2Fgh-gantt%23330");
+    const { getByText } = render(<DeepLinkProbe displayedRunId="run-330" />);
+
+    fireEvent.click(getByText("default node"));
+
+    const params = new URL(window.location.href).searchParams;
+    expect(params.get("run")).toBe("run-330");
+    expect(params.get("node")).toBe("node-default");
   });
 
   it("選択 task/run/node だけを bounded API query に渡す", async () => {

@@ -802,7 +802,12 @@ export function App() {
                     runGraphLoading={projectMapRunGraph.loading}
                     runGraphError={projectMapRunGraph.error}
                     onSelectRun={setSelectedRunId}
-                    onSelectRunNode={setSelectedNodeId}
+                    onSelectRunNode={(nodeId) =>
+                      setSelectedNodeId(
+                        nodeId,
+                        projectMapRunGraph.viewModel?.selectedRun?.runId ?? null,
+                      )
+                    }
                     syncRefreshKey={syncing}
                   />
                 ) : null}

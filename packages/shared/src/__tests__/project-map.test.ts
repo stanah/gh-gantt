@@ -668,6 +668,25 @@ describe("[FR-VIS-026-AC4] Run Graph の一覧と deep link を bounded にす�
     ).toContain("node=node-executor");
   });
 
+  it("run 内の repository 表記ではなく選択 task の canonical ID で deep link を生成する", () => {
+    const canonicalTaskId = "Stanah/gh-gantt#330";
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: canonicalTaskId,
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      selectedRunId: "run-330",
+      selectedNodeId: "node-executor",
+    });
+
+    expect(vm.runs.items[0]?.taskId).toBe(canonicalTaskId);
+    expect(vm.runs.items[0]?.deepLink).toContain("task=Stanah%2Fgh-gantt%23330");
+    expect(vm.selectedRun?.taskId).toBe(canonicalTaskId);
+    expect(vm.selectedRun?.deepLink).toContain("task=Stanah%2Fgh-gantt%23330");
+    expect(
+      vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")?.deepLink,
+    ).toContain("task=Stanah%2Fgh-gantt%23330");
+  });
+
   it("planned node と edge も同じ limit の bounded collection にする", () => {
     const vm = buildProjectMapRunGraphViewModel({
       taskId: "stanah/gh-gantt#330",

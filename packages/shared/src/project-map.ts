@@ -1057,8 +1057,7 @@ function runDeepLink(taskId: string, runId: string, nodeId?: string | null): str
     .join("&")}`;
 }
 
-function buildRunSummary(view: RunGraphView): ProjectMapRunSummary {
-  const taskId = runTaskId(view);
+function buildRunSummary(view: RunGraphView, taskId: string): ProjectMapRunSummary {
   return {
     runId: view.runId,
     taskId,
@@ -1077,11 +1076,11 @@ function buildRunSummary(view: RunGraphView): ProjectMapRunSummary {
 
 function buildSelectedRun(
   view: RunGraphView,
+  taskId: string,
   contract: GraphContract | null,
   requestedNodeId: string | null,
   limit: number,
 ): ProjectMapSelectedRun {
-  const taskId = runTaskId(view);
   const contractNodes = new Map((contract?.nodes ?? []).map((node) => [node.id, node]));
   const actualNodeById = new Map(view.nodes.items.map((node) => [node.id, node]));
   const selectedNodeId =
@@ -1302,7 +1301,9 @@ export function buildProjectMapRunGraphViewModel(
       Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
       left.runId.localeCompare(right.runId),
   );
-  const summaries = sortedViews.map(buildRunSummary);
+  const summaries = sortedViews.map((view) =>
+    buildRunSummary(view, input.taskId ?? runTaskId(view)),
+  );
   const totalRuns = Math.max(input.totalRuns ?? summaries.length, summaries.length);
   const selectedView = input.selectedRunId
     ? (sortedViews.find((view) => view.runId === input.selectedRunId) ?? null)
@@ -1327,7 +1328,13 @@ export function buildProjectMapRunGraphViewModel(
       items,
     },
     selectedRun: selectedView
-      ? buildSelectedRun(selectedView, input.contract, input.selectedNodeId ?? null, limit)
+      ? buildSelectedRun(
+          selectedView,
+          input.taskId ?? runTaskId(selectedView),
+          input.contract,
+          input.selectedNodeId ?? null,
+          limit,
+        )
       : null,
   };
 }

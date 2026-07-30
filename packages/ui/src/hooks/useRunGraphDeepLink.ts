@@ -48,9 +48,10 @@ export function useRunGraphDeepLink() {
     updateUrl(runId, null);
   }, []);
 
-  const setSelectedNodeId = useCallback((nodeId: string | null) => {
+  const setSelectedNodeId = useCallback((nodeId: string | null, displayedRunId?: string | null) => {
     setNodeId(nodeId);
-    const runId = readSelection().runId;
+    const runId = readSelection().runId ?? displayedRunId ?? null;
+    setRunId(runId);
     updateUrl(runId, nodeId);
   }, []);
 
