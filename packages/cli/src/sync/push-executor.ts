@@ -998,7 +998,9 @@ export async function executePush(
 
   syncState = {
     ...syncState,
-    last_synced_at: new Date().toISOString(),
+    // last_synced_at は全リモート状態を取得した pull の watermark。
+    // 一部タスクだけを更新する push では、push 対象外の外部更新を次回 pull の
+    // pre-check から隠さないように前進させない (#318)。
     snapshots: newSnapshots,
   };
 
