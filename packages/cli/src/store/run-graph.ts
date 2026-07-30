@@ -55,10 +55,7 @@ export class RunGraphEventStore {
     if (event.sequence !== expected) {
       throw new Error(`event sequence は ${expected} である必要があります`);
     }
-    const filePath = join(
-      eventsDir,
-      `${String(event.sequence).padStart(12, "0")}-${safeSegment(event.eventId)}.json`,
-    );
+    const filePath = join(eventsDir, `${String(event.sequence).padStart(12, "0")}.json`);
     try {
       await writeFile(filePath, JSON.stringify(event, null, 2) + "\n", { flag: "wx" });
     } catch (error) {

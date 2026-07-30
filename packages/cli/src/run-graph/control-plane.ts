@@ -296,14 +296,19 @@ export class RunGraphControlPlane {
       );
     }
 
+    if ((input.artifacts?.length ?? 0) > 0 && !activeAttempt) {
+      return this.reject(
+        input,
+        "artifact_schema_mismatch",
+        "artifact を生成した active attempt がありません",
+        view,
+      );
+    }
+
     const acceptedAt = this.dependencies.now();
-    const artifacts = this.materializeArtifacts(
-      input,
-      projection,
-      currentNode.id,
-      activeAttempt?.id,
-      acceptedAt,
-    );
+    const artifacts = activeAttempt
+      ? this.materializeArtifacts(input, projection, currentNode.id, activeAttempt.id, acceptedAt)
+      : [];
     const evidence = this.materializeEvidence(
       input,
       projection,
@@ -569,6 +574,13 @@ export class RunGraphControlPlane {
     let nextNodeId: string | undefined;
     let nextContractNodeId: string | undefined;
     let waitReason: string | undefined;
+    if (
+      input.command.type === "attempt_finished" &&
+      input.command.outcome !== "succeeded" &&
+      input.command.outcome !== "cancelled"
+    ) {
+      waitReason = `attempt_${input.command.outcome}`;
+    }
     if (input.command.type === "node_outcome_submitted") {
       const expectedSchemas =
         contract.nodes.find((node) => node.id === currentNode.contractNodeId)
@@ -637,8 +649,19 @@ export class RunGraphControlPlane {
         input.command.decision === "override" &&
         currentWaitReason !== "human_approval_required"
       ) {
+        const overrideEdge = contract.edges.find(
+          (edge) => edge.from === currentNode.contractNodeId && edge.condition === "human_override",
+        );
+        if (!overrideEdge || overrideEdge.to === "terminal") {
+          return this.reject(
+            input,
+            "invalid_transition",
+            `node ${currentNode.contractNodeId} に human_override edge がありません`,
+            view,
+          );
+        }
         nextNodeId = this.dependencies.nextId("node");
-        nextContractNodeId = "implementer";
+        nextContractNodeId = overrideEdge.to;
       }
     }
 
@@ -686,20 +709,7 @@ export class RunGraphControlPlane {
             "human_gate_required")
           : null,
       budgets: projection.budgets,
-      allowedNextTransitions:
-        projection.run.state === "paused"
-          ? ["run_resumed"]
-          : projection.run.state === "waiting_human"
-            ? ["human_decision"]
-            : currentNode?.contractNodeId === "human-pr" && currentNode.state === "running"
-              ? ["pr_observed"]
-              : currentNode?.state === "ready"
-                ? ["attempt_started"]
-                : currentNode?.state === "running" && activeAttempt?.state === "running"
-                  ? ["attempt_finished", "run_paused"]
-                  : currentNode?.state === "running" && activeAttempt?.state === "succeeded"
-                    ? ["node_outcome_submitted", "run_paused"]
-                    : [],
+      allowedNextTransitions: this.allowedNextTransitions(projection, currentNode, activeAttempt),
       artifacts: {
         total: projection.artifacts.length,
         limit,
@@ -815,22 +825,41 @@ export class RunGraphControlPlane {
     input: RunGraphRunnerCommandInput,
     projection: RunGraphProjection,
     nodeId: string,
-    attemptId: string | undefined,
+    attemptId: string,
     createdAt: string,
   ): RunGraphArtifact[] {
-    if ((input.artifacts?.length ?? 0) > 0 && !attemptId) return [];
     const producerActor =
-      input.command.type === "run_paused" && attemptId
+      input.command.type === "run_paused"
         ? (projection.attempts.find((attempt) => attempt.id === attemptId)?.actor ?? input.actor)
         : input.actor;
     return (input.artifacts ?? []).map((artifact) => ({
       ...artifact,
       runId: input.runId,
       nodeId,
-      producerAttemptId: attemptId as string,
+      producerAttemptId: attemptId,
       actor: producerActor,
       createdAt,
     }));
+  }
+
+  private allowedNextTransitions(
+    projection: RunGraphProjection,
+    currentNode: RunGraphProjection["nodes"][number] | null,
+    activeAttempt: RunGraphProjection["attempts"][number] | null,
+  ): RunGraphView["allowedNextTransitions"] {
+    if (projection.run.state === "paused") return ["run_resumed"];
+    if (projection.run.state === "waiting_human") return ["human_decision"];
+    if (currentNode?.contractNodeId === "human-pr" && currentNode.state === "running") {
+      return ["pr_observed"];
+    }
+    if (currentNode?.state === "ready") return ["attempt_started"];
+    if (currentNode?.state === "running" && activeAttempt?.state === "running") {
+      return ["attempt_finished", "run_paused"];
+    }
+    if (currentNode?.state === "running" && activeAttempt?.state === "succeeded") {
+      return ["node_outcome_submitted", "run_paused"];
+    }
+    return [];
   }
 
   private materializeEvidence(
@@ -1024,9 +1053,12 @@ export class RunGraphControlPlane {
           ...event.artifactIds.filter((id) => !currentNode.outputArtifactIds.includes(id)),
         );
         currentNode.updatedAt = event.acceptedAt;
-        if (command.outcome !== "succeeded") {
-          currentNode.state = command.outcome === "cancelled" ? "cancelled" : "failed";
-          projection.run.state = command.outcome === "cancelled" ? "cancelled" : "failed";
+        if (command.outcome === "cancelled") {
+          currentNode.state = "cancelled";
+          projection.run.state = "cancelled";
+        } else if (command.outcome !== "succeeded") {
+          currentNode.state = "waiting_human";
+          projection.run.state = "waiting_human";
         }
         continue;
       }

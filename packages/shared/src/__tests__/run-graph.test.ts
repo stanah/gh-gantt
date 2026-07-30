@@ -45,6 +45,23 @@ describe("[NFR-STABILITY-014-AC3] Graph Contract が固定 dev-role graph の統
     expect(contract.edges).toContainEqual(
       expect.objectContaining({ from: "executor", to: "implementer", condition: "verify_failed" }),
     );
+    expect(contract.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ from: "planner", to: "planner", condition: "human_override" }),
+        expect.objectContaining({
+          from: "implementer",
+          to: "implementer",
+          condition: "human_override",
+        }),
+        expect.objectContaining({ from: "executor", to: "executor", condition: "human_override" }),
+        expect.objectContaining({ from: "reviewer", to: "reviewer", condition: "human_override" }),
+        expect.objectContaining({
+          from: "human-pr",
+          to: "implementer",
+          condition: "human_override",
+        }),
+      ]),
+    );
     expect(contract.edges).toContainEqual(
       expect.objectContaining({
         from: "reviewer",

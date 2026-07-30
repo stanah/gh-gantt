@@ -1,7 +1,7 @@
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { createEmptyLoopState, FIXED_DEV_ROLE_GRAPH_CONTRACT } from "@gh-gantt/shared";
 import { RunGraphControlPlane } from "../../run-graph/control-plane.js";
 import { GraphContractStore } from "../../store/graph-contract.js";
@@ -30,8 +30,15 @@ function dependencies() {
 }
 
 describe("[NFR-STABILITY-014-AC5] [Issue #328] Run Graph 再開は旧 loop-state と完了 node を変更しない", () => {
+  let root = "";
+
+  afterEach(async () => {
+    if (root !== "") await rm(root, { recursive: true, force: true });
+    root = "";
+  });
+
   it("再起動と event 再送後も planner outcome を一度だけ replay する", async () => {
-    const root = await mkdtemp(join(tmpdir(), "gh-gantt-issue-328-regression-"));
+    root = await mkdtemp(join(tmpdir(), "gh-gantt-issue-328-regression-"));
     const legacyLoopState = createEmptyLoopState();
     const legacyStore = new LoopStateStore(root);
     await legacyStore.write(legacyLoopState);
@@ -42,7 +49,11 @@ describe("[NFR-STABILITY-014-AC5] [Issue #328] Run Graph 再開は旧 loop-state
       eventId: "start-regression-328",
       actor: { id: "orchestrator-1", role: "orchestrator" },
       task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
-      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      contract: {
+        planId: FIXED_DEV_ROLE_GRAPH_CONTRACT.planId,
+        planVersion: FIXED_DEV_ROLE_GRAPH_CONTRACT.planVersion,
+        schemaVersion: FIXED_DEV_ROLE_GRAPH_CONTRACT.schemaVersion,
+      },
     });
     if (!started.accepted || !started.view.currentNode) throw new Error("Run Graph start failure");
     const runId = started.view.runId;

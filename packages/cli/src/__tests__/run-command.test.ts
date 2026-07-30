@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -78,6 +79,16 @@ const reference = (name: string) => ({
   sha256: `sha256:${"d".repeat(64)}`,
   byteLength: 256,
 });
+
+function expectedBoundedReference(kind: "command" | "github", uri: string, value: unknown) {
+  const canonicalJson = JSON.stringify(value);
+  return {
+    kind,
+    uri,
+    sha256: `sha256:${createHash("sha256").update(canonicalJson, "utf8").digest("hex")}`,
+    byteLength: Buffer.byteLength(canonicalJson, "utf8"),
+  };
+}
 
 type ExecutionRole = "planner" | "implementer" | "executor" | "reviewer";
 
@@ -319,6 +330,57 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
     expect(errorSpy).not.toHaveBeenCalled();
   });
 
+  it("run start は同期 task の repository casing が異なっても同じ Issue として扱う", async () => {
+    await new TasksStore(projectRoot).write({
+      tasks: [makeTask({ github_repo: "STANAH/GH-GANTT" })],
+      cache: { comments: {}, reactions: {} },
+    });
+
+    await createRunCommand().parseAsync(
+      [
+        "start",
+        "--issue",
+        "328",
+        "--event-id",
+        "event-case-insensitive",
+        "--actor",
+        "orchestrator-1",
+        "--json",
+      ],
+      { from: "user" },
+    );
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] as string)).toMatchObject({
+      accepted: true,
+      view: { task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 } },
+    });
+  });
+
+  it.each([
+    { option: "--event-id", value: "   ", otherOption: "--actor", otherValue: "orchestrator-1" },
+    { option: "--actor", value: "   ", otherOption: "--event-id", otherValue: "event-start" },
+  ])("run start は空の $option を invalid_input で拒否する", async (params) => {
+    await createRunCommand().parseAsync(
+      [
+        "start",
+        "--issue",
+        "328",
+        params.option,
+        params.value,
+        params.otherOption,
+        params.otherValue,
+        "--json",
+      ],
+      { from: "user" },
+    );
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] as string)).toMatchObject({
+      accepted: false,
+      code: "invalid_input",
+    });
+    expect(process.exitCode).toBe(1);
+  });
+
   it("外部 event JSON を適用し、checkpoint と副作用状態を明示して再開する", async () => {
     await createRunCommand().parseAsync(
       [
@@ -449,6 +511,70 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
       code: "duplicate_event",
       stateUnchanged: true,
     });
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("run event は schema に一致しない runner command JSON を invalid_input で拒否する", async () => {
+    await createRunCommand().parseAsync(
+      [
+        "start",
+        "--issue",
+        "328",
+        "--event-id",
+        "event-start",
+        "--actor",
+        "orchestrator-1",
+        "--json",
+      ],
+      { from: "user" },
+    );
+    const started = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string) as {
+      view: { runId: string };
+    };
+    const eventFile = join(projectRoot, "invalid-runner-event.json");
+    await writeFile(
+      eventFile,
+      JSON.stringify({
+        schemaVersion: "1",
+        eventId: "event-invalid-schema",
+        actor: { id: "planner-1", role: "planner" },
+        command: { type: "attempt_started", nodeId: "node-1", attemptId: "" },
+      }),
+    );
+
+    logSpy.mockClear();
+    process.exitCode = undefined;
+    await createRunCommand().parseAsync(
+      ["event", started.view.runId, "--file", eventFile, "--json"],
+      { from: "user" },
+    );
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] as string)).toMatchObject({
+      accepted: false,
+      code: "invalid_input",
+    });
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("run start の control plane 拒否は start 固有ラベルで表示する", async () => {
+    const args = [
+      "start",
+      "--issue",
+      "328",
+      "--event-id",
+      "event-duplicate-start",
+      "--actor",
+      "orchestrator-1",
+    ];
+    await createRunCommand().parseAsync(args, { from: "user" });
+
+    errorSpy.mockClear();
+    process.exitCode = undefined;
+    await createRunCommand().parseAsync(args, { from: "user" });
+
+    expect(errorSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^Run start rejected \[duplicate_event\]:/),
+    );
     expect(process.exitCode).toBe(1);
   });
 
@@ -591,12 +717,11 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
         id: "human-evidence-1",
         kind: "human_decision",
         actor: { id: "human-1", role: "human" },
-        reference: {
-          kind: "command",
-          uri: "command:gh-gantt/run/decide",
-          sha256: "sha256:68326ecec4486dd727e93480ad238a35bdc877d0fc8807cb68180187f78eac7a",
-          byteLength: 77,
-        },
+        reference: expectedBoundedReference("command", "command:gh-gantt/run/decide", {
+          actor: { id: "human-1", role: "human" },
+          decision: "approved",
+          reason: null,
+        }),
       }),
     );
   });
@@ -730,15 +855,27 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
       };
       expect(result).toMatchObject({ accepted: true, view: { state: expectedRunState } });
       if (state === "MERGED") {
+        const canonicalLiveState = {
+          owner: liveState.owner,
+          repo: liveState.repo,
+          number: liveState.number,
+          state: liveState.state,
+          isDraft: liveState.isDraft,
+          linkedIssue: liveState.linkedIssue,
+          linkageComplete: liveState.linkageComplete,
+          reviewDecision: liveState.reviewDecision,
+          unresolvedThreads: liveState.unresolvedThreads,
+          pendingChecks: liveState.pendingChecks ?? null,
+        };
         expect(result.view.evidence.items).toContainEqual(
           expect.objectContaining({
             id: "pr-evidence-linked",
             kind: "github_pr_live",
-            reference: expect.objectContaining({
-              uri: "https://github.com/stanah/gh-gantt/pull/400",
-              sha256: "sha256:275086f30aa17c6bf5760c62e99992991f3c74e6a1ee62035d8a52821336e3ec",
-              byteLength: 242,
-            }),
+            reference: expectedBoundedReference(
+              "github",
+              "https://github.com/stanah/gh-gantt/pull/400",
+              canonicalLiveState,
+            ),
           }),
         );
       }

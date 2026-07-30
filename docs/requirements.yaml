@@ -1490,6 +1490,7 @@ areas:
               外部 runner は必須 human gate を bypass できない
             status: covered
             tests:
+              - packages/cli/src/__tests__/loop-pr-evidence.test.ts
               - packages/cli/src/__tests__/run-graph-control-plane.test.ts
           - id: NFR-STABILITY-014-AC8
             description: |

@@ -885,6 +885,261 @@ describe("[NFR-STABILITY-014-AC6] fixed dev-role transition は accepted outcome
       ),
     ).toHaveLength(1);
   });
+
+  it("artifact を active attempt のない human gate へ渡すと破棄せず拒否する", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-artifact-without-attempt");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_invalid",
+      schemaId: "dev-role.plan",
+      prefix: "artifact-without-attempt-plan",
+    });
+    const before = await control.inspect(runId);
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "artifact-without-attempt-override",
+        runId,
+        actor: { id: "maintainer-1", role: "human" },
+        command: {
+          type: "human_decision",
+          decision: "override",
+          reason: "計画を人手で確認したため続行する",
+          evidenceIds: ["artifact-without-attempt-evidence"],
+        },
+        artifacts: [
+          {
+            id: "artifact-without-attempt",
+            schemaId: "dev-role.plan",
+            schemaVersion: "1",
+            derivedFromArtifactIds: [],
+            reference: reference("artifact-without-attempt"),
+          },
+        ],
+        evidence: [
+          {
+            id: "artifact-without-attempt-evidence",
+            kind: "human_decision",
+            artifactIds: [],
+            provenance: "maintainer-1",
+            reference: reference("artifact-without-attempt-evidence"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "artifact_schema_mismatch",
+      stateUnchanged: true,
+      view: { revision: before.revision },
+    });
+  });
+
+  it("失敗した attempt は human gate から contract の自己 edge で同じ role を再試行する", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-failed-attempt-recovery");
+    const started = await control.inspect(runId);
+    if (!started.currentNode) throw new Error("planner node がありません");
+    const failedNodeId = started.currentNode.id;
+
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "failed-attempt-start",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_started",
+        nodeId: failedNodeId,
+        attemptId: "failed-attempt",
+      },
+    });
+    const failed = await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "failed-attempt-finish",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_finished",
+        nodeId: failedNodeId,
+        attemptId: "failed-attempt",
+        outcome: "failed",
+        artifactIds: [],
+        evidenceIds: ["failed-attempt-evidence"],
+      },
+      evidence: [
+        {
+          id: "failed-attempt-evidence",
+          kind: "command_execution",
+          artifactIds: [],
+          provenance: "external-runner",
+          reference: reference("failed-attempt-evidence"),
+        },
+      ],
+    });
+    expect(failed).toMatchObject({
+      accepted: true,
+      view: {
+        state: "waiting_human",
+        waitReason: "attempt_failed",
+        currentNode: { id: failedNodeId, contractNodeId: "planner", state: "waiting_human" },
+        activeAttempt: { id: "failed-attempt", state: "failed" },
+        allowedNextTransitions: ["human_decision"],
+      },
+    });
+
+    const override = await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "failed-attempt-override",
+      runId,
+      actor: { id: "maintainer-1", role: "human" },
+      command: {
+        type: "human_decision",
+        decision: "override",
+        reason: "失敗原因を確認したため planner を再実行する",
+        evidenceIds: ["failed-attempt-override-evidence"],
+      },
+      evidence: [
+        {
+          id: "failed-attempt-override-evidence",
+          kind: "human_decision",
+          artifactIds: [],
+          provenance: "maintainer-1",
+          reference: reference("failed-attempt-override-evidence"),
+        },
+      ],
+    });
+    expect(override).toMatchObject({
+      accepted: true,
+      view: {
+        state: "running",
+        currentNode: {
+          contractNodeId: "planner",
+          state: "ready",
+          previousNodeId: failedNodeId,
+        },
+        activeAttempt: null,
+        allowedNextTransitions: ["attempt_started"],
+      },
+    });
+  });
+
+  it("cancelled attempt は Run を終端させ human override を許可しない", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-cancelled-attempt");
+    const started = await control.inspect(runId);
+    if (!started.currentNode) throw new Error("planner node がありません");
+
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "cancelled-attempt-start",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_started",
+        nodeId: started.currentNode.id,
+        attemptId: "cancelled-attempt",
+      },
+    });
+    const cancelled = await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "cancelled-attempt-finish",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_finished",
+        nodeId: started.currentNode.id,
+        attemptId: "cancelled-attempt",
+        outcome: "cancelled",
+        artifactIds: [],
+        evidenceIds: ["cancelled-attempt-evidence"],
+      },
+      evidence: [
+        {
+          id: "cancelled-attempt-evidence",
+          kind: "command_execution",
+          artifactIds: [],
+          provenance: "external-runner",
+          reference: reference("cancelled-attempt-evidence"),
+        },
+      ],
+    });
+    expect(cancelled).toMatchObject({
+      accepted: true,
+      view: {
+        state: "cancelled",
+        currentNode: { state: "cancelled" },
+        activeAttempt: { state: "cancelled" },
+        allowedNextTransitions: [],
+      },
+    });
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "cancelled-attempt-override",
+        runId,
+        actor: { id: "maintainer-1", role: "human" },
+        command: {
+          type: "human_decision",
+          decision: "override",
+          reason: "取消後の続行は許可しない",
+          evidenceIds: ["cancelled-attempt-override-evidence"],
+        },
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "invalid_transition", stateUnchanged: true });
+  });
+
+  it("human override は現在 node からの明示 contract edge がなければ拒否する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-control-plane-no-override-edge-"));
+    await new GraphContractStore(root).install({
+      ...FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      edges: FIXED_DEV_ROLE_GRAPH_CONTRACT.edges.filter(
+        (edge) => !(edge.from === "human-pr" && edge.condition === "human_override"),
+      ),
+    });
+    const control = new RunGraphControlPlane(root, deterministicDependencies());
+    const runId = await startRun(control, "start-no-override-edge");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_invalid",
+      schemaId: "dev-role.plan",
+      prefix: "no-override-edge-plan",
+    });
+    const before = await control.inspect(runId);
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "no-override-edge-decision",
+        runId,
+        actor: { id: "maintainer-1", role: "human" },
+        command: {
+          type: "human_decision",
+          decision: "override",
+          reason: "明示 edge がない場合は続行しない",
+          evidenceIds: ["no-override-edge-evidence"],
+        },
+        evidence: [
+          {
+            id: "no-override-edge-evidence",
+            kind: "human_decision",
+            artifactIds: [],
+            provenance: "maintainer-1",
+            reference: reference("no-override-edge-evidence"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "invalid_transition",
+      stateUnchanged: true,
+      view: { revision: before.revision },
+    });
+  });
 });
 
 describe("[NFR-STABILITY-014-AC6] verify retry と review improvement は独立 bounded budget に従う", () => {
@@ -1090,9 +1345,10 @@ describe("[NFR-STABILITY-014-AC5] checkpoint は同じ attempt を重複 dispatc
         },
       },
     });
+    if (!paused.accepted) throw new Error("pause が拒否されました");
 
     const restored = new RunGraphControlPlane(root, deterministicDependencies());
-    expect(await restored.inspect(runId)).toEqual(paused.accepted ? paused.view : undefined);
+    expect(await restored.inspect(runId)).toEqual(paused.view);
     await expect(
       restored.applyEvent({
         schemaVersion: "1",

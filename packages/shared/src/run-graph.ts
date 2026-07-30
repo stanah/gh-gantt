@@ -262,6 +262,31 @@ export const FIXED_DEV_ROLE_GRAPH_CONTRACT: GraphContract = {
     },
     { id: "review-blocked", from: "reviewer", to: "human-pr", condition: "block" },
     { id: "review-critical", from: "reviewer", to: "human-pr", condition: "critical" },
+    { id: "planner-human-override", from: "planner", to: "planner", condition: "human_override" },
+    {
+      id: "implementer-human-override",
+      from: "implementer",
+      to: "implementer",
+      condition: "human_override",
+    },
+    {
+      id: "executor-human-override",
+      from: "executor",
+      to: "executor",
+      condition: "human_override",
+    },
+    {
+      id: "reviewer-human-override",
+      from: "reviewer",
+      to: "reviewer",
+      condition: "human_override",
+    },
+    {
+      id: "human-pr-override",
+      from: "human-pr",
+      to: "implementer",
+      condition: "human_override",
+    },
     { id: "pr-completed", from: "human-pr", to: "terminal", condition: "pr_completed" },
   ],
   artifactSchemas: [

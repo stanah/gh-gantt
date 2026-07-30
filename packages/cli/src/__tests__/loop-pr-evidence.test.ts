@@ -38,6 +38,7 @@ const gateState = (overrides: Partial<PrGateState>): PrGateState => ({
 
 function prPage(params: {
   issues: Array<{ repository: string; number: number }>;
+  nodes?: Array<{ repository: { nameWithOwner: string }; number: number } | null> | null;
   hasNextPage: boolean;
   endCursor: string | null;
   state?: "OPEN" | "MERGED" | "CLOSED";
@@ -52,10 +53,13 @@ function prPage(params: {
         reviewDecision: "APPROVED",
         closingIssuesReferences: {
           pageInfo: { hasNextPage: params.hasNextPage, endCursor: params.endCursor },
-          nodes: params.issues.map((issue) => ({
-            number: issue.number,
-            repository: { nameWithOwner: issue.repository },
-          })),
+          nodes:
+            params.nodes === undefined
+              ? params.issues.map((issue) => ({
+                  number: issue.number,
+                  repository: { nameWithOwner: issue.repository },
+                }))
+              : params.nodes,
         },
         reviewThreads: { nodes: [] },
         commits: { nodes: [] },
@@ -64,7 +68,7 @@ function prPage(params: {
   };
 }
 
-describe("Run Graph PR observation は closing Issue を cursor pagination する", () => {
+describe("[NFR-STABILITY-014-AC7] Run Graph PR observation は closing Issue を cursor pagination する", () => {
   const runTarget = {
     target: { ...REPO, number: 334, crossRepo: false },
     expectedIssue: { ...REPO, issueNumber: 328 },
@@ -145,6 +149,42 @@ describe("Run Graph PR observation は closing Issue を cursor pagination す�
       .mockRejectedValueOnce(new Error("GitHub API unavailable"));
     await expect(fetchRunGraphPrObservation(runTarget, { query: failedPage })).rejects.toThrow(
       "GitHub API unavailable",
+    );
+  });
+
+  it("pagination 中の live state 変更を fail-closed にする", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(prPage({ issues: [], hasNextPage: true, endCursor: "cursor-1" }))
+      .mockResolvedValueOnce(
+        prPage({
+          issues: [],
+          hasNextPage: false,
+          endCursor: null,
+          state: "OPEN",
+        }),
+      );
+
+    await expect(fetchRunGraphPrObservation(runTarget, { query })).rejects.toThrow(
+      "live state が pagination 中に変更されました",
+    );
+  });
+
+  it.each([
+    { name: "nodes が null", nodes: null },
+    { name: "nodes に null 要素を含む", nodes: [null] },
+  ])("closing Issue の $name 場合を fail-closed にする", async ({ nodes }) => {
+    const query = vi.fn().mockResolvedValueOnce(
+      prPage({
+        issues: [],
+        nodes,
+        hasNextPage: false,
+        endCursor: null,
+      }),
+    );
+
+    await expect(fetchRunGraphPrObservation(runTarget, { query })).rejects.toThrow(
+      "closing Issue 参照を完全に取得できません",
     );
   });
 });

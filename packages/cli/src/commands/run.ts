@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  RunGraphRunnerCommandInputSchema,
   type RunGraphRunnerCommandInput,
   type RunGraphView,
 } from "@gh-gantt/shared";
@@ -131,13 +132,17 @@ export function formatRunGraphView(view: RunGraphView): string {
   return lines.join("\n");
 }
 
-function outputResult(result: RunGraphCommandResult, json: boolean | undefined): void {
+function outputResult(
+  result: RunGraphCommandResult,
+  json: boolean | undefined,
+  label: string,
+): void {
   if (json) {
     console.log(JSON.stringify(result, null, 2));
   } else if (result.accepted) {
     console.log(formatRunGraphView(result.view));
   } else {
-    console.error(`Run event rejected [${result.code}]: ${result.message}`);
+    console.error(`${label} rejected [${result.code}]: ${result.message}`);
     if (result.view) console.log(formatRunGraphView(result.view));
   }
   if (!result.accepted) process.exitCode = 1;
@@ -159,6 +164,8 @@ async function startRun(
   options: { issue: string; eventId: string; actor: string },
 ): Promise<RunGraphCommandResult> {
   const issueNumber = parsePositiveInteger(options.issue, "--issue");
+  const eventId = parseRequiredText(options.eventId, "--event-id");
+  const actorId = parseRequiredText(options.actor, "--actor");
   const config = await new ConfigStore(projectRoot).read();
   const binding = config.run_graph;
   if (!binding) {
@@ -186,7 +193,9 @@ async function startRun(
   const tasks = await new TasksStore(projectRoot).read();
   const repository = `${config.project.github.owner}/${config.project.github.repo}`;
   const task = tasks.tasks.find(
-    (candidate) => candidate.github_issue === issueNumber && candidate.github_repo === repository,
+    (candidate) =>
+      candidate.github_issue === issueNumber &&
+      candidate.github_repo.toLowerCase() === repository.toLowerCase(),
   );
   if (!task) {
     throw new RunCommandError(
@@ -201,8 +210,8 @@ async function startRun(
   await new GraphContractStore(projectRoot).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
   return new RunGraphControlPlane(projectRoot).start({
     schemaVersion: "1",
-    eventId: options.eventId,
-    actor: { id: options.actor, role: "orchestrator" },
+    eventId,
+    actor: { id: actorId, role: "orchestrator" },
     task: {
       owner: config.project.github.owner,
       repo: config.project.github.repo,
@@ -231,7 +240,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
       .action(
         async (options: { issue: string; eventId: string; actor: string; json?: boolean }) => {
           try {
-            outputResult(await startRun(process.cwd(), options), options.json);
+            outputResult(await startRun(process.cwd(), options), options.json, "Run start");
           } catch (error) {
             outputError(error, options.json);
           }
@@ -264,10 +273,17 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
               `${rawCommandType} は専用の run command からのみ受理します`,
             );
           }
-          const input = { ...raw, runId } as RunGraphRunnerCommandInput;
+          const parsed = RunGraphRunnerCommandInputSchema.safeParse({ ...raw, runId });
+          if (!parsed.success) {
+            throw new RunCommandError(
+              "invalid_input",
+              `runner command JSON が schema に一致しません: ${parsed.error.message}`,
+            );
+          }
           outputResult(
-            await new RunGraphControlPlane(process.cwd()).applyEvent(input),
+            await new RunGraphControlPlane(process.cwd()).applyEvent(parsed.data),
             options.json,
+            "Run event",
           );
         } catch (error) {
           outputError(error, options.json);
@@ -335,6 +351,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
             outputResult(
               await new RunGraphControlPlane(process.cwd()).applyEvent(input),
               options.json,
+              "Run resume",
             );
           } catch (error) {
             outputError(error, options.json);
@@ -403,6 +420,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                 ],
               }),
               options.json,
+              "Run decide",
             );
           } catch (error) {
             outputError(error, options.json);
@@ -452,6 +470,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                   view: before,
                 },
                 options.json,
+                "Run observe-pr",
               );
               return;
             }
@@ -471,6 +490,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                   view: before,
                 },
                 options.json,
+                "Run observe-pr",
               );
               return;
             }
@@ -488,6 +508,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                   view: before,
                 },
                 options.json,
+                "Run observe-pr",
               );
               return;
             }
@@ -535,6 +556,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                 ],
               }),
               options.json,
+              "Run observe-pr",
             );
           } catch (error) {
             outputError(error, options.json);

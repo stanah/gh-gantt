@@ -101,6 +101,41 @@ describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segm
     expect((await store.readJournal(startEvent.runId)).acceptedEvents).toHaveLength(1);
   });
 
+  it("同じ sequence の concurrent append は一件だけを受理する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEvent);
+    const events = ["attempt-started-a", "attempt-started-b"].map(
+      (eventId, index): RunGraphAcceptedEvent => ({
+        ...startEvent,
+        eventId,
+        sequence: 2,
+        acceptedAt: `2026-07-30T00:0${index + 1}:00.000Z`,
+        command: {
+          type: "attempt_started",
+          nodeId: "node-planner-1",
+          attemptId: `attempt-planner-${index + 1}`,
+        },
+      }),
+    );
+    const results = await Promise.allSettled([
+      store.appendAccepted(events[0]),
+      new RunGraphEventStore(root).appendAccepted(events[1]),
+    ]);
+
+    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((result) => result.status === "rejected");
+    expect(rejected).toMatchObject({
+      status: "rejected",
+      reason: expect.objectContaining({
+        message: expect.stringMatching(/duplicate event segment/i),
+      }),
+    });
+    await expect(store.readJournal(startEvent.runId)).resolves.toMatchObject({
+      acceptedEvents: [{ sequence: 1 }, { sequence: 2 }],
+    });
+  });
+
   it("旧 schema v1 の pr_observed accepted event を不変のまま安全な未証明 linkage へ read migration する", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
     const store = new RunGraphEventStore(root);
