@@ -59,6 +59,13 @@
 
 振る舞い変更を伴う開発では、Issue 作成時または実装中に `gh-gantt-living-documentation` スキルを invoke して、要件 AC の追加とテスト名への `[ID]` 付与を行うこと。
 
+## Graph Contract
+
+正典は`docs/adr/ADR-021-graph-contract-and-run-graph-boundary.md`とする。
+
+- **現行 (#327)**: plan_id、plan_version、authority binding値のないunversioned provisional projectionとして、外部orchestratorが`.dev-flow`のJSON/schema/manual gateを運用する。製品はeventを受理しない。
+- **#328以後**: 製品control planeがversion bindingとeventを検証・受理する。外部runnerはexecutionだけを担う。
+
 ## Dev-Role Config
 
 `gh-gantt-dev-role` スキル用の設定。orchestrator / planner / implementer / executor / reviewer の各ロールが参照する。

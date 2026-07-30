@@ -16,6 +16,12 @@ description: gh-gantt の開発サイクル全体を回すオーケストレー�
 
 注: `gh-gantt init` がワークフローファイルの自動生成に対応している場合はそちらを使用する。
 
+## Project Contract Discovery
+
+`.gantt-sync/workflow.md`にproject-owned Graph Contractセクションや設計文書への参照がある場合は、
+task選定とdev-roleへの引き継ぎ前に読み、project固有のbinding、段階境界、roadmapへ従う。
+本スキルは特定projectのcontract IDやIssue番号をhard-codeしない。
+
 ## ライフサイクルフック
 
 このスキルは以下のフックポイントを定義する。各フックで `.gantt-sync/workflow.md` に対応するセクションが存在すれば、そのアクションを実行する。定義がなければスキップする。

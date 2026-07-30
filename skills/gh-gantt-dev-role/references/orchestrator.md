@@ -33,27 +33,54 @@ Evidence: sync status、conflict status、Issue 番号、config path、verify co
 6. `executor` を pass 1 として呼び、`03-verify-result-pass-1.json` を作成させる。
 7. executor が failed の場合は `maxExecutorRetries` まで implementer に戻す。
 8. executor が passed になったら `reviewer` を呼び、`04-review-pass-<n>.json` を作成させる。
-9. reviewer が `request-changes` または `block` の場合、`maxImprovementIterations` まで implementer に findings を渡して再実行する。
-10. 終了条件を判定する。
-11. PR 作成に進める場合は `gh-gantt-pr` または project の `prCreator` に引き継ぐ。
-12. PR 作成後は `gh-gantt-workflow` の PR 後レビューサイクルを開始する。
-13. 最終判断を `99-orchestrator-decision.md` に保存する。
+9. review artifactをSafety preflight precedenceで検証する。critical findingが1件でもあればdeclared verdictに
+   関係なく`ESCALATED`とする。
+10. criticalがない場合も、required evidence missing、verify-result inconsistency、またはverdict/finding semantic
+    contract mismatchがあれば、通常verdict edgeより先に`BLOCKED`とする。
+11. preflight通過後だけReviewer verdict operationを適用する。schema-valid `comment`はminor / nitだけ、
+    `approve`はfindings empty、`request-changes`はmajorまたはplan/implementation mismatchを要求する。
+12. 改善budget超過時に`request-changes`が残ればseverityだけで`comment`へ降格せず`BLOCKED`とし、
+    `block`はblocking reason/evidenceを保持して`BLOCKED`とする。
+13. 終了条件を判定する。
+14. PR 作成に進める場合は `gh-gantt-pr` または project の `prCreator` に引き継ぐ。
+15. PR 作成後は `gh-gantt-workflow` の PR 後レビューサイクルを開始する。
+16. 最終判断を `99-orchestrator-decision.md` に保存する。
 
-## 終了条件
+## Project Contract Discovery
 
-| 条件                                                       | 判定                                          |
-| ---------------------------------------------------------- | --------------------------------------------- |
-| executor passed かつ reviewer approve                      | PR 作成へ進む                                 |
-| executor が `maxExecutorRetries` 回連続 failed             | `BLOCKED`                                     |
-| reviewer が critical finding を残した                      | `ESCALATED`                                   |
-| `maxImprovementIterations` 到達後に minor finding のみ残る | PR description に残課題を書いて人間レビューへ |
-| Issue / config / artifact が欠落                           | `BLOCKED`                                     |
+`.gantt-sync/workflow.md`にproject-owned Graph Contractセクションや設計文書への参照がある場合は、
+そのrole transitionとbudget規則を正典として各artifactとevidenceを検証してからedgeを選ぶ。
+project contractがない場合も必須human gateと独立executor/reviewerをbypassしない。終了結果は
+`BLOCKED`、`ESCALATED`、`READY_FOR_PR`、`CONDITIONAL_HANDOFF`、`COMPLETED`のいずれかとする。
+
+### Safety preflight precedence
+
+| priority | condition                                  | declared verdict       | result                    | evidence                            |
+| -------- | ------------------------------------------ | ---------------------- | ------------------------- | ----------------------------------- |
+| 1        | critical finding present                   | approve                | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | comment                | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | request-changes        | ESCALATED                 | critical finding evidence           |
+| 1        | critical finding present                   | block                  | ESCALATED                 | critical finding evidence           |
+| 2        | required evidence missing                  | any                    | BLOCKED                   | missing evidence list               |
+| 2        | verify-result inconsistency                | any                    | BLOCKED                   | verification inconsistency evidence |
+| 2        | verdict/finding semantic contract mismatch | any                    | BLOCKED                   | semantic validation evidence        |
+| 3        | all safety guards passed                   | contract-valid verdict | apply normal verdict edge | validated review artifact           |
+
+### Reviewer verdict operation
+
+| verdict         | guard                                                                                   | action                               | status              |
+| --------------- | --------------------------------------------------------------------------------------- | ------------------------------------ | ------------------- |
+| approve         | contract-valid + findings empty                                                         | human / PR                           | READY_FOR_PR        |
+| comment         | contract-valid + minor/nit only                                                         | preserve remaining findings evidence | CONDITIONAL_HANDOFF |
+| request-changes | contract-valid + (major or plan/implementation mismatch) + improvement budget available | implementer improvement              | IMPROVE             |
+| request-changes | contract-valid + (major or plan/implementation mismatch) + improvement budget exhausted | waiting_human                        | BLOCKED             |
+| block           | contract-valid + blocking reason/evidence + no critical                                 | waiting_human                        | BLOCKED             |
 
 ## 出力契約
 
 `99-orchestrator-decision.md` に以下を含める。
 
-- `status`: `READY_FOR_PR` / `BLOCKED` / `ESCALATED`
+- `status`: `READY_FOR_PR` / `CONDITIONAL_HANDOFF` / `BLOCKED` / `ESCALATED` / `COMPLETED`
 - 対象 Issue
 - 使用 config path
 - 実行した pass 数

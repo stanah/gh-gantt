@@ -73,6 +73,12 @@ Evidence: 読み込んだ config path、role 名、検証した artifact path、
 4. reference の HARD-GATE を満たしてから role を実行する。
 5. 出力を `scratchpadDir/<issue-number>/` に schema 準拠で保存する。
 
+## Project Contract Discovery
+
+`.gantt-sync/workflow.md`にproject-owned Graph Contractセクションや設計文書への参照がある場合、
+Config Discoveryと同時に読み、role transition、budget、human gate、control/execution境界へ適用する。
+本スキルはproject固有のcontract IDやroadmapをhard-codeせず、role artifactの受け渡しだけを汎用定義する。
+
 ## 共通 Artifact
 
 | ファイル                         | 作成 role    | schema                                                                                             |

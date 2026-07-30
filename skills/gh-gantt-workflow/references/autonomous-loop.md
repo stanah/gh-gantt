@@ -2,7 +2,13 @@
 
 外側ループ（タスクを選ぶ → 完了させる → 次を選ぶ）をコード駆動で回す手順。
 決定論的な部分（選定・停止判定・実績記録）は gh-gantt CLI が行い、
-エージェントは設計・実装だけを担う（ADR-016 / ADR-017）。
+エージェントは設計・実装だけを担う。
+
+## Project Contract Discovery
+
+`.gantt-sync/workflow.md`にproject-owned Graph Contractセクションや設計文書への参照がある場合は、
+外側のWork Graph iterationと内側のdev-role graphの境界、artifact、event、停止条件へ適用する。
+この汎用手順は特定projectのcontract IDやroadmapをhard-codeしない。
 
 ## 1 イテレーションの手順
 
@@ -31,16 +37,16 @@
 
 ## センサー結線（検証とループの接続）
 
-検証（`verifyCommands` / dev-role の executor gate, ADR-014）は外側ループのセンサーであり、
+検証（`verifyCommands` / dev-role の executor gate）は外側ループのセンサーであり、
 検証失敗は**新規 Issue 化せず、同一イテレーション内の retry** として扱う
-（`loop.onVerifyFailure: retry`, ADR-016 案D）。
+（`loop.onVerifyFailure: retry`）。
 
 - リトライ予算は dev-role の `maxExecutorRetries` に従う。予算内に合格しなければ
   `--outcome verify_failed` で記録して次の decide に進む
 - 各試行は `--verify "<command>=pass|fail"` で失敗分も含めて漏れなく記録する
   （attempt は指定順で採番）。記録した attempt 分布が
   `gh-gantt loop status` の Loop metrics（改善反復ヒストグラム・停滞警告）の入力になる
-- Living Documentation 採用プロジェクト（ADR-012）では、各イテレーションの record 前に
+- Living Documentation 採用プロジェクトでは、各イテレーションの record 前に
   `pnpm req:trace` → `pnpm req:validate` を 1 回実行して要件トレーサビリティの陳腐化を防ぎ、
   結果を `--verify "req:validate=pass"` として記録する
 
