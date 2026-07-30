@@ -1054,6 +1054,45 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/schema.test.ts
+      - id: FR-STORE-004
+        summary: worktree 間で共有する Work Graph Cache の配置
+        acceptance_criteria:
+          - id: FR-STORE-004-AC1
+            description: |
+              同じ git-common-dir と GitHub Project identity を持つ linked worktree は
+              tasks.json、sync-state.json、comments.json を共有し、config、workflow、
+              loop-state、Graph Contract、Run Graph は workspace-local に保持する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: FR-STORE-004-AC2
+            description: |
+              Work Graph Cache は git-common-dir 配下の versioned namespace に置かれ、
+              owner、repository、project number が異なる GitHub Project の cache を混在させない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: FR-STORE-004-AC3
+            description: |
+              全登録 worktree の legacy tasks/sync-state は Zod 検証と canonical fingerprint が
+              一致する場合だけ一度移行され、相違、片側欠損、破損、移行後の変更は fail-closed になる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: FR-STORE-004-AC4
+            description: |
+              明確な non-git directory だけが従来の projectRoot/.gantt-sync layout を使い、
+              Git discovery の実行異常は workspace-local cache へ fallback しない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: FR-STORE-004-AC5
+            description: |
+              legacy cache が分岐した場合は通常 access を fail-closed にし、operator が
+              storage migrate --from <worktree> で明示した候補だけを共有 generation に publish する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
       - id: NFR-STORE-001
         summary: スキーマバリデーション
         acceptance_criteria:
@@ -1498,3 +1537,57 @@ areas:
               stable ID と event lineage を壊さない versioned extension として追加できる
             status: uncovered
             tests: []
+      - id: NFR-STABILITY-015
+        summary: Work Graph Cache のsnapshot整合性とrepository lease
+        acceptance_criteria:
+          - id: NFR-STABILITY-015-AC1
+            description: |
+              tasks.json と sync-state.json は同じ generation に保存し、callback が publish 前に
+              失敗した場合は旧 CURRENT generation の両ファイルを維持する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC2
+            description: |
+              別 process identity の session は先行 lease の解放まで shared slot access を待ち、
+              真の別 OS process 間でも同じ順序で直列化される
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC3
+            description: |
+              live owner の lease は timeout 後も回収せず STORAGE_BUSY を返し、同一 host で
+              process の死亡と owner nonce を確認できる lease だけを回収する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC4
+            description: |
+              実 Git linked worktree は tasks、sync-state、comments を共有し、config、workflow、
+              loop-state、Graph Contract、Run Graph を workspace-local に保持する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC5
+            description: |
+              最初の shared slot access で lazy initialize し、read/write 共通の exclusive repository lease を
+              callback 完了時の final flush まで保持する。shared slot 非接触 callback は filesystem に触れない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC6
+            description: |
+              実 Git linked worktree 上で、固有のpullなしに CLI status が共有 Work Graph Cache を読み取る
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-status-shared-cache.test.ts
+          - id: NFR-STABILITY-015-AC7
+            description: 生死を判定できない owner の lease は回収しない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC8
+            description: 実 Git linked worktree 上で CLI の pull と push が共有 Work Graph Cache と互換に動作する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-status-shared-cache.test.ts

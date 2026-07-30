@@ -1,8 +1,8 @@
 import { Command } from "commander";
 import { normalizeAcceptanceCriteria } from "@gh-gantt/shared";
 import type { AcceptanceCriterion, Config, Task } from "@gh-gantt/shared";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
+import { withProjectStorage } from "../store/project-storage.js";
+import type { TasksStore } from "../store/tasks.js";
 import { resolveTaskId } from "../util/task-id.js";
 
 export interface AcceptanceCriteriaAddOptions {
@@ -90,33 +90,39 @@ export function createAcceptanceCriteriaCommand(): Command {
     .action(async (id: string, description: string, opts) => {
       try {
         const projectRoot = process.cwd();
-        const configStore = new ConfigStore(projectRoot);
-        const tasksStore = new TasksStore(projectRoot);
-        const config = await configStore.read();
-        const { tasksFile, resolvedId, taskIndex } = await readTask(id, config, tasksStore);
+        await withProjectStorage(
+          projectRoot,
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const { tasksFile, resolvedId, taskIndex } = await readTask(id, config, tasksStore);
 
-        if (taskIndex === -1) {
-          console.error(`Task not found: ${resolvedId}`);
-          process.exitCode = 1;
-          return;
-        }
+            if (taskIndex === -1) {
+              console.error(`Task not found: ${resolvedId}`);
+              process.exitCode = 1;
+              return;
+            }
 
-        const result = addAcceptanceCriterion(tasksFile.tasks[taskIndex], { description });
-        if (result.error) {
-          console.error(result.error);
-          process.exitCode = 1;
-          return;
-        }
+            const result = addAcceptanceCriterion(tasksFile.tasks[taskIndex], { description });
+            if (result.error) {
+              console.error(result.error);
+              process.exitCode = 1;
+              return;
+            }
 
-        tasksFile.tasks[taskIndex] = result.task;
-        await tasksStore.write(tasksFile);
+            tasksFile.tasks[taskIndex] = result.task;
+            await tasksStore.write(tasksFile);
+            await storage.flush();
 
-        if (opts.json) {
-          console.log(JSON.stringify(result.task, null, 2));
-        } else {
-          const count = normalizeAcceptanceCriteria(result.task.acceptance_criteria).length;
-          console.log(`Added acceptance criterion #${count} to ${resolvedId}.`);
-        }
+            if (opts.json) {
+              console.log(JSON.stringify(result.task, null, 2));
+            } else {
+              const count = normalizeAcceptanceCriteria(result.task.acceptance_criteria).length;
+              console.log(`Added acceptance criterion #${count} to ${resolvedId}.`);
+            }
+          },
+        );
       } catch (err) {
         console.error(
           "Failed to add acceptance criterion:",
@@ -134,32 +140,40 @@ export function createAcceptanceCriteriaCommand(): Command {
     .action(async (id: string, opts) => {
       try {
         const projectRoot = process.cwd();
-        const configStore = new ConfigStore(projectRoot);
-        const tasksStore = new TasksStore(projectRoot);
-        const config = await configStore.read();
-        const { tasksFile, resolvedId, taskIndex } = await readTask(id, config, tasksStore);
+        await withProjectStorage(
+          projectRoot,
+          { mode: "write", scope: "shared-cache" },
+          async (storage) => {
+            const { configStore, tasksStore } = storage;
+            const config = await configStore.read();
+            const { tasksFile, resolvedId, taskIndex } = await readTask(id, config, tasksStore);
 
-        if (taskIndex === -1) {
-          console.error(`Task not found: ${resolvedId}`);
-          process.exitCode = 1;
-          return;
-        }
+            if (taskIndex === -1) {
+              console.error(`Task not found: ${resolvedId}`);
+              process.exitCode = 1;
+              return;
+            }
 
-        const result = checkAcceptanceCriterion(tasksFile.tasks[taskIndex], { index: opts.index });
-        if (result.error) {
-          console.error(result.error);
-          process.exitCode = 1;
-          return;
-        }
+            const result = checkAcceptanceCriterion(tasksFile.tasks[taskIndex], {
+              index: opts.index,
+            });
+            if (result.error) {
+              console.error(result.error);
+              process.exitCode = 1;
+              return;
+            }
 
-        tasksFile.tasks[taskIndex] = result.task;
-        await tasksStore.write(tasksFile);
+            tasksFile.tasks[taskIndex] = result.task;
+            await tasksStore.write(tasksFile);
+            await storage.flush();
 
-        if (opts.json) {
-          console.log(JSON.stringify(result.task, null, 2));
-        } else {
-          console.log(`Checked acceptance criterion #${opts.index} on ${resolvedId}.`);
-        }
+            if (opts.json) {
+              console.log(JSON.stringify(result.task, null, 2));
+            } else {
+              console.log(`Checked acceptance criterion #${opts.index} on ${resolvedId}.`);
+            }
+          },
+        );
       } catch (err) {
         console.error(
           "Failed to check acceptance criterion:",

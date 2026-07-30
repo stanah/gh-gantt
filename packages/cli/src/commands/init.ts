@@ -10,8 +10,7 @@ import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
 import { mapProjectItemToTask, applySubIssueLinks, milestoneToTask } from "../github/issues.js";
 import { resolveTaskType } from "../sync/type-resolver.js";
 import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { DEFAULT_CONFLICT_POLICY } from "@gh-gantt/shared";
 import type { Config, TaskType, TaskDisplay, Task, SyncState } from "@gh-gantt/shared";
 
@@ -94,7 +93,8 @@ export const initCommand = new Command("init")
       console.error(".gantt-sync/gantt.config.json が既に存在します。");
       console.error("  同期データの再構成だけなら gh-gantt pull を使ってください。");
       console.error("  設定ごと作り直す場合は --force を指定してください。");
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
 
     console.log(`Initializing gh-gantt for ${opts.owner}/${opts.repo} project #${opts.project}...`);
@@ -308,16 +308,17 @@ export const initCommand = new Command("init")
 
     // Write files
     const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
-
     await configStore.write(config);
-    await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
-    await stateStore.write(syncState);
+    await withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async ({ tasksStore, stateStore }) => {
+        await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
+        await stateStore.write(syncState);
+      },
+    );
 
     console.log(`Initialized gh-gantt with ${tasks.length} tasks`);
-    console.log("Files created in .gantt-sync/:");
-    console.log("  - gantt.config.json");
-    console.log("  - tasks.json");
-    console.log("  - sync-state.json");
+    console.log("Workspace config: .gantt-sync/gantt.config.json");
+    console.log("Work Graph Cache: git-common-dir/gh-gantt/cache/project-storage/");
   });

@@ -1,6 +1,5 @@
 import { Command } from "commander";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { detectMarkers } from "../sync/conflict-marker.js";
 import { formatValue } from "../util/format.js";
 import type { SyncState } from "@gh-gantt/shared";
@@ -130,19 +129,22 @@ export const conflictsCommand = new Command("conflicts")
   .option("--json", "Output as JSON")
   .action(async (issue?: number, opts?: { json?: boolean }) => {
     const projectRoot = process.cwd();
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
+    return withProjectStorage(
+      projectRoot,
+      { mode: "read", scope: "shared-cache" },
+      async ({ tasksStore, stateStore }) => {
+        const tasksFile = await tasksStore.read();
+        const syncState = await stateStore.read();
 
-    const tasksFile = await tasksStore.read();
-    const syncState = await stateStore.read();
+        const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
 
-    const tasks = tasksFile.tasks as unknown as Record<string, unknown>[];
-
-    if (opts?.json) {
-      const json = buildConflictJson(tasks, syncState.snapshots, issue);
-      console.log(JSON.stringify(json, null, 2));
-    } else {
-      const output = formatConflictList(tasks, syncState.snapshots, issue);
-      console.log(output);
-    }
+        if (opts?.json) {
+          const json = buildConflictJson(tasks, syncState.snapshots, issue);
+          console.log(JSON.stringify(json, null, 2));
+        } else {
+          const output = formatConflictList(tasks, syncState.snapshots, issue);
+          console.log(output);
+        }
+      },
+    );
   });

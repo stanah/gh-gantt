@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CommentsStore } from "../store/comments.js";
 import { fetchAllComments, fetchIssueComments } from "../github/comments.js";
+import { saveCommentsCheckpoint } from "../commands/pull.js";
 import type { CommentsFile } from "@gh-gantt/shared";
 
 describe("CommentsStore", () => {
@@ -205,6 +206,20 @@ describe("fetchAllComments", () => {
     // All 3 should be fetched
     expect(gql).toHaveBeenCalledTimes(3);
     expect(result.comments["o/r#1"]?.[0].id).toBe("C_1_new");
+  });
+});
+
+describe("saveCommentsCheckpoint", () => {
+  it("comments batchを書き込んだ直後にdurable publishする", async () => {
+    const write = vi.fn(async () => undefined);
+    const flush = vi.fn(async () => undefined);
+    const data: CommentsFile = { version: "1", fetched_at: {}, comments: {} };
+
+    await saveCommentsCheckpoint({ commentsStore: { write }, flush }, data);
+
+    expect(write).toHaveBeenCalledWith(data);
+    expect(flush).toHaveBeenCalledOnce();
+    expect(write.mock.invocationCallOrder[0]).toBeLessThan(flush.mock.invocationCallOrder[0]);
   });
 });
 

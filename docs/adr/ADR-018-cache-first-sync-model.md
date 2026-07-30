@@ -10,6 +10,8 @@ related_requirements:
   - FR-STORE-001
   - FR-STORE-002
   - FR-STORE-003
+  - FR-STORE-004
+  - NFR-STABILITY-015
 ---
 
 ## Context
@@ -126,6 +128,11 @@ GitHub を唯一の真実源 (single source of truth) とし、`.gantt-sync/` �
 worktree からの並行 pull / push は後勝ちで同期結果を上書きしうる。排他制御の
 設計・実装は #299 のスコープに含める。
 
+#299 の具体的な配置、GitHub Project identity ごとの versioned namespace、
+tasks/sync-state の atomic snapshot-set、all-worktree legacy migration、
+read/write 共通の初版 exclusive repository lease、non-git fallback の契約は ADR-023 を正本とする。
+ADR-023 は本 ADR の cache 分類を変更せず、その実装境界を確定する。
+
 ### 4. ローカル専用データを排除する
 
 draft タスクは既定で即座に GitHub Issue化する (オフライン時のみ `--draft` で
@@ -188,6 +195,9 @@ write-through push (Decision 2) で同期窓を短縮すれば得られる利益
 - ADR-005 の「`.gantt-sync/` にローカルデータを永続化する」は維持するが、
   永続化の意味が「唯一のデータ」から「破棄可能なキャッシュ」へ変わる。
 - `gantt.config.json` / `workflow.md` の git コミットが必要になる (#295)。
+- #299 の共有対象は Work Graph Cache (`tasks.json`, `sync-state.json`, `comments.json`)
+  に限る。`loop-state.json`、Graph Contract、Run Graph は workspace-local を維持する
+  （配置と lease の詳細は ADR-023、Run Graph の正本は ADR-022）。
 - 本 ADR の decision に従い、以下の実装タスクが必要になる: stale チェック +
   auto-pull (#296)、write-through push (#297)、draft 即時実体化と `date`
   フィールド整理 (#298)、git-common-dir 化によるワークツリー間共有 (#299)、

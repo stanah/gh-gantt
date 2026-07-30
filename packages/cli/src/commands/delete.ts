@@ -1,8 +1,7 @@
 import { Command } from "commander";
 import type { SyncState, Task, TasksFile } from "@gh-gantt/shared";
 import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
 import { createGraphQLClient } from "../github/client.js";
 import { executePull } from "../sync/pull-executor.js";
@@ -266,64 +265,69 @@ export function createDeleteCommand(): Command {
     .action(async (id: string, opts: { yes?: boolean; json?: boolean }) => {
       const projectRoot = process.cwd();
       const configStore = new ConfigStore(projectRoot);
-      const tasksStore = new TasksStore(projectRoot);
-      const stateStore = new SyncStateStore(projectRoot);
-
-      const config = await configStore.read();
-      const tasksFile = await tasksStore.read();
-      const syncState = await stateStore.read();
-      const taskId = resolveTaskId(id, config);
-      const result = await executeTaskDeletion({
-        tasksFile,
-        syncState,
-        taskId,
-        yes: opts.yes === true,
-        deleteGithubIssue: deleteGithubIssueWithGraphQL,
-        forcePull: async ({ tasksFile: cleanedTasksFile, syncState: cleanedSyncState }) => {
-          const gql = await createGraphQLClient();
-          const pulled = await executePull(gql, config, cleanedTasksFile, cleanedSyncState, {
-            force: true,
-            fullFetch: true,
-          });
-          return { tasksFile: pulled.tasksFile, syncState: pulled.syncState };
-        },
-      });
-
-      if (!result.ok) {
-        if (opts.json) {
-          console.log(JSON.stringify(result, null, 2));
-        } else {
-          console.error(result.error);
-        }
-        process.exitCode = 1;
-        return;
-      }
-
-      await tasksStore.write(result.tasksFile);
-      await stateStore.write(result.syncState);
-
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            {
-              ok: true,
-              task_id: result.taskId,
-              issue_number: result.issueNumber,
-              repair: result.repair,
+      return withProjectStorage(
+        projectRoot,
+        { mode: "write", scope: "shared-cache" },
+        async (storage) => {
+          const { tasksStore, stateStore } = storage;
+          const config = await configStore.read();
+          const tasksFile = await tasksStore.read();
+          const syncState = await stateStore.read();
+          const taskId = resolveTaskId(id, config);
+          const result = await executeTaskDeletion({
+            tasksFile,
+            syncState,
+            taskId,
+            yes: opts.yes === true,
+            deleteGithubIssue: deleteGithubIssueWithGraphQL,
+            forcePull: async ({ tasksFile: cleanedTasksFile, syncState: cleanedSyncState }) => {
+              const gql = await createGraphQLClient();
+              const pulled = await executePull(gql, config, cleanedTasksFile, cleanedSyncState, {
+                force: true,
+                fullFetch: true,
+              });
+              return { tasksFile: pulled.tasksFile, syncState: pulled.syncState };
             },
-            null,
-            2,
-          ),
-        );
-        return;
-      }
+          });
 
-      console.log(`Deleted GitHub Issue: #${result.issueNumber}`);
-      console.log(`Removed task from mirror: ${result.taskId}`);
-      console.log(
-        `Repaired references: parent=${result.repair.parentCleared.length}, sub_tasks=${result.repair.subTaskRemoved.length}, blocked_by=${result.repair.blockedByRemoved.length}`,
+          if (!result.ok) {
+            if (opts.json) {
+              console.log(JSON.stringify(result, null, 2));
+            } else {
+              console.error(result.error);
+            }
+            process.exitCode = 1;
+            return;
+          }
+
+          await tasksStore.write(result.tasksFile);
+          await stateStore.write(result.syncState);
+          await storage.flush();
+
+          if (opts.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  ok: true,
+                  task_id: result.taskId,
+                  issue_number: result.issueNumber,
+                  repair: result.repair,
+                },
+                null,
+                2,
+              ),
+            );
+            return;
+          }
+
+          console.log(`Deleted GitHub Issue: #${result.issueNumber}`);
+          console.log(`Removed task from mirror: ${result.taskId}`);
+          console.log(
+            `Repaired references: parent=${result.repair.parentCleared.length}, sub_tasks=${result.repair.subTaskRemoved.length}, blocked_by=${result.repair.blockedByRemoved.length}`,
+          );
+          console.log("Force pull verification complete.");
+        },
       );
-      console.log("Force pull verification complete.");
     });
 }
 

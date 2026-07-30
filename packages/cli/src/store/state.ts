@@ -16,14 +16,34 @@ async function writeAtomic(filePath: string, content: string): Promise<void> {
 }
 
 export class SyncStateStore {
-  private path: string;
+  private path: string | null;
+  private binding: {
+    readText(slot: "sync-state"): Promise<string | null>;
+    writeText(slot: "sync-state", content: string): Promise<void>;
+  } | null;
 
-  constructor(projectRoot: string) {
-    this.path = join(projectRoot, GANTT_DIR, SYNC_STATE_FILE);
+  constructor(
+    projectRootOrBinding:
+      | string
+      | {
+          readText(slot: "sync-state"): Promise<string | null>;
+          writeText(slot: "sync-state", content: string): Promise<void>;
+        },
+  ) {
+    this.path =
+      typeof projectRootOrBinding === "string"
+        ? join(projectRootOrBinding, GANTT_DIR, SYNC_STATE_FILE)
+        : null;
+    this.binding = typeof projectRootOrBinding === "string" ? null : projectRootOrBinding;
   }
 
   async read(): Promise<SyncState> {
-    const raw = await readFile(this.path, "utf-8");
+    const raw = this.binding
+      ? await this.binding.readText("sync-state")
+      : await readFile(this.path!, "utf-8");
+    if (raw === null) {
+      throw Object.assign(new Error("sync-state.json が見つかりません"), { code: "ENOENT" });
+    }
     return SyncStateSchema.parse(JSON.parse(raw));
   }
 
@@ -49,7 +69,12 @@ export class SyncStateStore {
   }
 
   async write(data: SyncState): Promise<void> {
-    await mkdir(join(this.path, ".."), { recursive: true });
-    await writeAtomic(this.path, JSON.stringify(data, null, 2) + "\n");
+    const content = JSON.stringify(data, null, 2) + "\n";
+    if (this.binding) {
+      await this.binding.writeText("sync-state", content);
+      return;
+    }
+    await mkdir(join(this.path!, ".."), { recursive: true });
+    await writeAtomic(this.path!, content);
   }
 }

@@ -1,9 +1,7 @@
 import { createInterface } from "node:readline";
 import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { computeLocalDiff, estimateApiCalls } from "../sync/diff.js";
 import { executePush } from "../sync/push-executor.js";
 import { isDraftTask, isMilestoneDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
@@ -26,186 +24,193 @@ export const pushCommand = new Command("push")
   .option("--json", "Output as JSON (implies non-interactive: skips confirmation prompt)")
   .action(async (opts) => {
     const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
+    return withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async (storage) => {
+        const { configStore, tasksStore, stateStore } = storage;
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
-    const syncState = await stateStore.read();
+        const config = await configStore.read();
+        const tasksFile = await tasksStore.read();
+        const syncState = await stateStore.read();
 
-    // Guard: unresolved conflicts (not skippable with --force)
-    if (tasksFile.has_conflicts) {
-      console.error("未解決のコンフリクトがあります。先に resolve してください");
-      process.exit(1);
-    }
+        // Guard: unresolved conflicts (not skippable with --force)
+        if (tasksFile.has_conflicts) {
+          console.error("未解決のコンフリクトがあります。先に resolve してください");
+          process.exitCode = 1;
+          return;
+        }
 
-    const diffs = computeLocalDiff(tasksFile.tasks, syncState);
+        const diffs = computeLocalDiff(tasksFile.tasks, syncState);
 
-    if (diffs.length === 0) {
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            {
-              changes: [],
-              dry_run: !!opts.dryRun,
-              estimated_api_calls: 0,
-              summary: { created: 0, updated: 0, skipped: 0 },
-            },
-            null,
-            2,
-          ),
-        );
-      } else {
-        console.log("No local changes to push.");
-      }
-      return;
-    }
+        if (diffs.length === 0) {
+          if (opts.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  changes: [],
+                  dry_run: !!opts.dryRun,
+                  estimated_api_calls: 0,
+                  summary: { created: 0, updated: 0, skipped: 0 },
+                },
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.log("No local changes to push.");
+          }
+          return;
+        }
 
-    // Exclude synthetic milestone tasks (read-only)
-    const pushableDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
+        // Exclude synthetic milestone tasks (read-only)
+        const pushableDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
-    if (pushableDiffs.length === 0) {
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            {
-              changes: [],
-              dry_run: !!opts.dryRun,
-              estimated_api_calls: 0,
-              summary: { created: 0, updated: 0, skipped: 0 },
-            },
-            null,
-            2,
-          ),
-        );
-      } else {
-        console.log("No local changes to push.");
-      }
-      return;
-    }
+        if (pushableDiffs.length === 0) {
+          if (opts.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  changes: [],
+                  dry_run: !!opts.dryRun,
+                  estimated_api_calls: 0,
+                  summary: { created: 0, updated: 0, skipped: 0 },
+                },
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.log("No local changes to push.");
+          }
+          return;
+        }
 
-    const milestoneCount = pushableDiffs.filter(
-      (d) => d.type !== "deleted" && isMilestoneDraftTask(d.task),
-    ).length;
-    const draftCount = pushableDiffs.filter(
-      (d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task),
-    ).length;
-    const deletedCount = pushableDiffs.filter((d) => d.type === "deleted").length;
-    const existingCount = pushableDiffs.length - draftCount - milestoneCount - deletedCount;
+        const milestoneCount = pushableDiffs.filter(
+          (d) => d.type !== "deleted" && isMilestoneDraftTask(d.task),
+        ).length;
+        const draftCount = pushableDiffs.filter(
+          (d) => d.type !== "deleted" && isDraftTask(d.id) && !isMilestoneDraftTask(d.task),
+        ).length;
+        const deletedCount = pushableDiffs.filter((d) => d.type === "deleted").length;
+        const existingCount = pushableDiffs.length - draftCount - milestoneCount - deletedCount;
 
-    if (!opts.json) {
-      console.log(`Found ${pushableDiffs.length} local change(s):`);
-      if (milestoneCount > 0) console.log(`  ${milestoneCount} milestone(s) to create`);
-      if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
-      if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
-      if (deletedCount > 0) console.log(`  ${deletedCount} deleted task(s)`);
+        if (!opts.json) {
+          console.log(`Found ${pushableDiffs.length} local change(s):`);
+          if (milestoneCount > 0) console.log(`  ${milestoneCount} milestone(s) to create`);
+          if (draftCount > 0) console.log(`  ${draftCount} draft task(s) to create`);
+          if (existingCount > 0) console.log(`  ${existingCount} existing task(s) to update`);
+          if (deletedCount > 0) console.log(`  ${deletedCount} deleted task(s)`);
 
-      for (const diff of pushableDiffs) {
-        const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);
-        const symbol = isMilestone
-          ? "*"
-          : diff.type === "added"
-            ? "+"
-            : diff.type === "modified"
-              ? "~"
-              : "-";
-        const tag = isMilestone
-          ? ` [milestone${diff.task.date ? `, due: ${diff.task.date}` : ""}]`
-          : isDraftTask(diff.id)
-            ? " [draft]"
-            : "";
-        const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
-        console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
-      }
+          for (const diff of pushableDiffs) {
+            const isMilestone = diff.type !== "deleted" && isMilestoneDraftTask(diff.task);
+            const symbol = isMilestone
+              ? "*"
+              : diff.type === "added"
+                ? "+"
+                : diff.type === "modified"
+                  ? "~"
+                  : "-";
+            const tag = isMilestone
+              ? ` [milestone${diff.task.date ? `, due: ${diff.task.date}` : ""}]`
+              : isDraftTask(diff.id)
+                ? " [draft]"
+                : "";
+            const fields = diff.changedFields?.length ? ` [${diff.changedFields.join(", ")}]` : "";
+            console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}${tag}${fields}`);
+          }
 
-      const estimated = estimateApiCalls(pushableDiffs);
-      console.log(`\nEstimated GitHub API calls: ~${estimated}`);
-    }
+          const estimated = estimateApiCalls(pushableDiffs);
+          console.log(`\nEstimated GitHub API calls: ~${estimated}`);
+        }
 
-    if (opts.dryRun) {
-      if (opts.json) {
-        console.log(
-          JSON.stringify(
-            {
-              changes: pushableDiffs.map((d) => ({
-                type: d.type,
-                id: d.id,
-                title: d.task.title ?? null,
-                changed_fields: d.changedFields ?? [],
-              })),
-              dry_run: true,
-              estimated_api_calls: estimateApiCalls(pushableDiffs),
-              summary: {
-                created: draftCount + milestoneCount,
-                updated: existingCount,
-                skipped: deletedCount,
-              },
-            },
-            null,
-            2,
-          ),
-        );
-      } else {
-        console.log("\nDry run — no changes pushed.");
-      }
-      return;
-    }
+        if (opts.dryRun) {
+          if (opts.json) {
+            console.log(
+              JSON.stringify(
+                {
+                  changes: pushableDiffs.map((d) => ({
+                    type: d.type,
+                    id: d.id,
+                    title: d.task.title ?? null,
+                    changed_fields: d.changedFields ?? [],
+                  })),
+                  dry_run: true,
+                  estimated_api_calls: estimateApiCalls(pushableDiffs),
+                  summary: {
+                    created: draftCount + milestoneCount,
+                    updated: existingCount,
+                    skipped: deletedCount,
+                  },
+                },
+                null,
+                2,
+              ),
+            );
+          } else {
+            console.log("\nDry run — no changes pushed.");
+          }
+          return;
+        }
 
-    if (!opts.yes && !opts.json) {
-      if (!process.stdin.isTTY) {
-        console.error("Non-interactive environment detected. Use --yes to confirm push.");
-        process.exitCode = 1;
-        return;
-      }
-      const confirmed = await confirm("\nProceed with push?");
-      if (!confirmed) {
-        console.log("Push cancelled.");
-        return;
-      }
-    }
+        if (!opts.yes && !opts.json) {
+          if (!process.stdin.isTTY) {
+            console.error("Non-interactive environment detected. Use --yes to confirm push.");
+            process.exitCode = 1;
+            return;
+          }
+          const confirmed = await confirm("\nProceed with push?");
+          if (!confirmed) {
+            console.log("Push cancelled.");
+            return;
+          }
+        }
 
-    const gql = await createGraphQLClient();
-    const {
-      result,
-      tasksFile: updatedTasksFile,
-      syncState: updatedSyncState,
-    } = await executePush(gql, config, tasksFile, syncState, {
-      force: opts.force,
-      saveProgress: async (tf, ss) => {
-        await tasksStore.write(tf);
-        await stateStore.write(ss);
-      },
-    });
-
-    await tasksStore.write(updatedTasksFile);
-    await stateStore.write(updatedSyncState);
-
-    if (opts.json) {
-      console.log(
-        JSON.stringify(
-          {
-            changes: pushableDiffs.map((d) => ({
-              type: d.type,
-              id: d.id,
-              title: d.task.title ?? null,
-              changed_fields: d.changedFields ?? [],
-            })),
-            dry_run: false,
-            estimated_api_calls: estimateApiCalls(pushableDiffs),
-            summary: {
-              created: result.created,
-              updated: result.updated,
-              skipped: result.skipped,
-            },
+        const gql = await createGraphQLClient();
+        const {
+          result,
+          tasksFile: updatedTasksFile,
+          syncState: updatedSyncState,
+        } = await executePush(gql, config, tasksFile, syncState, {
+          force: opts.force,
+          saveProgress: async (tf, ss) => {
+            await tasksStore.write(tf);
+            await stateStore.write(ss);
+            await storage.flush();
           },
-          null,
-          2,
-        ),
-      );
-    } else {
-      console.log(
-        `Push complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`,
-      );
-    }
+        });
+
+        await tasksStore.write(updatedTasksFile);
+        await stateStore.write(updatedSyncState);
+        await storage.flush();
+
+        if (opts.json) {
+          console.log(
+            JSON.stringify(
+              {
+                changes: pushableDiffs.map((d) => ({
+                  type: d.type,
+                  id: d.id,
+                  title: d.task.title ?? null,
+                  changed_fields: d.changedFields ?? [],
+                })),
+                dry_run: false,
+                estimated_api_calls: estimateApiCalls(pushableDiffs),
+                summary: {
+                  created: result.created,
+                  updated: result.updated,
+                  skipped: result.skipped,
+                },
+              },
+              null,
+              2,
+            ),
+          );
+        } else {
+          console.log(
+            `Push complete: ${result.created} created, ${result.updated} updated, ${result.skipped} skipped.`,
+          );
+        }
+      },
+    );
   });

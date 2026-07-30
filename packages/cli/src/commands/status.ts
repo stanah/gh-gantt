@@ -2,9 +2,7 @@ import { Command } from "commander";
 import { createGraphQLClient } from "../github/client.js";
 import { fetchProject } from "../github/projects.js";
 import { isDraftTask } from "../github/issues.js";
-import { ConfigStore } from "../store/config.js";
-import { TasksStore } from "../store/tasks.js";
-import { SyncStateStore } from "../store/state.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { threeWayMerge, type FieldConflict } from "../sync/three-way-merge.js";
 import { formatValue } from "../util/format.js";
@@ -60,147 +58,149 @@ export const statusCommand = new Command("status")
   .option("--json", "Output as JSON")
   .action(async (opts) => {
     const projectRoot = process.cwd();
-    const configStore = new ConfigStore(projectRoot);
-    const tasksStore = new TasksStore(projectRoot);
-    const stateStore = new SyncStateStore(projectRoot);
+    return withProjectStorage(
+      projectRoot,
+      { mode: "read", scope: "shared-cache" },
+      async ({ configStore, tasksStore, stateStore }) => {
+        const config = await configStore.read();
+        const tasksFile = await tasksStore.read();
+        const syncState = await stateStore.read();
 
-    const config = await configStore.read();
-    const tasksFile = await tasksStore.read();
-    const syncState = await stateStore.read();
+        // Compute local diff
+        const localDiffs = computeLocalDiff(tasksFile.tasks, syncState);
 
-    // Compute local diff
-    const localDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+        // Fetch remote and compute remote diff
+        const gql = await createGraphQLClient();
+        const { owner, project_number } = config.project.github;
+        const projectData = await fetchProject(gql, owner, project_number);
 
-    // Fetch remote and compute remote diff
-    const gql = await createGraphQLClient();
-    const { owner, project_number } = config.project.github;
-    const projectData = await fetchProject(gql, owner, project_number);
-
-    const remoteTasks: Task[] = [];
-    for (const item of projectData.items) {
-      const task = mapRemoteItemToTask(item, config);
-      if (task) remoteTasks.push(task);
-    }
-
-    // Compute remote changes (aligned with pull's quick check)
-    const remoteChanged = countRemoteChanges(remoteTasks, syncState);
-
-    // Detect conflicts via 3-way merge
-    interface StatusConflict {
-      taskId: string;
-      title: string;
-      fieldConflicts: FieldConflict[];
-    }
-    const conflicts: StatusConflict[] = [];
-    const remoteTaskMap = new Map(remoteTasks.map((t) => [t.id, t]));
-    for (const local of tasksFile.tasks) {
-      const remote = remoteTaskMap.get(local.id);
-      if (!remote) continue;
-      const snapshot = syncState.snapshots[local.id];
-      if (!snapshot?.syncFields) continue;
-      const localHash = hashTask(local);
-      const remoteHash = hashTask(remote);
-      if (localHash !== snapshot.hash && remoteHash !== snapshot.hash) {
-        const localFields = extractSyncFields(local);
-        const remoteFields = extractSyncFields(remote);
-        const { conflicts: fieldConflicts } = threeWayMerge(
-          snapshot.syncFields,
-          localFields,
-          remoteFields,
-        );
-        if (fieldConflicts.length > 0) {
-          conflicts.push({ taskId: local.id, title: local.title, fieldConflicts });
+        const remoteTasks: Task[] = [];
+        for (const item of projectData.items) {
+          const task = mapRemoteItemToTask(item, config);
+          if (task) remoteTasks.push(task);
         }
-      }
-    }
 
-    // Draft tasks
-    const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
+        // Compute remote changes (aligned with pull's quick check)
+        const remoteChanged = countRemoteChanges(remoteTasks, syncState);
 
-    if (opts.json) {
-      // JSON 出力
-      console.log(
-        JSON.stringify(
-          {
-            last_synced_at: syncState.last_synced_at,
-            local_tasks: tasksFile.tasks.length,
-            remote_tasks: remoteTasks.length,
-            local_changes: localDiffs.map((d) => ({
-              type: d.type,
-              id: d.id,
-              title: d.task.title ?? null,
-            })),
-            remote_changed: remoteChanged,
-            conflicts: conflicts.map((c) => ({
-              id: c.taskId,
-              title: c.title,
-              issue: extractIssueNumber(c.taskId) ?? null,
-              conflicts: c.fieldConflicts.map((fc) => ({
-                field: fc.field,
-                current: fc.current,
-                incoming: fc.incoming,
-                base: fc.base,
-              })),
-            })),
-            draft_tasks: draftTasks.map((t) => ({ id: t.id, title: t.title, type: t.type })),
-            config: { auto_create_issues: config.sync.auto_create_issues },
-          },
-          null,
-          2,
-        ),
-      );
-      return;
-    }
+        // Detect conflicts via 3-way merge
+        interface StatusConflict {
+          taskId: string;
+          title: string;
+          fieldConflicts: FieldConflict[];
+        }
+        const conflicts: StatusConflict[] = [];
+        const remoteTaskMap = new Map(remoteTasks.map((t) => [t.id, t]));
+        for (const local of tasksFile.tasks) {
+          const remote = remoteTaskMap.get(local.id);
+          if (!remote) continue;
+          const snapshot = syncState.snapshots[local.id];
+          if (!snapshot?.syncFields) continue;
+          const localHash = hashTask(local);
+          const remoteHash = hashTask(remote);
+          if (localHash !== snapshot.hash && remoteHash !== snapshot.hash) {
+            const localFields = extractSyncFields(local);
+            const remoteFields = extractSyncFields(remote);
+            const { conflicts: fieldConflicts } = threeWayMerge(
+              snapshot.syncFields,
+              localFields,
+              remoteFields,
+            );
+            if (fieldConflicts.length > 0) {
+              conflicts.push({ taskId: local.id, title: local.title, fieldConflicts });
+            }
+          }
+        }
 
-    // テキスト出力
-    console.log(`Last synced: ${syncState.last_synced_at}`);
-    console.log(`Local tasks: ${tasksFile.tasks.length}`);
-    console.log(`Remote tasks: ${remoteTasks.length}`);
-    console.log();
+        // Draft tasks
+        const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
 
-    if (localDiffs.length > 0) {
-      console.log("Local changes:");
-      for (const diff of localDiffs) {
-        const symbol = diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
-        console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}`);
-      }
-    } else {
-      console.log("No local changes.");
-    }
-
-    console.log();
-
-    if (remoteChanged > 0) {
-      console.log(`Remote changes: ${remoteChanged} task(s) modified`);
-    } else {
-      console.log("No remote changes.");
-    }
-
-    if (conflicts.length > 0) {
-      console.log();
-      console.log(`Conflicts (${conflicts.length}):`);
-      for (const c of conflicts) {
-        console.log(`  ! ${c.taskId}: ${c.title}`);
-        for (const fc of c.fieldConflicts) {
+        if (opts.json) {
+          // JSON 出力
           console.log(
-            `      ${fc.field}: local=${formatValue(fc.current)} remote=${formatValue(fc.incoming)} <- ${formatValue(fc.base)}`,
+            JSON.stringify(
+              {
+                last_synced_at: syncState.last_synced_at,
+                local_tasks: tasksFile.tasks.length,
+                remote_tasks: remoteTasks.length,
+                local_changes: localDiffs.map((d) => ({
+                  type: d.type,
+                  id: d.id,
+                  title: d.task.title ?? null,
+                })),
+                remote_changed: remoteChanged,
+                conflicts: conflicts.map((c) => ({
+                  id: c.taskId,
+                  title: c.title,
+                  issue: extractIssueNumber(c.taskId) ?? null,
+                  conflicts: c.fieldConflicts.map((fc) => ({
+                    field: fc.field,
+                    current: fc.current,
+                    incoming: fc.incoming,
+                    base: fc.base,
+                  })),
+                })),
+                draft_tasks: draftTasks.map((t) => ({ id: t.id, title: t.title, type: t.type })),
+                config: { auto_create_issues: config.sync.auto_create_issues },
+              },
+              null,
+              2,
+            ),
           );
+          return;
         }
-      }
-      console.log();
-      console.log(`Sync: auto_create_issues=${config.sync.auto_create_issues}`);
-    }
 
-    if (draftTasks.length > 0) {
-      console.log();
-      console.log(`Draft tasks (${draftTasks.length}):`);
-      for (const t of draftTasks) {
-        console.log(`  * ${t.id}: ${t.title} [${t.type}]`);
-      }
-      if (config.sync.auto_create_issues) {
-        console.log('  Run "gh-gantt push" to create GitHub issues.');
-      } else {
-        console.log('  Set "auto_create_issues: true" in config to enable push.');
-      }
-    }
+        // テキスト出力
+        console.log(`Last synced: ${syncState.last_synced_at}`);
+        console.log(`Local tasks: ${tasksFile.tasks.length}`);
+        console.log(`Remote tasks: ${remoteTasks.length}`);
+        console.log();
+
+        if (localDiffs.length > 0) {
+          console.log("Local changes:");
+          for (const diff of localDiffs) {
+            const symbol = diff.type === "added" ? "+" : diff.type === "modified" ? "~" : "-";
+            console.log(`  ${symbol} ${diff.id}: ${diff.task.title ?? "(deleted)"}`);
+          }
+        } else {
+          console.log("No local changes.");
+        }
+
+        console.log();
+
+        if (remoteChanged > 0) {
+          console.log(`Remote changes: ${remoteChanged} task(s) modified`);
+        } else {
+          console.log("No remote changes.");
+        }
+
+        if (conflicts.length > 0) {
+          console.log();
+          console.log(`Conflicts (${conflicts.length}):`);
+          for (const c of conflicts) {
+            console.log(`  ! ${c.taskId}: ${c.title}`);
+            for (const fc of c.fieldConflicts) {
+              console.log(
+                `      ${fc.field}: local=${formatValue(fc.current)} remote=${formatValue(fc.incoming)} <- ${formatValue(fc.base)}`,
+              );
+            }
+          }
+          console.log();
+          console.log(`Sync: auto_create_issues=${config.sync.auto_create_issues}`);
+        }
+
+        if (draftTasks.length > 0) {
+          console.log();
+          console.log(`Draft tasks (${draftTasks.length}):`);
+          for (const t of draftTasks) {
+            console.log(`  * ${t.id}: ${t.title} [${t.type}]`);
+          }
+          if (config.sync.auto_create_issues) {
+            console.log('  Run "gh-gantt push" to create GitHub issues.');
+          } else {
+            console.log('  Set "auto_create_issues: true" in config to enable push.');
+          }
+        }
+      },
+    );
   });
