@@ -20,7 +20,11 @@ import {
   TaskSchema,
 } from "@gh-gantt/shared";
 import { GraphContractStore } from "../store/graph-contract.js";
-import { RunGraphEventStore } from "../store/run-graph.js";
+import {
+  RunGraphEventStore,
+  RunGraphLocatorIndexBusyError,
+  RunGraphLocatorIndexNotReadyError,
+} from "../store/run-graph.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 
 const CreateTaskRequestSchema = z
@@ -745,6 +749,13 @@ export function createApiRouter(projectRoot: string): Router {
         ),
       );
     } catch (error) {
+      if (
+        error instanceof RunGraphLocatorIndexBusyError ||
+        error instanceof RunGraphLocatorIndexNotReadyError
+      ) {
+        res.status(503).json({ error: "Run Graph locator index is temporarily unavailable" });
+        return;
+      }
       res.status(500).json({
         error:
           "Failed to build Project Map Run Graph: " +

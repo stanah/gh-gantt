@@ -623,6 +623,43 @@ describe("[FR-VIS-026-AC3] planned との差分と unknown metric を保持す�
     );
   });
 
+  it("複数種別の deviation が schema 上限を超えても bounded に切り詰める", () => {
+    const base = runView();
+    const nodes = Array.from({ length: 50 }, (_, index) => ({
+      ...base.nodes.items[0]!,
+      id: `node-overflow-${index}`,
+      contractNodeId: "rogue",
+      state: "cancelled" as const,
+      previousNodeId: `node-overflow-${(index + 49) % 50}`,
+      outputArtifactIds: [],
+    }));
+    const attempts = nodes.map((node, index) => ({
+      ...base.attempts.items[0]!,
+      id: `attempt-overflow-${index}`,
+      nodeId: node.id,
+      ordinal: 2,
+      state: "failed" as const,
+      previousAttemptId: null,
+    }));
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: null,
+      runViews: [
+        runView({
+          state: "cancelled",
+          currentNode: nodes.at(-1)!,
+          nodes: { total: 50, limit: 50, truncated: false, items: nodes },
+          attempts: { total: 50, limit: 50, truncated: false, items: attempts },
+        }),
+      ],
+      limit: 50,
+    });
+
+    expect(vm.selectedRun?.deviations).toHaveLength(200);
+    expect(vm.selectedRun?.deviationsTruncated).toBe(true);
+    expect(ProjectMapRunGraphViewModelSchema.safeParse(vm).success).toBe(true);
+  });
+
   it("Graph Contract の direct branch edge を node 配列順だけで skip としない", () => {
     const base = runView();
     const planner = base.nodes.items[0]!;

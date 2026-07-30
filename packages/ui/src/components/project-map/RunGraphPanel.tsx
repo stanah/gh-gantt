@@ -1,5 +1,9 @@
 import React from "react";
-import type { ProjectMapRunGraphViewModel, ProjectMapRunMetric } from "@gh-gantt/shared";
+import {
+  PROJECT_MAP_RUN_DEVIATION_LIMIT,
+  type ProjectMapRunGraphViewModel,
+  type ProjectMapRunMetric,
+} from "@gh-gantt/shared";
 import { PanelBody, PanelEmpty, PanelHeader } from "./ProjectMapLayout.js";
 
 interface RunGraphPanelProps {
@@ -223,6 +227,11 @@ export function RunGraphPanel({
                   ))}
                 </ul>
               )}
+              {viewModel.selectedRun.deviationsTruncated ? (
+                <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+                  差分は先頭 {PROJECT_MAP_RUN_DEVIATION_LIMIT} 件のみ表示
+                </div>
+              ) : null}
               {viewModel.selectedRun.artifacts.truncated ||
               viewModel.selectedRun.evidence.truncated ? (
                 <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>

@@ -52,6 +52,15 @@ export interface RunGraphEventStoreDependencies {
 const RUN_GRAPH_LOCATOR_INDEX_DIR = "locator-index";
 const RUN_GRAPH_LOCATOR_INDEX_LIMIT = 50;
 const RECOVERY_CLAIM_STALE_MS = 60_000;
+const RUN_GRAPH_LOCATOR_READ_LEASE_TIMEOUT_MS = 100;
+
+export class RunGraphLocatorIndexBusyError extends Error {
+  override readonly name = "RunGraphLocatorIndexBusyError";
+}
+
+export class RunGraphLocatorIndexNotReadyError extends Error {
+  override readonly name = "RunGraphLocatorIndexNotReadyError";
+}
 
 const RunGraphTaskSchema = z
   .object({
@@ -226,7 +235,10 @@ async function sleep(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function acquireLocatorIndexLease(locatorIndexRoot: string): Promise<() => Promise<void>> {
+async function acquireLocatorIndexLease(
+  locatorIndexRoot: string,
+  timeoutMs = 30_000,
+): Promise<() => Promise<void>> {
   await mkdir(locatorIndexRoot, { recursive: true });
   const lockDir = join(locatorIndexRoot, "LOCK");
   const owner = RunGraphLocatorIndexLockOwnerSchema.parse({
@@ -235,7 +247,7 @@ async function acquireLocatorIndexLease(locatorIndexRoot: string): Promise<() =>
     hostname: hostname(),
     nonce: randomUUID(),
   });
-  const deadline = Date.now() + 30_000;
+  const deadline = Date.now() + timeoutMs;
 
   while (true) {
     const candidate = `${lockDir}.candidate-${owner.nonce}`;
@@ -334,7 +346,7 @@ async function acquireLocatorIndexLease(locatorIndexRoot: string): Promise<() =>
         }
       }
       if (Date.now() >= deadline) {
-        throw new Error(
+        throw new RunGraphLocatorIndexBusyError(
           `Run Graph locator index は別 process が使用中です (pid=${existing.pid}, host=${existing.hostname})`,
         );
       }
@@ -359,8 +371,9 @@ async function acquireLocatorIndexLease(locatorIndexRoot: string): Promise<() =>
 async function withLocatorIndexLease<T>(
   locatorIndexRoot: string,
   operation: () => Promise<T>,
+  timeoutMs = 30_000,
 ): Promise<T> {
-  const release = await acquireLocatorIndexLease(locatorIndexRoot);
+  const release = await acquireLocatorIndexLease(locatorIndexRoot, timeoutMs);
   try {
     return await operation();
   } finally {
@@ -550,14 +563,17 @@ export class RunGraphEventStore {
         : RunGraphAcceptedEventReadSchema.parse(
             JSON.parse(await readFile(join(eventsDir, lastFile), "utf8")),
           );
-    return { runId, task: first.command.task, updatedAt: last.acceptedAt };
+    return { runId, task: normalizedTask(first.command.task), updatedAt: last.acceptedAt };
   }
 
   private async prepareLocatorTransaction(
     event: RunGraphAcceptedEvent,
     input: RunGraphRunLocator,
   ): Promise<RunGraphPendingLocatorTransaction> {
-    const locator = RunGraphRunLocatorSchema.parse(input);
+    const locator = RunGraphRunLocatorSchema.parse({
+      ...input,
+      task: normalizedTask(input.task),
+    });
     const locatorPath = this.locatorPath(locator.runId);
     const previousLocator = await readJsonOptional(locatorPath, RunGraphRunLocatorSchema);
     if (previousLocator && !sameTask(previousLocator.task, locator.task)) {
@@ -701,8 +717,7 @@ export class RunGraphEventStore {
     total: number;
     items: RunGraphRunLocator[];
   }> {
-    return withLocatorIndexLease(this.locatorIndexRoot, async () => {
-      await this.recoverPendingLocatorTransaction();
+    const readStableIndex = async () => {
       const limit = Math.min(50, Math.max(1, input.limit));
       const index = await readJsonOptional(
         this.taskLocatorIndexPath(input.task),
@@ -728,6 +743,23 @@ export class RunGraphEventStore {
         }
       }
       return { total: index?.total ?? 0, items };
-    });
+    };
+    return withLocatorIndexLease(
+      this.locatorIndexRoot,
+      async () => {
+        await this.recoverPendingLocatorTransaction();
+        const state = await readJsonOptional(
+          this.locatorIndexStatePath(),
+          RunGraphLocatorIndexStateSchema,
+        );
+        if (!state) {
+          throw new RunGraphLocatorIndexNotReadyError(
+            "Run Graph locator index の complete state がありません",
+          );
+        }
+        return readStableIndex();
+      },
+      RUN_GRAPH_LOCATOR_READ_LEASE_TIMEOUT_MS,
+    );
   }
 }

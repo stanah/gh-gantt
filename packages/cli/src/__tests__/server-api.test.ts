@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
@@ -9,7 +9,14 @@ import { GraphContractStore } from "../store/graph-contract.js";
 import { RunGraphEventStore } from "../store/run-graph.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { createApiRouter } from "../server/api.js";
-import { FIXED_DEV_ROLE_GRAPH_CONTRACT, type Config, type Task } from "@gh-gantt/shared";
+import {
+  FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  GANTT_DIR,
+  GRAPH_CONTRACTS_DIR,
+  RUN_GRAPH_DIR,
+  type Config,
+  type Task,
+} from "@gh-gantt/shared";
 
 describe("createApiRouter", () => {
   let dir: string;
@@ -71,6 +78,7 @@ describe("createApiRouter", () => {
     });
     await tasksStore.write({ tasks: [task], cache: { comments: {}, reactions: {} } });
     await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
+    await new RunGraphEventStore(dir).ensureRunLocatorIndex();
     return task;
   }
 
@@ -154,6 +162,55 @@ describe("createApiRouter", () => {
     await expect(
       callRunGraphRoute({ taskId: "o/r#330", runId: "missing-run", limit: "20" }),
     ).resolves.toMatchObject({ statusCode: 404 });
+  });
+
+  it("[NFR-STABILITY-014-AC4] locator writer が使用中なら短時間で 503 を返す", async () => {
+    await seedRunGraphProject();
+    const lockDir = join(dir, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "LOCK");
+    await mkdir(lockDir, { recursive: true });
+    await writeFile(
+      join(lockDir, "owner.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        pid: process.pid,
+        hostname: hostname(),
+        nonce: "00000000-0000-4000-8000-000000000005",
+      }),
+    );
+
+    const startedAt = Date.now();
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(response.statusCode).toBe(503);
+    expect(response.jsonPayload).toEqual({
+      error: "Run Graph locator index is temporarily unavailable",
+    });
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("[NFR-STABILITY-014-AC1] binding 済み contract が欠損した Run Graph を fail-closed にする", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const started = await new RunGraphControlPlane(dir).start({
+      schemaVersion: "1",
+      eventId: "start-missing-contract",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 330 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    if (!started.accepted) throw new Error("run start failure");
+    await rm(join(dir, GANTT_DIR, RUN_GRAPH_DIR, GRAPH_CONTRACTS_DIR), {
+      recursive: true,
+      force: true,
+    });
+
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.jsonPayload).toMatchObject({
+      error: expect.stringContaining("Graph Contract が見つかりません"),
+    });
   });
 
   it("[FR-VIS-026-AC4] API request ごとの journal replay を limit 件に抑える", async () => {

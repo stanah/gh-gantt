@@ -3,6 +3,7 @@ import { mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { RunGraphEventStore } from "../store/run-graph.js";
 
 const mocks = vi.hoisted(() => {
   const staticMiddleware = Symbol("staticMiddleware");
@@ -136,5 +137,19 @@ describe("serve コマンド", () => {
         middlewares.indexOf(mocks.rateLimitMiddleware),
       );
     });
+  });
+
+  it("locator index の準備に失敗した場合は fail-closed で server を起動しない", async () => {
+    const ensureRunLocatorIndex = vi
+      .spyOn(RunGraphEventStore.prototype, "ensureRunLocatorIndex")
+      .mockRejectedValueOnce(new Error("locator lease busy"));
+    const { serveCommand } = await import("../commands/serve.js");
+
+    await expect(
+      serveCommand.parseAsync(["serve", "--port", "0", "--api-only"], { from: "user" }),
+    ).rejects.toThrow("locator lease busy");
+
+    expect(mocks.app.listen).not.toHaveBeenCalled();
+    ensureRunLocatorIndex.mockRestore();
   });
 });

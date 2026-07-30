@@ -146,7 +146,7 @@ score =
 
 Project MapはWork Graphの派生viewであり、graph contractの正典はADR-021とする。
 本viewは実行履歴を生成せず、taskを暗黙に変更しない。#330 の planned-vs-actual 表示は
-#328 の immutable event store と control plane の bounded view だけを入力にし、runner log 本文を読まない。
+`#328` の immutable event store と control plane の bounded view だけを入力にし、runner log 本文を読まない。
 後続拡張は、#329のclaim/lease/joinと#331のapproval proposal/new plan versionをADR-021で確認する。
 
 ## 11. Planned vs Actual Run Graph
@@ -169,6 +169,8 @@ append 時に Zod 検証済みの task locator index を更新し、API request 
 journal 全文の replay は最大 `limit` 件に限定する。append は event 確定前に index を検証して pending
 transaction を永続化し、event 確定後の中断は次の append / 一覧取得 / server 起動時に bounded 修復する。
 locator writer は process 間 lease で直列化し、死亡 owner と死亡・期限切れ recovery claimant を再回収する。
+一覧取得も同じ lease 内で pending 修復・complete state 検証・index 読み取りを行う。live writer が
+100ms 以内に解放しない場合や complete state がない場合は、混在 snapshot を返さず 503 で fail-closed にする。
 全 run history や log 本文は既定で返さない。
 URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時は古い node 選択を除去する。
 
@@ -177,7 +179,8 @@ URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時�
 - run は `active / queued / waiting_human / failed / completed / cancelled`、node はこれに
   `running / retrying` を加えた表示状態へ正規化する。正準 state 自体は変更しない。
 - actual transition を Graph Contract edge と stable ID で照合し、`unexpected_node`、
-  `unexpected_edge`、`skip`、`retry`、`fallback`、`cancel` を差分として表示する。
+  `unexpected_edge`、`skip`、`retry`、`fallback`、`cancel` を差分として表示する。差分は最大200件に制限し、
+  超過時は `deviationsTruncated` で一部表示であることを示す。
 - attempt は node/attempt ID、actor、開始・終了時刻、duration、artifact/evidence の bounded 件数だけを表示する。
 - accepted event timestamp から導出できる duration は既知値とする。現行 runner contract が保持しない
   token / cost / latency は `0` へ丸めず `unknown` とする。

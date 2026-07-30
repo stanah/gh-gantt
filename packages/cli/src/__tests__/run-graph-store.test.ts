@@ -102,6 +102,7 @@ describe("[FR-VIS-026-AC4] [NFR-STABILITY-014-AC4] RunGraphEventStore は immuta
   it("[FR-VIS-026-AC4] task locator index から limit 件だけを返し request 時に全 Run を走査しない", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
     const store = new RunGraphEventStore(root);
+    await store.ensureRunLocatorIndex();
     for (let index = 0; index < 55; index += 1) {
       await store.appendAccepted(
         startEventFor(
@@ -136,6 +137,114 @@ describe("[FR-VIS-026-AC4] [NFR-STABILITY-014-AC4] RunGraphEventStore は immuta
     });
     expect(bounded.total).toBe(55);
     expect(bounded.items).toHaveLength(50);
+  });
+
+  it("locator index には owner/repository を正規化した task を保存する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.ensureRunLocatorIndex();
+    const base = startEventFor("run-mixed-case", 330, "2026-07-30T00:00:00.000Z");
+    if (base.command.type !== "run_started") throw new Error("run_started event が必要です");
+    const mixedCase: RunGraphAcceptedEvent = {
+      ...base,
+      command: {
+        ...base.command,
+        task: { owner: "Stanah", repo: "GH-Gantt", issueNumber: 330 },
+      },
+    };
+
+    await store.appendAccepted(mixedCase);
+
+    await expect(
+      store.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).resolves.toMatchObject({
+      items: [{ task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 } }],
+    });
+  });
+
+  it("writer lease が使用中なら pending の有無にかかわらず短時間で fail-closed にする", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEventFor("run-readable", 330, "2026-07-30T00:00:00.000Z"));
+    const lockDir = join(root, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "LOCK");
+    await mkdir(lockDir, { recursive: true });
+    await writeFile(
+      join(lockDir, "owner.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        pid: process.pid,
+        hostname: hostname(),
+        nonce: "00000000-0000-4000-8000-000000000003",
+      }),
+    );
+    const startedAt = Date.now();
+    await expect(
+      store.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ name: "RunGraphLocatorIndexBusyError" });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("pending transaction の修復 lease が使用中なら混在 snapshot を返さない", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEventFor("run-stable", 330, "2026-07-30T00:00:00.000Z"));
+    const interrupted = new RunGraphEventStore(root, {
+      afterJournalCommit: async () => {
+        throw new Error("process kill 境界の模擬");
+      },
+    });
+    await interrupted.appendAccepted(startEventFor("run-pending", 330, "2026-07-30T00:01:00.000Z"));
+    const lockDir = join(root, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "LOCK");
+    await mkdir(lockDir, { recursive: true });
+    await writeFile(
+      join(lockDir, "owner.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        pid: process.pid,
+        hostname: hostname(),
+        nonce: "00000000-0000-4000-8000-000000000004",
+      }),
+    );
+    const startedAt = Date.now();
+    await expect(
+      store.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ name: "RunGraphLocatorIndexBusyError" });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("complete state がない locator index を正常応答にしない", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const legacy = startEventFor("legacy-not-ready", 330, "2026-07-30T00:00:00.000Z");
+    const eventsDir = join(
+      root,
+      GANTT_DIR,
+      RUN_GRAPH_DIR,
+      RUN_GRAPH_RUNS_DIR,
+      Buffer.from(legacy.runId, "utf8").toString("base64url"),
+      "events",
+    );
+    await mkdir(eventsDir, { recursive: true });
+    await writeFile(join(eventsDir, "000000000001.json"), JSON.stringify(legacy));
+
+    await expect(
+      new RunGraphEventStore(root).listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).rejects.toMatchObject({ name: "RunGraphLocatorIndexNotReadyError" });
   });
 
   it("破損した task locator index を Zod 境界で拒否する", async () => {
@@ -192,6 +301,7 @@ describe("[FR-VIS-026-AC4] [NFR-STABILITY-014-AC4] RunGraphEventStore は immuta
 
   it("event 確定直後の中断を pending transaction から bounded 自動修復する", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    await new RunGraphEventStore(root).ensureRunLocatorIndex();
     const interrupted = new RunGraphEventStore(root, {
       afterJournalCommit: async () => {
         throw new Error("process kill 境界の模擬");

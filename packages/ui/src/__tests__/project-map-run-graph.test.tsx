@@ -129,6 +129,7 @@ const viewModel: ProjectMapRunGraphViewModel = {
         reason: "implementer を再試行",
       },
     ],
+    deviationsTruncated: false,
     metrics: {
       duration: { known: true, value: 240000, unit: "ms" },
       tokens: { known: false, value: null, unit: "token" },
@@ -246,6 +247,23 @@ describe("[FR-VIS-026-AC6] planned-vs-actual panel の操作性", () => {
     );
 
     expect(getByText("このタスクの Run Graph はありません")).toBeTruthy();
+  });
+
+  it("deviation が上限を超えた場合は一部表示であることを示す", () => {
+    const { getByText } = render(
+      <RunGraphPanel
+        viewModel={{
+          ...viewModel,
+          selectedRun: { ...viewModel.selectedRun!, deviationsTruncated: true },
+        }}
+        loading={false}
+        error={null}
+        onSelectRun={vi.fn()}
+        onSelectNode={vi.fn()}
+      />,
+    );
+
+    expect(getByText("差分は先頭 200 件のみ表示")).toBeTruthy();
   });
 });
 

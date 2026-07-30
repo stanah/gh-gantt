@@ -1518,6 +1518,7 @@ areas:
             tests:
               - packages/cli/src/__tests__/run-command.test.ts
               - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/cli/src/__tests__/server-api.test.ts
               - packages/shared/src/__tests__/run-graph.test.ts
               - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-014-AC2
@@ -1544,6 +1545,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/cli/src/__tests__/server-api.test.ts
               - packages/shared/src/__tests__/run-graph.test.ts
           - id: NFR-STABILITY-014-AC5
             description: |

@@ -726,6 +726,7 @@ export interface ProjectMapSelectedRun {
     attemptsTruncated: boolean;
   };
   deviations: ProjectMapRunDeviation[];
+  deviationsTruncated: boolean;
   metrics: {
     duration: ProjectMapRunMetric;
     tokens: ProjectMapRunMetric;
@@ -908,6 +909,8 @@ const ProjectMapRunDeviationSchema = z
   })
   .strict();
 
+export const PROJECT_MAP_RUN_DEVIATION_LIMIT = 200;
+
 /** UI/agent API が共用する planned-vs-actual response の strict runtime schema。 */
 export const ProjectMapRunGraphViewModelSchema: z.ZodType<ProjectMapRunGraphViewModel> = z
   .object({
@@ -938,7 +941,8 @@ export const ProjectMapRunGraphViewModelSchema: z.ZodType<ProjectMapRunGraphView
             attemptsTruncated: z.boolean(),
           })
           .strict(),
-        deviations: z.array(ProjectMapRunDeviationSchema).max(200),
+        deviations: z.array(ProjectMapRunDeviationSchema).max(PROJECT_MAP_RUN_DEVIATION_LIMIT),
+        deviationsTruncated: z.boolean(),
         metrics: z
           .object({
             duration: ProjectMapRunMetricSchema,
@@ -1239,6 +1243,7 @@ function buildSelectedRun(
     });
   }
 
+  const deviationItems = [...deviations.values()];
   const duration = finiteDuration(view.createdAt, view.updatedAt);
   const plannedNodes = (contract?.nodes ?? []).map((node) => ({ id: node.id, role: node.role }));
   const plannedEdges = (contract?.edges ?? []).map((edge) => ({
@@ -1276,7 +1281,8 @@ function buildSelectedRun(
       nodesTruncated: view.nodes.truncated,
       attemptsTruncated: view.attempts.truncated,
     },
-    deviations: [...deviations.values()],
+    deviations: deviationItems.slice(0, PROJECT_MAP_RUN_DEVIATION_LIMIT),
+    deviationsTruncated: deviationItems.length > PROJECT_MAP_RUN_DEVIATION_LIMIT,
     metrics: {
       duration: { known: duration != null, value: duration, unit: "ms" },
       tokens: { known: false, value: null, unit: "token" },
