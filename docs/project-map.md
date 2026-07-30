@@ -23,19 +23,22 @@
 │ (左)          │ (中央)                │ (右)           │
 ├───────────────┴───────────┬───────────┴────────────────┤
 │ Next Actions              │ Compact Gantt / Timeline    │
-│ (下左)                    │ (下右)                      │
-└───────────────────────────┴─────────────────────────────┘
+│ (中左)                    │ (中右)                      │
+├───────────────────────────┴─────────────────────────────┤
+│ Planned vs Actual Run Graph                             │
+└────────────────────────────────────────────────────────┘
 ```
 
 UI 上の各パネル見出しは英語表記（括弧内）で表示される。
 
-| パネル                             | 責務                                                                      |
-| ---------------------------------- | ------------------------------------------------------------------------- |
-| システムツリー (System Tree)       | 全体構造を階層表示し、選択した Epic / Feature / Task を他パネルへ伝播する |
-| プロジェクトボード (Project Board) | 選択サブツリーのタスクを実行状態の列で表示する (`Ready Now` 列が要)       |
-| 依存関係マップ (Dependency Map)    | 選択サブツリーの上流 / 下流依存・クリティカルパスをグラフ表示する         |
-| 次のアクション (Next Actions)      | 次に着手すべきタスクをスコア順で理由付きに推薦する                        |
-| コンパクトガント (Compact Gantt)   | 選択サブツリーのスケジュールをミニタイムラインで読み取り専用表示する      |
+| パネル                             | 責務                                                                       |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| システムツリー (System Tree)       | 全体構造を階層表示し、選択した Epic / Feature / Task を他パネルへ伝播する  |
+| プロジェクトボード (Project Board) | 選択サブツリーのタスクを実行状態の列で表示する (`Ready Now` 列が要)        |
+| 依存関係マップ (Dependency Map)    | 選択サブツリーの上流 / 下流依存・クリティカルパスをグラフ表示する          |
+| 次のアクション (Next Actions)      | 次に着手すべきタスクをスコア順で理由付きに推薦する                         |
+| コンパクトガント (Compact Gantt)   | 選択サブツリーのスケジュールをミニタイムラインで読み取り専用表示する       |
+| 実行グラフ (Planned vs Actual)     | Graph Contract の計画と durable Run Graph の実績・差分・待機理由を表示する |
 
 ## 3. MVP / P1 / P2 の境界
 
@@ -142,5 +145,34 @@ score =
 ## 10. Graph Contractとの関係
 
 Project MapはWork Graphの派生viewであり、graph contractの正典はADR-021とする。
-本viewは実行履歴を生成せず、taskを暗黙に変更しない。planned-vs-actual表示は#330まで未実装である。
+本viewは実行履歴を生成せず、taskを暗黙に変更しない。#330 の planned-vs-actual 表示は
+#328 の immutable event store と control plane の bounded view だけを入力にし、runner log 本文を読まない。
 後続拡張は、#329のclaim/lease/joinと#331のapproval proposal/new plan versionをADR-021で確認する。
+
+## 11. Planned vs Actual Run Graph
+
+選択 task に紐づく run を `GET /api/project-map/run-graph` から取得する。operator UI と agent 向け
+JSON は shared の `ProjectMapRunGraphViewModel` を共用し、別々の状態判定を持たない。
+
+### 11.1 bounded API
+
+| query    | 意味                                                                     |
+| -------- | ------------------------------------------------------------------------ |
+| `taskId` | canonical task ID。draft task は Run Graph target を持たないため拒否する |
+| `runId`  | opaque run ID。task と一致しない run は 404                              |
+| `nodeId` | opaque node ID。該当しない場合は current node を選択する                 |
+| `limit`  | run/node/attempt/artifact/evidence の上限。1〜50、既定20                 |
+
+レスポンスは `total / limit / truncated / items` を持つ。全 run history や log 本文は既定で返さない。
+URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時は古い node 選択を除去する。
+
+### 11.2 状態と差分
+
+- run は `active / queued / waiting_human / failed / completed / cancelled`、node はこれに
+  `running / retrying` を加えた表示状態へ正規化する。正準 state 自体は変更しない。
+- actual transition を Graph Contract edge と stable ID で照合し、`unexpected_node`、
+  `unexpected_edge`、`skip`、`retry`、`fallback`、`cancel` を差分として表示する。
+- attempt は actor、開始・終了時刻、duration、artifact/evidence の bounded 件数だけを表示する。
+- accepted event timestamp から導出できる duration は既知値とする。現行 runner contract が保持しない
+  token / cost / latency は `0` へ丸めず `unknown` とする。
+- Run Graph が存在しない project では空状態を表示し、従来の5パネルと task 編集を維持する。

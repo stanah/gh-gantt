@@ -64,6 +64,23 @@ function referencedIds(command: RunGraphRunnerCommandInput["command"]): {
   return { artifactIds: command.artifactIds, evidenceIds: command.evidenceIds };
 }
 
+function boundedTailWithFocus<T>(
+  items: T[],
+  limit: number,
+  matchesFocus: ((item: T) => boolean) | null,
+): T[] {
+  const tail = items.slice(-limit);
+  if (!matchesFocus) return tail;
+  const focused = items.filter(matchesFocus).slice(-limit);
+  if (focused.length === 0) return tail;
+  const focusedSet = new Set(focused);
+  const remaining = Math.max(0, limit - focused.length);
+  const tailCompanions =
+    remaining === 0 ? [] : tail.filter((item) => !focusedSet.has(item)).slice(-remaining);
+  const selected = new Set([...focused, ...tailCompanions]);
+  return items.filter((item) => selected.has(item));
+}
+
 function contractSchemaKey(schemaId: string, schemaVersion: string): string {
   return `${schemaId}@${schemaVersion}`;
 }
@@ -685,7 +702,7 @@ export class RunGraphControlPlane {
     return { accepted: true, view: await this.inspect(input.runId) };
   }
 
-  async inspect(runId: string, limit = 20): Promise<RunGraphView> {
+  async inspect(runId: string, limit = 20, focusNodeId?: string): Promise<RunGraphView> {
     const journal = await this.events.readJournal(runId);
     const projection = this.replay(journal);
     const currentNode =
@@ -693,14 +710,35 @@ export class RunGraphControlPlane {
     const activeAttempt = currentNode?.activeAttemptId
       ? (projection.attempts.find((attempt) => attempt.id === currentNode.activeAttemptId) ?? null)
       : null;
-    const artifacts = projection.artifacts.slice(-limit);
-    const evidence = projection.evidence.slice(-limit);
+    const nodes = boundedTailWithFocus(
+      projection.nodes,
+      limit,
+      focusNodeId ? (node) => node.id === focusNodeId : null,
+    );
+    const attempts = boundedTailWithFocus(
+      projection.attempts,
+      limit,
+      focusNodeId ? (attempt) => attempt.nodeId === focusNodeId : null,
+    );
+    const artifacts = boundedTailWithFocus(
+      projection.artifacts,
+      limit,
+      focusNodeId ? (artifact) => artifact.nodeId === focusNodeId : null,
+    );
+    const evidence = boundedTailWithFocus(
+      projection.evidence,
+      limit,
+      focusNodeId ? (item) => item.nodeId === focusNodeId : null,
+    );
     return RunGraphViewSchema.parse({
       schemaVersion: "1",
       runId: projection.run.id,
       task: projection.run.task,
+      contract: projection.run.contract,
       revision: projection.revision,
       state: projection.run.state,
+      createdAt: projection.run.createdAt,
+      updatedAt: projection.run.updatedAt,
       currentNode,
       activeAttempt,
       waitReason:
@@ -710,6 +748,18 @@ export class RunGraphControlPlane {
           : null,
       budgets: projection.budgets,
       allowedNextTransitions: this.allowedNextTransitions(projection, currentNode, activeAttempt),
+      nodes: {
+        total: projection.nodes.length,
+        limit,
+        truncated: projection.nodes.length > nodes.length,
+        items: nodes,
+      },
+      attempts: {
+        total: projection.attempts.length,
+        limit,
+        truncated: projection.attempts.length > attempts.length,
+        items: attempts,
+      },
       artifacts: {
         total: projection.artifacts.length,
         limit,

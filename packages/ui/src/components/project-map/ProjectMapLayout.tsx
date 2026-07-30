@@ -6,6 +6,7 @@ interface ProjectMapLayoutProps {
   dependency: React.ReactNode;
   nextActions: React.ReactNode;
   timeline: React.ReactNode;
+  runGraph: React.ReactNode;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -30,6 +31,7 @@ export function ProjectMapLayout({
   dependency,
   nextActions,
   timeline,
+  runGraph,
 }: ProjectMapLayoutProps) {
   return (
     <div
@@ -41,10 +43,11 @@ export function ProjectMapLayout({
         height: "100%",
         boxSizing: "border-box",
         gridTemplateColumns: "minmax(220px, 1fr) minmax(280px, 1.6fr) minmax(240px, 1fr)",
-        gridTemplateRows: "minmax(0, 1.4fr) minmax(0, 1fr)",
+        gridTemplateRows: "minmax(280px, 1.4fr) minmax(220px, 1fr) minmax(260px, 1.1fr)",
         gridTemplateAreas: `
           "tree board dependency"
           "next next timeline"
+          "run run run"
         `,
         overflow: "auto",
       }}
@@ -63,6 +66,9 @@ export function ProjectMapLayout({
       </section>
       <section style={{ ...panelStyle, gridArea: "timeline" }} aria-label="Compact Timeline">
         {timeline}
+      </section>
+      <section style={{ ...panelStyle, gridArea: "run" }} aria-label="Run Graph">
+        {runGraph}
       </section>
     </div>
   );

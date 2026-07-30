@@ -5,6 +5,14 @@ import {
   dependencyEdgeKey,
   type CriticalPathResult,
 } from "./dependency-graph.js";
+import type {
+  GraphContract,
+  RunGraphActor,
+  RunGraphAttemptState,
+  RunGraphNodeState,
+  RunGraphRunState,
+  RunGraphView,
+} from "./run-graph.js";
 
 /**
  * Project Board の列 ID。
@@ -584,6 +592,462 @@ export function buildProjectMapViewModel(
   }
 
   return { hierarchy, boardColumns, readinessById, nextActions, criticalPath, warnings };
+}
+
+// ---------------------------------------------------------------------------
+// planned-vs-actual Run Graph overlay (FR-VIS-026)
+// ---------------------------------------------------------------------------
+
+/** Project Map が operator 向けに正規化する Run / Node の表示状態。 */
+export type ProjectMapRunDisplayState =
+  | "active"
+  | "queued"
+  | "running"
+  | "retrying"
+  | "waiting_human"
+  | "failed"
+  | "completed"
+  | "cancelled";
+
+export type ProjectMapRunDeviationKind =
+  | "unexpected_node"
+  | "unexpected_edge"
+  | "skip"
+  | "retry"
+  | "fallback"
+  | "cancel";
+
+export interface ProjectMapRunMetric {
+  known: boolean;
+  value: number | null;
+  unit: "ms" | "token" | "currency";
+}
+
+export interface ProjectMapRunSummary {
+  runId: string;
+  taskId: string;
+  state: RunGraphRunState;
+  displayState: ProjectMapRunDisplayState;
+  currentNodeId: string | null;
+  currentContractNodeId: string | null;
+  waitReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  nodeCount: number;
+  attemptCount: number;
+  deepLink: string;
+}
+
+export interface ProjectMapPlannedNode {
+  id: string;
+  role: string;
+}
+
+export interface ProjectMapPlannedEdge {
+  id: string;
+  from: string;
+  to: string;
+  conditions: string[];
+}
+
+export interface ProjectMapActualNode {
+  id: string;
+  contractNodeId: string;
+  state: RunGraphNodeState;
+  displayState: ProjectMapRunDisplayState;
+  actor: RunGraphActor;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  attemptCount: number;
+  artifactCount: number;
+  evidenceCount: number;
+  isPlanned: boolean;
+  deepLink: string;
+}
+
+export interface ProjectMapActualAttempt {
+  id: string;
+  nodeId: string;
+  ordinal: number;
+  state: RunGraphAttemptState;
+  actor: RunGraphActor;
+  createdAt: string;
+  updatedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+  artifactCount: number;
+}
+
+export interface ProjectMapActualTransition {
+  fromNodeId: string;
+  toNodeId: string;
+  fromContractNodeId: string;
+  toContractNodeId: string;
+  isPlanned: boolean;
+}
+
+export interface ProjectMapRunDeviation {
+  id: string;
+  kind: ProjectMapRunDeviationKind;
+  nodeId: string | null;
+  transition: { fromNodeId: string; toNodeId: string } | null;
+  reason: string;
+}
+
+export interface ProjectMapSelectedRun {
+  runId: string;
+  taskId: string;
+  state: RunGraphRunState;
+  displayState: ProjectMapRunDisplayState;
+  waitReason: string | null;
+  selectedNodeId: string | null;
+  deepLink: string;
+  planned: {
+    nodes: ProjectMapPlannedNode[];
+    edges: ProjectMapPlannedEdge[];
+  };
+  actual: {
+    nodes: ProjectMapActualNode[];
+    transitions: ProjectMapActualTransition[];
+    attempts: ProjectMapActualAttempt[];
+    nodesTruncated: boolean;
+    attemptsTruncated: boolean;
+  };
+  deviations: ProjectMapRunDeviation[];
+  metrics: {
+    duration: ProjectMapRunMetric;
+    tokens: ProjectMapRunMetric;
+    cost: ProjectMapRunMetric;
+    latency: ProjectMapRunMetric;
+  };
+  artifacts: RunGraphView["artifacts"];
+  evidence: RunGraphView["evidence"];
+}
+
+export interface ProjectMapRunGraphViewModel {
+  schemaVersion: "1";
+  taskId: string | null;
+  runs: {
+    total: number;
+    limit: number;
+    truncated: boolean;
+    items: ProjectMapRunSummary[];
+  };
+  selectedRun: ProjectMapSelectedRun | null;
+}
+
+export interface ProjectMapRunGraphInput {
+  taskId: string | null;
+  contract: GraphContract | null;
+  runViews: RunGraphView[];
+  selectedRunId?: string | null;
+  selectedNodeId?: string | null;
+  limit?: number;
+}
+
+function runTaskId(view: RunGraphView): string {
+  return `${view.task.owner}/${view.task.repo}#${view.task.issueNumber}`;
+}
+
+function finiteDuration(start: string, end: string): number | null {
+  const startMs = Date.parse(start);
+  const endMs = Date.parse(end);
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return endMs - startMs;
+}
+
+function runDisplayState(state: RunGraphRunState): ProjectMapRunDisplayState {
+  switch (state) {
+    case "pending":
+      return "queued";
+    case "running":
+    case "paused":
+      return "active";
+    default:
+      return state;
+  }
+}
+
+function nodeDisplayState(state: RunGraphNodeState, retrying: boolean): ProjectMapRunDisplayState {
+  if (retrying && (state === "pending" || state === "ready" || state === "running")) {
+    return "retrying";
+  }
+  switch (state) {
+    case "pending":
+    case "ready":
+      return "queued";
+    case "paused":
+      return "running";
+    default:
+      return state;
+  }
+}
+
+function isTerminalState(state: string): boolean {
+  return (
+    state === "completed" || state === "failed" || state === "cancelled" || state === "succeeded"
+  );
+}
+
+function runDeepLink(taskId: string, runId: string, nodeId?: string | null): string {
+  const pairs: Array<[string, string]> = [
+    ["view", "project-map"],
+    ["task", taskId],
+    ["run", runId],
+  ];
+  if (nodeId) pairs.push(["node", nodeId]);
+  return `?${pairs
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&")}`;
+}
+
+function buildRunSummary(view: RunGraphView): ProjectMapRunSummary {
+  const taskId = runTaskId(view);
+  return {
+    runId: view.runId,
+    taskId,
+    state: view.state,
+    displayState: runDisplayState(view.state),
+    currentNodeId: view.currentNode?.id ?? null,
+    currentContractNodeId: view.currentNode?.contractNodeId ?? null,
+    waitReason: view.waitReason,
+    createdAt: view.createdAt,
+    updatedAt: view.updatedAt,
+    nodeCount: view.nodes.total,
+    attemptCount: view.attempts.total,
+    deepLink: runDeepLink(taskId, view.runId, view.currentNode?.id),
+  };
+}
+
+function buildSelectedRun(
+  view: RunGraphView,
+  contract: GraphContract | null,
+  requestedNodeId: string | null,
+): ProjectMapSelectedRun {
+  const taskId = runTaskId(view);
+  const contractNodes = new Map((contract?.nodes ?? []).map((node) => [node.id, node]));
+  const contractNodeOrder = new Map((contract?.nodes ?? []).map((node, index) => [node.id, index]));
+  const actualNodeById = new Map(view.nodes.items.map((node) => [node.id, node]));
+  const firstOccurrence = new Map<string, string>();
+  for (const node of view.nodes.items) {
+    if (!firstOccurrence.has(node.contractNodeId))
+      firstOccurrence.set(node.contractNodeId, node.id);
+  }
+
+  const actualNodes: ProjectMapActualNode[] = view.nodes.items.map((node) => {
+    const attempts = view.attempts.items.filter((attempt) => attempt.nodeId === node.id);
+    const retrying =
+      firstOccurrence.get(node.contractNodeId) !== node.id || attempts.some((a) => a.ordinal > 1);
+    return {
+      id: node.id,
+      contractNodeId: node.contractNodeId,
+      state: node.state,
+      displayState: nodeDisplayState(node.state, retrying),
+      actor: node.actor,
+      createdAt: node.createdAt,
+      updatedAt: node.updatedAt,
+      endedAt: isTerminalState(node.state) ? node.updatedAt : null,
+      durationMs: finiteDuration(node.createdAt, node.updatedAt),
+      attemptCount: attempts.length,
+      artifactCount: view.artifacts.items.filter((item) => item.nodeId === node.id).length,
+      evidenceCount: view.evidence.items.filter((item) => item.nodeId === node.id).length,
+      isPlanned: contractNodes.has(node.contractNodeId),
+      deepLink: runDeepLink(taskId, view.runId, node.id),
+    };
+  });
+
+  const actualAttempts: ProjectMapActualAttempt[] = view.attempts.items.map((attempt) => ({
+    id: attempt.id,
+    nodeId: attempt.nodeId,
+    ordinal: attempt.ordinal,
+    state: attempt.state,
+    actor: attempt.actor,
+    createdAt: attempt.createdAt,
+    updatedAt: attempt.updatedAt,
+    endedAt: isTerminalState(attempt.state) ? attempt.updatedAt : null,
+    durationMs: finiteDuration(attempt.createdAt, attempt.updatedAt),
+    artifactCount: view.artifacts.items.filter((item) => item.producerAttemptId === attempt.id)
+      .length,
+  }));
+
+  const plannedEdgeKeys = new Set(
+    (contract?.edges ?? []).map((edge) => `${edge.from}->${edge.to}`),
+  );
+  const transitions: ProjectMapActualTransition[] = [];
+  const deviations = new Map<string, ProjectMapRunDeviation>();
+
+  for (const node of view.nodes.items) {
+    const hasRetriedAttempt = view.attempts.items.some(
+      (attempt) => attempt.nodeId === node.id && attempt.ordinal > 1,
+    );
+    if (!contractNodes.has(node.contractNodeId)) {
+      const id = `unexpected-node:${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "unexpected_node",
+        nodeId: node.id,
+        transition: null,
+        reason: `planned にない node ${node.contractNodeId}`,
+      });
+    }
+    if (firstOccurrence.get(node.contractNodeId) !== node.id || hasRetriedAttempt) {
+      const id = `retry:${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "retry",
+        nodeId: node.id,
+        transition: null,
+        reason: `${node.contractNodeId} を再試行`,
+      });
+    }
+    if (node.state === "cancelled") {
+      const id = `cancel:${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "cancel",
+        nodeId: node.id,
+        transition: null,
+        reason: `${node.contractNodeId} が cancelled`,
+      });
+    }
+    if (!node.previousNodeId) continue;
+    const previous = actualNodeById.get(node.previousNodeId);
+    if (!previous) continue;
+    const edgeKey = `${previous.contractNodeId}->${node.contractNodeId}`;
+    const isPlanned = plannedEdgeKeys.has(edgeKey);
+    transitions.push({
+      fromNodeId: previous.id,
+      toNodeId: node.id,
+      fromContractNodeId: previous.contractNodeId,
+      toContractNodeId: node.contractNodeId,
+      isPlanned,
+    });
+    if (!isPlanned) {
+      const id = `unexpected-edge:${previous.id}->${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "unexpected_edge",
+        nodeId: node.id,
+        transition: { fromNodeId: previous.id, toNodeId: node.id },
+        reason: `planned にない edge ${edgeKey}`,
+      });
+    }
+    const fromRank = contractNodeOrder.get(previous.contractNodeId);
+    const toRank = contractNodeOrder.get(node.contractNodeId);
+    if (fromRank != null && toRank != null && toRank < fromRank) {
+      const id = `fallback:${previous.id}->${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "fallback",
+        nodeId: node.id,
+        transition: { fromNodeId: previous.id, toNodeId: node.id },
+        reason: `${previous.contractNodeId} から ${node.contractNodeId} へ戻った`,
+      });
+    } else if (fromRank != null && toRank != null && toRank > fromRank + 1) {
+      const id = `skip:${previous.id}->${node.id}`;
+      deviations.set(id, {
+        id,
+        kind: "skip",
+        nodeId: node.id,
+        transition: { fromNodeId: previous.id, toNodeId: node.id },
+        reason: `${previous.contractNodeId} と ${node.contractNodeId} の間の planned node を skip`,
+      });
+    }
+  }
+
+  if (view.state === "cancelled") {
+    deviations.set(`cancel:${view.runId}`, {
+      id: `cancel:${view.runId}`,
+      kind: "cancel",
+      nodeId: view.currentNode?.id ?? null,
+      transition: null,
+      reason: `run ${view.runId} が cancelled`,
+    });
+  }
+
+  const selectedNodeId =
+    requestedNodeId && actualNodeById.has(requestedNodeId)
+      ? requestedNodeId
+      : (view.currentNode?.id ?? null);
+  const duration = finiteDuration(view.createdAt, view.updatedAt);
+  return {
+    runId: view.runId,
+    taskId,
+    state: view.state,
+    displayState: runDisplayState(view.state),
+    waitReason: view.waitReason,
+    selectedNodeId,
+    deepLink: runDeepLink(taskId, view.runId, selectedNodeId),
+    planned: {
+      nodes: (contract?.nodes ?? []).map((node) => ({ id: node.id, role: node.role })),
+      edges: (contract?.edges ?? []).map((edge) => ({
+        id: edge.id,
+        from: edge.from,
+        to: edge.to,
+        conditions: [edge.condition],
+      })),
+    },
+    actual: {
+      nodes: actualNodes,
+      transitions,
+      attempts: actualAttempts,
+      nodesTruncated: view.nodes.truncated,
+      attemptsTruncated: view.attempts.truncated,
+    },
+    deviations: [...deviations.values()],
+    metrics: {
+      duration: { known: duration != null, value: duration, unit: "ms" },
+      tokens: { known: false, value: null, unit: "token" },
+      cost: { known: false, value: null, unit: "currency" },
+      latency: { known: false, value: null, unit: "ms" },
+    },
+    artifacts: view.artifacts,
+    evidence: view.evidence,
+  };
+}
+
+/**
+ * Graph Contract と bounded RunGraphView から Project Map/API 共通の overlay を導出する。
+ * runner log 本文は受け取らず、bounded entity/reference だけを返す。
+ */
+export function buildProjectMapRunGraphViewModel(
+  input: ProjectMapRunGraphInput,
+): ProjectMapRunGraphViewModel {
+  const limit = Math.min(50, Math.max(1, input.limit ?? 20));
+  const sortedViews = [...input.runViews].sort(
+    (left, right) =>
+      Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+      left.runId.localeCompare(right.runId),
+  );
+  const summaries = sortedViews.map(buildRunSummary);
+  const selectedView = input.selectedRunId
+    ? (sortedViews.find((view) => view.runId === input.selectedRunId) ?? null)
+    : (sortedViews[0] ?? null);
+  let items = summaries.slice(0, limit);
+  if (selectedView && !items.some((summary) => summary.runId === selectedView.runId)) {
+    const selectedSummary = summaries.find((summary) => summary.runId === selectedView.runId);
+    if (selectedSummary) {
+      items = [
+        selectedSummary,
+        ...items.filter((summary) => summary.runId !== selectedView.runId),
+      ].slice(0, limit);
+    }
+  }
+  return {
+    schemaVersion: "1",
+    taskId: input.taskId,
+    runs: {
+      total: summaries.length,
+      limit,
+      truncated: summaries.length > items.length,
+      items,
+    },
+    selectedRun: selectedView
+      ? buildSelectedRun(selectedView, input.contract, input.selectedNodeId ?? null)
+      : null,
+  };
 }
 
 // ---------------------------------------------------------------------------

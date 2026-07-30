@@ -3,6 +3,7 @@ import {
   groupTasks,
   getGroupDimensions,
   type GroupDimension,
+  type ProjectMapRunGraphViewModel,
   type ProjectMapViewModel,
   type Task as SharedTask,
 } from "@gh-gantt/shared";
@@ -16,19 +17,25 @@ import { NextActionsPanel } from "./NextActionsPanel.js";
 import { CompactTimelinePanel } from "./CompactTimelinePanel.js";
 import { ProjectMapToolbar, type ProjectMapFilterState } from "./ProjectMapToolbar.js";
 import { taskMatchesFilter, filterHierarchy } from "./filter-util.js";
+import { RunGraphPanel } from "./RunGraphPanel.js";
 
 interface ProjectMapPageProps {
   viewModel: ProjectMapViewModel;
   config: Config;
   selectedTaskId: string | null;
   onSelectTask: (taskId: string) => void;
+  runGraphViewModel?: ProjectMapRunGraphViewModel | null;
+  runGraphLoading?: boolean;
+  runGraphError?: string | null;
+  onSelectRun?: (runId: string) => void;
+  onSelectRunNode?: (nodeId: string) => void;
   /** 同期状態の再取得トリガー（pull/push 後に変化させる）。 */
   syncRefreshKey?: unknown;
 }
 
 /**
  * Project Map ビューのページ。ツールバー（検索・readiness フィルタ・同期状態）と
- * 5 パネルを配置し、ViewModel を各パネルへ配る。フィルタは Tree / Board / Next Actions /
+ * 6 パネルを配置し、ViewModel を各パネルへ配る。フィルタは Tree / Board / Next Actions /
  * Timeline に一貫適用される（Dependency Map は選択タスク中心のため選択スコープを優先）。
  */
 export function ProjectMapPage({
@@ -36,6 +43,11 @@ export function ProjectMapPage({
   config,
   selectedTaskId,
   onSelectTask,
+  runGraphViewModel = null,
+  runGraphLoading = false,
+  runGraphError = null,
+  onSelectRun = () => undefined,
+  onSelectRunNode = () => undefined,
   syncRefreshKey,
 }: ProjectMapPageProps) {
   const [filter, setFilter] = useState<ProjectMapFilterState>({ search: "", readiness: null });
@@ -160,6 +172,15 @@ export function ProjectMapPage({
               readinessById={viewModel.readinessById}
               selectedTaskId={selectedTaskId}
               onSelectTask={onSelectTask}
+            />
+          }
+          runGraph={
+            <RunGraphPanel
+              viewModel={runGraphViewModel}
+              loading={runGraphLoading}
+              error={runGraphError}
+              onSelectRun={onSelectRun}
+              onSelectNode={onSelectRunNode}
             />
           }
         />

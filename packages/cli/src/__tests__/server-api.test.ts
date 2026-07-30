@@ -5,14 +5,167 @@ import { join } from "node:path";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { CommentsStore } from "../store/comments.js";
+import { GraphContractStore } from "../store/graph-contract.js";
+import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { createApiRouter } from "../server/api.js";
-import type { Config, Task } from "@gh-gantt/shared";
+import { FIXED_DEV_ROLE_GRAPH_CONTRACT, type Config, type Task } from "@gh-gantt/shared";
 
 describe("createApiRouter", () => {
   let dir: string;
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "gh-gantt-api-test-"));
+  });
+
+  async function seedRunGraphProject(): Promise<Task> {
+    const configStore = new ConfigStore(dir);
+    const tasksStore = new TasksStore(dir);
+    const commentsStore = new CommentsStore(dir);
+    const task = {
+      id: "o/r#330",
+      type: "task",
+      github_issue: 330,
+      github_repo: "o/r",
+      parent: null,
+      sub_tasks: [],
+      title: "Run Graph を表示する",
+      body: null,
+      state: "open" as const,
+      state_reason: null,
+      assignees: [],
+      labels: [],
+      milestone: null,
+      linked_prs: [],
+      created_at: "2026-07-30T00:00:00.000Z",
+      updated_at: "2026-07-30T00:00:00.000Z",
+      closed_at: null,
+      acceptance_criteria: [],
+      acceptance_criteria_slot: false,
+      implementer: null,
+      reviewer: null,
+      require_review: false,
+      review_approved_by: null,
+      review_approved_at: null,
+      custom_fields: {},
+      start_date: null,
+      end_date: null,
+      date: null,
+      blocked_by: [],
+    } satisfies Task;
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: { auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E" } },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: null },
+      },
+      type_hierarchy: { task: [] },
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+      run_graph: { plan_id: "dev-role-fixed", plan_version: "1", schema_version: "1" },
+    });
+    await tasksStore.write({ tasks: [task], cache: { comments: {}, reactions: {} } });
+    await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
+    return task;
+  }
+
+  async function callRunGraphRoute(query: Record<string, unknown>) {
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === "/api/project-map/run-graph",
+    );
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("GET /api/project-map/run-graph handler not found");
+    let statusCode = 200;
+    let jsonPayload: unknown;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+    await handler({ query }, res);
+    return { statusCode, jsonPayload };
+  }
+
+  it("[FR-VIS-026-AC4] GET /api/project-map/run-graph は run/node deep link を bounded detail で返す", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const started = await new RunGraphControlPlane(dir).start({
+      schemaVersion: "1",
+      eventId: "start-330",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 330 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    if (!started.accepted || !started.view.currentNode) throw new Error("run start failure");
+
+    const response = await callRunGraphRoute({
+      taskId: "o/r#330",
+      runId: started.view.runId,
+      nodeId: started.view.currentNode.id,
+      limit: "1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonPayload).toMatchObject({
+      schemaVersion: "1",
+      taskId: "o/r#330",
+      runs: { total: 1, limit: 1, truncated: false },
+      selectedRun: {
+        runId: started.view.runId,
+        selectedNodeId: started.view.currentNode.id,
+        actual: {
+          nodes: [{ id: started.view.currentNode.id, contractNodeId: "planner" }],
+          nodesTruncated: false,
+        },
+      },
+    });
+    expect(JSON.stringify(response.jsonPayload)).not.toContain("runner log");
+
+    await expect(
+      callRunGraphRoute({
+        taskId: "o/r#330",
+        runId: started.view.runId,
+        nodeId: "missing-node",
+        limit: "1",
+      }),
+    ).resolves.toMatchObject({ statusCode: 404 });
+  });
+
+  it("[FR-VIS-026-AC4] detail limit の範囲外と未知 run を拒否する", async () => {
+    await seedRunGraphProject();
+
+    await expect(callRunGraphRoute({ taskId: "o/r#330", limit: "51" })).resolves.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(
+      callRunGraphRoute({ taskId: "o/r#330", runId: "missing-run", limit: "20" }),
+    ).resolves.toMatchObject({ statusCode: 404 });
+  });
+
+  it("[FR-VIS-026-AC5] Run Graph がなければ既存 task に空の overlay を返す", async () => {
+    await seedRunGraphProject();
+
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonPayload).toEqual({
+      schemaVersion: "1",
+      taskId: "o/r#330",
+      runs: { total: 0, limit: 20, truncated: false, items: [] },
+      selectedRun: null,
+    });
   });
 
   afterEach(async () => {
