@@ -138,6 +138,10 @@ Git adapter が「この root は Git repository ではない」と明確に判�
 common-dir 解決失敗は non-git と同一視せず fail-closed にする。これにより Git worktree 内の一時障害から
 workspace-local cache が新設されることを防ぐ。
 
+Git hook が export する `GIT_DIR`、`GIT_WORK_TREE` 等の repository 選択環境変数は、
+`projectRoot` を正本として実行する Git subprocess へ継承しない。環境変数は `git -C <projectRoot>` より
+優先され得るため、継承すると hook を起動した repository を誤って検出・操作する危険がある。
+
 ### Run Graph の扱い
 
 #299 の repository lease と snapshot-set は Work Graph Cache のための統制であり、Graph Contract と
@@ -192,5 +196,7 @@ StorageSlot追加時の変更をmodule内へ局所化する。案Cのcaller互�
   一致・分岐・欠損・破損・破損comments・別Projectの不完全pair・移行後変更、publish 前 callback 失敗、
   live / dead / 生死判定不能 owner、
   同一process内の別process identity、真の別 OS process による lease 直列化、明示的 migration、
-  shared slot 非接触 callback の filesystem 非接触、linked worktree から追加 pull なしで実行する `status` を検証する。
-  CLI の `pull` / `push` を実 linked worktree で通す end-to-end smoke は未検証である。
+  shared slot 非接触 callback の filesystem 非接触、Git hook の repository 選択環境変数からの分離、
+  linked worktree から追加 pull なしで実行する `status`、CLI の `pull` / `push` を検証する。
+  linked worktree と CLI process は実物だが、GitHub transport は mock、`push` は dry-run であり、
+  remote write を伴う end-to-end smoke は未検証である。

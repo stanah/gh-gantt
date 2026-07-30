@@ -202,12 +202,41 @@ function isNotGitRepository(error: unknown): boolean {
   return stderr.includes("not a git repository") || stderr.includes("not a git work tree");
 }
 
+function gitCommandEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  // pre-push等のGit hookはrepository選択用envをexportすることがある。
+  // projectRootを正本とするsubprocessへ継承すると、-Cよりenvが優先され別repositoryを操作し得る。
+  for (const name of [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  ]) {
+    delete environment[name];
+  }
+  return environment;
+}
+
 async function runGit(projectRoot: string, args: string[]): Promise<string> {
   try {
     const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
       encoding: "utf8",
       timeout: 10_000,
       maxBuffer: 4 * 1024 * 1024,
+      env: gitCommandEnvironment(),
     });
     return result.stdout.trim();
   } catch (error) {

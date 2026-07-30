@@ -115,8 +115,36 @@ const CONFIG_OTHER_PROJECT = `${JSON.stringify(
 
 type SharedStorageSlot = "tasks" | "sync-state" | "comments";
 
+function gitCommandEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const name of [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  ]) {
+    delete environment[name];
+  }
+  return environment;
+}
+
 async function runGit(root: string, ...args: string[]): Promise<string> {
-  const result = await execFileAsync("git", ["-C", root, ...args]);
+  const result = await execFileAsync("git", ["-C", root, ...args], {
+    env: gitCommandEnvironment(),
+  });
   return result.stdout.trim();
 }
 
@@ -130,7 +158,9 @@ async function makeRepositoryWithLinkedWorktree(): Promise<{
   const repository = join(parent, "repository");
   const linked = join(parent, "linked");
   await mkdir(repository);
-  await execFileAsync("git", ["init", "--initial-branch=main", repository]);
+  await execFileAsync("git", ["init", "--initial-branch=main", repository], {
+    env: gitCommandEnvironment(),
+  });
   await runGit(repository, "config", "user.email", "issue-299@example.invalid");
   await runGit(repository, "config", "user.name", "Issue 299 Test");
   await mkdir(join(repository, ".gantt-sync"), { recursive: true });
@@ -619,6 +649,62 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     }
   });
 
+  it("[NFR-STABILITY-015-AC9] Git hookのrepository選択envをsubprocessへ継承しない", async () => {
+    const { repository, linked, commonDir } = await makeRepositoryWithLinkedWorktree();
+    const foreignGitDir = await makeStandaloneRoot();
+    await execFileAsync("git", ["init", "--bare", foreignGitDir], {
+      env: gitCommandEnvironment(),
+    });
+    const previousGitDir = process.env.GIT_DIR;
+    const previousWorkTree = process.env.GIT_WORK_TREE;
+    process.env.GIT_DIR = foreignGitDir;
+    process.env.GIT_WORK_TREE = repository;
+
+    try {
+      await publishSharedCache(repository);
+      await expect(readSlot(linked, "tasks")).resolves.toBe(TASKS_V1);
+      await expect(
+        access(join(projectNamespace(commonDir, "fixture/repository#1"), "CURRENT")),
+      ).resolves.toBeUndefined();
+      await expect(access(join(foreignGitDir, "gh-gantt"))).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      if (previousGitDir === undefined) delete process.env.GIT_DIR;
+      else process.env.GIT_DIR = previousGitDir;
+      if (previousWorkTree === undefined) delete process.env.GIT_WORK_TREE;
+      else process.env.GIT_WORK_TREE = previousWorkTree;
+    }
+  });
+
+  it("[NFR-STABILITY-015-AC9] Git discovery範囲を制限するenvよりprojectRootを優先する", async () => {
+    const { repository, linked } = await makeRepositoryWithLinkedWorktree();
+    const nestedRepository = join(repository, "nested-project");
+    const nestedLinked = join(linked, "nested-project");
+    await Promise.all([
+      mkdir(join(nestedRepository, ".gantt-sync"), { recursive: true }),
+      mkdir(join(nestedLinked, ".gantt-sync"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(nestedRepository, ".gantt-sync", "gantt.config.json"), CONFIG_V1),
+      writeFile(join(nestedLinked, ".gantt-sync", "gantt.config.json"), CONFIG_V1),
+    ]);
+    const previousCeiling = process.env.GIT_CEILING_DIRECTORIES;
+    const previousDiscovery = process.env.GIT_DISCOVERY_ACROSS_FILESYSTEM;
+    process.env.GIT_CEILING_DIRECTORIES = repository;
+    process.env.GIT_DISCOVERY_ACROSS_FILESYSTEM = "0";
+
+    try {
+      await publishSharedCache(nestedRepository);
+      await expect(readSlot(nestedLinked, "tasks")).resolves.toBe(TASKS_V1);
+    } finally {
+      if (previousCeiling === undefined) delete process.env.GIT_CEILING_DIRECTORIES;
+      else process.env.GIT_CEILING_DIRECTORIES = previousCeiling;
+      if (previousDiscovery === undefined) delete process.env.GIT_DISCOVERY_ACROSS_FILESYSTEM;
+      else process.env.GIT_DISCOVERY_ACROSS_FILESYSTEM = previousDiscovery;
+    }
+  });
+
   it("[NFR-STABILITY-015-AC7] 別hostで生死を判定できないownerのleaseは回収しない", async () => {
     const { repository, commonDir } = await makeRepositoryWithLinkedWorktree();
     const leaseDir = join(commonDir, "gh-gantt", "locks", "work-graph-cache.lock");
@@ -714,7 +800,11 @@ main().catch((error) => {
     const child = spawn(
       process.execPath,
       ["--import", "tsx", childScript, moduleUrl, repository, barrier, release],
-      { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+      {
+        cwd: process.cwd(),
+        env: gitCommandEnvironment(),
+        stdio: ["ignore", "pipe", "pipe"],
+      },
     );
     let childStderr = "";
     child.stderr?.setEncoding("utf8");

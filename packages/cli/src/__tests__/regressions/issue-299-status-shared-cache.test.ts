@@ -37,6 +37,32 @@ const execFileAsync = promisify(execFile);
 const createdRoots: string[] = [];
 let originalExitCode: typeof process.exitCode;
 
+function gitCommandEnvironment(): NodeJS.ProcessEnv {
+  const environment = { ...process.env };
+  for (const name of [
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CONFIG",
+    "GIT_CONFIG_PARAMETERS",
+    "GIT_CONFIG_COUNT",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_IMPLICIT_WORK_TREE",
+    "GIT_GRAFT_FILE",
+    "GIT_INDEX_FILE",
+    "GIT_NO_REPLACE_OBJECTS",
+    "GIT_REPLACE_REF_BASE",
+    "GIT_PREFIX",
+    "GIT_SHALLOW_FILE",
+    "GIT_COMMON_DIR",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+  ]) {
+    delete environment[name];
+  }
+  return environment;
+}
+
 const CONFIG = `${JSON.stringify(
   {
     version: "1",
@@ -83,7 +109,7 @@ const SYNC_STATE = `${JSON.stringify(
 )}\n`;
 
 async function runGit(root: string, ...args: string[]): Promise<void> {
-  await execFileAsync("git", ["-C", root, ...args]);
+  await execFileAsync("git", ["-C", root, ...args], { env: gitCommandEnvironment() });
 }
 
 beforeEach(() => {
@@ -106,7 +132,9 @@ describe("[NFR-STABILITY-015] [Issue #299] statusはlinked worktreeから共有c
     const repository = join(parent, "repository");
     const linked = join(parent, "linked");
     await mkdir(join(repository, ".gantt-sync"), { recursive: true });
-    await execFileAsync("git", ["init", "--initial-branch=main", repository]);
+    await execFileAsync("git", ["init", "--initial-branch=main", repository], {
+      env: gitCommandEnvironment(),
+    });
     await runGit(repository, "config", "user.email", "issue-299@example.invalid");
     await runGit(repository, "config", "user.name", "Issue 299 Test");
     await writeFile(join(repository, ".gantt-sync", "gantt.config.json"), CONFIG);
@@ -149,7 +177,9 @@ describe("[NFR-STABILITY-015] [Issue #299] statusはlinked worktreeから共有c
     const repository = join(parent, "repository");
     const linked = join(parent, "linked");
     await mkdir(join(repository, ".gantt-sync"), { recursive: true });
-    await execFileAsync("git", ["init", "--initial-branch=main", repository]);
+    await execFileAsync("git", ["init", "--initial-branch=main", repository], {
+      env: gitCommandEnvironment(),
+    });
     await runGit(repository, "config", "user.email", "issue-299@example.invalid");
     await runGit(repository, "config", "user.name", "Issue 299 Test");
     await writeFile(join(repository, ".gantt-sync", "gantt.config.json"), CONFIG);

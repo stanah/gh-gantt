@@ -1591,3 +1591,10 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-status-shared-cache.test.ts
+          - id: NFR-STABILITY-015-AC9
+            description: |
+              Git hook 由来の repository 選択環境変数を Git subprocess へ継承せず、
+              caller が指定した projectRoot の repository だけを検出・操作する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
