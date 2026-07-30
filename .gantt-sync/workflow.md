@@ -63,8 +63,36 @@
 
 正典は`docs/adr/ADR-021-graph-contract-and-run-graph-boundary.md`とする。
 
-- **現行 (#327)**: plan_id、plan_version、authority binding値のないunversioned provisional projectionとして、外部orchestratorが`.dev-flow`のJSON/schema/manual gateを運用する。製品はeventを受理しない。
-- **#328以後**: 製品control planeがversion bindingとeventを検証・受理する。外部runnerはexecutionだけを担う。
+- **基盤 (#327)**: plan_id、plan_version、authority binding値のないunversioned provisional projectionとして、外部orchestratorが`.dev-flow`のJSON/schema/manual gateを運用した。製品はeventを受理しなかった。
+- **現行 (#328)**: 製品control planeがversion bindingとeventを検証・受理する。外部runnerはexecutionだけを担う。
+- **binding**: `.gantt-sync/gantt.config.json` の次の値を exact binding とする。
+
+```yaml
+plan_id: dev-role-fixed
+plan_version: "1"
+schema_version: "1"
+```
+
+- **control plane**: gh-gantt が binding、stable ID、transition、budget、authority、human gate、checkpoint、event 重複を検証する。
+- **execution plane**: 外部 runner は次の CLI contract で結果を返し、provider SDK・agent subprocess・任意 shell executor は gh-gantt に内蔵しない。
+
+```bash
+gh-gantt run start --issue <issue> --event-id <id> --actor <actor> --json
+gh-gantt run event <run-id> --file <event.json> --json
+gh-gantt run show <run-id> --json
+gh-gantt run resume <run-id> --event-id <id> --actor <actor> --checkpoint <artifact-id> --evidence <evidence-id> --side-effect-state <not_started|committed|reconciled|unknown> --json
+gh-gantt run decide <run-id> --event-id <id> --actor <human> --decision <approved|rejected|override> --evidence-id <id> --json
+gh-gantt run observe-pr <run-id> --repository <owner/repo> --number <pr> --event-id <id> --actor <orchestrator> --evidence-id <id> --json
+```
+
+`run show` が `human_gate_required` を返した場合、外部 runner は停止する。human authority の承認または
+Graph Contract が許可した edge への理由・evidence 付き override だけが再開を許可する。
+resume は外部副作用の状態を必須入力とし、`unknown` は自動再開しない。`committed` / `reconciled` は
+`side_effect_reconciliation` evidence なしに受理しない。
+外部 runner 用 `run event` は `human_decision` と `pr_observed` を受理しない。human decision は
+専用 `run decide`、PR 状態は GitHub GraphQL から live state を取得する `run observe-pr` だけを使用する。
+`run observe-pr` は live `closingIssuesReferences` で Run 対象 Issue への exact linkage を確認し、
+未結線または取得不完全の PR では Run を完了しない。
 
 ## Dev-Role Config
 

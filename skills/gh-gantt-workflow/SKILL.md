@@ -83,6 +83,9 @@ Evidence: コマンド出力をそのまま提示する。
 6. ブランチ作成 — Issue から branch 名を標準化する場合は `gh-gantt-pr` の命名規則（`<prefix>/issue-<number>-<slug>`）に従う
 7. **★`before_design`** → 設計 → **★`before_implementation`** → 実装 & 検証
    - `.gantt-sync/workflow.md` に `## Dev-Role Config` がある場合、開発・検証は `gh-gantt-dev-role role=orchestrator` に引き継ぐ。executor gate を通るまで reviewer / PR 作成へ進んではならない
+   - project config が versioned Graph Contract を binding し `run` command を提供する場合、外部 runner は `gh-gantt run start` で Run Graph を開始し、role outcome を `gh-gantt run event` へ渡す。再起動後は `gh-gantt run show` を読み、checkpoint / evidence / side-effect state が明示された paused checkpoint だけを `gh-gantt run resume` で再開する。side-effect state が `unknown` なら停止する
+   - `run show` が human gate を示す場合、外部 runner は停止する。human authority の decision evidence または許可 edge への理由付き override なしに次 role を実行しない
+   - human gate は専用 `gh-gantt run decide`、PR evidence は GitHub live state を読む `gh-gantt run observe-pr` で扱う。外部 runner の raw `run event` から両者を自己申告しない
    - プロジェクトが Living Documentation 体系を採用している場合（`.gantt-sync/workflow.md` に Living Documentation セクションがある）、振る舞い変更を伴う作業では `gh-gantt-living-documentation` を invoke して要件 AC の追加とテストへの `[ID]` 付与を行う
 8. **★`before_commit`** — workflow.md の該当セクションを実行（自己レビュー・lint・テスト等）
 9. `git commit`

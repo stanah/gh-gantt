@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LoopConfigSchema } from "./loop-state.js";
+import { RunGraphConfigSchema } from "./run-graph.js";
 import type {
   AcceptanceCriterion,
   CalendarHoliday,
@@ -215,6 +216,7 @@ export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
   task_templates: TaskTemplatesSchema.optional(),
   doctor: DoctorConfigSchema.optional(),
   loop: LoopConfigSchema.optional(),
+  run_graph: RunGraphConfigSchema.optional(),
   require_review_for_types: z.array(z.string().trim().min(1)).default([]),
   require_close_evidence: z.boolean().default(false),
   max_task_size_hours: z.number().positive().optional(),

@@ -103,5 +103,10 @@
         "label_prefix": "feature:"
       }
     ]
+  },
+  "run_graph": {
+    "plan_id": "dev-role-fixed",
+    "plan_version": "1",
+    "schema_version": "1"
   }
 }

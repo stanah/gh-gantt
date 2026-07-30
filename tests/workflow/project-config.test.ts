@@ -123,3 +123,26 @@ describe("[NFR-STABILITY-013-AC4] AGENTS.md は config 未作成時だけ local 
     expect(bootstrapSection).toContain("上書きは `--force`");
   });
 });
+
+describe("[NFR-STABILITY-014-AC1] 共有 project config が versioned Graph Contract を exact binding する", () => {
+  it("config と workflow が同じ plan ID/version/schema version を参照する", async () => {
+    const rawConfig = JSON.parse(await readRepoFile(".gantt-sync/gantt.config.json"));
+    const config = ConfigSchema.parse(rawConfig);
+    const workflow = await readRepoFile(".gantt-sync/workflow.md");
+
+    expect(config.run_graph).toEqual({
+      plan_id: "dev-role-fixed",
+      plan_version: "1",
+      schema_version: "1",
+    });
+    expect(workflow).toContain("plan_id: dev-role-fixed");
+    expect(workflow).toContain('plan_version: "1"');
+    expect(workflow).toContain('schema_version: "1"');
+    expect(workflow).toContain("gh-gantt run start");
+    expect(workflow).toContain("gh-gantt run event");
+    expect(workflow).toContain("gh-gantt run show");
+    expect(workflow).toContain("gh-gantt run resume");
+    expect(workflow).toContain("gh-gantt run decide");
+    expect(workflow).toContain("gh-gantt run observe-pr");
+  });
+});

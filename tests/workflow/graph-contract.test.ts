@@ -617,10 +617,10 @@ describe("Graph Contract の公開文書契約", () => {
   it("project workflowだけがrepo固有contractを持ちshared skillsはproject contractをdiscoverする", async () => {
     const projectWorkflow = await readRepoFile(".gantt-sync/workflow.md");
     expect(projectWorkflow).toContain("ADR-021");
-    expect(projectWorkflow).toContain("現行 (#327)");
+    expect(projectWorkflow).toContain("基盤 (#327)");
     expect(projectWorkflow).toContain("外部orchestrator");
     expect(projectWorkflow).toContain("JSON/schema/manual gate");
-    expect(projectWorkflow).toContain("#328以後");
+    expect(projectWorkflow).toContain("現行 (#328)");
     expect(projectWorkflow).toContain("製品control plane");
 
     const sharedSkillPaths = [
@@ -648,7 +648,7 @@ describe("Graph Contract の公開文書契約", () => {
     expect(mapSection.length).toBeLessThan(700);
   });
 
-  it("NFR-STABILITY-014はAC1からAC8を固有意味のまま未実装として保持する", async () => {
+  it("NFR-STABILITY-014はAC1からAC8をcoverage状態と分離して固有意味のまま保持する", async () => {
     const requirements = RequirementsSchema.parse(
       parse(await readRepoFile("docs/requirements.yaml")) as unknown,
     );
@@ -698,8 +698,6 @@ describe("Graph Contract の公開文書契約", () => {
     for (const entry of criteria) {
       const description = entry.description.replaceAll(/\s+/g, " ");
       for (const term of meanings[entry.id] ?? []) expect(description).toContain(term);
-      expect(entry.status).toBe("uncovered");
-      expect(entry.tests).toEqual([]);
     }
 
     const testSource = await readRepoFile("tests/workflow/graph-contract.test.ts");

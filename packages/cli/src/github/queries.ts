@@ -195,16 +195,25 @@ export const ISSUE_RELATIONSHIPS_QUERY = `
  * loop complete の PR evidence ゲート用に PR 単体の live 状態を取得する（ADR-019）。
  *
  * ゲート判定に使うのは state のみ。reviewDecision / reviewThreads / statusCheckRollup
- * は拒否時の診断表示と prEvidence 記録のための参考情報。reviewThreads と contexts の
- * ページングは first: 100 で打ち切る（診断用途のため許容。ADR-019 参照）。
+ * は拒否時の診断表示と prEvidence 記録のための参考情報。reviewThreads と contexts は
+ * first: 100 で打ち切る。closingIssuesReferences は Run Graph adapter が一致を見つけるか、
+ * 不一致を確定できる cursor 終端まで取得する。
  */
 export const PULL_REQUEST_GATE_QUERY = `
-  query($owner: String!, $repo: String!, $number: Int!) {
+  query($owner: String!, $repo: String!, $number: Int!, $closingIssuesCursor: String) {
     repository(owner: $owner, name: $repo) {
       pullRequest(number: $number) {
         number
         state
+        isDraft
         reviewDecision
+        closingIssuesReferences(first: 100, after: $closingIssuesCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            number
+            repository { nameWithOwner }
+          }
+        }
         reviewThreads(first: 100) {
           nodes { isResolved }
         }
