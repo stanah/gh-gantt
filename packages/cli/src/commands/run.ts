@@ -8,8 +8,8 @@ import {
 } from "@gh-gantt/shared";
 import { Command } from "commander";
 import {
-  fetchPrGateStates as fetchPrGateStatesDefault,
-  type PrGateState,
+  fetchRunGraphPrObservation as fetchRunGraphPrObservationDefault,
+  type RunGraphPrObservation,
 } from "../loop/pr-evidence.js";
 import { RunGraphControlPlane, type RunGraphCommandResult } from "../run-graph/control-plane.js";
 import { ConfigStore } from "../store/config.js";
@@ -82,14 +82,15 @@ function parseRepository(value: string): { owner: string; repo: string } {
 }
 
 export interface RunCommandDependencies {
-  fetchPrGateStates?: (params: {
-    targets: Array<{
+  fetchRunGraphPrObservation?: (params: {
+    target: {
       owner: string;
       repo: string;
       number: number;
       crossRepo: boolean;
-    }>;
-  }) => Promise<PrGateState[]>;
+    };
+    expectedIssue: { owner: string; repo: string; issueNumber: number };
+  }) => Promise<RunGraphPrObservation>;
 }
 
 function formatReferenceLine(id: string, label: string, uri: string): string {
@@ -108,6 +109,7 @@ export function formatRunGraphView(view: RunGraphView): string {
     view.allowedNextTransitions.length > 0 ? view.allowedNextTransitions.join(", ") : "none";
   const lines = [
     `Run ${view.runId} [${view.state}] revision=${view.revision}`,
+    `task: ${view.task.owner}/${view.task.repo}#${view.task.issueNumber}`,
     `current node: ${node}`,
     `wait: ${view.waitReason ?? "none"}`,
     `attempt: ${attempt}`,
@@ -215,7 +217,8 @@ async function startRun(
 }
 
 export function createRunCommand(dependencies: RunCommandDependencies = {}): Command {
-  const fetchPrGateStates = dependencies.fetchPrGateStates ?? fetchPrGateStatesDefault;
+  const fetchRunGraphPrObservation =
+    dependencies.fetchRunGraphPrObservation ?? fetchRunGraphPrObservationDefault;
   const command = new Command("run").description("Durable Run Graph を操作する");
 
   command.addCommand(
@@ -436,30 +439,73 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
             const eventId = parseRequiredText(options.eventId, "--event-id");
             const actorId = parseRequiredText(options.actor, "--actor");
             const evidenceId = parseRequiredText(options.evidenceId, "--evidence-id");
-            const states = await fetchPrGateStates({
-              targets: [{ owner, repo, number, crossRepo: false }],
-            });
-            const liveState = states.find(
-              (state) => state.owner === owner && state.repo === repo && state.number === number,
-            );
-            if (!liveState || states.length !== 1) {
-              throw new RunCommandError(
-                "github_live_state_unavailable",
-                `GitHub PR live state を一意に取得できません: ${owner}/${repo}#${number}`,
+            const control = new RunGraphControlPlane(process.cwd());
+            const before = await control.inspect(runId);
+            const expectedRepository = `${before.task.owner}/${before.task.repo}`;
+            if (`${owner}/${repo}`.toLowerCase() !== expectedRepository.toLowerCase()) {
+              outputResult(
+                {
+                  accepted: false,
+                  code: "pr_not_linked_to_task",
+                  message: `PR repository は Run 対象 ${expectedRepository} と一致する必要があります`,
+                  stateUnchanged: true,
+                  view: before,
+                },
+                options.json,
               );
+              return;
+            }
+            let liveState: RunGraphPrObservation;
+            try {
+              liveState = await fetchRunGraphPrObservation({
+                target: { owner, repo, number, crossRepo: false },
+                expectedIssue: before.task,
+              });
+            } catch {
+              outputResult(
+                {
+                  accepted: false,
+                  code: "github_live_state_unavailable",
+                  message: `GitHub PR live state/linkage を取得できません: ${owner}/${repo}#${number}`,
+                  stateUnchanged: true,
+                  view: before,
+                },
+                options.json,
+              );
+              return;
+            }
+            if (
+              liveState.owner.toLowerCase() !== owner.toLowerCase() ||
+              liveState.repo.toLowerCase() !== repo.toLowerCase() ||
+              liveState.number !== number
+            ) {
+              outputResult(
+                {
+                  accepted: false,
+                  code: "github_live_state_unavailable",
+                  message: `GitHub PR live state を一意に取得できません: ${owner}/${repo}#${number}`,
+                  stateUnchanged: true,
+                  view: before,
+                },
+                options.json,
+              );
+              return;
             }
             const canonicalLiveState = JSON.stringify({
               owner: liveState.owner,
               repo: liveState.repo,
               number: liveState.number,
               state: liveState.state,
+              isDraft: liveState.isDraft,
+              linkedIssue: liveState.linkedIssue,
+              linkageComplete: liveState.linkageComplete,
               reviewDecision: liveState.reviewDecision,
               unresolvedThreads: liveState.unresolvedThreads,
               pendingChecks: liveState.pendingChecks ?? null,
             });
             const actor = { id: actorId, role: "orchestrator" as const };
             outputResult(
-              await new RunGraphControlPlane(process.cwd()).applyEvent({
+              await control.applyEvent({
                 schemaVersion: "1",
                 eventId,
                 runId,
@@ -469,6 +515,9 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                   repository: `${owner}/${repo}`,
                   pullRequestNumber: number,
                   state: liveState.state.toLowerCase() as "open" | "merged" | "closed",
+                  isDraft: liveState.isDraft,
+                  linkedIssue: liveState.linkedIssue,
+                  linkageComplete: liveState.linkageComplete,
                   evidenceIds: [evidenceId],
                 },
                 evidence: [

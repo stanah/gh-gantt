@@ -10,7 +10,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRunCommand } from "../commands/run.js";
 import { buildProgram } from "../program.js";
-import type { PrGateState } from "../loop/pr-evidence.js";
+import type { RunGraphPrObservation } from "../loop/pr-evidence.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
@@ -223,6 +223,43 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
     vi.restoreAllMocks();
     await rm(projectRoot, { recursive: true, force: true });
   });
+
+  async function startAtPrGate(): Promise<string> {
+    await createRunCommand().parseAsync(
+      [
+        "start",
+        "--issue",
+        "328",
+        "--event-id",
+        "event-start",
+        "--actor",
+        "orchestrator-1",
+        "--json",
+      ],
+      { from: "user" },
+    );
+    const started = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string) as {
+      view: { runId: string };
+    };
+    await advanceToHumanGate(projectRoot, started.view.runId);
+    await createRunCommand().parseAsync(
+      [
+        "decide",
+        started.view.runId,
+        "--event-id",
+        "event-human-before-pr",
+        "--actor",
+        "human-1",
+        "--decision",
+        "approved",
+        "--evidence-id",
+        "human-evidence-before-pr",
+        "--json",
+      ],
+      { from: "user" },
+    );
+    return started.view.runId;
+  }
 
   it("run group を登録し、OPEN Issue から exact-bound run を開始して bounded view を表示する", async () => {
     const runGroup = buildProgram().commands.find((command) => command.name() === "run");
@@ -459,6 +496,9 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
         repository: "stanah/gh-gantt",
         pullRequestNumber: 334,
         state: "merged",
+        isDraft: false,
+        linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+        linkageComplete: true,
         evidenceIds: ["self-reported-pr"],
       },
     },
@@ -586,57 +626,28 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
     expect(process.exitCode).toBe(1);
   });
 
-  it("run observe-pr は注入した fetcher の live state だけから PR evidence を生成する", async () => {
-    await createRunCommand().parseAsync(
-      [
-        "start",
-        "--issue",
-        "328",
-        "--event-id",
-        "event-start",
-        "--actor",
-        "orchestrator-1",
-        "--json",
-      ],
-      { from: "user" },
-    );
-    const started = JSON.parse(logSpy.mock.calls.at(-1)?.[0] as string) as {
-      view: { runId: string };
-    };
-    await advanceToHumanGate(projectRoot, started.view.runId);
-    await createRunCommand().parseAsync(
-      [
-        "decide",
-        started.view.runId,
-        "--event-id",
-        "event-human-before-pr",
-        "--actor",
-        "human-1",
-        "--decision",
-        "approved",
-        "--evidence-id",
-        "human-evidence-before-pr",
-        "--json",
-      ],
-      { from: "user" },
-    );
-    const liveState: PrGateState = {
+  it("run observe-pr は対象 Issue と無関係な同一 repository の merged PR を拒否する", async () => {
+    const runId = await startAtPrGate();
+    const liveState: RunGraphPrObservation = {
       owner: "stanah",
       repo: "gh-gantt",
       number: 334,
       crossRepo: false,
       state: "MERGED",
+      isDraft: false,
+      linkedIssue: null,
+      linkageComplete: true,
       reviewDecision: "APPROVED",
       unresolvedThreads: 0,
       pendingChecks: 0,
     };
-    const fetcher = vi.fn(async () => [liveState]);
+    const fetcher = vi.fn(async () => liveState);
 
     logSpy.mockClear();
-    await createRunCommand({ fetchPrGateStates: fetcher }).parseAsync(
+    await createRunCommand({ fetchRunGraphPrObservation: fetcher }).parseAsync(
       [
         "observe-pr",
-        started.view.runId,
+        runId,
         "--repository",
         "stanah/gh-gantt",
         "--number",
@@ -653,26 +664,154 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
     );
 
     expect(fetcher).toHaveBeenCalledWith({
-      targets: [{ owner: "stanah", repo: "gh-gantt", number: 334, crossRepo: false }],
+      target: { owner: "stanah", repo: "gh-gantt", number: 334, crossRepo: false },
+      expectedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
     });
     const result = JSON.parse(logSpy.mock.calls[0]?.[0] as string) as {
       accepted: boolean;
-      view: { state: string; evidence: { items: Array<Record<string, unknown>> } };
+      view: { state: string };
     };
-    expect(result).toMatchObject({ accepted: true, view: { state: "completed" } });
-    expect(result.view.evidence.items).toContainEqual(
-      expect.objectContaining({
-        id: "pr-evidence-1",
-        kind: "github_pr_live",
-        actor: { id: "orchestrator-1", role: "orchestrator" },
-        reference: {
-          kind: "github",
-          uri: "https://github.com/stanah/gh-gantt/pull/334",
-          sha256: "sha256:e5f420fb998d0b76c6321c81102de77af854683553b798038067ff831576bf2f",
-          byteLength: 134,
-        },
-      }),
+    expect(result).toMatchObject({
+      accepted: false,
+      code: "pr_not_linked_to_task",
+      stateUnchanged: true,
+      view: { state: "running" },
+    });
+  });
+
+  it.each([
+    { state: "MERGED" as const, isDraft: false, expectedRunState: "completed" },
+    { state: "CLOSED" as const, isDraft: false, expectedRunState: "completed" },
+    { state: "CLOSED" as const, isDraft: true, expectedRunState: "completed" },
+    { state: "OPEN" as const, isDraft: false, expectedRunState: "running" },
+    { state: "OPEN" as const, isDraft: true, expectedRunState: "running" },
+  ])(
+    "run observe-pr は linked $state (draft=$isDraft) の live semantics だけを Run へ反映する",
+    async ({ state, isDraft, expectedRunState }) => {
+      const runId = await startAtPrGate();
+      const liveState: RunGraphPrObservation = {
+        owner: "stanah",
+        repo: "gh-gantt",
+        number: 400,
+        crossRepo: false,
+        state,
+        isDraft,
+        linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+        linkageComplete: true,
+        reviewDecision: "APPROVED",
+        unresolvedThreads: 0,
+        pendingChecks: 0,
+      };
+      const fetcher = vi.fn(async () => liveState);
+
+      logSpy.mockClear();
+      await createRunCommand({ fetchRunGraphPrObservation: fetcher }).parseAsync(
+        [
+          "observe-pr",
+          runId,
+          "--repository",
+          "stanah/gh-gantt",
+          "--number",
+          "400",
+          "--event-id",
+          "event-pr-linked",
+          "--actor",
+          "orchestrator-1",
+          "--evidence-id",
+          "pr-evidence-linked",
+          "--json",
+        ],
+        { from: "user" },
+      );
+
+      const result = JSON.parse(logSpy.mock.calls[0]?.[0] as string) as {
+        accepted: boolean;
+        view: { state: string; evidence: { items: Array<Record<string, unknown>> } };
+      };
+      expect(result).toMatchObject({ accepted: true, view: { state: expectedRunState } });
+      if (state === "MERGED") {
+        expect(result.view.evidence.items).toContainEqual(
+          expect.objectContaining({
+            id: "pr-evidence-linked",
+            kind: "github_pr_live",
+            reference: expect.objectContaining({
+              uri: "https://github.com/stanah/gh-gantt/pull/400",
+              sha256: "sha256:275086f30aa17c6bf5760c62e99992991f3c74e6a1ee62035d8a52821336e3ec",
+              byteLength: 242,
+            }),
+          }),
+        );
+      }
+    },
+  );
+
+  it("run observe-pr は GitHub live 取得失敗時に state/revision を変えない", async () => {
+    const runId = await startAtPrGate();
+    const before = await new RunGraphControlPlane(projectRoot).inspect(runId);
+    const fetcher = vi.fn(async (): Promise<RunGraphPrObservation> => {
+      throw new Error("GitHub API unavailable");
+    });
+
+    logSpy.mockClear();
+    await createRunCommand({ fetchRunGraphPrObservation: fetcher }).parseAsync(
+      [
+        "observe-pr",
+        runId,
+        "--repository",
+        "stanah/gh-gantt",
+        "--number",
+        "400",
+        "--event-id",
+        "event-pr-unavailable",
+        "--actor",
+        "orchestrator-1",
+        "--evidence-id",
+        "pr-evidence-unavailable",
+        "--json",
+      ],
+      { from: "user" },
     );
+
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] as string)).toMatchObject({
+      accepted: false,
+      code: "github_live_state_unavailable",
+      stateUnchanged: true,
+      view: { revision: before.revision, state: before.state },
+    });
+    await expect(new RunGraphControlPlane(projectRoot).inspect(runId)).resolves.toEqual(before);
+  });
+
+  it("run observe-pr は Run と異なる repository を live fetch 前に拒否する", async () => {
+    const runId = await startAtPrGate();
+    const fetcher = vi.fn();
+
+    logSpy.mockClear();
+    await createRunCommand({ fetchRunGraphPrObservation: fetcher }).parseAsync(
+      [
+        "observe-pr",
+        runId,
+        "--repository",
+        "someone/other-repo",
+        "--number",
+        "400",
+        "--event-id",
+        "event-pr-wrong-repo",
+        "--actor",
+        "orchestrator-1",
+        "--evidence-id",
+        "pr-evidence-wrong-repo",
+        "--json",
+      ],
+      { from: "user" },
+    );
+
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(JSON.parse(logSpy.mock.calls[0]?.[0] as string)).toMatchObject({
+      accepted: false,
+      code: "pr_not_linked_to_task",
+      stateUnchanged: true,
+      view: { state: "running" },
+    });
   });
 
   it("resume は side-effect-state 未指定を command parsing で拒否する", async () => {

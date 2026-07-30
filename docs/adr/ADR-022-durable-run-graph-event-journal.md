@@ -26,6 +26,10 @@ runner は event sequence、target state、edge、budget counter を指定でき
 CLI の汎用 `run event` は execution plane 用に限定し、`human_decision` と `pr_observed` を拒否する。
 前者は human role を固定する `run decide`、後者は既存 GitHub GraphQL adapter から live state を取得する
 read-only の `run observe-pr` だけが control plane へ渡す。
+`run observe-pr` は PR の `closingIssuesReferences` を live 取得し、Run の Work Graph 対象と
+owner / repository / Issue 番号が一致する positive proof を得た場合だけ遷移を許可する。
+一致しないと確定するには cursor 終端まで取得し、pagination を完了できない場合は Run state を
+変更せず拒否する。
 
 Graph Contract と Run Graph event は `.gantt-sync/run-graph/` 配下の別 store に置く。Graph Contract は
 plan ID/version/schema version で exact binding し、Run Graph は run ごとの immutable sequence segment を
@@ -37,7 +41,7 @@ payload が同じでも `DUPLICATE_EVENT` として拒否する。domain rejecti
 別の rejection evidence として記録する。壊れた JSON のように run/event identity 自体を信用できない入力は
 永続化せず拒否する。
 
-default view は current node、wait reason、attempt、独立 budget、allowed next transitions、bounded な
+default view は Work Graph 対象、current node、wait reason、attempt、独立 budget、allowed next transitions、bounded な
 artifact/evidence reference だけを返し、`total`、`limit`、`truncated` を含める。外部副作用と event append を
 原子的にはできないため、再開時に running Attempt を盲目的に再配布しない。checkpoint と side-effect evidence が
 不足する場合は state を変更せず paused のまま fail-closed にする。

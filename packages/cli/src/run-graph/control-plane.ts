@@ -193,6 +193,17 @@ export class RunGraphControlPlane {
       ? projection.attempts.find((attempt) => attempt.id === currentNode.activeAttemptId)
       : undefined;
     if (
+      (input.command.type === "run_paused" || input.command.type === "run_resumed") &&
+      !activeAttempt
+    ) {
+      return this.reject(
+        input,
+        "stale_attempt",
+        "pause/resume に対応する active attempt がありません",
+        view,
+      );
+    }
+    if (
       (input.command.type === "attempt_finished" ||
         input.command.type === "node_outcome_submitted") &&
       (!activeAttempt || input.command.attemptId !== activeAttempt.id)
@@ -415,7 +426,73 @@ export class RunGraphControlPlane {
           view,
         );
       }
+      const checkpointEvidence = evidenceForCommand.filter(
+        (item) => item.kind === "checkpoint" && item.artifactIds.includes(checkpoint.id),
+      );
+      if (
+        input.command.type === "run_paused" &&
+        (!activeAttempt ||
+          checkpoint.nodeId !== currentNode.id ||
+          checkpoint.producerAttemptId !== activeAttempt.id ||
+          checkpoint.actor.id !== activeAttempt.actor.id ||
+          checkpoint.actor.role !== activeAttempt.actor.role ||
+          checkpointEvidence.some(
+            (item) =>
+              item.nodeId !== currentNode.id ||
+              item.producerAttemptId !== activeAttempt.id ||
+              item.actor.id !== activeAttempt.actor.id ||
+              item.actor.role !== activeAttempt.actor.role,
+          ))
+      ) {
+        return this.reject(
+          input,
+          "stale_attempt",
+          "checkpoint artifact/evidence は active attempt の lineage に属していません",
+          view,
+        );
+      }
       if (input.command.type === "run_resumed") {
+        const resumeCommand = input.command;
+        const latestPause = [...journal.acceptedEvents]
+          .reverse()
+          .find((event) => event.command.type === "run_paused");
+        const latestPauseCommand =
+          latestPause?.command.type === "run_paused" ? latestPause.command : undefined;
+        const latestCheckpointEvidenceIds =
+          latestPause && latestPauseCommand
+            ? latestPause.evidenceIds.filter((id) => {
+                const item = allEvidence.find((evidenceItem) => evidenceItem.id === id);
+                return (
+                  item?.kind === "checkpoint" &&
+                  item.artifactIds.includes(latestPauseCommand.checkpointArtifactId)
+                );
+              })
+            : [];
+        if (
+          !activeAttempt ||
+          !latestPauseCommand ||
+          latestPauseCommand.checkpointArtifactId !== checkpoint.id ||
+          latestCheckpointEvidenceIds.length === 0 ||
+          latestCheckpointEvidenceIds.some((id) => !resumeCommand.evidenceIds.includes(id)) ||
+          checkpoint.nodeId !== currentNode.id ||
+          checkpoint.producerAttemptId !== activeAttempt.id ||
+          checkpoint.actor.id !== activeAttempt.actor.id ||
+          checkpoint.actor.role !== activeAttempt.actor.role ||
+          checkpointEvidence.some(
+            (item) =>
+              item.nodeId !== currentNode.id ||
+              item.producerAttemptId !== activeAttempt.id ||
+              item.actor.id !== activeAttempt.actor.id ||
+              item.actor.role !== activeAttempt.actor.role,
+          )
+        ) {
+          return this.reject(
+            input,
+            "stale_attempt",
+            "resume checkpoint は最新 pause と active attempt の lineage に一致していません",
+            view,
+          );
+        }
         if (input.command.sideEffectState === "unknown") {
           return this.reject(
             input,
@@ -446,11 +523,33 @@ export class RunGraphControlPlane {
     }
     if (input.command.type === "pr_observed") {
       const expectedRepository = `${projection.run.task.owner}/${projection.run.task.repo}`;
-      if (input.command.repository !== expectedRepository) {
+      if (input.command.repository.toLowerCase() !== expectedRepository.toLowerCase()) {
         return this.reject(
           input,
-          "evidence_required",
+          "pr_not_linked_to_task",
           `PR evidence の repository は ${expectedRepository} である必要があります`,
+          view,
+        );
+      }
+      if (!input.command.linkedIssue) {
+        return this.reject(
+          input,
+          input.command.linkageComplete ? "pr_not_linked_to_task" : "github_live_state_unavailable",
+          input.command.linkageComplete
+            ? `PR #${input.command.pullRequestNumber} は Run 対象 Issue #${projection.run.task.issueNumber} に紐づいていません`
+            : "PR と Run 対象 Issue の live linkage を確定できません",
+          view,
+        );
+      }
+      if (
+        input.command.linkedIssue.owner.toLowerCase() !== projection.run.task.owner.toLowerCase() ||
+        input.command.linkedIssue.repo.toLowerCase() !== projection.run.task.repo.toLowerCase() ||
+        input.command.linkedIssue.issueNumber !== projection.run.task.issueNumber
+      ) {
+        return this.reject(
+          input,
+          "pr_not_linked_to_task",
+          "PR の live linkage が Run 対象 Issue と一致しません",
           view,
         );
       }
@@ -576,6 +675,7 @@ export class RunGraphControlPlane {
     return RunGraphViewSchema.parse({
       schemaVersion: "1",
       runId: projection.run.id,
+      task: projection.run.task,
       revision: projection.revision,
       state: projection.run.state,
       currentNode,
@@ -719,12 +819,16 @@ export class RunGraphControlPlane {
     createdAt: string,
   ): RunGraphArtifact[] {
     if ((input.artifacts?.length ?? 0) > 0 && !attemptId) return [];
+    const producerActor =
+      input.command.type === "run_paused" && attemptId
+        ? (projection.attempts.find((attempt) => attempt.id === attemptId)?.actor ?? input.actor)
+        : input.actor;
     return (input.artifacts ?? []).map((artifact) => ({
       ...artifact,
       runId: input.runId,
       nodeId,
       producerAttemptId: attemptId as string,
-      actor: input.actor,
+      actor: producerActor,
       createdAt,
     }));
   }
@@ -736,12 +840,16 @@ export class RunGraphControlPlane {
     attemptId: string | undefined,
     createdAt: string,
   ): RunGraphEvidence[] {
+    const producerActor =
+      input.command.type === "run_paused" && attemptId
+        ? (projection.attempts.find((attempt) => attempt.id === attemptId)?.actor ?? input.actor)
+        : input.actor;
     return (input.evidence ?? []).map((item) => ({
       ...item,
       runId: input.runId,
       nodeId,
       producerAttemptId: attemptId ?? null,
-      actor: input.actor,
+      actor: producerActor,
       createdAt,
     }));
   }

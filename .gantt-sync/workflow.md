@@ -91,6 +91,8 @@ resume は外部副作用の状態を必須入力とし、`unknown` は自動再
 `side_effect_reconciliation` evidence なしに受理しない。
 外部 runner 用 `run event` は `human_decision` と `pr_observed` を受理しない。human decision は
 専用 `run decide`、PR 状態は GitHub GraphQL から live state を取得する `run observe-pr` だけを使用する。
+`run observe-pr` は live `closingIssuesReferences` で Run 対象 Issue への exact linkage を確認し、
+未結線または取得不完全の PR では Run を完了しない。
 
 ## Dev-Role Config
 

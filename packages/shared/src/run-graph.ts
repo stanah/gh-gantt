@@ -611,6 +611,9 @@ export type RunGraphRunnerCommand =
       repository: string;
       pullRequestNumber: number;
       state: "open" | "merged" | "closed";
+      isDraft: boolean;
+      linkedIssue: { owner: string; repo: string; issueNumber: number } | null;
+      linkageComplete: boolean;
       evidenceIds: string[];
     };
 
@@ -666,6 +669,8 @@ export const RUN_GRAPH_REJECTION_CODES = [
   "unsupported_contract_binding",
   "authority_denied",
   "evidence_required",
+  "pr_not_linked_to_task",
+  "github_live_state_unavailable",
 ] as const;
 
 export type RunGraphRejectionCode = (typeof RUN_GRAPH_REJECTION_CODES)[number];
@@ -757,6 +762,16 @@ const PrObservedCommandSchema = z
       .regex(/^[^/]+\/[^/]+$/),
     pullRequestNumber: z.number().int().positive(),
     state: z.enum(["open", "merged", "closed"]),
+    isDraft: z.boolean(),
+    linkedIssue: z
+      .object({
+        owner: z.string().min(1),
+        repo: z.string().min(1),
+        issueNumber: z.number().int().positive(),
+      })
+      .strict()
+      .nullable(),
+    linkageComplete: z.boolean(),
     evidenceIds: z.array(OpaqueIdSchema),
   })
   .strict();
@@ -854,16 +869,21 @@ export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
   .superRefine((event, context) => {
     const submittedArtifactIds = (event.artifacts ?? []).map((artifact) => artifact.id);
     const submittedEvidenceIds = (event.evidence ?? []).map((evidence) => evidence.id);
+    const checkpointUsesAttemptProducer = event.command.type === "run_paused";
     if (
       new Set(event.artifactIds).size !== event.artifactIds.length ||
       new Set(event.evidenceIds).size !== event.evidenceIds.length ||
       submittedArtifactIds.some((id) => !event.artifactIds.includes(id)) ||
       submittedEvidenceIds.some((id) => !event.evidenceIds.includes(id)) ||
       (event.artifacts ?? []).some(
-        (artifact) => artifact.runId !== event.runId || artifact.actor.id !== event.actor.id,
+        (artifact) =>
+          artifact.runId !== event.runId ||
+          (!checkpointUsesAttemptProducer && artifact.actor.id !== event.actor.id),
       ) ||
       (event.evidence ?? []).some(
-        (evidence) => evidence.runId !== event.runId || evidence.actor.id !== event.actor.id,
+        (evidence) =>
+          evidence.runId !== event.runId ||
+          (!checkpointUsesAttemptProducer && evidence.actor.id !== event.actor.id),
       )
     ) {
       context.addIssue({
@@ -994,6 +1014,7 @@ export interface RunGraphBoundedCollection<T> {
 export interface RunGraphView {
   schemaVersion: "1";
   runId: string;
+  task: { owner: string; repo: string; issueNumber: number };
   revision: number;
   state: RunGraphRunState;
   currentNode: RunGraphNode | null;
@@ -1179,6 +1200,7 @@ export const RunGraphViewSchema: z.ZodType<RunGraphView> = z
   .object({
     schemaVersion: z.literal("1"),
     runId: OpaqueIdSchema,
+    task: TaskReferenceSchema,
     revision: z.number().int().nonnegative(),
     state: z.enum(RUN_GRAPH_RUN_STATES),
     currentNode: RunGraphNodeSchema.nullable(),

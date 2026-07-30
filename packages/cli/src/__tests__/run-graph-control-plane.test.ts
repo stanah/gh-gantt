@@ -335,6 +335,9 @@ describe("[NFR-STABILITY-014-AC6] fixed dev-role transition は accepted outcome
           repository: "stanah/gh-gantt",
           pullRequestNumber: 400,
           state: "merged",
+          isDraft: false,
+          linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+          linkageComplete: true,
           evidenceIds: ["pr-before-human-evidence"],
         },
       }),
@@ -925,6 +928,26 @@ describe("[NFR-STABILITY-014-AC5] checkpoint は同じ attempt を重複 dispatc
         state: "paused",
         activeAttempt: { id: "checkpoint-attempt", state: "running" },
         allowedNextTransitions: ["run_resumed"],
+        artifacts: {
+          items: [
+            {
+              id: "checkpoint-artifact",
+              nodeId,
+              producerAttemptId: "checkpoint-attempt",
+              actor: { id: "planner-agent", role: "planner" },
+            },
+          ],
+        },
+        evidence: {
+          items: [
+            {
+              id: "checkpoint-evidence",
+              nodeId,
+              producerAttemptId: "checkpoint-attempt",
+              actor: { id: "planner-agent", role: "planner" },
+            },
+          ],
+        },
       },
     });
 
@@ -1124,6 +1147,303 @@ describe("[NFR-STABILITY-014-AC5] checkpoint は同じ attempt を重複 dispatc
       stateUnchanged: true,
     });
   });
+
+  it("過去 attempt の checkpoint を現在の attempt の pause に再利用できない", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-stale-checkpoint-attempt");
+    const planner = await control.inspect(runId);
+    if (!planner.currentNode) throw new Error("planner node がありません");
+    const plannerNodeId = planner.currentNode.id;
+
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-planner-start",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_started",
+        nodeId: plannerNodeId,
+        attemptId: "stale-checkpoint-planner-attempt",
+      },
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-planner-pause",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_paused",
+        checkpointArtifactId: "stale-checkpoint-planner-artifact",
+        evidenceIds: ["stale-checkpoint-planner-evidence"],
+        reason: "planner checkpoint を保存する",
+      },
+      artifacts: [
+        {
+          id: "stale-checkpoint-planner-artifact",
+          schemaId: "run.checkpoint",
+          schemaVersion: "1",
+          derivedFromArtifactIds: [],
+          reference: reference("stale-checkpoint-planner"),
+        },
+      ],
+      evidence: [
+        {
+          id: "stale-checkpoint-planner-evidence",
+          kind: "checkpoint",
+          artifactIds: ["stale-checkpoint-planner-artifact"],
+          provenance: "external-runner",
+          reference: reference("stale-checkpoint-planner-evidence"),
+        },
+      ],
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-planner-resume",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_resumed",
+        checkpointArtifactId: "stale-checkpoint-planner-artifact",
+        evidenceIds: ["stale-checkpoint-planner-evidence"],
+        sideEffectState: "not_started",
+      },
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-planner-finish",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_finished",
+        nodeId: plannerNodeId,
+        attemptId: "stale-checkpoint-planner-attempt",
+        outcome: "succeeded",
+        artifactIds: [],
+        evidenceIds: ["stale-checkpoint-planner-command"],
+      },
+      evidence: [
+        {
+          id: "stale-checkpoint-planner-command",
+          kind: "command_execution",
+          artifactIds: [],
+          provenance: "external-runner",
+          reference: reference("stale-checkpoint-planner-command"),
+        },
+      ],
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-planner-outcome",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "node_outcome_submitted",
+        nodeId: plannerNodeId,
+        attemptId: "stale-checkpoint-planner-attempt",
+        outcome: "plan_valid",
+        artifactIds: ["stale-checkpoint-plan"],
+        evidenceIds: ["stale-checkpoint-plan-validation"],
+      },
+      artifacts: [
+        {
+          id: "stale-checkpoint-plan",
+          schemaId: "dev-role.plan",
+          schemaVersion: "1",
+          derivedFromArtifactIds: [],
+          reference: reference("stale-checkpoint-plan"),
+        },
+      ],
+      evidence: [
+        {
+          id: "stale-checkpoint-plan-validation",
+          kind: "artifact_validation",
+          artifactIds: ["stale-checkpoint-plan"],
+          provenance: "schema-validator",
+          reference: reference("stale-checkpoint-plan-validation"),
+        },
+      ],
+    });
+
+    const implementer = await control.inspect(runId);
+    if (!implementer.currentNode) throw new Error("implementer node がありません");
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-checkpoint-implementer-start",
+      runId,
+      actor: { id: "implementer-agent", role: "implementer" },
+      command: {
+        type: "attempt_started",
+        nodeId: implementer.currentNode.id,
+        attemptId: "stale-checkpoint-current-attempt",
+      },
+    });
+    const beforeRejectedPause = await control.inspect(runId);
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "stale-checkpoint-reused-pause",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_paused",
+          checkpointArtifactId: "stale-checkpoint-planner-artifact",
+          evidenceIds: ["stale-checkpoint-planner-evidence"],
+          reason: "過去 checkpoint の再利用を試す",
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+      view: {
+        revision: beforeRejectedPause.revision,
+        state: "running",
+        activeAttempt: { id: "stale-checkpoint-current-attempt", state: "running" },
+      },
+    });
+    await expect(control.inspect(runId)).resolves.toEqual(beforeRejectedPause);
+  });
+
+  it("最新 pause より古い checkpoint では resume できない", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-stale-resume-checkpoint");
+    const planner = await control.inspect(runId);
+    if (!planner.currentNode) throw new Error("planner node がありません");
+    const nodeId = planner.currentNode.id;
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-resume-attempt-start",
+      runId,
+      actor: { id: "planner-agent", role: "planner" },
+      command: {
+        type: "attempt_started",
+        nodeId,
+        attemptId: "stale-resume-attempt",
+      },
+    });
+
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-resume-first-pause",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_paused",
+        checkpointArtifactId: "stale-resume-first-checkpoint",
+        evidenceIds: ["stale-resume-first-evidence"],
+        reason: "最初の checkpoint",
+      },
+      artifacts: [
+        {
+          id: "stale-resume-first-checkpoint",
+          schemaId: "run.checkpoint",
+          schemaVersion: "1",
+          derivedFromArtifactIds: [],
+          reference: reference("stale-resume-first-checkpoint"),
+        },
+      ],
+      evidence: [
+        {
+          id: "stale-resume-first-evidence",
+          kind: "checkpoint",
+          artifactIds: ["stale-resume-first-checkpoint"],
+          provenance: "external-runner",
+          reference: reference("stale-resume-first-evidence"),
+        },
+      ],
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-resume-first-resume",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_resumed",
+        checkpointArtifactId: "stale-resume-first-checkpoint",
+        evidenceIds: ["stale-resume-first-evidence"],
+        sideEffectState: "not_started",
+      },
+    });
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "stale-resume-second-pause",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_paused",
+        checkpointArtifactId: "stale-resume-current-checkpoint",
+        evidenceIds: ["stale-resume-current-evidence"],
+        reason: "最新の checkpoint",
+      },
+      artifacts: [
+        {
+          id: "stale-resume-current-checkpoint",
+          schemaId: "run.checkpoint",
+          schemaVersion: "1",
+          derivedFromArtifactIds: ["stale-resume-first-checkpoint"],
+          reference: reference("stale-resume-current-checkpoint"),
+        },
+      ],
+      evidence: [
+        {
+          id: "stale-resume-current-evidence",
+          kind: "checkpoint",
+          artifactIds: ["stale-resume-current-checkpoint"],
+          provenance: "external-runner",
+          reference: reference("stale-resume-current-evidence"),
+        },
+      ],
+    });
+    const beforeRejectedResume = await control.inspect(runId);
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "stale-resume-old-checkpoint",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_resumed",
+          checkpointArtifactId: "stale-resume-first-checkpoint",
+          evidenceIds: ["stale-resume-first-evidence"],
+          sideEffectState: "not_started",
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+      view: {
+        revision: beforeRejectedResume.revision,
+        state: "paused",
+        activeAttempt: { id: "stale-resume-attempt", state: "running" },
+      },
+    });
+    await expect(control.inspect(runId)).resolves.toEqual(beforeRejectedResume);
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "stale-resume-current-checkpoint",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_resumed",
+          checkpointArtifactId: "stale-resume-current-checkpoint",
+          evidenceIds: ["stale-resume-current-evidence"],
+          sideEffectState: "not_started",
+        },
+      }),
+    ).resolves.toMatchObject({
+      accepted: true,
+      view: {
+        revision: beforeRejectedResume.revision + 1,
+        state: "running",
+        activeAttempt: { id: "stale-resume-attempt", state: "running" },
+      },
+    });
+  });
 });
 
 describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence を要求する", () => {
@@ -1209,6 +1529,9 @@ describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence 
           repository: "someone/another-repo",
           pullRequestNumber: 400,
           state: "merged",
+          isDraft: false,
+          linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+          linkageComplete: true,
           evidenceIds: ["pr-wrong-evidence"],
         },
         evidence: [
@@ -1221,7 +1544,87 @@ describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence 
           },
         ],
       }),
-    ).resolves.toMatchObject({ accepted: false, code: "evidence_required", stateUnchanged: true });
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "pr_not_linked_to_task",
+      stateUnchanged: true,
+    });
+
+    const beforeLinkageRejections = await control.inspect(runId);
+    for (const [eventId, linkedIssue, linkageComplete, expectedCode] of [
+      ["pr-definitive-unlinked", null, true, "pr_not_linked_to_task"],
+      ["pr-linkage-unavailable", null, false, "github_live_state_unavailable"],
+      [
+        "pr-linked-to-another-issue",
+        { owner: "stanah", repo: "gh-gantt", issueNumber: 999 },
+        true,
+        "pr_not_linked_to_task",
+      ],
+    ] as const) {
+      await expect(
+        control.applyEvent({
+          schemaVersion: "1",
+          eventId,
+          runId,
+          actor: { id: "orchestrator-1", role: "orchestrator" },
+          command: {
+            type: "pr_observed",
+            repository: "stanah/gh-gantt",
+            pullRequestNumber: 400,
+            state: "merged",
+            isDraft: false,
+            linkedIssue,
+            linkageComplete,
+            evidenceIds: [`${eventId}-evidence`],
+          },
+          evidence: [
+            {
+              id: `${eventId}-evidence`,
+              kind: "github_pr_live",
+              artifactIds: [],
+              provenance: "github-graphql",
+              reference: reference(`${eventId}-evidence`),
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({
+        accepted: false,
+        code: expectedCode,
+        stateUnchanged: true,
+        view: { revision: beforeLinkageRejections.revision, state: "running" },
+      });
+      await expect(control.inspect(runId)).resolves.toEqual(beforeLinkageRejections);
+    }
+
+    const draft = await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "pr-linked-draft",
+      runId,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "pr_observed",
+        repository: "STANAH/GH-GANTT",
+        pullRequestNumber: 400,
+        state: "open",
+        isDraft: true,
+        linkedIssue: { owner: "STANAH", repo: "GH-GANTT", issueNumber: 328 },
+        linkageComplete: false,
+        evidenceIds: ["pr-draft-evidence"],
+      },
+      evidence: [
+        {
+          id: "pr-draft-evidence",
+          kind: "github_pr_live",
+          artifactIds: [],
+          provenance: "github-graphql",
+          reference: reference("pr-draft-evidence"),
+        },
+      ],
+    });
+    expect(draft).toMatchObject({
+      accepted: true,
+      view: { state: "running", currentNode: { state: "running" } },
+    });
 
     const merged = await control.applyEvent({
       schemaVersion: "1",
@@ -1230,9 +1633,12 @@ describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence 
       actor: { id: "orchestrator-1", role: "orchestrator" },
       command: {
         type: "pr_observed",
-        repository: "stanah/gh-gantt",
+        repository: "STANAH/GH-GANTT",
         pullRequestNumber: 400,
         state: "merged",
+        isDraft: false,
+        linkedIssue: { owner: "STANAH", repo: "GH-GANTT", issueNumber: 328 },
+        linkageComplete: true,
         evidenceIds: ["pr-live-evidence"],
       },
       evidence: [

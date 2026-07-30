@@ -31,11 +31,26 @@ export interface PrGateState {
   number: number;
   crossRepo: boolean;
   state: "OPEN" | "MERGED" | "CLOSED";
+  isDraft: boolean;
   reviewDecision: string | null;
   /** 未解決レビュースレッド数（先頭 100 件までの集計）。 */
   unresolvedThreads: number;
   /** 完了していないチェック数（先頭 100 件までの集計）。チェック未設定なら undefined。 */
   pendingChecks: number | undefined;
+}
+
+/** Run Graph の Work Graph 対象と一致した GitHub Issue 参照。 */
+export interface RunGraphLinkedIssueReference {
+  owner: string;
+  repo: string;
+  issueNumber: number;
+}
+
+/** PR live state と、Run 対象 Issue への bounded linkage observation。 */
+export interface RunGraphPrObservation extends PrGateState {
+  linkedIssue: RunGraphLinkedIssueReference | null;
+  /** false で linkedIssue=null の場合は live relation を確定できていない。 */
+  linkageComplete: boolean;
 }
 
 /** ゲート評価の結果。 */
@@ -275,7 +290,15 @@ interface PullRequestGateResponse {
     pullRequest: {
       number: number;
       state: string;
+      isDraft: boolean;
       reviewDecision: string | null;
+      closingIssuesReferences: {
+        pageInfo: { hasNextPage: boolean; endCursor: string | null };
+        nodes: Array<{
+          number: number;
+          repository: { nameWithOwner: string };
+        } | null> | null;
+      };
       reviewThreads: { nodes: Array<{ isResolved: boolean } | null> | null };
       commits: {
         nodes: Array<{
@@ -292,6 +315,20 @@ interface PullRequestGateResponse {
   } | null;
 }
 
+interface PullRequestGateQueryVariables {
+  [key: string]: unknown;
+  owner: string;
+  repo: string;
+  number: number;
+  closingIssuesCursor: string | null;
+}
+
+interface PullRequestGateDependencies {
+  query?: (variables: PullRequestGateQueryVariables) => Promise<PullRequestGateResponse>;
+}
+
+const MAX_CLOSING_ISSUE_PAGES = 100;
+
 /** 完了していないチェック数を数える（CheckRun: COMPLETED 以外 / StatusContext: PENDING・EXPECTED）。 */
 function countPendingChecks(
   nodes: Array<{ __typename: string; status?: string; state?: string } | null>,
@@ -306,6 +343,107 @@ function countPendingChecks(
     }
   }
   return pending;
+}
+
+function parsePrGateState(
+  target: PrGateTarget,
+  pr: NonNullable<NonNullable<PullRequestGateResponse["repository"]>["pullRequest"]>,
+): PrGateState {
+  const state = pr.state;
+  if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") {
+    throw new Error(`PR ${prLabel(target)} の状態 "${state}" を解釈できません`);
+  }
+  const rollup = pr.commits.nodes?.[0]?.commit.statusCheckRollup ?? null;
+  return {
+    owner: target.owner,
+    repo: target.repo,
+    number: pr.number,
+    crossRepo: target.crossRepo,
+    state,
+    isDraft: pr.isDraft,
+    reviewDecision: pr.reviewDecision,
+    unresolvedThreads: (pr.reviewThreads.nodes ?? []).filter(
+      (thread) => thread && !thread.isResolved,
+    ).length,
+    pendingChecks: rollup ? countPendingChecks(rollup.contexts.nodes ?? []) : undefined,
+  };
+}
+
+/**
+ * GitHub live relation を cursor 最後まで追い、Run 対象 Issue への exact linkage を確定する。
+ * target を見つけた場合は positive proof なので、残りの page を journal へ展開せず終了する。
+ */
+export async function fetchRunGraphPrObservation(
+  params: {
+    target: PrGateTarget;
+    expectedIssue: RunGraphLinkedIssueReference;
+  },
+  dependencies: PullRequestGateDependencies = {},
+): Promise<RunGraphPrObservation> {
+  const { target, expectedIssue } = params;
+  let clientPromise: ReturnType<typeof createGraphQLClient> | undefined;
+  const query =
+    dependencies.query ??
+    (async (variables: PullRequestGateQueryVariables) => {
+      clientPromise ??= createGraphQLClient();
+      const client = await clientPromise;
+      return client<PullRequestGateResponse>(PULL_REQUEST_GATE_QUERY, variables);
+    });
+  let cursor: string | null = null;
+  let firstState: PrGateState | null = null;
+  const seenCursors = new Set<string>();
+  const expectedRepository = `${expectedIssue.owner}/${expectedIssue.repo}`.toLowerCase();
+
+  for (let page = 0; page < MAX_CLOSING_ISSUE_PAGES; page++) {
+    const response = await query({
+      owner: target.owner,
+      repo: target.repo,
+      number: target.number,
+      closingIssuesCursor: cursor,
+    });
+    const pr = response.repository?.pullRequest;
+    if (!pr || pr.number !== target.number) {
+      throw new Error(`PR ${prLabel(target)} の live state を一意に取得できません`);
+    }
+    const state = parsePrGateState(target, pr);
+    if (
+      firstState &&
+      (state.number !== firstState.number ||
+        state.state !== firstState.state ||
+        state.isDraft !== firstState.isDraft)
+    ) {
+      throw new Error(`PR ${prLabel(target)} の live state が pagination 中に変更されました`);
+    }
+    firstState ??= state;
+
+    const connection = pr.closingIssuesReferences;
+    if (!Array.isArray(connection.nodes) || connection.nodes.some((issue) => issue === null)) {
+      throw new Error(`PR ${prLabel(target)} の closing Issue 参照を完全に取得できません`);
+    }
+    const linked = connection.nodes.some(
+      (issue) =>
+        issue !== null &&
+        issue.number === expectedIssue.issueNumber &&
+        issue.repository.nameWithOwner.toLowerCase() === expectedRepository,
+    );
+    if (linked) {
+      return {
+        ...firstState,
+        linkedIssue: expectedIssue,
+        linkageComplete: !connection.pageInfo.hasNextPage,
+      };
+    }
+    if (!connection.pageInfo.hasNextPage) {
+      return { ...firstState, linkedIssue: null, linkageComplete: true };
+    }
+    const nextCursor = connection.pageInfo.endCursor;
+    if (!nextCursor || seenCursors.has(nextCursor)) {
+      throw new Error(`PR ${prLabel(target)} の closing Issue pagination が整合しません`);
+    }
+    seenCursors.add(nextCursor);
+    cursor = nextCursor;
+  }
+  throw new Error(`PR ${prLabel(target)} の closing Issue pagination が上限を超えました`);
 }
 
 /**
@@ -324,27 +462,13 @@ export async function fetchPrGateStates(params: {
       owner: target.owner,
       repo: target.repo,
       number: target.number,
+      closingIssuesCursor: null,
     });
     const pr = res.repository?.pullRequest;
     if (!pr) {
       throw new Error(`PR ${prLabel(target)} が ${target.owner}/${target.repo} に見つかりません`);
     }
-    const state = pr.state;
-    if (state !== "OPEN" && state !== "MERGED" && state !== "CLOSED") {
-      // 予期しない状態でゲート判定を誤らせない（fail-closed）
-      throw new Error(`PR ${prLabel(target)} の状態 "${state}" を解釈できません`);
-    }
-    const rollup = pr.commits.nodes?.[0]?.commit.statusCheckRollup ?? null;
-    states.push({
-      owner: target.owner,
-      repo: target.repo,
-      number: pr.number,
-      crossRepo: target.crossRepo,
-      state,
-      reviewDecision: pr.reviewDecision,
-      unresolvedThreads: (pr.reviewThreads.nodes ?? []).filter((t) => t && !t.isResolved).length,
-      pendingChecks: rollup ? countPendingChecks(rollup.contexts.nodes ?? []) : undefined,
-    });
+    states.push(parsePrGateState(target, pr));
   }
   return states;
 }

@@ -1,10 +1,11 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import type { Config, LinkedPullRequestRef, LoopState } from "@gh-gantt/shared";
 import { resolveLoopConfig } from "@gh-gantt/shared";
 import {
   detectMissingTaskRejection,
   evaluatePrEvidence,
   extractLinkedPrTargets,
+  fetchRunGraphPrObservation,
   formatPrGateRejection,
   normalizeOverrideReason,
   shouldApplyPrGate,
@@ -28,10 +29,124 @@ const gateState = (overrides: Partial<PrGateState>): PrGateState => ({
   crossRepo: false,
   number: 304,
   state: "MERGED",
+  isDraft: false,
   reviewDecision: "APPROVED",
   unresolvedThreads: 0,
   pendingChecks: 0,
   ...overrides,
+});
+
+function prPage(params: {
+  issues: Array<{ repository: string; number: number }>;
+  hasNextPage: boolean;
+  endCursor: string | null;
+  state?: "OPEN" | "MERGED" | "CLOSED";
+  isDraft?: boolean;
+}) {
+  return {
+    repository: {
+      pullRequest: {
+        number: 334,
+        state: params.state ?? "MERGED",
+        isDraft: params.isDraft ?? false,
+        reviewDecision: "APPROVED",
+        closingIssuesReferences: {
+          pageInfo: { hasNextPage: params.hasNextPage, endCursor: params.endCursor },
+          nodes: params.issues.map((issue) => ({
+            number: issue.number,
+            repository: { nameWithOwner: issue.repository },
+          })),
+        },
+        reviewThreads: { nodes: [] },
+        commits: { nodes: [] },
+      },
+    },
+  };
+}
+
+describe("Run Graph PR observation は closing Issue を cursor pagination する", () => {
+  const runTarget = {
+    target: { ...REPO, number: 334, crossRepo: false },
+    expectedIssue: { ...REPO, issueNumber: 328 },
+  };
+
+  it("2 page 目で Run 対象 Issue を見つけ exact linkage を返す", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(
+        prPage({
+          issues: [{ repository: "stanah/gh-gantt", number: 100 }],
+          hasNextPage: true,
+          endCursor: "cursor-1",
+        }),
+      )
+      .mockResolvedValueOnce(
+        prPage({
+          issues: [{ repository: "STANAH/GH-GANTT", number: 328 }],
+          hasNextPage: false,
+          endCursor: null,
+        }),
+      );
+
+    await expect(fetchRunGraphPrObservation(runTarget, { query })).resolves.toMatchObject({
+      state: "MERGED",
+      isDraft: false,
+      linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+      linkageComplete: true,
+    });
+    expect(query.mock.calls.map((call) => call[0].closingIssuesCursor)).toEqual([null, "cursor-1"]);
+  });
+
+  it("target の positive proof を最初の page で得たら残りを展開しない", async () => {
+    const query = vi.fn().mockResolvedValueOnce(
+      prPage({
+        issues: [{ repository: "stanah/gh-gantt", number: 328 }],
+        hasNextPage: true,
+        endCursor: "cursor-unused",
+      }),
+    );
+
+    await expect(fetchRunGraphPrObservation(runTarget, { query })).resolves.toMatchObject({
+      linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+      linkageComplete: false,
+    });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("全 page に target がない場合だけ definitive unlinked とする", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce(prPage({ issues: [], hasNextPage: true, endCursor: "cursor-1" }))
+      .mockResolvedValueOnce(
+        prPage({
+          issues: [{ repository: "stanah/gh-gantt", number: 999 }],
+          hasNextPage: false,
+          endCursor: null,
+        }),
+      );
+
+    await expect(fetchRunGraphPrObservation(runTarget, { query })).resolves.toMatchObject({
+      linkedIssue: null,
+      linkageComplete: true,
+    });
+  });
+
+  it("next cursor の欠落と途中 page の取得失敗を fail-closed にする", async () => {
+    const missingCursor = vi
+      .fn()
+      .mockResolvedValueOnce(prPage({ issues: [], hasNextPage: true, endCursor: null }));
+    await expect(fetchRunGraphPrObservation(runTarget, { query: missingCursor })).rejects.toThrow(
+      "pagination が整合しません",
+    );
+
+    const failedPage = vi
+      .fn()
+      .mockResolvedValueOnce(prPage({ issues: [], hasNextPage: true, endCursor: "cursor-1" }))
+      .mockRejectedValueOnce(new Error("GitHub API unavailable"));
+    await expect(fetchRunGraphPrObservation(runTarget, { query: failedPage })).rejects.toThrow(
+      "GitHub API unavailable",
+    );
+  });
 });
 
 describe("[FR-CLI-018-AC7] extractLinkedPrTargets による PR 所在の列挙", () => {

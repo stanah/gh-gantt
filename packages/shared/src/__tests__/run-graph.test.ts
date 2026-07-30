@@ -232,6 +232,9 @@ describe("[NFR-STABILITY-014-AC2] 外部 runner command と append-only journal 
       repository: "stanah/gh-gantt",
       pullRequestNumber: 334,
       state: "merged",
+      isDraft: false,
+      linkedIssue: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+      linkageComplete: true,
       evidenceIds: ["evidence-pr"],
     },
   ] as const;
@@ -263,6 +266,21 @@ describe("[NFR-STABILITY-014-AC2] 外部 runner command と append-only journal 
         runId: "run-1",
         actor,
         command: { ...commands[0], targetState: "completed" },
+      }),
+    ).toThrow();
+    expect(() =>
+      RunGraphRunnerCommandInputSchema.parse({
+        schemaVersion: "1",
+        eventId: "runner-event-pr-without-linkage",
+        runId: "run-1",
+        actor,
+        command: {
+          type: "pr_observed",
+          repository: "stanah/gh-gantt",
+          pullRequestNumber: 334,
+          state: "merged",
+          evidenceIds: ["evidence-pr"],
+        },
       }),
     ).toThrow();
   });
@@ -492,6 +510,7 @@ describe("[NFR-STABILITY-014-AC2] [NFR-STABILITY-014-AC4] replay projection と 
     const view = RunGraphViewSchema.parse({
       schemaVersion: "1",
       runId: "run-1",
+      task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
       revision: 3,
       state: "running",
       currentNode: node,
@@ -504,6 +523,7 @@ describe("[NFR-STABILITY-014-AC2] [NFR-STABILITY-014-AC4] replay projection と 
     });
 
     expect(view.artifacts).toMatchObject({ total: 2, limit: 1, truncated: true });
+    expect(view.task).toEqual({ owner: "stanah", repo: "gh-gantt", issueNumber: 328 });
     expect(() =>
       RunGraphViewSchema.parse({
         ...view,
