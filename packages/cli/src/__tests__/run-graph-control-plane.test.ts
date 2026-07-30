@@ -1655,7 +1655,12 @@ describe("[NFR-STABILITY-014-AC7] human/PR gate は authority と live evidence 
     });
     expect(approved).toMatchObject({
       accepted: true,
-      view: { state: "running", currentNode: { contractNodeId: "human-pr", state: "running" } },
+      view: {
+        state: "running",
+        currentNode: { contractNodeId: "human-pr", state: "running" },
+        activeAttempt: null,
+        allowedNextTransitions: ["pr_observed"],
+      },
     });
 
     await expect(

@@ -692,7 +692,7 @@ export class RunGraphControlPlane {
           : projection.run.state === "waiting_human"
             ? ["human_decision"]
             : currentNode?.contractNodeId === "human-pr" && currentNode.state === "running"
-              ? ["pr_observed", "run_paused"]
+              ? ["pr_observed"]
               : currentNode?.state === "ready"
                 ? ["attempt_started"]
                 : currentNode?.state === "running" && activeAttempt?.state === "running"
