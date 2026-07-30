@@ -1267,13 +1267,7 @@ export const RunGraphViewSchema: z.ZodType<RunGraphView> = z
     schemaVersion: z.literal("1"),
     runId: OpaqueIdSchema,
     task: TaskReferenceSchema,
-    contract: z
-      .object({
-        planId: z.string().min(1),
-        planVersion: z.string().min(1),
-        schemaVersion: z.string().min(1),
-      })
-      .strict(),
+    contract: ContractReferenceSchema,
     revision: z.number().int().nonnegative(),
     state: z.enum(RUN_GRAPH_RUN_STATES),
     createdAt: TimestampSchema,

@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ProjectMapRunGraphViewModel } from "@gh-gantt/shared";
+import {
+  ProjectMapRunGraphViewModelSchema,
+  type ProjectMapRunGraphViewModel,
+} from "@gh-gantt/shared";
 
 /** 選択中 task/run/node の bounded planned-vs-actual overlay を取得する。 */
 export function useProjectMapRunGraph(
@@ -35,7 +38,9 @@ export function useProjectMapRunGraph(
           const payload = (await response.json().catch(() => null)) as { error?: string } | null;
           throw new Error(payload?.error ?? "Run Graph の取得に失敗しました");
         }
-        return (await response.json()) as ProjectMapRunGraphViewModel;
+        const parsed = ProjectMapRunGraphViewModelSchema.safeParse(await response.json());
+        if (!parsed.success) throw new Error("Run Graph 応答の検証に失敗しました");
+        return parsed.data;
       })
       .then((payload) => {
         if (!controller.signal.aborted) setViewModel(payload);

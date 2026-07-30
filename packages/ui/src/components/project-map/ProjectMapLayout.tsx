@@ -21,8 +21,9 @@ const panelStyle: React.CSSProperties = {
 };
 
 /**
- * Project Map の 5 パネルを 2 段グリッドで配置するレイアウト。
- * 上段に System Tree / Project Board / Dependency Map、下段に Next Actions / Compact Gantt。
+ * Project Map の 6 パネルを 3 段グリッドで配置するレイアウト。
+ * 上段に System Tree / Project Board / Dependency Map、中段に Next Actions / Compact Gantt、
+ * 下段に Planned vs Actual Run Graph を配置する。
  * 画面幅が狭い場合 (max-width 980px) は 1 カラムに折り返す。
  */
 export function ProjectMapLayout({

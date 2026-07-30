@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -154,6 +154,45 @@ describe("createApiRouter", () => {
     ).resolves.toMatchObject({ statusCode: 404 });
   });
 
+  it("[FR-VIS-026-AC4] API request ごとの journal replay を limit 件に抑える", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const control = new RunGraphControlPlane(dir);
+    const runIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const started = await control.start({
+        schemaVersion: "1",
+        eventId: `bounded-start-${index}`,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "o", repo: "r", issueNumber: 330 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      });
+      if (!started.accepted) throw new Error("run start failure");
+      runIds.push(started.view.runId);
+    }
+    await control.start({
+      schemaVersion: "1",
+      eventId: "bounded-start-other-task",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 331 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    const inspect = vi.spyOn(RunGraphControlPlane.prototype, "inspect");
+
+    const response = await callRunGraphRoute({
+      taskId: "o/r#330",
+      runId: runIds[0],
+      limit: "1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(inspect).toHaveBeenCalledWith(runIds[0], 1, undefined);
+    expect(response.jsonPayload).toMatchObject({
+      runs: { total: 3, limit: 1, truncated: true, items: [{ runId: runIds[0] }] },
+    });
+  });
+
   it("[FR-VIS-026-AC5] Run Graph がなければ既存 task に空の overlay を返す", async () => {
     await seedRunGraphProject();
 
@@ -169,6 +208,7 @@ describe("createApiRouter", () => {
   });
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(dir, { recursive: true, force: true });
   });
 

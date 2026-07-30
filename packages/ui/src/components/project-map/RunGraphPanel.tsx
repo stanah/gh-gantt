@@ -119,19 +119,25 @@ export function RunGraphPanel({
             <section aria-label="Planned nodes" style={sectionStyle}>
               <strong style={{ fontSize: 11 }}>Planned</strong>
               <ol style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 11 }}>
-                {viewModel.selectedRun.planned.nodes.map((node) => (
+                {viewModel.selectedRun.planned.nodes.items.map((node) => (
                   <li key={node.id}>
                     {node.id} · {node.role}
                   </li>
                 ))}
               </ol>
               <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 10 }}>
-                {viewModel.selectedRun.planned.edges.map((edge) => (
+                {viewModel.selectedRun.planned.edges.items.map((edge) => (
                   <li key={edge.id}>
                     {edge.from} → {edge.to} · {edge.conditions.join(" / ")}
                   </li>
                 ))}
               </ul>
+              {viewModel.selectedRun.planned.nodes.truncated ||
+              viewModel.selectedRun.planned.edges.truncated ? (
+                <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+                  planned detail は上限 {viewModel.selectedRun.planned.nodes.limit} 件
+                </div>
+              ) : null}
             </section>
             <section aria-label="Actual nodes" style={sectionStyle}>
               <strong style={{ fontSize: 11 }}>Actual</strong>
@@ -150,9 +156,9 @@ export function RunGraphPanel({
                     }}
                     style={{ textAlign: "left", fontSize: 11 }}
                   >
-                    {node.contractNodeId} · {node.displayState} · {node.actor.id} ·{" "}
-                    {formatDuration(node.durationMs)} · artifact {node.artifactCount} · evidence{" "}
-                    {node.evidenceCount}
+                    {node.contractNodeId} · {node.displayState} · {node.actor.id} · {node.createdAt}{" "}
+                    → {node.endedAt ?? "running"} · {formatDuration(node.durationMs)} · artifact{" "}
+                    {node.artifactCount} · evidence {node.evidenceCount}
                   </button>
                 ))}
               </div>
@@ -164,6 +170,11 @@ export function RunGraphPanel({
                   </li>
                 ))}
               </ul>
+              {viewModel.selectedRun.actual.nodesTruncated ? (
+                <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+                  actual node は一部のみ表示
+                </div>
+              ) : null}
             </section>
           </div>
 
@@ -183,18 +194,27 @@ export function RunGraphPanel({
                 <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 11 }}>
                   {viewModel.selectedRun.actual.attempts.map((attempt) => (
                     <li key={attempt.id}>
-                      {attempt.actor.id} · {attempt.state} · {formatDuration(attempt.durationMs)} ·
-                      artifact {attempt.artifactCount}
+                      {attempt.nodeId} · {attempt.id} · {attempt.actor.id} · {attempt.actor.role} ·{" "}
+                      {attempt.createdAt} → {attempt.endedAt ?? "running"} ·{" "}
+                      {formatDuration(attempt.durationMs)} · artifact {attempt.artifactCount} ·
+                      evidence {attempt.evidenceCount}
                     </li>
                   ))}
                 </ul>
               )}
+              {viewModel.selectedRun.actual.attemptsTruncated ? (
+                <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+                  attempt は一部のみ表示
+                </div>
+              ) : null}
             </section>
             <section aria-label="Run deviations" style={sectionStyle}>
               <strong style={{ fontSize: 11 }}>Differences</strong>
               {viewModel.selectedRun.deviations.length === 0 ? (
                 <div style={{ fontSize: 11, color: "var(--color-text-muted)" }}>
-                  planned との差分なし
+                  {viewModel.selectedRun.actual.nodesTruncated
+                    ? "表示範囲に planned との差分なし（全履歴は未確認）"
+                    : "planned との差分なし"}
                 </div>
               ) : (
                 <ul style={{ margin: "6px 0 0", paddingLeft: 20, fontSize: 11 }}>
@@ -203,6 +223,12 @@ export function RunGraphPanel({
                   ))}
                 </ul>
               )}
+              {viewModel.selectedRun.artifacts.truncated ||
+              viewModel.selectedRun.evidence.truncated ? (
+                <div style={{ fontSize: 10, color: "var(--color-text-muted)" }}>
+                  artifact/evidence 件数は bounded 表示
+                </div>
+              ) : null}
             </section>
           </div>
         </PanelBody>

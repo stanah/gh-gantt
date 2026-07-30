@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { Task, Config, StatusValue, StatusCategory, GroupingFacet } from "./types.js";
 import {
   calculateCriticalPath,
@@ -5,13 +6,21 @@ import {
   dependencyEdgeKey,
   type CriticalPathResult,
 } from "./dependency-graph.js";
-import type {
-  GraphContract,
-  RunGraphActor,
-  RunGraphAttemptState,
-  RunGraphNodeState,
-  RunGraphRunState,
-  RunGraphView,
+import {
+  RUN_GRAPH_ATTEMPT_STATES,
+  RUN_GRAPH_NODE_STATES,
+  RUN_GRAPH_ROLES,
+  RUN_GRAPH_RUN_STATES,
+  RunGraphActorSchema,
+  RunGraphArtifactSchema,
+  RunGraphEvidenceSchema,
+  type RunGraphBoundedCollection,
+  type GraphContract,
+  type RunGraphActor,
+  type RunGraphAttemptState,
+  type RunGraphNodeState,
+  type RunGraphRunState,
+  type RunGraphView,
 } from "./run-graph.js";
 
 /**
@@ -678,6 +687,7 @@ export interface ProjectMapActualAttempt {
   endedAt: string | null;
   durationMs: number | null;
   artifactCount: number;
+  evidenceCount: number;
 }
 
 export interface ProjectMapActualTransition {
@@ -705,8 +715,8 @@ export interface ProjectMapSelectedRun {
   selectedNodeId: string | null;
   deepLink: string;
   planned: {
-    nodes: ProjectMapPlannedNode[];
-    edges: ProjectMapPlannedEdge[];
+    nodes: RunGraphBoundedCollection<ProjectMapPlannedNode>;
+    edges: RunGraphBoundedCollection<ProjectMapPlannedEdge>;
   };
   actual: {
     nodes: ProjectMapActualNode[];
@@ -745,7 +755,197 @@ export interface ProjectMapRunGraphInput {
   selectedRunId?: string | null;
   selectedNodeId?: string | null;
   limit?: number;
+  totalRuns?: number;
 }
+
+const ProjectMapRunDisplayStateSchema = z.enum([
+  "active",
+  "queued",
+  "running",
+  "retrying",
+  "waiting_human",
+  "failed",
+  "completed",
+  "cancelled",
+]);
+
+const ProjectMapRunDeviationKindSchema = z.enum([
+  "unexpected_node",
+  "unexpected_edge",
+  "skip",
+  "retry",
+  "fallback",
+  "cancel",
+]);
+
+const ProjectMapRunMetricSchema = z
+  .object({
+    known: z.boolean(),
+    value: z.number().nullable(),
+    unit: z.enum(["ms", "token", "currency"]),
+  })
+  .strict();
+
+function projectMapBoundedCollectionSchema<T extends z.ZodType>(itemSchema: T) {
+  return z
+    .object({
+      total: z.number().int().nonnegative(),
+      limit: z.number().int().min(1).max(50),
+      truncated: z.boolean(),
+      items: z.array(itemSchema).max(50),
+    })
+    .strict()
+    .superRefine((collection, context) => {
+      if (
+        collection.items.length > collection.limit ||
+        collection.items.length > collection.total
+      ) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["items"],
+          message: "items は limit と total 以下である必要があります",
+        });
+      }
+    });
+}
+
+const ProjectMapRunSummarySchema = z
+  .object({
+    runId: z.string().min(1).max(200),
+    taskId: z.string().min(1).max(500),
+    state: z.enum(RUN_GRAPH_RUN_STATES),
+    displayState: ProjectMapRunDisplayStateSchema,
+    currentNodeId: z.string().min(1).max(200).nullable(),
+    currentContractNodeId: z.string().min(1).nullable(),
+    waitReason: z.string().min(1).max(2000).nullable(),
+    createdAt: z.string().datetime({ offset: true }),
+    updatedAt: z.string().datetime({ offset: true }),
+    nodeCount: z.number().int().nonnegative(),
+    attemptCount: z.number().int().nonnegative(),
+    deepLink: z.string().min(1),
+  })
+  .strict();
+
+const ProjectMapPlannedNodeSchema = z
+  .object({ id: z.string().min(1), role: z.enum(RUN_GRAPH_ROLES) })
+  .strict();
+
+const ProjectMapPlannedEdgeSchema = z
+  .object({
+    id: z.string().min(1),
+    from: z.string().min(1),
+    to: z.string().min(1),
+    conditions: z.array(z.string().min(1)).min(1),
+  })
+  .strict();
+
+const ProjectMapActualNodeSchema = z
+  .object({
+    id: z.string().min(1).max(200),
+    contractNodeId: z.string().min(1),
+    state: z.enum(RUN_GRAPH_NODE_STATES),
+    displayState: ProjectMapRunDisplayStateSchema,
+    actor: RunGraphActorSchema,
+    createdAt: z.string().datetime({ offset: true }),
+    updatedAt: z.string().datetime({ offset: true }),
+    endedAt: z.string().datetime({ offset: true }).nullable(),
+    durationMs: z.number().nonnegative().nullable(),
+    attemptCount: z.number().int().nonnegative(),
+    artifactCount: z.number().int().nonnegative(),
+    evidenceCount: z.number().int().nonnegative(),
+    isPlanned: z.boolean(),
+    deepLink: z.string().min(1),
+  })
+  .strict();
+
+const ProjectMapActualAttemptSchema = z
+  .object({
+    id: z.string().min(1).max(200),
+    nodeId: z.string().min(1).max(200),
+    ordinal: z.number().int().positive(),
+    state: z.enum(RUN_GRAPH_ATTEMPT_STATES),
+    actor: RunGraphActorSchema,
+    createdAt: z.string().datetime({ offset: true }),
+    updatedAt: z.string().datetime({ offset: true }),
+    endedAt: z.string().datetime({ offset: true }).nullable(),
+    durationMs: z.number().nonnegative().nullable(),
+    artifactCount: z.number().int().nonnegative(),
+    evidenceCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const ProjectMapActualTransitionSchema = z
+  .object({
+    fromNodeId: z.string().min(1).max(200),
+    toNodeId: z.string().min(1).max(200),
+    fromContractNodeId: z.string().min(1),
+    toContractNodeId: z.string().min(1),
+    isPlanned: z.boolean(),
+  })
+  .strict();
+
+const ProjectMapRunDeviationSchema = z
+  .object({
+    id: z.string().min(1),
+    kind: ProjectMapRunDeviationKindSchema,
+    nodeId: z.string().min(1).max(200).nullable(),
+    transition: z
+      .object({
+        fromNodeId: z.string().min(1).max(200),
+        toNodeId: z.string().min(1).max(200),
+      })
+      .strict()
+      .nullable(),
+    reason: z.string().min(1),
+  })
+  .strict();
+
+/** UI/agent API が共用する planned-vs-actual response の strict runtime schema。 */
+export const ProjectMapRunGraphViewModelSchema: z.ZodType<ProjectMapRunGraphViewModel> = z
+  .object({
+    schemaVersion: z.literal("1"),
+    taskId: z.string().min(1).max(500).nullable(),
+    runs: projectMapBoundedCollectionSchema(ProjectMapRunSummarySchema),
+    selectedRun: z
+      .object({
+        runId: z.string().min(1).max(200),
+        taskId: z.string().min(1).max(500),
+        state: z.enum(RUN_GRAPH_RUN_STATES),
+        displayState: ProjectMapRunDisplayStateSchema,
+        waitReason: z.string().min(1).max(2000).nullable(),
+        selectedNodeId: z.string().min(1).max(200).nullable(),
+        deepLink: z.string().min(1),
+        planned: z
+          .object({
+            nodes: projectMapBoundedCollectionSchema(ProjectMapPlannedNodeSchema),
+            edges: projectMapBoundedCollectionSchema(ProjectMapPlannedEdgeSchema),
+          })
+          .strict(),
+        actual: z
+          .object({
+            nodes: z.array(ProjectMapActualNodeSchema).max(50),
+            transitions: z.array(ProjectMapActualTransitionSchema).max(50),
+            attempts: z.array(ProjectMapActualAttemptSchema).max(50),
+            nodesTruncated: z.boolean(),
+            attemptsTruncated: z.boolean(),
+          })
+          .strict(),
+        deviations: z.array(ProjectMapRunDeviationSchema).max(200),
+        metrics: z
+          .object({
+            duration: ProjectMapRunMetricSchema,
+            tokens: ProjectMapRunMetricSchema,
+            cost: ProjectMapRunMetricSchema,
+            latency: ProjectMapRunMetricSchema,
+          })
+          .strict(),
+        artifacts: projectMapBoundedCollectionSchema(RunGraphArtifactSchema),
+        evidence: projectMapBoundedCollectionSchema(RunGraphEvidenceSchema),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
 
 function runTaskId(view: RunGraphView): string {
   return `${view.task.owner}/${view.task.repo}#${view.task.issueNumber}`;
@@ -787,8 +987,54 @@ function nodeDisplayState(state: RunGraphNodeState, retrying: boolean): ProjectM
 
 function isTerminalState(state: string): boolean {
   return (
-    state === "completed" || state === "failed" || state === "cancelled" || state === "succeeded"
+    state === "completed" ||
+    state === "failed" ||
+    state === "cancelled" ||
+    state === "succeeded" ||
+    state === "timed_out" ||
+    state === "stalled"
   );
+}
+
+function plannedPathLength(from: string, to: string, edges: GraphContract["edges"]): number | null {
+  if (from === to) return 0;
+  const outgoing = new Map<string, string[]>();
+  for (const edge of edges) {
+    const targets = outgoing.get(edge.from) ?? [];
+    targets.push(edge.to);
+    outgoing.set(edge.from, targets);
+  }
+  const queue: Array<{ id: string; distance: number }> = [{ id: from, distance: 0 }];
+  const visited = new Set([from]);
+  for (let index = 0; index < queue.length; index += 1) {
+    const current = queue[index]!;
+    for (const target of outgoing.get(current.id) ?? []) {
+      if (target === to) return current.distance + 1;
+      if (target === "terminal" || visited.has(target)) continue;
+      visited.add(target);
+      queue.push({ id: target, distance: current.distance + 1 });
+    }
+  }
+  return null;
+}
+
+function boundedWithFocus<T>(
+  items: T[],
+  limit: number,
+  matchesFocus: ((item: T) => boolean) | null,
+): RunGraphBoundedCollection<T> {
+  const head = items.slice(0, limit);
+  const focused = matchesFocus ? items.filter(matchesFocus).slice(0, limit) : [];
+  const focusedSet = new Set(focused);
+  const companions = head.filter((item) => !focusedSet.has(item)).slice(0, limit - focused.length);
+  const selected = new Set([...focused, ...companions]);
+  const boundedItems = items.filter((item) => selected.has(item));
+  return {
+    total: items.length,
+    limit,
+    truncated: items.length > boundedItems.length,
+    items: boundedItems,
+  };
 }
 
 function runDeepLink(taskId: string, runId: string, nodeId?: string | null): string {
@@ -825,11 +1071,18 @@ function buildSelectedRun(
   view: RunGraphView,
   contract: GraphContract | null,
   requestedNodeId: string | null,
+  limit: number,
 ): ProjectMapSelectedRun {
   const taskId = runTaskId(view);
   const contractNodes = new Map((contract?.nodes ?? []).map((node) => [node.id, node]));
-  const contractNodeOrder = new Map((contract?.nodes ?? []).map((node, index) => [node.id, index]));
   const actualNodeById = new Map(view.nodes.items.map((node) => [node.id, node]));
+  const selectedNodeId =
+    requestedNodeId && actualNodeById.has(requestedNodeId)
+      ? requestedNodeId
+      : (view.currentNode?.id ?? null);
+  const selectedContractNodeId = selectedNodeId
+    ? (actualNodeById.get(selectedNodeId)?.contractNodeId ?? null)
+    : null;
   const firstOccurrence = new Map<string, string>();
   for (const node of view.nodes.items) {
     if (!firstOccurrence.has(node.contractNodeId))
@@ -869,6 +1122,8 @@ function buildSelectedRun(
     endedAt: isTerminalState(attempt.state) ? attempt.updatedAt : null,
     durationMs: finiteDuration(attempt.createdAt, attempt.updatedAt),
     artifactCount: view.artifacts.items.filter((item) => item.producerAttemptId === attempt.id)
+      .length,
+    evidenceCount: view.evidence.items.filter((item) => item.producerAttemptId === attempt.id)
       .length,
   }));
 
@@ -934,9 +1189,19 @@ function buildSelectedRun(
         reason: `planned にない edge ${edgeKey}`,
       });
     }
-    const fromRank = contractNodeOrder.get(previous.contractNodeId);
-    const toRank = contractNodeOrder.get(node.contractNodeId);
-    if (fromRank != null && toRank != null && toRank < fromRank) {
+    const contractEdges = contract?.edges ?? [];
+    const returnsToVisitedNode = firstOccurrence.get(node.contractNodeId) !== node.id;
+    const reversePathLength = plannedPathLength(
+      node.contractNodeId,
+      previous.contractNodeId,
+      contractEdges,
+    );
+    const forwardPathLength = plannedPathLength(
+      previous.contractNodeId,
+      node.contractNodeId,
+      contractEdges,
+    );
+    if (returnsToVisitedNode || (!isPlanned && reversePathLength != null)) {
       const id = `fallback:${previous.id}->${node.id}`;
       deviations.set(id, {
         id,
@@ -945,7 +1210,7 @@ function buildSelectedRun(
         transition: { fromNodeId: previous.id, toNodeId: node.id },
         reason: `${previous.contractNodeId} から ${node.contractNodeId} へ戻った`,
       });
-    } else if (fromRank != null && toRank != null && toRank > fromRank + 1) {
+    } else if (!isPlanned && forwardPathLength != null && forwardPathLength > 1) {
       const id = `skip:${previous.id}->${node.id}`;
       deviations.set(id, {
         id,
@@ -967,11 +1232,14 @@ function buildSelectedRun(
     });
   }
 
-  const selectedNodeId =
-    requestedNodeId && actualNodeById.has(requestedNodeId)
-      ? requestedNodeId
-      : (view.currentNode?.id ?? null);
   const duration = finiteDuration(view.createdAt, view.updatedAt);
+  const plannedNodes = (contract?.nodes ?? []).map((node) => ({ id: node.id, role: node.role }));
+  const plannedEdges = (contract?.edges ?? []).map((edge) => ({
+    id: edge.id,
+    from: edge.from,
+    to: edge.to,
+    conditions: [edge.condition],
+  }));
   return {
     runId: view.runId,
     taskId,
@@ -981,13 +1249,18 @@ function buildSelectedRun(
     selectedNodeId,
     deepLink: runDeepLink(taskId, view.runId, selectedNodeId),
     planned: {
-      nodes: (contract?.nodes ?? []).map((node) => ({ id: node.id, role: node.role })),
-      edges: (contract?.edges ?? []).map((edge) => ({
-        id: edge.id,
-        from: edge.from,
-        to: edge.to,
-        conditions: [edge.condition],
-      })),
+      nodes: boundedWithFocus(
+        plannedNodes,
+        limit,
+        selectedContractNodeId ? (node) => node.id === selectedContractNodeId : null,
+      ),
+      edges: boundedWithFocus(
+        plannedEdges,
+        limit,
+        selectedContractNodeId
+          ? (edge) => edge.from === selectedContractNodeId || edge.to === selectedContractNodeId
+          : null,
+      ),
     },
     actual: {
       nodes: actualNodes,
@@ -1022,6 +1295,7 @@ export function buildProjectMapRunGraphViewModel(
       left.runId.localeCompare(right.runId),
   );
   const summaries = sortedViews.map(buildRunSummary);
+  const totalRuns = Math.max(input.totalRuns ?? summaries.length, summaries.length);
   const selectedView = input.selectedRunId
     ? (sortedViews.find((view) => view.runId === input.selectedRunId) ?? null)
     : (sortedViews[0] ?? null);
@@ -1039,13 +1313,13 @@ export function buildProjectMapRunGraphViewModel(
     schemaVersion: "1",
     taskId: input.taskId,
     runs: {
-      total: summaries.length,
+      total: totalRuns,
       limit,
-      truncated: summaries.length > items.length,
+      truncated: totalRuns > items.length,
       items,
     },
     selectedRun: selectedView
-      ? buildSelectedRun(selectedView, input.contract, input.selectedNodeId ?? null)
+      ? buildSelectedRun(selectedView, input.contract, input.selectedNodeId ?? null, limit)
       : null,
   };
 }

@@ -160,10 +160,12 @@ JSON は shared の `ProjectMapRunGraphViewModel` を共用し、別々の状態
 | -------- | ------------------------------------------------------------------------ |
 | `taskId` | canonical task ID。draft task は Run Graph target を持たないため拒否する |
 | `runId`  | opaque run ID。task と一致しない run は 404                              |
-| `nodeId` | opaque node ID。該当しない場合は current node を選択する                 |
+| `nodeId` | opaque node ID。選択 run に存在しない場合は fail-closed で 404           |
 | `limit`  | run/node/attempt/artifact/evidence の上限。1〜50、既定20                 |
 
-レスポンスは `total / limit / truncated / items` を持つ。全 run history や log 本文は既定で返さない。
+レスポンスは run と planned node/edge に `total / limit / truncated / items` を持つ。API は各 run の
+先頭・末尾 event metadata を直列に確認して候補を先に絞り、journal 全文の replay は最大 `limit` 件に
+限定する。全 run history や log 本文は既定で返さない。
 URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時は古い node 選択を除去する。
 
 ### 11.2 状態と差分
@@ -172,7 +174,7 @@ URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時�
   `running / retrying` を加えた表示状態へ正規化する。正準 state 自体は変更しない。
 - actual transition を Graph Contract edge と stable ID で照合し、`unexpected_node`、
   `unexpected_edge`、`skip`、`retry`、`fallback`、`cancel` を差分として表示する。
-- attempt は actor、開始・終了時刻、duration、artifact/evidence の bounded 件数だけを表示する。
+- attempt は node/attempt ID、actor、開始・終了時刻、duration、artifact/evidence の bounded 件数だけを表示する。
 - accepted event timestamp から導出できる duration は既知値とする。現行 runner contract が保持しない
   token / cost / latency は `0` へ丸めず `unknown` とする。
 - Run Graph が存在しない project では空状態を表示し、従来の5パネルと task 編集を維持する。

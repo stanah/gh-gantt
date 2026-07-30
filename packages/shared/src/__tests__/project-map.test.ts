@@ -3,6 +3,7 @@ import type { Config, Task } from "../types.js";
 import { FIXED_DEV_ROLE_GRAPH_CONTRACT, type RunGraphView } from "../run-graph.js";
 import {
   buildProjectMapRunGraphViewModel,
+  ProjectMapRunGraphViewModelSchema,
   buildProjectMapViewModel,
   buildBoardColumns,
   buildTaskHierarchy,
@@ -424,7 +425,7 @@ describe("[FR-VIS-026-AC1] planned と actual の Run Graph を同じ ViewModel 
       limit: 20,
     });
 
-    expect(vm.selectedRun?.planned.nodes.map((node) => node.id)).toContain("executor");
+    expect(vm.selectedRun?.planned.nodes.items.map((node) => node.id)).toContain("executor");
     expect(vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")).toMatchObject({
       contractNodeId: "executor",
       displayState: "completed",
@@ -457,9 +458,29 @@ describe("[FR-VIS-026-AC2] Run Graph の状態と attempt 要約を導出する"
       vm.selectedRun?.actual.nodes.find((node) => node.id === "node-implementer-2")?.displayState,
     ).toBe("retrying");
     expect(vm.selectedRun?.actual.attempts[0]).toMatchObject({
+      id: "attempt-executor",
+      nodeId: "node-executor",
       actor: { id: "runner-1", role: "executor" },
       durationMs: 60000,
+      evidenceCount: 0,
     });
+  });
+
+  it("timed_out と stalled の attempt に終了時刻を設定する", () => {
+    const base = runView();
+    for (const state of ["timed_out", "stalled"] as const) {
+      const attempt = { ...base.attempts.items[0]!, state };
+      const vm = buildProjectMapRunGraphViewModel({
+        taskId: "stanah/gh-gantt#330",
+        contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+        runViews: [
+          runView({
+            attempts: { total: 1, limit: 20, truncated: false, items: [attempt] },
+          }),
+        ],
+      });
+      expect(vm.selectedRun?.actual.attempts[0]?.endedAt).toBe(attempt.updatedAt);
+    }
   });
 
   it("active / queued / running / waiting_human / failed / completed / cancelled を正規化する", () => {
@@ -601,6 +622,31 @@ describe("[FR-VIS-026-AC3] planned との差分と unknown metric を保持す�
       expect.arrayContaining(["unexpected_node", "unexpected_edge", "skip", "cancel"]),
     );
   });
+
+  it("Graph Contract の direct branch edge を node 配列順だけで skip としない", () => {
+    const base = runView();
+    const planner = base.nodes.items[0]!;
+    const human = {
+      ...base.nodes.items[1]!,
+      id: "node-human",
+      contractNodeId: "human-pr",
+      previousNodeId: planner.id,
+    };
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [
+        runView({
+          currentNode: human,
+          nodes: { total: 2, limit: 20, truncated: false, items: [planner, human] },
+          attempts: { total: 0, limit: 20, truncated: false, items: [] },
+        }),
+      ],
+    });
+
+    expect(vm.selectedRun?.actual.transitions[0]?.isPlanned).toBe(true);
+    expect(vm.selectedRun?.deviations.map((item) => item.kind)).not.toContain("skip");
+  });
 });
 
 describe("[FR-VIS-026-AC4] Run Graph の一覧と deep link を bounded にする", () => {
@@ -620,6 +666,42 @@ describe("[FR-VIS-026-AC4] Run Graph の一覧と deep link を bounded にす�
     expect(
       vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")?.deepLink,
     ).toContain("node=node-executor");
+  });
+
+  it("planned node と edge も同じ limit の bounded collection にする", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      limit: 2,
+    });
+
+    expect(vm.selectedRun?.planned.nodes).toMatchObject({
+      total: FIXED_DEV_ROLE_GRAPH_CONTRACT.nodes.length,
+      limit: 2,
+      truncated: true,
+    });
+    expect(vm.selectedRun?.planned.nodes.items).toHaveLength(2);
+    expect(vm.selectedRun?.planned.edges).toMatchObject({
+      total: FIXED_DEV_ROLE_GRAPH_CONTRACT.edges.length,
+      limit: 2,
+      truncated: true,
+    });
+    expect(vm.selectedRun?.planned.edges.items).toHaveLength(2);
+  });
+
+  it("agent/UI 共通 response を strict schema で検証する", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      limit: 2,
+    });
+
+    expect(ProjectMapRunGraphViewModelSchema.safeParse(vm).success).toBe(true);
+    expect(ProjectMapRunGraphViewModelSchema.safeParse({ ...vm, unexpected: true }).success).toBe(
+      false,
+    );
   });
 });
 

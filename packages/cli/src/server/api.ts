@@ -16,6 +16,7 @@ import {
   buildProjectMapRunGraphViewModel,
   computeStatusDateUpdates,
   DependencySchema,
+  ProjectMapRunGraphViewModelSchema,
   TaskSchema,
 } from "@gh-gantt/shared";
 import { GraphContractStore } from "../store/graph-contract.js";
@@ -696,36 +697,31 @@ export function createApiRouter(projectRoot: string): Router {
 
       const eventStore = new RunGraphEventStore(projectRoot);
       const controlPlane = new RunGraphControlPlane(projectRoot);
-      const views = await Promise.all(
-        (await eventStore.listRunIds()).map((runId) =>
-          controlPlane.inspect(
-            runId,
-            query.data.limit,
-            runId === query.data.runId ? query.data.nodeId : undefined,
-          ),
-        ),
-      );
-      const filteredViews = selectedTask
-        ? views.filter(
-            (view) =>
-              view.task.issueNumber === selectedTask.github_issue &&
-              `${view.task.owner}/${view.task.repo}`.toLowerCase() ===
-                selectedTask.github_repo.toLowerCase(),
-          )
-        : views;
-      if (query.data.runId && !filteredViews.some((view) => view.runId === query.data.runId)) {
+      const [owner, repo] = selectedTask?.github_repo.split("/") ?? [];
+      const locators = await eventStore.listRunLocators({
+        ...(selectedTask && owner && repo
+          ? { task: { owner, repo, issueNumber: selectedTask.github_issue! } }
+          : {}),
+        limit: query.data.limit,
+        ...(query.data.runId ? { selectedRunId: query.data.runId } : {}),
+      });
+      if (query.data.runId && !locators.items.some((item) => item.runId === query.data.runId)) {
         res.status(404).json({ error: "Run Graph not found for the selected task" });
         return;
       }
-
-      const sortedViews = [...filteredViews].sort(
-        (left, right) =>
-          Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
-          left.runId.localeCompare(right.runId),
-      );
+      const views = [];
+      for (const locator of locators.items) {
+        views.push(
+          await controlPlane.inspect(
+            locator.runId,
+            query.data.limit,
+            locator.runId === query.data.runId ? query.data.nodeId : undefined,
+          ),
+        );
+      }
       const selectedView = query.data.runId
-        ? (sortedViews.find((view) => view.runId === query.data.runId) ?? null)
-        : (sortedViews[0] ?? null);
+        ? (views.find((view) => view.runId === query.data.runId) ?? null)
+        : (views[0] ?? null);
       if (
         query.data.nodeId &&
         !selectedView?.nodes.items.some((node) => node.id === query.data.nodeId)
@@ -743,14 +739,17 @@ export function createApiRouter(projectRoot: string): Router {
           : null);
 
       res.json(
-        buildProjectMapRunGraphViewModel({
-          taskId,
-          contract,
-          runViews: filteredViews,
-          selectedRunId: selectedView?.runId ?? null,
-          selectedNodeId: query.data.nodeId ?? null,
-          limit: query.data.limit,
-        }),
+        ProjectMapRunGraphViewModelSchema.parse(
+          buildProjectMapRunGraphViewModel({
+            taskId,
+            contract,
+            runViews: views,
+            selectedRunId: selectedView?.runId ?? null,
+            selectedNodeId: query.data.nodeId ?? null,
+            limit: query.data.limit,
+            totalRuns: locators.total,
+          }),
+        ),
       );
     } catch (error) {
       res.status(500).json({

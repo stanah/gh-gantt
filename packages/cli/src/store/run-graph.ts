@@ -14,6 +14,18 @@ import {
   type RunGraphRejection,
 } from "@gh-gantt/shared";
 
+export interface RunGraphRunLocator {
+  runId: string;
+  task: { owner: string; repo: string; issueNumber: number };
+  updatedAt: string;
+}
+
+export interface RunGraphRunLocatorQuery {
+  task?: { owner: string; repo: string; issueNumber: number };
+  limit: number;
+  selectedRunId?: string;
+}
+
 function safeSegment(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
 }
@@ -119,5 +131,67 @@ export class RunGraphEventStore {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
       throw error;
     }
+  }
+
+  private async readRunLocator(runId: string): Promise<RunGraphRunLocator | null> {
+    const eventsDir = join(this.runDir(runId), "events");
+    const files = await listJsonFiles(eventsDir);
+    const firstFile = files[0];
+    const lastFile = files.at(-1);
+    if (!firstFile || !lastFile) return null;
+    const first = RunGraphAcceptedEventReadSchema.parse(
+      JSON.parse(await readFile(join(eventsDir, firstFile), "utf8")),
+    );
+    if (first.command.type !== "run_started") {
+      throw new Error(`Run Graph の先頭 event が run_started ではありません: ${runId}`);
+    }
+    const last =
+      lastFile === firstFile
+        ? first
+        : RunGraphAcceptedEventReadSchema.parse(
+            JSON.parse(await readFile(join(eventsDir, lastFile), "utf8")),
+          );
+    return { runId, task: first.command.task, updatedAt: last.acceptedAt };
+  }
+
+  /**
+   * journal 全文を replay せず、各 run の先頭・末尾 event だけで候補を絞る。
+   * file read は直列に行い、詳細 replay は返却した最大 limit 件だけを caller が実行する。
+   */
+  async listRunLocators(input: RunGraphRunLocatorQuery): Promise<{
+    total: number;
+    items: RunGraphRunLocator[];
+  }> {
+    const limit = Math.min(50, Math.max(1, input.limit));
+    const locators: RunGraphRunLocator[] = [];
+    for (const runId of await this.listRunIds()) {
+      const locator = await this.readRunLocator(runId);
+      if (!locator) continue;
+      if (
+        input.task &&
+        (locator.task.issueNumber !== input.task.issueNumber ||
+          locator.task.owner.toLowerCase() !== input.task.owner.toLowerCase() ||
+          locator.task.repo.toLowerCase() !== input.task.repo.toLowerCase())
+      ) {
+        continue;
+      }
+      locators.push(locator);
+    }
+    locators.sort(
+      (left, right) =>
+        Date.parse(right.updatedAt) - Date.parse(left.updatedAt) ||
+        left.runId.localeCompare(right.runId),
+    );
+    let items = locators.slice(0, limit);
+    if (input.selectedRunId && !items.some((item) => item.runId === input.selectedRunId)) {
+      const selected = locators.find((item) => item.runId === input.selectedRunId);
+      if (selected) {
+        items = [selected, ...items.filter((item) => item.runId !== selected.runId)].slice(
+          0,
+          limit,
+        );
+      }
+    }
+    return { total: locators.length, items };
   }
 }

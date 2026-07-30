@@ -40,11 +40,23 @@ const viewModel: ProjectMapRunGraphViewModel = {
     selectedNodeId: "node-2",
     deepLink: "?view=project-map&task=stanah%2Fgh-gantt%23330&run=run-330&node=node-2",
     planned: {
-      nodes: [
-        { id: "planner", role: "planner" },
-        { id: "implementer", role: "implementer" },
-      ],
-      edges: [{ id: "plan-valid", from: "planner", to: "implementer", conditions: ["plan_valid"] }],
+      nodes: {
+        total: 2,
+        limit: 20,
+        truncated: false,
+        items: [
+          { id: "planner", role: "planner" },
+          { id: "implementer", role: "implementer" },
+        ],
+      },
+      edges: {
+        total: 1,
+        limit: 20,
+        truncated: false,
+        items: [
+          { id: "plan-valid", from: "planner", to: "implementer", conditions: ["plan_valid"] },
+        ],
+      },
     },
     actual: {
       nodes: [
@@ -102,6 +114,7 @@ const viewModel: ProjectMapRunGraphViewModel = {
           endedAt: "2026-07-30T00:01:00.000Z",
           durationMs: 60000,
           artifactCount: 0,
+          evidenceCount: 0,
         },
       ],
       nodesTruncated: false,
@@ -182,7 +195,11 @@ describe("[FR-VIS-026-AC6] planned-vs-actual panel の操作性", () => {
     expect(getByLabelText("Actual nodes").textContent).toContain("node-1 → node-2");
     expect(getByLabelText("Actual nodes").textContent).toContain("artifact 0 · evidence 0");
     expect(getByText("implementer を再試行")).toBeTruthy();
-    expect(within(getByLabelText("Attempts")).getByText(/planner-1.*60s/)).toBeTruthy();
+    expect(
+      within(getByLabelText("Attempts")).getByText(
+        /node-1.*attempt-1.*planner-1.*planner.*2026-07-30T00:00:00.000Z.*2026-07-30T00:01:00.000Z.*60s.*artifact 0.*evidence 0/,
+      ),
+    ).toBeTruthy();
     expect(getAllByText("unknown")).toHaveLength(3);
   });
 
@@ -267,5 +284,26 @@ describe("[FR-VIS-026-AC4] run/node の URL deep link", () => {
     expect(requestUrl.searchParams.get("limit")).toBe("20");
     expect(getByLabelText("run loading").textContent).toBe("false");
     expect(getByLabelText("run error").textContent).toBe("");
+  });
+
+  it("strict schema に合わない API 応答を表示へ渡さない", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          schemaVersion: "1",
+          taskId: "stanah/gh-gantt#330",
+          runs: { total: 0, limit: 20, truncated: false, items: [] },
+          selectedRun: null,
+          unexpected: "field",
+        }),
+      }),
+    );
+
+    const { getByLabelText } = render(<FetchProbe />);
+    await waitFor(() => expect(getByLabelText("run error").textContent).not.toBe(""));
+
+    expect(getByLabelText("run data").textContent).toBe("");
   });
 });
