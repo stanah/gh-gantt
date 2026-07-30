@@ -69,7 +69,7 @@ describe("[NFR-STABILITY-014-AC1] GraphContractStore は exact version binding �
   });
 });
 
-describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segment を正本にする", () => {
+describe("[FR-VIS-026-AC4] [NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segment を正本にする", () => {
   it("accepted event と rejection evidence を process 再生成後も同じ順序で読める", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
     const store = new RunGraphEventStore(root);
@@ -99,7 +99,7 @@ describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segm
     await expect(new RunGraphEventStore(root).listRunIds()).resolves.toEqual(["run-328"]);
   });
 
-  it("task locator index から limit 件だけを返し request 時に全 Run を走査しない", async () => {
+  it("[FR-VIS-026-AC4] task locator index から limit 件だけを返し request 時に全 Run を走査しない", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
     const store = new RunGraphEventStore(root);
     for (let index = 0; index < 55; index += 1) {
