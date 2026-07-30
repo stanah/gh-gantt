@@ -49,7 +49,7 @@ export const pullCommand = new Command("pull")
         const tasksFile = await tasksStore.readOrDefault();
         const syncState = await stateStore.readOrDefault();
 
-        // Guard: Unresolved conflicts must be resolved before next pull
+        // 未解決conflictがある場合は次のpullを拒否する
         if (tasksFile.has_conflicts) {
           console.error("未解決のコンフリクトがあります。先に resolve してください");
           process.exitCode = 1;
@@ -81,7 +81,7 @@ export const pullCommand = new Command("pull")
 
         if (result.skipped) {
           if (!opts.dryRun) {
-            // Save updated field/option metadata even when no task changes
+            // task変更がなくても更新済みfield・option metadataを保存する
             await stateStore.write(newSyncState);
             // bootstrap（tasks.json 不在）では空プロジェクトでも quick-skip され得るため、
             // 後続の status / list が ENOENT にならないよう初期ファイルを永続化する
@@ -91,7 +91,7 @@ export const pullCommand = new Command("pull")
             await storage.flush();
           }
 
-          if (!opts.withComments && !opts.forceComments) {
+          if (opts.dryRun || (!opts.withComments && !opts.forceComments)) {
             if (opts.json) {
               console.log(
                 JSON.stringify(
@@ -169,7 +169,7 @@ export const pullCommand = new Command("pull")
 
         console.log(`Fetched items from GitHub`);
 
-        // Dry-run reporting
+        // dry-run結果を表示する
         if (opts.dryRun) {
           for (const d of result.details) {
             switch (d.type) {
@@ -261,7 +261,7 @@ async function fetchAndSaveComments(
       { force: !!opts.forceComments },
     );
 
-    // Clean up comments for deleted tasks
+    // 削除済みtaskのコメントを除去する
     const taskIds = new Set(tasks.map((t) => t.id));
     for (const key of Object.keys(updatedComments.fetched_at)) {
       if (!taskIds.has(key)) {

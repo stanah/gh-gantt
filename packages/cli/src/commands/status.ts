@@ -66,10 +66,10 @@ export const statusCommand = new Command("status")
         const tasksFile = await tasksStore.read();
         const syncState = await stateStore.read();
 
-        // Compute local diff
+        // local差分を計算する
         const localDiffs = computeLocalDiff(tasksFile.tasks, syncState);
 
-        // Fetch remote and compute remote diff
+        // remoteを取得して差分を計算する
         const gql = await createGraphQLClient();
         const { owner, project_number } = config.project.github;
         const projectData = await fetchProject(gql, owner, project_number);
@@ -80,10 +80,10 @@ export const statusCommand = new Command("status")
           if (task) remoteTasks.push(task);
         }
 
-        // Compute remote changes (aligned with pull's quick check)
+        // pullのquick checkと同じ規則でremote変更を数える
         const remoteChanged = countRemoteChanges(remoteTasks, syncState);
 
-        // Detect conflicts via 3-way merge
+        // 3-way mergeでconflictを検出する
         interface StatusConflict {
           taskId: string;
           title: string;
@@ -112,7 +112,7 @@ export const statusCommand = new Command("status")
           }
         }
 
-        // Draft tasks
+        // draft taskを抽出する
         const draftTasks = tasksFile.tasks.filter((t) => isDraftTask(t.id));
 
         if (opts.json) {

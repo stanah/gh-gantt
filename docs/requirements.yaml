@@ -1543,7 +1543,8 @@ areas:
           - id: NFR-STABILITY-015-AC1
             description: |
               tasks.json と sync-state.json は同じ generation に保存し、callback が publish 前に
-              失敗した場合は旧 CURRENT generation の両ファイルを維持する
+              失敗した場合は旧 CURRENT generation の両ファイルを維持する。CURRENT が指す
+              generation の片側 member 欠損は空 cache とみなさず fail-closed にする
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
@@ -1557,7 +1558,8 @@ areas:
           - id: NFR-STABILITY-015-AC3
             description: |
               live owner の lease は timeout 後も回収せず STORAGE_BUSY を返し、同一 host で
-              process の死亡と owner nonce を確認できる lease だけを回収する
+              process の死亡と owner nonce を確認でき、atomic recovery claim を取得した
+              collector だけが lease を回収する
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts

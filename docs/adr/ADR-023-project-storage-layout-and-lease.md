@@ -126,7 +126,9 @@ reader/writer lease は、実際の contention と安全性を測定してから
 
 lock owner record は host、pid、nonce、access、開始時刻を持つ。live owner または生死を判定できない owner の
 lock は盗まない。同一 host で pid が存在しないことを確認でき、読み直した owner nonce が一致するときだけ
-compare-and-recover する。timeout は owner 情報を含む診断を返し、workspace-local cache へfallbackしない。
+atomic recovery claim を取得して compare-and-recover する。他collectorのclaimが存在する場合は回収せず、claim取得後に
+owner nonceが変わった場合もactive pathを変更しない。timeout は owner 情報を含む診断を返し、workspace-local cache
+へfallbackしない。
 解放時はnonce一致を確認したactive lock directoryをnonce固有のretired pathへatomic renameしてから削除し、
 解放と次ownerの取得が競合しても新しいlockを再帰削除しない。callback内では即時の`process.exit()`を使わず、
 `finally`によるlease解放を必ず通す。
@@ -144,7 +146,7 @@ Git hook が export する `GIT_DIR`、`GIT_WORK_TREE` 等の repository 選択�
 
 ### Run Graph の扱い
 
-#299 の repository lease と snapshot-set は Work Graph Cache のための統制であり、Graph Contract と
+Issue `#299` の repository lease と snapshot-set は Work Graph Cache のための統制であり、Graph Contract と
 Run Graph event journal には適用しない。ADR-022 の Run Graph は #329 で entity version、claim、lease、
 multi-process compare-and-append が実装・検証されるまで workspace-local を維持する。#329 完了後も共有化は
 自動ではなく、accepted event lineage を壊さないことを確認する別の意思決定を必要とする。

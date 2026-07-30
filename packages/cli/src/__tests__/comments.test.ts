@@ -209,8 +209,8 @@ describe("fetchAllComments", () => {
   });
 });
 
-describe("saveCommentsCheckpoint", () => {
-  it("comments batchを書き込んだ直後にdurable publishする", async () => {
+describe("コメントのチェックポイント保存", () => {
+  it("コメント一括分を書き込んだ直後に永続公開する", async () => {
     const write = vi.fn(async () => undefined);
     const flush = vi.fn(async () => undefined);
     const data: CommentsFile = { version: "1", fetched_at: {}, comments: {} };

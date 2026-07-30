@@ -981,6 +981,76 @@ describe("createApiRouter", () => {
     });
   });
 
+  describe("task mutation API はリクエスト全体を保存前に検証する", () => {
+    beforeEach(async () => {
+      await new ConfigStore(dir).write(buildParentTestConfig());
+      await new TasksStore(dir).write({
+        tasks: [makeServerTask("o/r#5", { github_issue: 5 })],
+        cache: { comments: {}, reactions: {} },
+      });
+    });
+
+    it("POSTはbody・日付・未知fieldの不正値を400で拒否しdraftを作成しない", async () => {
+      const handler = findRouteHandler(createApiRouter(dir), "/api/tasks", "post");
+      for (const body of [
+        { title: "不正body", type: "task", body: 42 },
+        { title: "不正日付", type: "task", start_date: { value: "2026-07-30" } },
+        { title: "未知field", type: "task", unexpected: true },
+      ]) {
+        const { res, captured } = makeCapturingRes();
+        await handler({ body }, res);
+        expect(captured.statusCode).toBe(400);
+      }
+      expect((await new TasksStore(dir).read()).tasks).toHaveLength(1);
+    });
+
+    it("PATCHはstate・assignees・custom_fields・日付の不正値を400で拒否しtaskを変更しない", async () => {
+      const handler = findRouteHandler(createApiRouter(dir), "/api/tasks/:id", "patch");
+      for (const body of [
+        { state: "archived" },
+        { assignees: ["alice", 42] },
+        { custom_fields: [] },
+        { start_date: 20260730 },
+      ]) {
+        const { res, captured } = makeCapturingRes();
+        await handler({ params: { id: encodeURIComponent("o/r#5") }, body }, res);
+        expect(captured.statusCode).toBe(400);
+      }
+      await expect(new TasksStore(dir).read()).resolves.toMatchObject({
+        tasks: [{ id: "o/r#5", state: "open", assignees: [], custom_fields: {}, start_date: null }],
+      });
+    });
+
+    it("親を変えないtype-only更新でも実効親のtype_hierarchyに反する変更を拒否する", async () => {
+      const config = buildParentTestConfig();
+      config.task_types.feature = {
+        label: "Feature",
+        display: "bar",
+        color: "#222222",
+        github_label: null,
+      };
+      config.type_hierarchy = { epic: ["feature"], feature: ["task"], task: [] };
+      await new ConfigStore(dir).write(config);
+      await new TasksStore(dir).write({
+        tasks: [
+          makeServerTask("o/r#1", { type: "epic", github_issue: 1, sub_tasks: ["o/r#5"] }),
+          makeServerTask("o/r#5", { type: "feature", github_issue: 5, parent: "o/r#1" }),
+        ],
+        cache: { comments: {}, reactions: {} },
+      });
+      const handler = findRouteHandler(createApiRouter(dir), "/api/tasks/:id", "patch");
+      const { res, captured } = makeCapturingRes();
+
+      await handler({ params: { id: encodeURIComponent("o/r#5") }, body: { type: "task" } }, res);
+
+      expect(captured.statusCode).toBe(400);
+      expect(captured.jsonPayload.error).toBe('Cannot place "task" under "epic"');
+      expect(
+        (await new TasksStore(dir).read()).tasks.find((task) => task.id === "o/r#5")?.type,
+      ).toBe("feature");
+    });
+  });
+
   describe("[FR-API-003-AC3] POST /api/tasks/:id/reparent は newParentId を正規形へ解決する", () => {
     beforeEach(async () => {
       await new ConfigStore(dir).write(buildParentTestConfig());

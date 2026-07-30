@@ -40,7 +40,7 @@ export function resolveAll(
   for (const task of tasks) {
     const id = task.id as string;
 
-    // Filter by issue number if specified
+    // 指定された場合はIssue番号で絞り込む
     if (filterIssue !== undefined) {
       const issueNum = extractIssueNumber(id);
       if (issueNum !== filterIssue) continue;
@@ -50,11 +50,11 @@ export function resolveAll(
     if (markers.length === 0) continue;
 
     for (const marker of markers) {
-      // Filter by field if specified
+      // 指定された場合はfieldで絞り込む
       if (filterField !== undefined && marker.field !== filterField) continue;
       resolveMarker(task, marker.field, choice);
 
-      // Track fields resolved with "theirs"
+      // "theirs"で解決したfieldを記録する
       if (choice === "theirs") {
         if (!theirsResolutions.has(id)) {
           theirsResolutions.set(id, new Set());
@@ -172,7 +172,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
               theirsResolutionFields.set(id, resolution.theirs);
             }
           } else if (opts?.ours || opts?.theirs) {
-            // Batch mode
+            // 一括解決mode
             const choice = opts.ours ? "ours" : "theirs";
             const batchResolutions = resolveAll(tasks, choice, issue, opts.field);
 
@@ -181,7 +181,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
               theirsResolutionFields.set(id, fields);
             }
           } else {
-            // Interactive mode
+            // 対話解決mode
             const rl = readline.createInterface({ input, output });
 
             try {
@@ -215,7 +215,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
                   const choice = answer === "o" ? "ours" : "theirs";
                   resolveMarker(task, marker.field, choice);
 
-                  // Track fields resolved with "theirs"
+                  // "theirs"で解決したfieldを記録する
                   if (choice === "theirs") {
                     const fields = theirsResolutionFields.get(id) ?? new Set<string>();
                     fields.add(marker.field);
@@ -228,13 +228,13 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
             }
           }
 
-          // Update snapshots for fully resolved tasks
+          // 完全に解決済みのtaskについてsnapshotを更新する
           for (const task of tasks) {
             const id = task.id as string;
             if (!snapshotTargetTaskIds.has(id)) continue;
             if (hasUnresolvedMarkers(task)) continue;
 
-            // Skip draft tasks (no issue number)
+            // Issue番号を持たないdraft taskは除外する
             if (!id.includes("#")) continue;
 
             try {
@@ -269,12 +269,12 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
                 };
               }
             } catch {
-              // If task can't be hashed (e.g. missing fields after conflict resolution),
-              // skip snapshot update
+              // conflict解決後のfield欠損などでhashを計算できないtaskは
+              // snapshot更新を行わない
             }
           }
 
-          // Update global has_conflicts flag
+          // 全体のhas_conflicts flagを更新する
           const anyConflicts = tasks.some((t) => hasUnresolvedMarkers(t));
           if (anyConflicts) {
             (tasksFile as unknown as Record<string, unknown>).has_conflicts = true;
@@ -286,7 +286,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
           await stateStore.write(syncState);
           await storage.flush();
 
-          // Print remaining conflicts or success
+          // 残りのconflictまたは成功結果を出力する
           if (opts?.json) {
             const json = buildConflictJson(tasks, syncState.snapshots, issue);
             console.log(JSON.stringify(json, null, 2));

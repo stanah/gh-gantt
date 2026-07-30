@@ -73,7 +73,7 @@ export function applyTaskUpdate(
   if (opts.title) updated.title = opts.title;
   if (opts.body !== undefined) updated.body = opts.body;
   if (opts.type) {
-    // Remove old type's github_label, add new type's github_label
+    // 旧typeのgithub_labelを除去し、新typeのgithub_labelを追加する
     const oldTypeDef = config.task_types[task.type];
     const newTypeDef = config.task_types[opts.type];
     if (oldTypeDef?.github_label) {
@@ -393,7 +393,7 @@ export function createTaskUpdateCommand(): Command {
             };
 
             if (id) {
-              // Single task update
+              // 単一taskを更新する
               const resolvedId = resolveTaskId(id, config);
               const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
 
@@ -421,7 +421,7 @@ export function createTaskUpdateCommand(): Command {
                 console.log(`Updated task: ${resolvedId}`);
               }
             } else {
-              // Bulk update
+              // 複数taskを一括更新する
               const filters: BulkFilterOptions = {
                 filterState: opts.filterState,
                 filterType: opts.filterType,

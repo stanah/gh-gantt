@@ -34,7 +34,7 @@ export const pushCommand = new Command("push")
         const tasksFile = await tasksStore.read();
         const syncState = await stateStore.read();
 
-        // Guard: unresolved conflicts (not skippable with --force)
+        // 未解決conflictは--forceでも迂回させない
         if (tasksFile.has_conflicts) {
           console.error("未解決のコンフリクトがあります。先に resolve してください");
           process.exitCode = 1;
@@ -63,7 +63,7 @@ export const pushCommand = new Command("push")
           return;
         }
 
-        // Exclude synthetic milestone tasks (read-only)
+        // 読み取り専用のsynthetic milestone taskを除外する
         const pushableDiffs = diffs.filter((d) => !isMilestoneSyntheticTask(d.id));
 
         if (pushableDiffs.length === 0) {

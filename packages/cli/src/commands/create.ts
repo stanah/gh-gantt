@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
+import { z } from "zod";
 import { withProjectStorage } from "../store/project-storage.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import { resolveTaskId } from "../util/task-id.js";
@@ -13,6 +14,8 @@ import {
   parseEstimateHours,
 } from "@gh-gantt/shared";
 import type { Task, TaskTemplates } from "@gh-gantt/shared";
+
+const TaskTemplateContentSchema = z.string();
 
 async function prompt(
   rl: ReturnType<typeof createInterface>,
@@ -164,7 +167,7 @@ export function createCreateCommand(): Command {
             return;
           }
 
-          // Interactive prompt for missing required fields
+          // 必須fieldが不足している場合は対話入力で補う
           if (!title || !type) {
             const rl = createInterface({ input: process.stdin, output: process.stdout });
             try {
@@ -202,7 +205,7 @@ export function createCreateCommand(): Command {
             }
           }
 
-          // Validate type
+          // task typeが設定に存在することを検証する
           if (!config.task_types[type]) {
             console.error(`Unknown task type: "${type}". Available: ${typeKeys.join(", ")}`);
             process.exitCode = 1;
@@ -236,7 +239,9 @@ export function createCreateCommand(): Command {
 
             let template: string;
             try {
-              template = await readFile(resolution.templatePath, "utf-8");
+              template = TaskTemplateContentSchema.parse(
+                await readFile(resolution.templatePath, "utf-8"),
+              );
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
               console.error(`Failed to read template "${opts.template}": ${message}`);
@@ -247,7 +252,7 @@ export function createCreateCommand(): Command {
             body = renderTaskTemplate(template, { title, type, body });
           }
 
-          // Build draft task
+          // draft taskを組み立てる
           const draftNumber = getNextDraftNumber(tasksFile.tasks);
           const taskId = buildDraftTaskId(repoFullName, draftNumber);
 
@@ -298,8 +303,8 @@ export function createCreateCommand(): Command {
             );
           }
 
-          // Update parent's sub_tasks if parent specified
-          // (parent の存在は正規化時に検証済み)
+          // parent指定時は親のsub_tasksも更新する
+          // （parentの存在は正規化時に検証済み）
           if (parent) {
             const parentTask = tasksFile.tasks.find((t) => t.id === parent);
             if (parentTask && !parentTask.sub_tasks.includes(taskId)) {

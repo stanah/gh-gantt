@@ -9,6 +9,10 @@ vi.mock("../../github/client.js", () => ({
   createGraphQLClient: vi.fn(() => vi.fn()),
 }));
 
+vi.mock("../../github/comments.js", () => ({
+  fetchAllComments: vi.fn(),
+}));
+
 vi.mock("../../github/projects.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../github/projects.js")>();
   return {
@@ -31,6 +35,7 @@ vi.mock("../../github/projects.js", async (importOriginal) => {
 import { statusCommand } from "../../commands/status.js";
 import { pullCommand } from "../../commands/pull.js";
 import { pushCommand } from "../../commands/push.js";
+import { fetchAllComments } from "../../github/comments.js";
 import { withProjectStorage } from "../../store/project-storage.js";
 
 const execFileAsync = promisify(execFile);
@@ -212,5 +217,40 @@ describe("[NFR-STABILITY-015] [Issue #299] statusはlinked worktreeから共有c
       estimated_api_calls: 0,
     });
     expect(process.exitCode).toBeUndefined();
+  });
+
+  it("[NFR-STABILITY-015-AC8] quick-skipしたpull dry-runは--with-commentsでもcomment cacheを書き換えない", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "gh-gantt-issue-299-dry-run-"));
+    createdRoots.push(parent);
+    const repository = join(parent, "repository");
+    await mkdir(join(repository, ".gantt-sync"), { recursive: true });
+    await execFileAsync("git", ["init", "--initial-branch=main", repository], {
+      env: gitCommandEnvironment(),
+    });
+    await runGit(repository, "config", "user.email", "issue-299@example.invalid");
+    await runGit(repository, "config", "user.name", "Issue 299 Test");
+    await writeFile(join(repository, ".gantt-sync", "gantt.config.json"), CONFIG);
+    await writeFile(join(repository, "README.md"), "fixture\n");
+    await runGit(repository, "add", "README.md", ".gantt-sync/gantt.config.json");
+    await runGit(repository, "commit", "-m", "test: fixture");
+    await withProjectStorage(
+      repository,
+      { mode: "write", scope: "shared-cache" },
+      async (storage) => {
+        await storage.tasksStore.write(JSON.parse(TASKS));
+        await storage.stateStore.write(JSON.parse(SYNC_STATE));
+      },
+    );
+
+    vi.spyOn(process, "cwd").mockReturnValue(repository);
+    vi.spyOn(console, "log").mockImplementation(() => undefined);
+    await pullCommand.parseAsync(["pull", "--dry-run", "--with-comments", "--json"], {
+      from: "user",
+    });
+
+    expect(fetchAllComments).not.toHaveBeenCalled();
+    await expect(access(join(repository, ".gantt-sync", "comments.json"))).rejects.toMatchObject({
+      code: "ENOENT",
+    });
   });
 });

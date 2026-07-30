@@ -124,6 +124,19 @@ const LockOwnerSchema = z.object({
 
 type LockOwner = z.infer<typeof LockOwnerSchema>;
 
+const RecoveryClaimSchema = z.object({
+  schemaVersion: z.literal("1"),
+  expectedOwnerNonce: z.string().min(1),
+  claimant: z.object({
+    pid: z.number().int().positive(),
+    hostname: z.string().min(1),
+    nonce: z.string().min(1),
+    claimedAt: z.string().datetime(),
+  }),
+});
+
+type RecoveryClaim = z.infer<typeof RecoveryClaimSchema>;
+
 interface LegacyCandidate {
   workspace: string;
   tasks: string;
@@ -227,6 +240,8 @@ function gitCommandEnvironment(): NodeJS.ProcessEnv {
   ]) {
     delete environment[name];
   }
+  // Git の診断文を安定させ、non-git 判定がprocess localeに依存しないようにする。
+  environment.LC_ALL = "C";
   return environment;
 }
 
@@ -429,20 +444,58 @@ async function acquireLease(
         }
       }
 
-      if (existing && existing.hostname === dependencies.processIdentity.hostname) {
+      let recoveryClaim: RecoveryClaim | null = null;
+      try {
+        const rawClaim = await readOptional(join(layout.lockDir, "recovery-claim.json"));
+        if (rawClaim !== null) {
+          recoveryClaim = RecoveryClaimSchema.parse(JSON.parse(rawClaim));
+        }
+      } catch (claimError) {
+        throw new ProjectStorageError("CACHE_LOCK_INVALID", "lock recovery claim が不正です", {
+          cause: claimError,
+        });
+      }
+
+      if (
+        existing &&
+        recoveryClaim === null &&
+        existing.hostname === dependencies.processIdentity.hostname
+      ) {
         const alive = await dependencies.isProcessAlive(existing.pid);
         if (!alive) {
-          const confirmed = LockOwnerSchema.parse(
-            JSON.parse(await readFile(join(layout.lockDir, "owner.json"), "utf8")),
-          );
-          if (confirmed.nonce === existing.nonce) {
-            const recovered = `${layout.lockDir}.recovered-${existing.nonce}-${randomUUID()}`;
-            try {
+          const claim: RecoveryClaim = {
+            schemaVersion: "1",
+            expectedOwnerNonce: existing.nonce,
+            claimant: {
+              pid: owner.pid,
+              hostname: owner.hostname,
+              nonce: owner.nonce,
+              claimedAt: new Date().toISOString(),
+            },
+          };
+          try {
+            await writeFile(
+              join(layout.lockDir, "recovery-claim.json"),
+              `${JSON.stringify(claim, null, 2)}\n`,
+              { flag: "wx" },
+            );
+            const confirmed = LockOwnerSchema.parse(
+              JSON.parse(await readFile(join(layout.lockDir, "owner.json"), "utf8")),
+            );
+            if (confirmed.nonce === claim.expectedOwnerNonce) {
+              const recovered = `${layout.lockDir}.recovered-${existing.nonce}-${randomUUID()}`;
               await rename(layout.lockDir, recovered);
               await rm(recovered, { recursive: true, force: true });
               continue;
-            } catch (recoveryError) {
-              if ((recoveryError as NodeJS.ErrnoException).code !== "ENOENT") throw recoveryError;
+            }
+          } catch (recoveryError) {
+            const recoveryCode = (recoveryError as NodeJS.ErrnoException).code;
+            if (
+              recoveryCode !== "ENOENT" &&
+              recoveryCode !== "EEXIST" &&
+              recoveryCode !== "ENOTEMPTY"
+            ) {
+              throw recoveryError;
             }
           }
         }
@@ -733,7 +786,14 @@ class BoundStorageSession {
     if (this.layout.kind === "git" && (slot === "tasks" || slot === "sync-state")) {
       const generation = await readCurrentGeneration(this.layout);
       if (generation === null) return null;
-      return readOptional(generationPath(this.layout, generation, slot));
+      const content = await readOptional(generationPath(this.layout, generation, slot));
+      if (content === null) {
+        throw new ProjectStorageError(
+          "CACHE_SNAPSHOT_INCOMPLETE",
+          `CURRENT generation ${generation} に ${slot}.json がありません`,
+        );
+      }
+      return content;
     }
     return readOptional(await this.location(slot));
   }

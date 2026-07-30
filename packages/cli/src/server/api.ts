@@ -1,4 +1,5 @@
 import { Router, json } from "express";
+import { z } from "zod";
 import { ConfigStore } from "../store/config.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { setParent, removeParent } from "../commands/task/link.js";
@@ -11,7 +12,43 @@ import { createGraphQLClient } from "../github/client.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import { resolveTaskId } from "../util/task-id.js";
 import type { Task, StatusValue, Dependency } from "@gh-gantt/shared";
-import { computeStatusDateUpdates, DependencySchema } from "@gh-gantt/shared";
+import { computeStatusDateUpdates, DependencySchema, TaskSchema } from "@gh-gantt/shared";
+
+const CreateTaskRequestSchema = z
+  .object({
+    title: z.string().trim().min(1),
+    type: z.string().trim().min(1),
+    body: z.string().nullable().optional(),
+    start_date: z.string().nullable().optional(),
+    end_date: z.string().nullable().optional(),
+    parent: z.string().nullable().optional(),
+  })
+  .strict();
+
+const UpdateTaskRequestSchema = z
+  .object({
+    title: z.string().optional(),
+    body: z.string().nullable().optional(),
+    type: z.string().optional(),
+    state: z.enum(["open", "closed"]).optional(),
+    state_reason: z.string().nullable().optional(),
+    assignees: z.array(z.string()).optional(),
+    implementer: z.string().nullable().optional(),
+    reviewer: z.string().nullable().optional(),
+    require_review: z.boolean().optional(),
+    review_approved_by: z.string().nullable().optional(),
+    review_approved_at: z.string().nullable().optional(),
+    labels: z.array(z.string()).optional(),
+    milestone: z.string().nullable().optional(),
+    custom_fields: z.record(z.string(), z.unknown()).optional(),
+    start_date: z.string().nullable().optional(),
+    end_date: z.string().nullable().optional(),
+    date: z.string().nullable().optional(),
+    parent: z.string().nullable().optional(),
+    blocked_by: z.array(DependencySchema).optional(),
+    sub_tasks: z.unknown().optional(),
+  })
+  .strict();
 
 /** newParentId から親方向へ遡り taskId に到達する場合 true (循環になる)。 */
 function wouldCreateCycle(tasks: Task[], taskId: string, newParentId: string): boolean {
@@ -30,7 +67,7 @@ export function createApiRouter(projectRoot: string): Router {
 
   const configStore = new ConfigStore(projectRoot);
 
-  // GET /api/config
+  // 設定取得: GET /api/config
   router.get("/api/config", async (_req, res) => {
     try {
       const config = await configStore.read();
@@ -40,7 +77,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // GET /api/tasks
+  // task一覧取得: GET /api/tasks
   router.get("/api/tasks", async (_req, res) => {
     try {
       await withProjectStorage(
@@ -78,7 +115,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // POST /api/tasks — create a draft task
+  // draft task作成: POST /api/tasks
   router.post("/api/tasks", async (req, res) => {
     try {
       await withProjectStorage(
@@ -88,15 +125,18 @@ export function createApiRouter(projectRoot: string): Router {
           const { configStore, tasksStore } = storage;
           const config = await configStore.read();
           const tasksFile = await tasksStore.read();
-          const { title, type, body, start_date, end_date } = req.body;
+          const rawBody = req.body as unknown;
 
-          if (!title || !type) {
+          if (
+            typeof rawBody !== "object" ||
+            rawBody === null ||
+            Array.isArray(rawBody) ||
+            !("title" in rawBody) ||
+            !("type" in rawBody) ||
+            !(rawBody as Record<string, unknown>).title ||
+            !(rawBody as Record<string, unknown>).type
+          ) {
             res.status(400).json({ error: "title and type are required" });
-            return;
-          }
-
-          if (!config.task_types[type]) {
-            res.status(400).json({ error: `Unknown task type: "${type}"` });
             return;
           }
 
@@ -104,14 +144,25 @@ export function createApiRouter(projectRoot: string): Router {
           // 生の "draft-1" / "293" のまま保存すると push の replaceTaskIdReferences /
           // id_map 照合 (正規形の完全一致) が効かず sub-issue 関係がスキップされるため、
           // CLI の create --parent (#302) と同じく resolveTaskId で正規形へ解決してから保存する
-          let parent: string | null = req.body.parent ?? null;
-          if (parent !== null && typeof parent !== "string") {
+          const rawParent = (rawBody as Record<string, unknown>).parent ?? null;
+          if (rawParent !== null && typeof rawParent !== "string") {
             res.status(400).json({ error: "parent must be a string or null" });
             return;
           }
+          let parent: string | null = rawParent;
           // 空文字・空白のみは正規化をすり抜けて参照整合性を壊すため明示的に拒否する
           if (parent !== null && parent.trim() === "") {
             res.status(400).json({ error: "parent must be a non-empty string or null" });
+            return;
+          }
+          const parsedBody = CreateTaskRequestSchema.safeParse(rawBody);
+          if (!parsedBody.success) {
+            res.status(400).json({ error: "Invalid task create request" });
+            return;
+          }
+          const { title, type, body, start_date, end_date } = parsedBody.data;
+          if (!config.task_types[type]) {
+            res.status(400).json({ error: `Unknown task type: "${type}"` });
             return;
           }
           if (parent) {
@@ -132,7 +183,7 @@ export function createApiRouter(projectRoot: string): Router {
           if (taskType.github_label) labels.push(taskType.github_label);
 
           const now = new Date().toISOString();
-          const task: Task = {
+          const task = TaskSchema.parse({
             id: taskId,
             type,
             github_issue: null,
@@ -162,7 +213,7 @@ export function createApiRouter(projectRoot: string): Router {
             end_date: end_date ?? null,
             date: null,
             blocked_by: [],
-          };
+          });
 
           // parent の存在は正規化時に検証済み (#319)
           if (parent) {
@@ -186,7 +237,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // PATCH /api/tasks/:id
+  // task更新: PATCH /api/tasks/:id
   router.patch("/api/tasks/:id", async (req, res) => {
     try {
       await withProjectStorage(
@@ -195,7 +246,11 @@ export function createApiRouter(projectRoot: string): Router {
         async (storage) => {
           const { configStore, tasksStore } = storage;
           const taskId = decodeURIComponent(req.params.id);
-          const updates = req.body;
+          let updates = req.body as Record<string, unknown>;
+          if (typeof updates !== "object" || updates === null || Array.isArray(updates)) {
+            res.status(400).json({ error: "Invalid task update request" });
+            return;
+          }
           const config = await configStore.read();
           const tasksFile = await tasksStore.read();
           const idx = tasksFile.tasks.findIndex((t) => t.id === taskId);
@@ -353,6 +408,13 @@ export function createApiRouter(projectRoot: string): Router {
             updates.blocked_by = normalizedDeps;
           }
 
+          const parsedUpdates = UpdateTaskRequestSchema.safeParse(updates);
+          if (!parsedUpdates.success) {
+            res.status(400).json({ error: "Invalid task update request" });
+            return;
+          }
+          updates = parsedUpdates.data;
+
           const safeUpdates: Partial<Task> = {};
           for (const key of UPDATABLE_FIELDS) {
             // parent は単純マージすると旧親・新親の sub_tasks 逆リンクが壊れるため、
@@ -393,7 +455,7 @@ export function createApiRouter(projectRoot: string): Router {
             }
           }
 
-          // Auto-update dates on status transition
+          // status遷移に応じて日付を自動更新する
           const statusField = config.statuses.field_name;
           const oldStatus = oldTask.custom_fields[statusField] as string | undefined;
           const newStatus = updatedTask.custom_fields[statusField] as string | undefined;
@@ -413,7 +475,7 @@ export function createApiRouter(projectRoot: string): Router {
               updatedTask.end_date = dateUpdates.end_date;
           }
 
-          // Prevent start > end regardless of how dates were changed
+          // 日付の変更経路にかかわらずstart > endを拒否する
           if (
             updatedTask.start_date &&
             updatedTask.end_date &&
@@ -425,7 +487,27 @@ export function createApiRouter(projectRoot: string): Router {
             return;
           }
 
-          tasksFile.tasks[idx] = updatedTask;
+          const effectiveParentId = "parent" in updates ? (updates.parent ?? null) : oldTask.parent;
+          if (("type" in updates || "parent" in updates) && effectiveParentId) {
+            const effectiveParent = tasksFile.tasks.find((task) => task.id === effectiveParentId);
+            if (effectiveParent) {
+              const allowed = config.type_hierarchy[effectiveParent.type];
+              if (allowed && allowed.length > 0 && !allowed.includes(updatedTask.type)) {
+                res.status(400).json({
+                  error: `Cannot place "${updatedTask.type}" under "${effectiveParent.type}"`,
+                });
+                return;
+              }
+            }
+          }
+
+          const parsedTask = TaskSchema.safeParse(updatedTask);
+          if (!parsedTask.success) {
+            res.status(400).json({ error: "Invalid task update request" });
+            return;
+          }
+
+          tasksFile.tasks[idx] = parsedTask.data;
 
           // parent の変更は /reparent と同一の setParent / removeParent に委譲し、
           // 自己参照の拒否と旧親・新親の sub_tasks 逆リンク維持を保証する
@@ -437,16 +519,6 @@ export function createApiRouter(projectRoot: string): Router {
               if (wouldCreateCycle(tasksFile.tasks, taskId, updates.parent as string)) {
                 res.status(400).json({ error: "This operation would create a cycle" });
                 return;
-              }
-              const newParentTask = tasksFile.tasks.find((t) => t.id === updates.parent);
-              if (newParentTask) {
-                const allowed = config.type_hierarchy[newParentTask.type];
-                if (allowed && allowed.length > 0 && !allowed.includes(updatedTask.type)) {
-                  res.status(400).json({
-                    error: `Cannot place "${updatedTask.type}" under "${newParentTask.type}"`,
-                  });
-                  return;
-                }
               }
               const parentResult = setParent(tasksFile.tasks, taskId, updates.parent as string);
               if (parentResult.error) {
@@ -469,7 +541,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // POST /api/tasks/:id/reparent
+  // 親変更: POST /api/tasks/:id/reparent
   router.post("/api/tasks/:id/reparent", async (req, res) => {
     try {
       await withProjectStorage(
@@ -522,7 +594,7 @@ export function createApiRouter(projectRoot: string): Router {
               return;
             }
 
-            // Cycle detection: walk up from newParentId, check we don't reach taskId
+            // newParentIdから親方向へ辿り、taskIdへ到達する循環を検出する
             if (wouldCreateCycle(tasksFile.tasks, taskId, newParentId)) {
               res
                 .status(400)
@@ -530,7 +602,7 @@ export function createApiRouter(projectRoot: string): Router {
               return;
             }
 
-            // Type hierarchy validation
+            // task typeの階層制約を検証する
             const allowed = config.type_hierarchy[parent.type];
             if (allowed && allowed.length > 0 && !allowed.includes(task.type)) {
               res.status(400).json({
@@ -568,7 +640,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // POST /api/sync/pull
+  // pull実行: POST /api/sync/pull
   router.post("/api/sync/pull", async (req, res) => {
     try {
       await withProjectStorage(
@@ -580,7 +652,7 @@ export function createApiRouter(projectRoot: string): Router {
           const tasksFile = await tasksStore.read();
           const syncState = await stateStore.read();
 
-          // Guard: Unresolved conflicts must be resolved before next pull
+          // 未解決conflictがある場合は次のpullを拒否する
           if (tasksFile.has_conflicts) {
             res.status(409).json({
               message: "未解決のコンフリクトがあります。先に resolve してください",
@@ -621,7 +693,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // POST /api/sync/push
+  // push実行: POST /api/sync/push
   router.post("/api/sync/push", async (req, res) => {
     try {
       await withProjectStorage(
@@ -633,7 +705,7 @@ export function createApiRouter(projectRoot: string): Router {
           const tasksFile = await tasksStore.read();
           const syncState = await stateStore.read();
 
-          // Guard: unresolved conflicts (not skippable with force)
+          // 未解決conflictはforceでも迂回させない
           if (tasksFile.has_conflicts) {
             res.status(409).json({
               message: "未解決のコンフリクトがあります。先に resolve してください",
@@ -687,7 +759,7 @@ export function createApiRouter(projectRoot: string): Router {
     }
   });
 
-  // GET /api/sync/status
+  // 同期状態取得: GET /api/sync/status
   router.get("/api/sync/status", async (_req, res) => {
     try {
       await withProjectStorage(

@@ -14,12 +14,19 @@ import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promise
 import { isAbsolute, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  createEmptyLoopState,
+  FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  type RunGraphAcceptedEvent,
+} from "@gh-gantt/shared";
 import { createStorageCommand } from "../../commands/storage.js";
 import { pullCommand } from "../../commands/pull.js";
+import { GraphContractStore } from "../../store/graph-contract.js";
 import {
   createProjectStorageDependencies,
   withProjectStorage,
 } from "../../store/project-storage.js";
+import { RunGraphEventStore } from "../../store/run-graph.js";
 
 const execFileAsync = promisify(execFile);
 const createdRoots: string[] = [];
@@ -280,15 +287,94 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     await expect(access(join(linked, ".gantt-sync", "tasks.json"))).rejects.toMatchObject({
       code: "ENOENT",
     });
-    expect(join(repository, ".gantt-sync", "gantt.config.json")).not.toBe(
-      join(linked, ".gantt-sync", "gantt.config.json"),
-    );
-    expect(join(repository, ".gantt-sync", "loop-state.json")).not.toBe(
-      join(linked, ".gantt-sync", "loop-state.json"),
-    );
-    expect(join(repository, ".gantt-sync", "run-graph.jsonl")).not.toBe(
-      join(linked, ".gantt-sync", "run-graph.jsonl"),
-    );
+
+    const repositoryConfig = {
+      ...JSON.parse(CONFIG_V1),
+      project: { ...JSON.parse(CONFIG_V1).project, name: "repository workspace" },
+    };
+    const linkedConfig = {
+      ...JSON.parse(CONFIG_V1),
+      project: { ...JSON.parse(CONFIG_V1).project, name: "linked workspace" },
+    };
+    const repositoryLoop = createEmptyLoopState();
+    repositoryLoop.iterations.push({
+      id: 1,
+      startedAt: "2026-07-30T00:00:00.000Z",
+      selectedTask: null,
+      decision: "repository workspace",
+    });
+    const linkedLoop = createEmptyLoopState();
+    linkedLoop.iterations.push({
+      id: 1,
+      startedAt: "2026-07-30T00:01:00.000Z",
+      selectedTask: null,
+      decision: "linked workspace",
+    });
+    await withProjectStorage(repository, { mode: "write", scope: "workspace" }, async (storage) => {
+      await storage.configStore.write(repositoryConfig);
+      await storage.loopStore.write(repositoryLoop);
+    });
+    await withProjectStorage(linked, { mode: "write", scope: "workspace" }, async (storage) => {
+      await storage.configStore.write(linkedConfig);
+      await storage.loopStore.write(linkedLoop);
+    });
+
+    const repositoryContract = {
+      ...FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      planId: "repository-contract",
+    };
+    const linkedContract = { ...FIXED_DEV_ROLE_GRAPH_CONTRACT, planId: "linked-contract" };
+    await new GraphContractStore(repository).install(repositoryContract);
+    await new GraphContractStore(linked).install(linkedContract);
+    const makeRunStart = (runId: string, issueNumber: number): RunGraphAcceptedEvent => ({
+      recordType: "accepted",
+      eventId: `${runId}-start`,
+      sequence: 1,
+      runId,
+      acceptedAt: "2026-07-30T00:00:00.000Z",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "run_started",
+        task: { owner: "fixture", repo: "repository", issueNumber },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+        firstNodeId: "node-planner-1",
+      },
+      artifactIds: [],
+      evidenceIds: [],
+    });
+    await new RunGraphEventStore(repository).appendAccepted(makeRunStart("repository-run", 299));
+    await new RunGraphEventStore(linked).appendAccepted(makeRunStart("linked-run", 300));
+
+    await withProjectStorage(repository, { mode: "read", scope: "workspace" }, async (storage) => {
+      await expect(storage.configStore.read()).resolves.toMatchObject({
+        project: { name: "repository workspace" },
+      });
+      await expect(storage.loopStore.readOrNull()).resolves.toEqual(repositoryLoop);
+    });
+    await withProjectStorage(linked, { mode: "read", scope: "workspace" }, async (storage) => {
+      await expect(storage.configStore.read()).resolves.toMatchObject({
+        project: { name: "linked workspace" },
+      });
+      await expect(storage.loopStore.readOrNull()).resolves.toEqual(linkedLoop);
+    });
+    await expect(
+      new GraphContractStore(repository).read({
+        planId: "repository-contract",
+        planVersion: "1",
+        schemaVersion: "1",
+      }),
+    ).resolves.toEqual(repositoryContract);
+    await expect(
+      new GraphContractStore(linked).read({
+        planId: "linked-contract",
+        planVersion: "1",
+        schemaVersion: "1",
+      }),
+    ).resolves.toEqual(linkedContract);
+    await expect(new RunGraphEventStore(repository).listRunIds()).resolves.toEqual([
+      "repository-run",
+    ]);
+    await expect(new RunGraphEventStore(linked).listRunIds()).resolves.toEqual(["linked-run"]);
   });
 
   it("[FR-STORE-004-AC4] non-git workspace はrepository scopeも従来の.gantt-sync配下へ縮退する", async () => {
@@ -331,6 +417,18 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
 
     await expect(readSlot(repository, "tasks")).resolves.toBe(TASKS_V1);
     await expect(readSlot(repository, "sync-state")).resolves.toBe(SYNC_STATE_V1);
+  });
+
+  it("[NFR-STABILITY-015-AC1] CURRENT世代のmember欠損は空cacheではなく不完全snapshotとして拒否する", async () => {
+    const { repository, commonDir } = await makeRepositoryWithLinkedWorktree();
+    await publishSharedCache(repository);
+    const namespaceRoot = projectNamespace(commonDir, "fixture/repository#1");
+    const generation = (await readFile(join(namespaceRoot, "CURRENT"), "utf8")).trim();
+    await rm(join(namespaceRoot, "snapshots", generation, "tasks.json"));
+
+    await expect(readSlot(repository, "tasks")).rejects.toMatchObject({
+      code: "CACHE_SNAPSHOT_INCOMPLETE",
+    });
   });
 
   it("[NFR-STABILITY-015-AC2] [NFR-STABILITY-015-AC5] 別process identityのwriter sessionは先行leaseが解放されるまでcallbackへ入らない", async () => {
@@ -672,6 +770,53 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     await expect(access(leaseDir)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
+  it("[NFR-STABILITY-015-AC3] 別collectorのatomic recovery claimがある死亡ownerは回収しない", async () => {
+    const { repository, commonDir } = await makeRepositoryWithLinkedWorktree();
+    const leaseDir = join(commonDir, "gh-gantt", "locks", "work-graph-cache.lock");
+    await mkdir(leaseDir, { recursive: true });
+    await writeFile(
+      join(leaseDir, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        group: "work-graph-cache",
+        pid: 611,
+        hostname: "issue-299-test-host",
+        startedAt: "2026-07-30T00:00:00.000Z",
+        workspace: repository,
+        access: "write",
+        nonce: "dead-owner-with-claim",
+      })}\n`,
+    );
+    await writeFile(
+      join(leaseDir, "recovery-claim.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        expectedOwnerNonce: "dead-owner-with-claim",
+        claimant: {
+          pid: 612,
+          hostname: "issue-299-test-host",
+          nonce: "other-collector",
+          claimedAt: "2026-07-30T00:00:01.000Z",
+        },
+      })}\n`,
+    );
+    const livePids = new Set([612, 613]);
+
+    await expect(
+      withProjectStorage(
+        repository,
+        {
+          mode: "write",
+          scope: "shared-cache",
+          waitTimeoutMs: 20,
+          dependencies: processDependencies(613, livePids),
+        },
+        async (storage) => storage.ensureSharedCache(),
+      ),
+    ).rejects.toMatchObject({ code: "STORAGE_BUSY" });
+    await expect(access(join(leaseDir, "owner.json"))).resolves.toBeUndefined();
+  });
+
   it("[FR-STORE-004-AC4] Git executableの起動失敗はnon-git扱いにせずGIT_DISCOVERY_FAILEDを返す", async () => {
     const { repository } = await makeRepositoryWithLinkedWorktree();
     const emptyPath = await makeStandaloneRoot();
@@ -844,29 +989,43 @@ main().catch((error) => {
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
+    const childExit = once(child, "exit") as Promise<[number | null]>;
     let childStderr = "";
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
       childStderr += chunk;
     });
-    await waitForFile(barrier, child, () => childStderr);
-
     let secondEntered = false;
-    const second = withProjectStorage(
-      repository,
-      { mode: "write", scope: "shared-cache", waitTimeoutMs: 2_000 },
-      async (storage) => {
-        await storage.ensureSharedCache();
-        secondEntered = true;
-      },
-    );
-    await new Promise<void>((resolveWait) => setTimeout(resolveWait, 100));
-    expect(secondEntered).toBe(false);
+    let released = false;
+    let second: Promise<void> | undefined;
+    try {
+      await waitForFile(barrier, child, () => childStderr);
+      second = withProjectStorage(
+        repository,
+        { mode: "write", scope: "shared-cache", waitTimeoutMs: 2_000 },
+        async (storage) => {
+          await storage.ensureSharedCache();
+          secondEntered = true;
+        },
+      );
+      await new Promise<void>((resolveWait) => setTimeout(resolveWait, 100));
+      expect(secondEntered).toBe(false);
 
-    await writeFile(release, "release\n");
-    const [exitCode] = (await once(child, "exit")) as [number | null];
-    expect(exitCode, childStderr).toBe(0);
-    await second;
-    expect(secondEntered).toBe(true);
+      await writeFile(release, "release\n");
+      released = true;
+      const [exitCode] = await childExit;
+      expect(exitCode, childStderr).toBe(0);
+      await second;
+      expect(secondEntered).toBe(true);
+    } finally {
+      if (!released) {
+        await writeFile(release, "release\n").catch(() => undefined);
+      }
+      if (child.exitCode === null && child.signalCode === null) {
+        child.kill();
+        await childExit.catch(() => undefined);
+      }
+      await second?.catch(() => undefined);
+    }
   });
 });

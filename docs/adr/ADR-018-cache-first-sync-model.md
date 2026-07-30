@@ -128,7 +128,7 @@ GitHub を唯一の真実源 (single source of truth) とし、`.gantt-sync/` �
 worktree からの並行 pull / push は後勝ちで同期結果を上書きしうる。排他制御の
 設計・実装は #299 のスコープに含める。
 
-#299 の具体的な配置、GitHub Project identity ごとの versioned namespace、
+Issue `#299` の具体的な配置、GitHub Project identity ごとの versioned namespace、
 tasks/sync-state の atomic snapshot-set、all-worktree legacy migration、
 read/write 共通の初版 exclusive repository lease、non-git fallback の契約は ADR-023 を正本とする。
 ADR-023 は本 ADR の cache 分類を変更せず、その実装境界を確定する。
