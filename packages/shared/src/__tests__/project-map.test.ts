@@ -702,6 +702,12 @@ describe("[FR-VIS-026-AC4] Run Graph の一覧と deep link を bounded にす�
     expect(ProjectMapRunGraphViewModelSchema.safeParse({ ...vm, unexpected: true }).success).toBe(
       false,
     );
+    expect(
+      ProjectMapRunGraphViewModelSchema.safeParse({
+        ...vm,
+        runs: { ...vm.runs, truncated: !vm.runs.truncated },
+      }).success,
+    ).toBe(false);
   });
 });
 

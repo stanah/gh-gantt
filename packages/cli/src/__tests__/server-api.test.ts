@@ -6,6 +6,7 @@ import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { CommentsStore } from "../store/comments.js";
 import { GraphContractStore } from "../store/graph-contract.js";
+import { RunGraphEventStore } from "../store/run-graph.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { createApiRouter } from "../server/api.js";
 import { FIXED_DEV_ROLE_GRAPH_CONTRACT, type Config, type Task } from "@gh-gantt/shared";
@@ -146,6 +147,7 @@ describe("createApiRouter", () => {
   it("[FR-VIS-026-AC4] detail limit の範囲外と未知 run を拒否する", async () => {
     await seedRunGraphProject();
 
+    await expect(callRunGraphRoute({ limit: "20" })).resolves.toMatchObject({ statusCode: 400 });
     await expect(callRunGraphRoute({ taskId: "o/r#330", limit: "51" })).resolves.toMatchObject({
       statusCode: 400,
     });
@@ -178,6 +180,9 @@ describe("createApiRouter", () => {
       contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
     });
     const inspect = vi.spyOn(RunGraphControlPlane.prototype, "inspect");
+    const listRunIds = vi
+      .spyOn(RunGraphEventStore.prototype, "listRunIds")
+      .mockRejectedValue(new Error("request path の全 Run 走査は禁止"));
 
     const response = await callRunGraphRoute({
       taskId: "o/r#330",
@@ -187,6 +192,7 @@ describe("createApiRouter", () => {
 
     expect(response.statusCode).toBe(200);
     expect(inspect).toHaveBeenCalledTimes(1);
+    expect(listRunIds).not.toHaveBeenCalled();
     expect(inspect).toHaveBeenCalledWith(runIds[0], 1, undefined);
     expect(response.jsonPayload).toMatchObject({
       runs: { total: 3, limit: 1, truncated: true, items: [{ runId: runIds[0] }] },

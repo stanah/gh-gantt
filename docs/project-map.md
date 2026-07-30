@@ -156,16 +156,17 @@ JSON は shared の `ProjectMapRunGraphViewModel` を共用し、別々の状態
 
 ### 11.1 bounded API
 
-| query    | 意味                                                                     |
-| -------- | ------------------------------------------------------------------------ |
-| `taskId` | canonical task ID。draft task は Run Graph target を持たないため拒否する |
-| `runId`  | opaque run ID。task と一致しない run は 404                              |
-| `nodeId` | opaque node ID。選択 run に存在しない場合は fail-closed で 404           |
-| `limit`  | run/node/attempt/artifact/evidence の上限。1〜50、既定20                 |
+| query    | 意味                                                                            |
+| -------- | ------------------------------------------------------------------------------- |
+| `taskId` | 必須の canonical task ID。draft task は Run Graph target を持たないため拒否する |
+| `runId`  | opaque run ID。task と一致しない run は 404                                     |
+| `nodeId` | opaque node ID。選択 run に存在しない場合は fail-closed で 404                  |
+| `limit`  | run/node/attempt/artifact/evidence の上限。1〜50、既定20                        |
 
-レスポンスは run と planned node/edge に `total / limit / truncated / items` を持つ。API は各 run の
-先頭・末尾 event metadata を直列に確認して候補を先に絞り、journal 全文の replay は最大 `limit` 件に
-限定する。全 run history や log 本文は既定で返さない。
+レスポンスは run と planned node/edge に `total / limit / truncated / items` を持つ。accepted event の
+append 時に Zod 検証済みの task locator index を更新し、API request は task 単位の最大50件の summary と
+選択 run の locator だけを読む。既存 journal の index 再構築は server 起動時に request path 外で行い、
+journal 全文の replay は最大 `limit` 件に限定する。全 run history や log 本文は既定で返さない。
 URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時は古い node 選択を除去する。
 
 ### 11.2 状態と差分

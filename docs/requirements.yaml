@@ -1029,9 +1029,10 @@ areas:
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
           - id: FR-VIS-026-AC4
-            description: run ID と node ID の deep link、および 1 件以上 50 件以下に制限された bounded detail API を提供する
+            description: run ID と node ID の deep link、および task locator index により request 処理を 1 件以上 50 件以下に制限した bounded detail API を提供する
             status: covered
             tests:
+              - packages/cli/src/__tests__/run-graph-store.test.ts
               - packages/cli/src/__tests__/server-api.test.ts
               - packages/shared/src/__tests__/project-map.test.ts
               - packages/ui/src/__tests__/project-map-run-graph.test.tsx

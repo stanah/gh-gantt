@@ -61,7 +61,7 @@ const UpdateTaskRequestSchema = z
 
 const ProjectMapRunGraphQuerySchema = z
   .object({
-    taskId: z.string().trim().min(1).max(500).optional(),
+    taskId: z.string().trim().min(1).max(500),
     runId: z.string().trim().min(1).max(200).optional(),
     nodeId: z.string().trim().min(1).max(200).optional(),
     limit: z.coerce.number().int().min(1).max(50).default(20),
@@ -676,32 +676,29 @@ export function createApiRouter(projectRoot: string): Router {
     }
 
     try {
-      const selectedTask = query.data.taskId
-        ? await withProjectStorage(
-            projectRoot,
-            { mode: "read", scope: "shared-cache" },
-            async ({ tasksStore }) => {
-              const tasksFile = await tasksStore.read();
-              return tasksFile.tasks.find((task) => task.id === query.data.taskId) ?? null;
-            },
-          )
-        : null;
-      if (query.data.taskId && !selectedTask) {
+      const selectedTask = await withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "shared-cache" },
+        async ({ tasksStore }) => {
+          const tasksFile = await tasksStore.read();
+          return tasksFile.tasks.find((task) => task.id === query.data.taskId) ?? null;
+        },
+      );
+      if (!selectedTask) {
         res.status(404).json({ error: "Task not found" });
         return;
       }
-      if (selectedTask && selectedTask.github_issue == null) {
+      if (selectedTask.github_issue == null) {
         res.status(400).json({ error: "Draft task does not have a Run Graph target" });
         return;
       }
 
       const eventStore = new RunGraphEventStore(projectRoot);
       const controlPlane = new RunGraphControlPlane(projectRoot);
-      const [owner, repo] = selectedTask?.github_repo.split("/") ?? [];
+      const [owner, repo] = selectedTask.github_repo.split("/");
+      if (!owner || !repo) throw new Error("Task github_repo が owner/repo 形式ではありません");
       const locators = await eventStore.listRunLocators({
-        ...(selectedTask && owner && repo
-          ? { task: { owner, repo, issueNumber: selectedTask.github_issue! } }
-          : {}),
+        task: { owner, repo, issueNumber: selectedTask.github_issue },
         limit: query.data.limit,
         ...(query.data.runId ? { selectedRunId: query.data.runId } : {}),
       });
@@ -732,11 +729,7 @@ export function createApiRouter(projectRoot: string): Router {
       const contract = selectedView
         ? await new GraphContractStore(projectRoot).read(selectedView.contract)
         : null;
-      const taskId =
-        selectedTask?.id ??
-        (selectedView
-          ? `${selectedView.task.owner}/${selectedView.task.repo}#${selectedView.task.issueNumber}`
-          : null);
+      const taskId = selectedTask.id;
 
       res.json(
         ProjectMapRunGraphViewModelSchema.parse(

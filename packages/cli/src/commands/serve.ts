@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createApiRouter } from "../server/api.js";
+import { RunGraphEventStore } from "../store/run-graph.js";
 import { DEFAULT_PORT } from "@gh-gantt/shared";
 
 export function resolveUiDistPath(moduleUrl = import.meta.url): string | null {
@@ -39,6 +40,9 @@ export const serveCommand = new Command("serve")
       }
       next();
     });
+
+    // 旧 Run Graph の locator は request path 外で一度だけ再構築する。
+    await new RunGraphEventStore(projectRoot).ensureRunLocatorIndex();
 
     // API は gh-gantt を実行したプロジェクトの同期データを読む。
     const apiRouter = createApiRouter(projectRoot);

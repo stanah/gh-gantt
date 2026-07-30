@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -30,6 +30,25 @@ const startEvent: RunGraphAcceptedEvent = {
   artifactIds: [],
   evidenceIds: [],
 };
+
+function startEventFor(
+  runId: string,
+  issueNumber: number,
+  acceptedAt: string,
+): RunGraphAcceptedEvent {
+  return {
+    ...startEvent,
+    eventId: `start-${runId}`,
+    runId,
+    acceptedAt,
+    command: {
+      type: "run_started",
+      task: { owner: "stanah", repo: "gh-gantt", issueNumber },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      firstNodeId: "node-planner-1",
+    },
+  };
+}
 
 describe("[NFR-STABILITY-014-AC1] GraphContractStore は exact version binding を永続化する", () => {
   it("install 後に別 instance から同じ contract を取得できる", async () => {
@@ -78,6 +97,94 @@ describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segm
     expect(journal.acceptedEvents).toEqual([startEvent]);
     expect(journal.rejections).toEqual([rejection]);
     await expect(new RunGraphEventStore(root).listRunIds()).resolves.toEqual(["run-328"]);
+  });
+
+  it("task locator index から limit 件だけを返し request 時に全 Run を走査しない", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    for (let index = 0; index < 55; index += 1) {
+      await store.appendAccepted(
+        startEventFor(
+          `run-${index}`,
+          330,
+          `2026-07-30T00:${String(index).padStart(2, "0")}:00.000Z`,
+        ),
+      );
+    }
+    await store.appendAccepted(startEventFor("run-other-task", 331, "2026-07-30T00:04:00.000Z"));
+    vi.spyOn(store, "listRunIds").mockRejectedValue(new Error("全 Run 走査は禁止"));
+
+    await expect(
+      store.listRunLocators({
+        task: { owner: "STANAH", repo: "GH-GANTT", issueNumber: 330 },
+        limit: 1,
+        selectedRunId: "run-0",
+      }),
+    ).resolves.toEqual({
+      total: 55,
+      items: [
+        {
+          runId: "run-0",
+          task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+          updatedAt: "2026-07-30T00:00:00.000Z",
+        },
+      ],
+    });
+    const bounded = await store.listRunLocators({
+      task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+      limit: 50,
+    });
+    expect(bounded.total).toBe(55);
+    expect(bounded.items).toHaveLength(50);
+  });
+
+  it("破損した task locator index を Zod 境界で拒否する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEventFor("run-corrupt", 330, "2026-07-30T00:00:00.000Z"));
+    const taskSegment = Buffer.from("stanah/gh-gantt#330", "utf8").toString("base64url");
+    await writeFile(
+      join(root, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "tasks", `${taskSegment}.json`),
+      JSON.stringify({
+        schemaVersion: "1",
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        total: "1",
+        items: [],
+      }),
+    );
+
+    await expect(
+      store.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("既存 journal の locator index を request path 外で一度だけ再構築する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const legacy = startEventFor("legacy-run", 330, "2026-07-30T00:00:00.000Z");
+    const eventsDir = join(
+      root,
+      GANTT_DIR,
+      RUN_GRAPH_DIR,
+      RUN_GRAPH_RUNS_DIR,
+      Buffer.from(legacy.runId, "utf8").toString("base64url"),
+      "events",
+    );
+    await mkdir(eventsDir, { recursive: true });
+    await writeFile(join(eventsDir, "000000000001.json"), JSON.stringify(legacy));
+
+    const store = new RunGraphEventStore(root);
+    await store.ensureRunLocatorIndex();
+    vi.spyOn(store, "listRunIds").mockRejectedValue(new Error("再構築後の走査は禁止"));
+
+    await expect(
+      store.listRunLocators({
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+        limit: 20,
+      }),
+    ).resolves.toMatchObject({ total: 1, items: [{ runId: "legacy-run" }] });
   });
 
   it("duplicate event と連続しない sequence を追記しない", async () => {

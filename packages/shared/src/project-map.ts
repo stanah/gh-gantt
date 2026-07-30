@@ -806,6 +806,14 @@ function projectMapBoundedCollectionSchema<T extends z.ZodType>(itemSchema: T) {
           message: "items は limit と total 以下である必要があります",
         });
       }
+      const expectedTruncated = collection.total > collection.items.length;
+      if (collection.truncated !== expectedTruncated) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["truncated"],
+          message: "truncated は total と items 件数から導出する必要があります",
+        });
+      }
     });
 }
 
