@@ -30,8 +30,8 @@ read-only の `run observe-pr` だけが control plane へ渡す。
 owner / repository / Issue 番号が一致する positive proof を得た場合だけ遷移を許可する。
 一致しないと確定するには cursor 終端まで取得し、pagination を完了できない場合は Run state を
 変更せず拒否する。
-旧 schema v1 の accepted segment に PR linkage フィールドがない場合、store は不変 segment を
-書き換えず、読み取り時だけ未証明 linkage へ正規化する。未証明の過去 event は
+旧 schema v1 の accepted segment または rejection record に PR linkage フィールドがない場合、
+store は不変 JSON を書き換えず、読み取り時だけ未証明 linkage へ正規化する。未証明の過去 event は
 `merged` / `closed` であっても Run を `completed` へ昇格させない。
 
 Graph Contract と Run Graph event は `.gantt-sync/run-graph/` 配下の別 store に置く。Graph Contract は

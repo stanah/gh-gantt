@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -151,5 +151,60 @@ describe("[NFR-STABILITY-014-AC4] RunGraphEventStore は immutable sequence segm
         },
       ],
     });
+  });
+
+  it("旧 schema v1 の pr_observed rejection を不変のまま安全な未証明 linkage へ read migration する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-store-"));
+    const store = new RunGraphEventStore(root);
+    await store.appendAccepted(startEvent);
+    const runSegment = Buffer.from(startEvent.runId, "utf8").toString("base64url");
+    const rejectionId = "legacy-pr-rejection";
+    const rejectionSegment = Buffer.from(rejectionId, "utf8").toString("base64url");
+    const rejectionsDir = join(
+      root,
+      GANTT_DIR,
+      RUN_GRAPH_DIR,
+      RUN_GRAPH_RUNS_DIR,
+      runSegment,
+      "rejections",
+    );
+    await mkdir(rejectionsDir, { recursive: true });
+    const filePath = join(rejectionsDir, `${rejectionSegment}.json`);
+    const legacyJson = JSON.stringify({
+      recordType: "rejected",
+      rejectionId,
+      eventId: "legacy-pr-observed-rejected",
+      runId: startEvent.runId,
+      rejectedAt: "2026-07-30T00:01:00.000Z",
+      actor,
+      command: {
+        type: "pr_observed",
+        repository: "stanah/gh-gantt",
+        pullRequestNumber: 334,
+        state: "merged",
+        evidenceIds: ["legacy-pr-evidence"],
+      },
+      code: "invalid_transition",
+      message: "human-pr gate 前の observation です",
+      stateUnchanged: true,
+    });
+    await expect(
+      store.appendRejection(JSON.parse(legacyJson) as RunGraphRejection),
+    ).rejects.toThrow(/isDraft/);
+    await writeFile(filePath, legacyJson);
+
+    await expect(store.readJournal(startEvent.runId)).resolves.toMatchObject({
+      rejections: [
+        {
+          command: {
+            type: "pr_observed",
+            isDraft: false,
+            linkedIssue: null,
+            linkageComplete: false,
+          },
+        },
+      ],
+    });
+    await expect(readFile(filePath, "utf8")).resolves.toBe(legacyJson);
   });
 });

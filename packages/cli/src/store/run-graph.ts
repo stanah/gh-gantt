@@ -7,6 +7,7 @@ import {
   RunGraphAcceptedEventReadSchema,
   RunGraphAcceptedEventSchema,
   RunGraphJournalSchema,
+  RunGraphRejectionReadSchema,
   RunGraphRejectionSchema,
   type RunGraphAcceptedEvent,
   type RunGraphJournal,
@@ -102,7 +103,7 @@ export class RunGraphEventStore {
     );
     const rejections = await Promise.all(
       (await listJsonFiles(join(runDir, "rejections"))).map(async (name) =>
-        RunGraphRejectionSchema.parse(
+        RunGraphRejectionReadSchema.parse(
           JSON.parse(await readFile(join(runDir, "rejections", name), "utf8")),
         ),
       ),

@@ -228,6 +228,45 @@ async function writeLegacyPrObservedEvent(params: {
   );
 }
 
+async function writeLegacyPrObservedRejection(params: {
+  root: string;
+  runId: string;
+}): Promise<void> {
+  const rejectionId = "legacy-pr-rejection";
+  const runSegment = Buffer.from(params.runId, "utf8").toString("base64url");
+  const rejectionSegment = Buffer.from(rejectionId, "utf8").toString("base64url");
+  const rejectionsDir = join(
+    params.root,
+    GANTT_DIR,
+    RUN_GRAPH_DIR,
+    RUN_GRAPH_RUNS_DIR,
+    runSegment,
+    "rejections",
+  );
+  await mkdir(rejectionsDir, { recursive: true });
+  await writeFile(
+    join(rejectionsDir, `${rejectionSegment}.json`),
+    JSON.stringify({
+      recordType: "rejected",
+      rejectionId,
+      eventId: "legacy-pr-observed-rejected",
+      runId: params.runId,
+      rejectedAt: "2026-07-30T00:01:00.000Z",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      command: {
+        type: "pr_observed",
+        repository: "stanah/gh-gantt",
+        pullRequestNumber: 334,
+        state: "merged",
+        evidenceIds: ["legacy-pr-evidence"],
+      },
+      code: "invalid_transition",
+      message: "human-pr gate 前の observation です",
+      stateUnchanged: true,
+    }),
+  );
+}
+
 describe("[NFR-STABILITY-014-AC2] RunGraphControlPlane は start/applyEvent/inspect に統制を隠す", () => {
   it("exact-bound contract と Issue から planner ready の durable run を開始する", async () => {
     const { root, control } = await createControlPlane();
@@ -1784,6 +1823,34 @@ describe("[NFR-STABILITY-014-AC7] 旧 PR observation は未証明 linkage とし
       control.start({
         schemaVersion: "1",
         eventId: "fresh-run-after-legacy-journal",
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 329 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      }),
+    ).resolves.toMatchObject({ accepted: true, view: { state: "running", revision: 1 } });
+  });
+
+  it("旧 rejected observation を含む journal を読めて、別 Run も start できる", async () => {
+    const { root, control } = await createControlPlane();
+    const runId = await startRun(control, "legacy-rejection-run-start");
+    await writeLegacyPrObservedRejection({ root, runId });
+
+    await expect(new RunGraphEventStore(root).readJournal(runId)).resolves.toMatchObject({
+      rejections: [
+        {
+          command: {
+            type: "pr_observed",
+            isDraft: false,
+            linkedIssue: null,
+            linkageComplete: false,
+          },
+        },
+      ],
+    });
+    await expect(
+      control.start({
+        schemaVersion: "1",
+        eventId: "fresh-run-after-legacy-rejection",
         actor: { id: "orchestrator-1", role: "orchestrator" },
         task: { owner: "stanah", repo: "gh-gantt", issueNumber: 329 },
         contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },

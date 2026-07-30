@@ -911,24 +911,17 @@ export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
     }
   });
 
-/**
- * immutable な旧 schema v1 segment を読むときだけ、追加前の PR observation を
- * fail-closed な未証明 linkage へ正規化する。新規 append は厳格な write schema を使い続ける。
- */
-export const RunGraphAcceptedEventReadSchema: z.ZodType<
-  RunGraphAcceptedEvent,
-  z.ZodTypeDef,
-  unknown
-> = z.preprocess((input) => {
+/** 旧 schema v1 envelope の PR observation を fail-closed な未証明 linkage へ正規化する。 */
+function normalizeLegacyPrObservedEnvelope(input: unknown): unknown {
   if (!input || typeof input !== "object" || Array.isArray(input)) return input;
-  const event = input as Record<string, unknown>;
-  const command = event.command;
+  const envelope = input as Record<string, unknown>;
+  const command = envelope.command;
   if (!command || typeof command !== "object" || Array.isArray(command)) return input;
   const commandRecord = command as Record<string, unknown>;
   if (commandRecord.type !== "pr_observed") return input;
   const has = (key: string) => Object.prototype.hasOwnProperty.call(commandRecord, key);
   return {
-    ...event,
+    ...envelope,
     command: {
       ...commandRecord,
       isDraft: has("isDraft") ? commandRecord.isDraft : false,
@@ -936,7 +929,17 @@ export const RunGraphAcceptedEventReadSchema: z.ZodType<
       linkageComplete: has("linkageComplete") ? commandRecord.linkageComplete : false,
     },
   };
-}, RunGraphAcceptedEventSchema);
+}
+
+/**
+ * immutable な旧 schema v1 segment を読むときだけ read migration を適用する。
+ * 新規 append は厳格な write schema を使い続ける。
+ */
+export const RunGraphAcceptedEventReadSchema: z.ZodType<
+  RunGraphAcceptedEvent,
+  z.ZodTypeDef,
+  unknown
+> = z.preprocess(normalizeLegacyPrObservedEnvelope, RunGraphAcceptedEventSchema);
 
 export const RunGraphRejectionSchema: z.ZodType<RunGraphRejection> = z
   .object({
@@ -952,6 +955,10 @@ export const RunGraphRejectionSchema: z.ZodType<RunGraphRejection> = z
     stateUnchanged: z.literal(true),
   })
   .strict();
+
+/** immutable な旧 rejection record 専用の read migration schema。 */
+export const RunGraphRejectionReadSchema: z.ZodType<RunGraphRejection, z.ZodTypeDef, unknown> =
+  z.preprocess(normalizeLegacyPrObservedEnvelope, RunGraphRejectionSchema);
 
 export const RunGraphJournalSchema: z.ZodType<RunGraphJournal> = z
   .object({
