@@ -1112,6 +1112,16 @@ areas:
             tests:
               - packages/cli/src/__tests__/regressions/issue-169-status-false-remote-changes.test.ts
               - packages/cli/src/__tests__/regressions/issue-197-status-remote-changed-stale-updated-at.test.ts
+          - id: NFR-STABILITY-001-AC6
+            description: |
+              push は pull の取り込み watermark である last_synced_at を進めず、
+              pull は full fetch の開始時刻までに観測したリモート更新を snapshot に
+              反映する。外部更新後に別タスクを push しても次回 pull の pre-check が
+              更新を見落とさず、pull 直後の push が stale 拒否されない
+              (regression #318)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-318-pull-quickskip-stale-push.test.ts
       - id: NFR-STABILITY-002
         summary: silent failure の禁止
         acceptance_criteria:

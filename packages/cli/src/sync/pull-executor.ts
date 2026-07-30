@@ -100,6 +100,11 @@ export async function executePull(
     }
   }
 
+  // この時刻までのリモート状態を今回の full fetch で観測する。
+  // fetch 完了時刻を使うと、fetch 中の外部更新が次回 pre-check の観測窓から
+  // 落ちるため、取得開始前に watermark を固定する (#318)。
+  const pullStartedAt = new Date().toISOString();
+
   // Record which tasks have unpushed local changes BEFORE merging
   const prePullDiffs = computeLocalDiff(tasksFile.tasks, syncState);
   const locallyChangedIds = new Set(
@@ -216,6 +221,8 @@ export async function executePull(
           ...syncState,
           // bootstrap（sync-state 不在からの初回同期）では空のため、取得値で補完する
           project_node_id: syncState.project_node_id || projectData.projectNodeId,
+          // 全タスクの updated_at 一致を確認済みなので、今回の観測時刻まで進める。
+          last_synced_at: pullStartedAt,
           id_map: newIdMap,
           field_ids: fieldIds,
           option_ids: optionIds,
@@ -392,7 +399,7 @@ export async function executePull(
     ...syncState,
     // bootstrap（sync-state 不在からの初回同期）では空のため、取得値で補完する
     project_node_id: syncState.project_node_id || projectData.projectNodeId,
-    last_synced_at: new Date().toISOString(),
+    last_synced_at: pullStartedAt,
     id_map: newIdMap,
     snapshots: newSnapshots,
     field_ids: fieldIds,
