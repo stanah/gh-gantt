@@ -1438,45 +1438,59 @@ areas:
             description: |
               Plan Graph、Work Graph、Org Graph、Run Graph が別の正本と責務を持ち、
               versioned Graph Contract を介して参照される
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-command.test.ts
+              - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/shared/src/__tests__/run-graph.test.ts
+              - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-014-AC2
             description: |
               gh-gantt control plane が contract validation、stable ID、transition、
               budget、authority、human gate、checkpoint、bounded view を統制し、
               external runner が execution plane として outcome event を返す
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
+              - packages/shared/src/__tests__/run-graph.test.ts
+              - tests/workflow/dev-role-skill.test.ts
           - id: NFR-STABILITY-014-AC3
             description: |
               Graph Contract が role、node、edge、transition condition、artifact、
               evidence、authority、budget、human gate、schema version を表現する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/run-graph.test.ts
           - id: NFR-STABILITY-014-AC4
             description: |
               run、node、attempt、artifact、evidence の安定 ID と lineage を保持し、
               task、run、node、attempt の状態を別々に扱う
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/shared/src/__tests__/run-graph.test.ts
           - id: NFR-STABILITY-014-AC5
             description: |
               停止、取消、失敗、再開、checkpoint、migration の意味論を持ち、
               unsupported schema version と古い attempt の update を拒否する
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-328-run-graph-resume.test.ts
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
           - id: NFR-STABILITY-014-AC6
             description: |
               fixed dev-role graph が transition guard、evidence、verify retry と
               review improvement の独立 budget、不正 transition の拒否を持つ
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
           - id: NFR-STABILITY-014-AC7
             description: |
               bypass は許可 edge、authority、理由、evidence に限定され、
               外部 runner は必須 human gate を bypass できない
-            status: uncovered
-            tests: []
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
           - id: NFR-STABILITY-014-AC8
             description: |
               bounded parallelism と approval-gated な Work Graph 変更を、

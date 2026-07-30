@@ -1,4 +1,5 @@
 import type { LoopConfig } from "./loop-state.js";
+import type { RunGraphConfig } from "./run-graph.js";
 
 export type TaskDisplay = "bar" | "summary" | "milestone";
 export type DependencyType =
@@ -189,6 +190,8 @@ export interface Config {
   doctor?: DoctorConfig;
   /** 外側ループの停止条件（ADR-016 案C / ADR-017）。未設定でも既存挙動は変わらない。 */
   loop?: LoopConfig;
+  /** 単一 Issue Run Graph が exact binding する versioned Graph Contract。 */
+  run_graph?: RunGraphConfig;
   require_review_for_types?: string[];
   require_close_evidence?: boolean;
   max_task_size_hours?: number;

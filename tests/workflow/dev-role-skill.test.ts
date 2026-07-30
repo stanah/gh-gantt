@@ -167,3 +167,24 @@ describe("[NFR-STABILITY-010-AC5] 既存 workflow と AGENTS は gh-gantt-dev-ro
     expect(agents).toContain("PR 前の独立検証");
   });
 });
+
+describe("[NFR-STABILITY-014-AC2] dev-role runner は Run Graph control plane に outcome event を返す", () => {
+  it("skill は製品 control plane と外部 execution plane を分離し human gate の停止を定義する", async () => {
+    const devRole = await readRepoFile(`${skillDir}/SKILL.md`);
+    const workflow = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
+
+    expect(devRole).toContain("gh-gantt run start");
+    expect(devRole).toContain("gh-gantt run event");
+    expect(devRole).toContain("gh-gantt run show");
+    expect(devRole).toContain("gh-gantt run decide");
+    expect(devRole).toContain("gh-gantt run observe-pr");
+    expect(devRole).toContain("external runner");
+    expect(devRole).toContain("human_gate_required");
+    expect(devRole).toContain("agent subprocess");
+    expect(workflow).toContain("gh-gantt run resume");
+    expect(workflow).toContain("gh-gantt run decide");
+    expect(workflow).toContain("gh-gantt run observe-pr");
+    expect(workflow).toContain("外部 runner");
+    expect(workflow).toContain("human gate");
+  });
+});

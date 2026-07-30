@@ -79,6 +79,29 @@ Evidence: 読み込んだ config path、role 名、検証した artifact path、
 Config Discoveryと同時に読み、role transition、budget、human gate、control/execution境界へ適用する。
 本スキルはproject固有のcontract IDやroadmapをhard-codeせず、role artifactの受け渡しだけを汎用定義する。
 
+## Run Graph Handoff
+
+project config に versioned Graph Contract binding があり、利用中の gh-gantt が `run` command を提供する場合、
+外部 runner は role artifact を製品 control plane へ outcome event として渡す。
+
+```bash
+gh-gantt run start --issue <issue> --event-id <id> --actor <orchestrator> --json
+gh-gantt run event <run-id> --file <event.json> --json
+gh-gantt run show <run-id> --json
+```
+
+- gh-gantt は binding、transition、budget、authority、checkpoint、重複 event、stale attempt を検証する。
+- external runner は planner / implementer / executor / reviewer の execution と schema-valid artifact 作成だけを担う。
+- model provider SDK、agent subprocess、任意 shell executor は gh-gantt に内蔵しない。
+- `run show` が `human_gate_required` を返したら停止し、agent authority で承認・override しない。
+- process restart 後は `run resume` に checkpoint / evidence / side-effect state を明示し、`unknown` のまま自動再開しない。
+- `human_decision` と `pr_observed` を raw `run event` に含めない。human authority は `gh-gantt run decide`、PR live evidence は read-only の `gh-gantt run observe-pr` からだけ投入する。
+- human gate は human authority の decision evidence、または契約で許可された edge への理由付き override でのみ解除する。
+- Run Graph event は Work Graph の task status を暗黙更新しない。GitHub への反映は既存 gh-gantt workflow に委ねる。
+
+`run` command がない既存 project では、従来どおり `.dev-flow` の schema-valid artifact を handoff とする。
+artifact が存在することを durable Run Graph event が受理された証拠にはしない。
+
 ## 共通 Artifact
 
 | ファイル                         | 作成 role    | schema                                                                                             |
