@@ -490,6 +490,44 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     }
   });
 
+  it("[FR-STORE-004-AC5] nested projectはworktree rootを--fromに指定して移行できる", async () => {
+    const { repository, linked } = await makeRepositoryWithLinkedWorktree();
+    const nestedRepository = join(repository, "nested-project");
+    const nestedLinked = join(linked, "nested-project");
+    await Promise.all([
+      mkdir(join(nestedRepository, ".gantt-sync"), { recursive: true }),
+      mkdir(join(nestedLinked, ".gantt-sync"), { recursive: true }),
+    ]);
+    await Promise.all([
+      writeFile(join(nestedRepository, ".gantt-sync", "gantt.config.json"), CONFIG_V1),
+      writeFile(join(nestedLinked, ".gantt-sync", "gantt.config.json"), CONFIG_V1),
+      writeLegacy(nestedRepository, {
+        "tasks.json": TASKS_V1,
+        "sync-state.json": SYNC_STATE_V1,
+      }),
+      writeLegacy(nestedLinked, {
+        "tasks.json": TASKS_V2,
+        "sync-state.json": SYNC_STATE_V2,
+      }),
+    ]);
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    try {
+      await createStorageCommand({ projectRoot: () => nestedRepository }).parseAsync(
+        ["migrate", "--from", linked, "--json"],
+        { from: "user" },
+      );
+      expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).toEqual({
+        ok: true,
+        source: linked,
+      });
+      await expect(readSlot(nestedRepository, "tasks")).resolves.toBe(TASKS_V2);
+      await expect(readSlot(nestedRepository, "sync-state")).resolves.toBe(SYNC_STATE_V2);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("[FR-STORE-004-AC2] 同じgit-common-dirでもGitHub Project identityが異なるworktreeはnamespaceを分離する", async () => {
     const { repository, linked } = await makeRepositoryWithLinkedWorktree();
     await publishSharedCache(repository);

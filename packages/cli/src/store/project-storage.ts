@@ -583,12 +583,21 @@ async function publishSnapshot(layout: GitLayout, tasks: string, syncState: stri
 }
 
 async function selectLegacyCandidate(
+  layout: GitLayout,
   candidates: LegacyCandidate[],
   source: string,
 ): Promise<LegacyCandidate> {
   const canonicalSource = await realpath(resolve(source));
+  const acceptedSources = new Set([canonicalSource]);
+  if (layout.relativeProjectRoot !== "") {
+    try {
+      acceptedSources.add(await realpath(join(canonicalSource, layout.relativeProjectRoot)));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   for (const candidate of candidates) {
-    if ((await realpath(candidate.workspace)) === canonicalSource) return candidate;
+    if (acceptedSources.has(await realpath(candidate.workspace))) return candidate;
   }
   throw new ProjectStorageError(
     "LEGACY_SOURCE_NOT_FOUND",
@@ -652,7 +661,7 @@ async function migrateLegacy(layout: GitLayout, legacySource?: string): Promise<
     if (legacySource) {
       await publishLegacyCandidate(
         layout,
-        await selectLegacyCandidate(candidates, legacySource),
+        await selectLegacyCandidate(layout, candidates, legacySource),
         candidates,
       );
       return;
@@ -689,7 +698,7 @@ async function migrateLegacy(layout: GitLayout, legacySource?: string): Promise<
     if (legacySource) {
       await publishLegacyCandidate(
         layout,
-        await selectLegacyCandidate(candidates, legacySource),
+        await selectLegacyCandidate(layout, candidates, legacySource),
         candidates,
       );
       return;
