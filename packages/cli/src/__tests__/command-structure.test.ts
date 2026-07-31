@@ -101,4 +101,16 @@ describe("[FR-CLI-006-AC1] init/pull/push/status/create/list/show/update/link/de
       expect(topLevel).not.toBe(alias);
     }
   });
+
+  it("[FR-SYNC-003-AC7] 変更系コマンドはトップレベルと task エイリアスで --no-push を受理する", () => {
+    const taskCommand = program.commands.find((command) => command.name() === "task")!;
+
+    for (const name of ["update", "link", "close"]) {
+      const topLevel = program.commands.find((command) => command.name() === name)!;
+      const alias = taskCommand.commands.find((command) => command.name() === name)!;
+
+      expect(topLevel.options.map((option) => option.long)).toContain("--no-push");
+      expect(alias.options.map((option) => option.long)).toContain("--no-push");
+    }
+  });
 });

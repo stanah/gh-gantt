@@ -105,6 +105,7 @@ export interface GithubConfig {
 
 export interface SyncConfig {
   auto_create_issues: boolean;
+  auto_push?: boolean;
   conflict_policy?: ConflictPolicy;
   field_mapping: {
     start_date: string;

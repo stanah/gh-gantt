@@ -141,7 +141,7 @@ describe("[NFR-STABILITY-002-AC6] [Issue #302] draft 親子一括 push の paren
       ["--title", "子タスク B", "--type", "task", "--parent", "draft-1", "--json"],
       { from: "user" },
     );
-    await createTaskLinkCommand().parseAsync(["draft-3", "--blocked-by", "draft-2"], {
+    await createTaskLinkCommand().parseAsync(["draft-3", "--blocked-by", "draft-2", "--no-push"], {
       from: "user",
     });
     expect(process.exitCode).toBeUndefined();

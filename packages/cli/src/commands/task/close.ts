@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { applyTaskUpdate, type TaskUpdateOptions } from "./update.js";
+import { executeWriteThroughPush } from "./write-through-push.js";
 
 export function createTaskCloseCommand(): Command {
   return new Command("close")
@@ -9,6 +10,7 @@ export function createTaskCloseCommand(): Command {
     .argument("<id>", "Task ID (e.g. 6, #6, owner/repo#6)")
     .option("--approve-review <login>", "Mark review as approved by the assigned reviewer")
     .option("--evidence <summary>", "Record close evidence in the issue body")
+    .option("--no-push", "Do not push this change to GitHub immediately")
     .option("--json", "Output closed task as JSON")
     .action(async (id: string, opts) => {
       try {
@@ -44,6 +46,9 @@ export function createTaskCloseCommand(): Command {
             tasksFile.tasks[taskIndex] = result.task;
             await tasksStore.write(tasksFile);
             await storage.flush();
+            await executeWriteThroughPush(storage, config, tasksFile, [resolvedId], {
+              push: opts.push,
+            });
 
             const evidence = typeof opts.evidence === "string" ? opts.evidence.trim() : "";
             if (evidence.length === 0 && config.require_close_evidence !== true) {

@@ -89,6 +89,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/push-executor.test.ts
+          - id: FR-SYNC-003-AC7
+            description: update / close / link は auto_push を既定で有効にし、--no-push による抑止、変更 task 限定の即時同期、対象単位の conflict skip、失敗後のローカル差分保持を行える
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/command-structure.test.ts
+              - packages/cli/src/__tests__/push-executor.test.ts
+              - packages/cli/src/__tests__/write-through-push.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
       - id: FR-SYNC-004
         summary: リモートデータからローカルタスクへのマッピング
         acceptance_criteria:

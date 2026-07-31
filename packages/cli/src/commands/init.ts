@@ -200,6 +200,7 @@ export const initCommand = new Command("init")
       },
       sync: {
         auto_create_issues: false,
+        auto_push: true,
         conflict_policy: { ...DEFAULT_CONFLICT_POLICY },
         field_mapping: fieldMapping,
       },

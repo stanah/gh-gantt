@@ -115,7 +115,7 @@ describe("[FR-CLI-016-AC1] close command の evidence warning", () => {
   it("空白だけの --evidence は実効証跡なしとして警告する", async () => {
     const cmd = createTaskCloseCommand();
 
-    await cmd.parseAsync(["close", "1", "--evidence", "   "], { from: "user" });
+    await cmd.parseAsync(["close", "1", "--evidence", "   ", "--no-push"], { from: "user" });
 
     expect(process.exitCode).toBeUndefined();
     expect(errorSpy).not.toHaveBeenCalled();

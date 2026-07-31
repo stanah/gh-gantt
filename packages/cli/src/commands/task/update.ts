@@ -1,6 +1,7 @@
 import { Command } from "commander";
 import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
+import { executeWriteThroughPush } from "./write-through-push.js";
 import type { Config, Task } from "@gh-gantt/shared";
 import {
   computeStatusDateUpdates,
@@ -358,6 +359,7 @@ export function createTaskUpdateCommand(): Command {
     .option("--filter-type <type>", "Bulk filter: match tasks by type")
     .option("--filter-milestone <name>", "Bulk filter: match tasks by milestone ('none' for unset)")
     .option("--filter-label <name>", "Bulk filter: match tasks by label")
+    .option("--no-push", "Do not push this change to GitHub immediately")
     .option("--json", "Output updated task(s) as JSON")
     .action(async (id: string | undefined, opts) => {
       try {
@@ -414,6 +416,9 @@ export function createTaskUpdateCommand(): Command {
               tasksFile.tasks[taskIndex] = result.task;
               await tasksStore.write(tasksFile);
               await storage.flush();
+              await executeWriteThroughPush(storage, config, tasksFile, [resolvedId], {
+                push: opts.push,
+              });
 
               if (opts.json) {
                 console.log(JSON.stringify(result.task, null, 2));
@@ -466,6 +471,13 @@ export function createTaskUpdateCommand(): Command {
 
               await tasksStore.write(tasksFile);
               await storage.flush();
+              await executeWriteThroughPush(
+                storage,
+                config,
+                tasksFile,
+                updatedTasks.map((task) => task.id),
+                { push: opts.push },
+              );
 
               if (opts.json) {
                 console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
