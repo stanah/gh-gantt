@@ -1074,13 +1074,18 @@ export interface RunGraphView {
   schemaVersion: "1";
   runId: string;
   task: { owner: string; repo: string; issueNumber: number };
+  contract: RunGraphRun["contract"];
   revision: number;
   state: RunGraphRunState;
+  createdAt: string;
+  updatedAt: string;
   currentNode: RunGraphNode | null;
   activeAttempt: RunGraphAttempt | null;
   waitReason: string | null;
   budgets: RunGraphBudgetProjection;
   allowedNextTransitions: RunGraphRunnerCommandType[];
+  nodes: RunGraphBoundedCollection<RunGraphNode>;
+  attempts: RunGraphBoundedCollection<RunGraphAttempt>;
   artifacts: RunGraphBoundedCollection<RunGraphArtifact>;
   evidence: RunGraphBoundedCollection<RunGraphEvidence>;
 }
@@ -1254,19 +1259,26 @@ function boundedCollectionSchema<T>(
 
 const BoundedArtifactCollectionSchema = boundedCollectionSchema(RunGraphArtifactSchema);
 const BoundedEvidenceCollectionSchema = boundedCollectionSchema(RunGraphEvidenceSchema);
+const BoundedNodeCollectionSchema = boundedCollectionSchema(RunGraphNodeSchema);
+const BoundedAttemptCollectionSchema = boundedCollectionSchema(RunGraphAttemptSchema);
 
 export const RunGraphViewSchema: z.ZodType<RunGraphView> = z
   .object({
     schemaVersion: z.literal("1"),
     runId: OpaqueIdSchema,
     task: TaskReferenceSchema,
+    contract: ContractReferenceSchema,
     revision: z.number().int().nonnegative(),
     state: z.enum(RUN_GRAPH_RUN_STATES),
+    createdAt: TimestampSchema,
+    updatedAt: TimestampSchema,
     currentNode: RunGraphNodeSchema.nullable(),
     activeAttempt: RunGraphAttemptSchema.nullable(),
     waitReason: z.string().min(1).max(2000).nullable(),
     budgets: RunGraphBudgetProjectionSchema,
     allowedNextTransitions: z.array(z.enum(RUN_GRAPH_RUNNER_COMMAND_TYPES)),
+    nodes: BoundedNodeCollectionSchema,
+    attempts: BoundedAttemptCollectionSchema,
     artifacts: BoundedArtifactCollectionSchema,
     evidence: BoundedEvidenceCollectionSchema,
   })

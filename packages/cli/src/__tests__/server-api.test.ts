@@ -1,12 +1,22 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { ConfigStore } from "../store/config.js";
 import { TasksStore } from "../store/tasks.js";
 import { CommentsStore } from "../store/comments.js";
+import { GraphContractStore } from "../store/graph-contract.js";
+import { RunGraphEventStore } from "../store/run-graph.js";
+import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { createApiRouter } from "../server/api.js";
-import type { Config, Task } from "@gh-gantt/shared";
+import {
+  FIXED_DEV_ROLE_GRAPH_CONTRACT,
+  GANTT_DIR,
+  GRAPH_CONTRACTS_DIR,
+  RUN_GRAPH_DIR,
+  type Config,
+  type Task,
+} from "@gh-gantt/shared";
 
 describe("createApiRouter", () => {
   let dir: string;
@@ -15,7 +25,253 @@ describe("createApiRouter", () => {
     dir = await mkdtemp(join(tmpdir(), "gh-gantt-api-test-"));
   });
 
+  async function seedRunGraphProject(): Promise<Task> {
+    const configStore = new ConfigStore(dir);
+    const tasksStore = new TasksStore(dir);
+    const commentsStore = new CommentsStore(dir);
+    const task = {
+      id: "o/r#330",
+      type: "task",
+      github_issue: 330,
+      github_repo: "o/r",
+      parent: null,
+      sub_tasks: [],
+      title: "Run Graph を表示する",
+      body: null,
+      state: "open" as const,
+      state_reason: null,
+      assignees: [],
+      labels: [],
+      milestone: null,
+      linked_prs: [],
+      created_at: "2026-07-30T00:00:00.000Z",
+      updated_at: "2026-07-30T00:00:00.000Z",
+      closed_at: null,
+      acceptance_criteria: [],
+      acceptance_criteria_slot: false,
+      implementer: null,
+      reviewer: null,
+      require_review: false,
+      review_approved_by: null,
+      review_approved_at: null,
+      custom_fields: {},
+      start_date: null,
+      end_date: null,
+      date: null,
+      blocked_by: [],
+    } satisfies Task;
+    await configStore.write({
+      version: "1",
+      project: { name: "test", github: { owner: "o", repo: "r", project_number: 1 } },
+      sync: { auto_create_issues: false, field_mapping: { start_date: "S", end_date: "E" } },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#333333", github_label: null },
+      },
+      type_hierarchy: { task: [] },
+      statuses: { field_name: "Status", values: {} },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#f00", on_track: "#0f0", at_risk: "#ff0", overdue: "#f00" },
+      },
+      run_graph: { plan_id: "dev-role-fixed", plan_version: "1", schema_version: "1" },
+    });
+    await tasksStore.write({ tasks: [task], cache: { comments: {}, reactions: {} } });
+    await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
+    await new RunGraphEventStore(dir).ensureRunLocatorIndex();
+    return task;
+  }
+
+  async function callRunGraphRoute(query: Record<string, unknown>) {
+    const router = createApiRouter(dir);
+    const routeLayer = router.stack.find(
+      (layer: any) => layer.route?.path === "/api/project-map/run-graph",
+    );
+    const handler = routeLayer?.route?.stack?.[0]?.handle as
+      | ((req: unknown, res: unknown) => Promise<void>)
+      | undefined;
+    if (!handler) throw new Error("GET /api/project-map/run-graph handler not found");
+    let statusCode = 200;
+    let jsonPayload: unknown;
+    const res = {
+      status(code: number) {
+        statusCode = code;
+        return this;
+      },
+      json(payload: unknown) {
+        jsonPayload = payload;
+        return this;
+      },
+    };
+    await handler({ query }, res);
+    return { statusCode, jsonPayload };
+  }
+
+  it("[FR-VIS-026-AC4] GET /api/project-map/run-graph は run/node deep link を bounded detail で返す", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const started = await new RunGraphControlPlane(dir).start({
+      schemaVersion: "1",
+      eventId: "start-330",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 330 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    if (!started.accepted || !started.view.currentNode) throw new Error("run start failure");
+
+    const response = await callRunGraphRoute({
+      taskId: "o/r#330",
+      runId: started.view.runId,
+      nodeId: started.view.currentNode.id,
+      limit: "1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonPayload).toMatchObject({
+      schemaVersion: "1",
+      taskId: "o/r#330",
+      runs: { total: 1, limit: 1, truncated: false },
+      selectedRun: {
+        runId: started.view.runId,
+        selectedNodeId: started.view.currentNode.id,
+        actual: {
+          nodes: [{ id: started.view.currentNode.id, contractNodeId: "planner" }],
+          nodesTruncated: false,
+        },
+      },
+    });
+    expect(JSON.stringify(response.jsonPayload)).not.toContain("runner log");
+
+    await expect(
+      callRunGraphRoute({
+        taskId: "o/r#330",
+        runId: started.view.runId,
+        nodeId: "missing-node",
+        limit: "1",
+      }),
+    ).resolves.toMatchObject({ statusCode: 404 });
+  });
+
+  it("[FR-VIS-026-AC4] detail limit の範囲外と未知 run を拒否する", async () => {
+    await seedRunGraphProject();
+
+    await expect(callRunGraphRoute({ limit: "20" })).resolves.toMatchObject({ statusCode: 400 });
+    await expect(callRunGraphRoute({ taskId: "o/r#330", limit: "51" })).resolves.toMatchObject({
+      statusCode: 400,
+    });
+    await expect(
+      callRunGraphRoute({ taskId: "o/r#330", runId: "missing-run", limit: "20" }),
+    ).resolves.toMatchObject({ statusCode: 404 });
+  });
+
+  it("[NFR-STABILITY-014-AC4] locator writer が使用中なら短時間で 503 を返す", async () => {
+    await seedRunGraphProject();
+    const lockDir = join(dir, GANTT_DIR, RUN_GRAPH_DIR, "locator-index", "LOCK");
+    await mkdir(lockDir, { recursive: true });
+    await writeFile(
+      join(lockDir, "owner.json"),
+      JSON.stringify({
+        schemaVersion: "1",
+        pid: process.pid,
+        hostname: hostname(),
+        nonce: "00000000-0000-4000-8000-000000000005",
+      }),
+    );
+
+    const startedAt = Date.now();
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+    const elapsedMs = Date.now() - startedAt;
+
+    expect(response.statusCode).toBe(503);
+    expect(response.jsonPayload).toEqual({
+      error: "Run Graph locator index is temporarily unavailable",
+    });
+    expect(elapsedMs).toBeLessThan(1_000);
+  });
+
+  it("[NFR-STABILITY-014-AC1] binding 済み contract が欠損した Run Graph を fail-closed にする", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const started = await new RunGraphControlPlane(dir).start({
+      schemaVersion: "1",
+      eventId: "start-missing-contract",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 330 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    if (!started.accepted) throw new Error("run start failure");
+    await rm(join(dir, GANTT_DIR, RUN_GRAPH_DIR, GRAPH_CONTRACTS_DIR), {
+      recursive: true,
+      force: true,
+    });
+
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+
+    expect(response.statusCode).toBe(500);
+    expect(response.jsonPayload).toMatchObject({
+      error: expect.stringContaining("Graph Contract が見つかりません"),
+    });
+  });
+
+  it("[FR-VIS-026-AC4] API request ごとの journal replay を limit 件に抑える", async () => {
+    await seedRunGraphProject();
+    await new GraphContractStore(dir).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const control = new RunGraphControlPlane(dir);
+    const runIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const started = await control.start({
+        schemaVersion: "1",
+        eventId: `bounded-start-${index}`,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "o", repo: "r", issueNumber: 330 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      });
+      if (!started.accepted) throw new Error("run start failure");
+      runIds.push(started.view.runId);
+    }
+    await control.start({
+      schemaVersion: "1",
+      eventId: "bounded-start-other-task",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "o", repo: "r", issueNumber: 331 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    const inspect = vi.spyOn(RunGraphControlPlane.prototype, "inspect");
+    const listRunIds = vi
+      .spyOn(RunGraphEventStore.prototype, "listRunIds")
+      .mockRejectedValue(new Error("request path の全 Run 走査は禁止"));
+
+    const response = await callRunGraphRoute({
+      taskId: "o/r#330",
+      runId: runIds[0],
+      limit: "1",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(inspect).toHaveBeenCalledTimes(1);
+    expect(listRunIds).not.toHaveBeenCalled();
+    expect(inspect).toHaveBeenCalledWith(runIds[0], 1, undefined);
+    expect(response.jsonPayload).toMatchObject({
+      runs: { total: 3, limit: 1, truncated: true, items: [{ runId: runIds[0] }] },
+    });
+  });
+
+  it("[FR-VIS-026-AC5] Run Graph がなければ既存 task に空の overlay を返す", async () => {
+    await seedRunGraphProject();
+
+    const response = await callRunGraphRoute({ taskId: "o/r#330", limit: "20" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.jsonPayload).toEqual({
+      schemaVersion: "1",
+      taskId: "o/r#330",
+      runs: { total: 0, limit: 20, truncated: false, items: [] },
+      selectedRun: null,
+    });
+  });
+
   afterEach(async () => {
+    vi.restoreAllMocks();
     await rm(dir, { recursive: true, force: true });
   });
 

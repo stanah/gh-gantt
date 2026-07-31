@@ -12,7 +12,20 @@ import { createGraphQLClient } from "../github/client.js";
 import { buildDraftTaskId, getNextDraftNumber } from "../github/issues.js";
 import { resolveTaskId } from "../util/task-id.js";
 import type { Task, StatusValue, Dependency } from "@gh-gantt/shared";
-import { computeStatusDateUpdates, DependencySchema, TaskSchema } from "@gh-gantt/shared";
+import {
+  buildProjectMapRunGraphViewModel,
+  computeStatusDateUpdates,
+  DependencySchema,
+  ProjectMapRunGraphViewModelSchema,
+  TaskSchema,
+} from "@gh-gantt/shared";
+import { GraphContractStore } from "../store/graph-contract.js";
+import {
+  RunGraphEventStore,
+  RunGraphLocatorIndexBusyError,
+  RunGraphLocatorIndexNotReadyError,
+} from "../store/run-graph.js";
+import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 
 const CreateTaskRequestSchema = z
   .object({
@@ -49,6 +62,24 @@ const UpdateTaskRequestSchema = z
     sub_tasks: z.unknown().optional(),
   })
   .strict();
+
+const ProjectMapRunGraphQuerySchema = z
+  .object({
+    taskId: z.string().trim().min(1).max(500),
+    runId: z.string().trim().min(1).max(200).optional(),
+    nodeId: z.string().trim().min(1).max(200).optional(),
+    limit: z.coerce.number().int().min(1).max(50).default(20),
+  })
+  .strict()
+  .superRefine((query, context) => {
+    if (query.nodeId && !query.runId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["nodeId"],
+        message: "nodeId requires runId",
+      });
+    }
+  });
 
 /** newParentId から親方向へ遡り taskId に到達する場合 true (循環になる)。 */
 function wouldCreateCycle(tasks: Task[], taskId: string, newParentId: string): boolean {
@@ -636,6 +667,99 @@ export function createApiRouter(projectRoot: string): Router {
     } catch (err) {
       res.status(500).json({
         error: "Failed to reparent task: " + (err instanceof Error ? err.message : String(err)),
+      });
+    }
+  });
+
+  // planned-vs-actual Run Graph: GET /api/project-map/run-graph
+  router.get("/api/project-map/run-graph", async (req, res) => {
+    const query = ProjectMapRunGraphQuerySchema.safeParse(req.query);
+    if (!query.success) {
+      res.status(400).json({ error: "Invalid Project Map Run Graph query" });
+      return;
+    }
+
+    try {
+      const selectedTask = await withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "shared-cache" },
+        async ({ tasksStore }) => {
+          const tasksFile = await tasksStore.read();
+          return tasksFile.tasks.find((task) => task.id === query.data.taskId) ?? null;
+        },
+      );
+      if (!selectedTask) {
+        res.status(404).json({ error: "Task not found" });
+        return;
+      }
+      if (selectedTask.github_issue == null) {
+        res.status(400).json({ error: "Draft task does not have a Run Graph target" });
+        return;
+      }
+
+      const eventStore = new RunGraphEventStore(projectRoot);
+      const controlPlane = new RunGraphControlPlane(projectRoot);
+      const [owner, repo] = selectedTask.github_repo.split("/");
+      if (!owner || !repo) throw new Error("Task github_repo が owner/repo 形式ではありません");
+      const locators = await eventStore.listRunLocators({
+        task: { owner, repo, issueNumber: selectedTask.github_issue },
+        limit: query.data.limit,
+        ...(query.data.runId ? { selectedRunId: query.data.runId } : {}),
+      });
+      if (query.data.runId && !locators.items.some((item) => item.runId === query.data.runId)) {
+        res.status(404).json({ error: "Run Graph not found for the selected task" });
+        return;
+      }
+      const views = [];
+      for (const locator of locators.items) {
+        views.push(
+          await controlPlane.inspect(
+            locator.runId,
+            query.data.limit,
+            locator.runId === query.data.runId ? query.data.nodeId : undefined,
+          ),
+        );
+      }
+      const selectedView = query.data.runId
+        ? (views.find((view) => view.runId === query.data.runId) ?? null)
+        : (views[0] ?? null);
+      if (
+        query.data.nodeId &&
+        !selectedView?.nodes.items.some((node) => node.id === query.data.nodeId)
+      ) {
+        res.status(404).json({ error: "Run Graph node not found" });
+        return;
+      }
+      const contract = selectedView
+        ? await new GraphContractStore(projectRoot).read(selectedView.contract)
+        : null;
+      const taskId = selectedTask.id;
+
+      res.json(
+        ProjectMapRunGraphViewModelSchema.parse(
+          buildProjectMapRunGraphViewModel({
+            taskId,
+            contract,
+            runViews: views,
+            selectedRunId: selectedView?.runId ?? null,
+            selectedNodeId: query.data.nodeId ?? null,
+            limit: query.data.limit,
+            totalRuns: locators.total,
+          }),
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof RunGraphLocatorIndexBusyError ||
+        error instanceof RunGraphLocatorIndexNotReadyError
+      ) {
+        res.status(503).json({ error: "Run Graph locator index is temporarily unavailable" });
+        return;
+      }
+      res.status(500).json({
+        error:
+          "Failed to build Project Map Run Graph: " +
+          (error instanceof Error ? error.message : String(error)),
       });
     }
   });

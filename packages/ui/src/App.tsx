@@ -26,6 +26,8 @@ import { useCustomNonWorkingDays } from "./hooks/useCustomNonWorkingDays.js";
 import { useHolidayPreset } from "./hooks/useHolidayPreset.js";
 import { useFilterPresets, type FilterPresetState } from "./hooks/useFilterPresets.js";
 import { useTaskDeepLink } from "./hooks/useTaskDeepLink.js";
+import { useProjectMapRunGraph } from "./hooks/useProjectMapRunGraph.js";
+import { useRunGraphDeepLink } from "./hooks/useRunGraphDeepLink.js";
 import { downloadGanttExport } from "./lib/export-download.js";
 import type { ExportRequest } from "./components/toolbar/ExportMenu.js";
 
@@ -80,7 +82,20 @@ export function App() {
   const [hoveredTaskId, setHoveredTaskId] = useState<string | null>(null);
   const [detailPanelWidth, setDetailPanelWidth] = useState(400);
   const [viewScale, setViewScale] = useState<ViewScale>("month");
-  const [viewMode, setViewMode] = useState<AppViewMode>("gantt");
+  const [viewMode, setViewMode] = useState<AppViewMode>(() => {
+    if (typeof window === "undefined") return "gantt";
+    return new URL(window.location.href).searchParams.get("view") === "project-map"
+      ? "project-map"
+      : "gantt";
+  });
+  const { selectedRunId, selectedNodeId, setSelectedRunId, setSelectedNodeId, clearRunSelection } =
+    useRunGraphDeepLink();
+  const projectMapRunGraph = useProjectMapRunGraph(
+    selectedTaskId,
+    selectedRunId,
+    selectedNodeId,
+    viewMode === "project-map",
+  );
   const [taskSortMode, setTaskSortMode] = useState<TaskSortMode>("default");
   const [labelGroupingEnabled, setLabelGroupingEnabled] = useState(false);
   const [ganttHeader, setGanttHeader] = useState<React.ReactNode>(null);
@@ -130,17 +145,27 @@ export function App() {
     setGanttHeader(node);
   }, []);
 
-  const handleSelectTask = useCallback((taskId: string) => {
-    setSelectedTaskId((prev) => (prev === taskId ? null : taskId));
-  }, []);
+  const handleSelectTask = useCallback(
+    (taskId: string) => {
+      const nextTaskId = selectedTaskId === taskId ? null : taskId;
+      if (nextTaskId !== selectedTaskId) clearRunSelection();
+      setSelectedTaskId(nextTaskId);
+    },
+    [clearRunSelection, selectedTaskId, setSelectedTaskId],
+  );
 
   const handleDeselectTask = useCallback(() => {
+    clearRunSelection();
     setSelectedTaskId(null);
-  }, []);
+  }, [clearRunSelection, setSelectedTaskId]);
 
-  const activateTask = useCallback((taskId: string) => {
-    setSelectedTaskId(taskId);
-  }, []);
+  const activateTask = useCallback(
+    (taskId: string) => {
+      if (taskId !== selectedTaskId) clearRunSelection();
+      setSelectedTaskId(taskId);
+    },
+    [clearRunSelection, selectedTaskId, setSelectedTaskId],
+  );
 
   const {
     enabled,
@@ -773,6 +798,16 @@ export function App() {
                     config={config}
                     selectedTaskId={selectedTaskId}
                     onSelectTask={handleSelectTask}
+                    runGraphViewModel={projectMapRunGraph.viewModel}
+                    runGraphLoading={projectMapRunGraph.loading}
+                    runGraphError={projectMapRunGraph.error}
+                    onSelectRun={setSelectedRunId}
+                    onSelectRunNode={(nodeId) =>
+                      setSelectedNodeId(
+                        nodeId,
+                        projectMapRunGraph.viewModel?.selectedRun?.runId ?? null,
+                      )
+                    }
                     syncRefreshKey={syncing}
                   />
                 ) : null}

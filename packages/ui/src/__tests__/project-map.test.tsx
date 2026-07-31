@@ -93,7 +93,7 @@ function renderPage(selectedTaskId: string | null, onSelectTask = vi.fn()) {
 }
 
 describe("[FR-VIS-024] Project Map ページ", () => {
-  it("5 パネルのレイアウトと System Tree のタスクが描画される", () => {
+  it("6 パネルのレイアウトと System Tree のタスクが描画される", () => {
     const { container, getByText } = renderPage(null);
     expect(container.querySelector('[data-testid="project-map-page"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="project-map-layout"]')).not.toBeNull();
@@ -103,6 +103,8 @@ describe("[FR-VIS-024] Project Map ページ", () => {
     expect(getByText("Dependency Map")).toBeTruthy();
     expect(getByText("Next Actions")).toBeTruthy();
     expect(getByText("Compact Gantt")).toBeTruthy();
+    expect(getByText("Planned vs Actual")).toBeTruthy();
+    expect(container.querySelector('[aria-label="Run Graph"]')).not.toBeNull();
   });
 
   it("依存解除済みでない t2 は Ready Now ではなく Blocked 列に出る（t1 完了済みなら Ready）", () => {

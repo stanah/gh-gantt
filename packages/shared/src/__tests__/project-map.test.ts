@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { Config, Task } from "../types.js";
+import { FIXED_DEV_ROLE_GRAPH_CONTRACT, type RunGraphView } from "../run-graph.js";
 import {
+  buildProjectMapRunGraphViewModel,
+  ProjectMapRunGraphViewModelSchema,
   buildProjectMapViewModel,
   buildBoardColumns,
   buildTaskHierarchy,
@@ -315,5 +318,465 @@ describe("優先度の正規化", () => {
       getNormalizedPriority(baseTask({ custom_fields: { Priority: "??" } }), config),
     ).toBeNull();
     expect(getNormalizedPriority(baseTask({ custom_fields: {} }), config)).toBeNull();
+  });
+});
+
+function runView(overrides: Partial<RunGraphView> = {}): RunGraphView {
+  const actor = { id: "runner-1", role: "executor" } as const;
+  const nodes: RunGraphView["nodes"]["items"] = [
+    {
+      id: "node-planner",
+      runId: "run-330",
+      contractNodeId: "planner",
+      state: "completed",
+      actor: { id: "planner-1", role: "planner" },
+      createdAt: "2026-07-30T00:00:00.000Z",
+      updatedAt: "2026-07-30T00:01:00.000Z",
+      activeAttemptId: null,
+      previousNodeId: null,
+      inputArtifactIds: [],
+      outputArtifactIds: ["artifact-plan"],
+    },
+    {
+      id: "node-implementer-1",
+      runId: "run-330",
+      contractNodeId: "implementer",
+      state: "completed",
+      actor: { id: "implementer-1", role: "implementer" },
+      createdAt: "2026-07-30T00:01:00.000Z",
+      updatedAt: "2026-07-30T00:03:00.000Z",
+      activeAttemptId: null,
+      previousNodeId: "node-planner",
+      inputArtifactIds: ["artifact-plan"],
+      outputArtifactIds: ["artifact-impl"],
+    },
+    {
+      id: "node-executor",
+      runId: "run-330",
+      contractNodeId: "executor",
+      state: "completed",
+      actor,
+      createdAt: "2026-07-30T00:03:00.000Z",
+      updatedAt: "2026-07-30T00:04:00.000Z",
+      activeAttemptId: null,
+      previousNodeId: "node-implementer-1",
+      inputArtifactIds: ["artifact-impl"],
+      outputArtifactIds: [],
+    },
+    {
+      id: "node-implementer-2",
+      runId: "run-330",
+      contractNodeId: "implementer",
+      state: "ready",
+      actor: { id: "implementer", role: "implementer" },
+      createdAt: "2026-07-30T00:04:00.000Z",
+      updatedAt: "2026-07-30T00:04:00.000Z",
+      activeAttemptId: null,
+      previousNodeId: "node-executor",
+      inputArtifactIds: ["artifact-plan", "artifact-impl"],
+      outputArtifactIds: [],
+    },
+  ];
+  const attempts: RunGraphView["attempts"]["items"] = [
+    {
+      id: "attempt-executor",
+      runId: "run-330",
+      nodeId: "node-executor",
+      ordinal: 1,
+      state: "succeeded",
+      actor,
+      createdAt: "2026-07-30T00:03:00.000Z",
+      updatedAt: "2026-07-30T00:04:00.000Z",
+      previousAttemptId: null,
+      inputArtifactIds: ["artifact-impl"],
+      outputArtifactIds: [],
+    },
+  ];
+  return {
+    schemaVersion: "1",
+    runId: "run-330",
+    task: { owner: "stanah", repo: "gh-gantt", issueNumber: 330 },
+    contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    revision: 10,
+    state: "running",
+    createdAt: "2026-07-30T00:00:00.000Z",
+    updatedAt: "2026-07-30T00:04:00.000Z",
+    currentNode: nodes.at(-1)!,
+    activeAttempt: null,
+    waitReason: null,
+    budgets: { executorRetries: 1, improvementIterations: 0 },
+    allowedNextTransitions: ["attempt_started"],
+    nodes: { total: nodes.length, limit: 20, truncated: false, items: nodes },
+    attempts: { total: attempts.length, limit: 20, truncated: false, items: attempts },
+    artifacts: { total: 0, limit: 20, truncated: false, items: [] },
+    evidence: { total: 0, limit: 20, truncated: false, items: [] },
+    ...overrides,
+  };
+}
+
+describe("[FR-VIS-026-AC1] planned と actual の Run Graph を同じ ViewModel に導出する", () => {
+  it("planned node/edge と actual transition を stable ID で対応付ける", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      selectedRunId: "run-330",
+      selectedNodeId: "node-executor",
+      limit: 20,
+    });
+
+    expect(vm.selectedRun?.planned.nodes.items.map((node) => node.id)).toContain("executor");
+    expect(vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")).toMatchObject({
+      contractNodeId: "executor",
+      displayState: "completed",
+      isPlanned: true,
+    });
+    expect(vm.selectedRun?.actual.transitions).toContainEqual(
+      expect.objectContaining({
+        fromNodeId: "node-implementer-1",
+        toNodeId: "node-executor",
+        isPlanned: true,
+      }),
+    );
+    expect(vm.selectedRun?.selectedNodeId).toBe("node-executor");
+  });
+});
+
+describe("[FR-VIS-026-AC2] Run Graph の状態と attempt 要約を導出する", () => {
+  it("active run、retrying node、actor、duration、待機理由を区別する", () => {
+    const waiting = runView({ state: "waiting_human", waitReason: "review_budget_exhausted" });
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [waiting],
+      selectedRunId: "run-330",
+    });
+
+    expect(vm.selectedRun?.displayState).toBe("waiting_human");
+    expect(vm.selectedRun?.waitReason).toBe("review_budget_exhausted");
+    expect(
+      vm.selectedRun?.actual.nodes.find((node) => node.id === "node-implementer-2")?.displayState,
+    ).toBe("retrying");
+    expect(vm.selectedRun?.actual.attempts[0]).toMatchObject({
+      id: "attempt-executor",
+      nodeId: "node-executor",
+      actor: { id: "runner-1", role: "executor" },
+      durationMs: 60000,
+      evidenceCount: 0,
+    });
+  });
+
+  it("timed_out と stalled の attempt に終了時刻を設定する", () => {
+    const base = runView();
+    for (const state of ["timed_out", "stalled"] as const) {
+      const attempt = { ...base.attempts.items[0]!, state };
+      const vm = buildProjectMapRunGraphViewModel({
+        taskId: "stanah/gh-gantt#330",
+        contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+        runViews: [
+          runView({
+            attempts: { total: 1, limit: 20, truncated: false, items: [attempt] },
+          }),
+        ],
+      });
+      expect(vm.selectedRun?.actual.attempts[0]?.endedAt).toBe(attempt.updatedAt);
+    }
+  });
+
+  it("active / queued / running / waiting_human / failed / completed / cancelled を正規化する", () => {
+    const runCases = [
+      ["pending", "queued"],
+      ["running", "active"],
+      ["paused", "active"],
+      ["waiting_human", "waiting_human"],
+      ["failed", "failed"],
+      ["completed", "completed"],
+      ["cancelled", "cancelled"],
+    ] as const;
+    for (const [state, expected] of runCases) {
+      const vm = buildProjectMapRunGraphViewModel({
+        taskId: "stanah/gh-gantt#330",
+        contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+        runViews: [runView({ state })],
+      });
+      expect(vm.selectedRun?.displayState).toBe(expected);
+    }
+
+    const base = runView();
+    const first = base.nodes.items[0]!;
+    for (const [state, expected] of [
+      ["ready", "queued"],
+      ["running", "running"],
+      ["waiting_human", "waiting_human"],
+      ["failed", "failed"],
+      ["completed", "completed"],
+      ["cancelled", "cancelled"],
+    ] as const) {
+      const node = { ...first, state };
+      const vm = buildProjectMapRunGraphViewModel({
+        taskId: "stanah/gh-gantt#330",
+        contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+        runViews: [
+          runView({
+            currentNode: node,
+            nodes: { total: 1, limit: 20, truncated: false, items: [node] },
+            attempts: { total: 0, limit: 20, truncated: false, items: [] },
+          }),
+        ],
+      });
+      expect(vm.selectedRun?.actual.nodes[0]?.displayState).toBe(expected);
+    }
+  });
+});
+
+describe("[FR-VIS-026-AC3] planned との差分と unknown metric を保持する", () => {
+  it("同じ node の2回目以降の attempt を retry deviation として扱う", () => {
+    const base = runView();
+    const planner = { ...base.nodes.items[0]!, state: "ready" as const };
+    const firstAttempt = {
+      ...base.attempts.items[0]!,
+      id: "attempt-planner-1",
+      nodeId: planner.id,
+      ordinal: 1,
+      state: "failed" as const,
+    };
+    const retryAttempt = {
+      ...firstAttempt,
+      id: "attempt-planner-2",
+      ordinal: 2,
+      state: "created" as const,
+      previousAttemptId: firstAttempt.id,
+    };
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [
+        runView({
+          currentNode: planner,
+          nodes: { total: 1, limit: 20, truncated: false, items: [planner] },
+          attempts: {
+            total: 2,
+            limit: 20,
+            truncated: false,
+            items: [firstAttempt, retryAttempt],
+          },
+        }),
+      ],
+    });
+
+    expect(vm.selectedRun?.actual.nodes[0]?.displayState).toBe("retrying");
+    expect(vm.selectedRun?.deviations).toContainEqual(
+      expect.objectContaining({ kind: "retry", nodeId: planner.id }),
+    );
+  });
+
+  it("fallback/retry を deviation とし、未取得の token/cost/latency を 0 にしない", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      selectedRunId: "run-330",
+    });
+
+    expect(vm.selectedRun?.deviations.map((item) => item.kind)).toEqual(
+      expect.arrayContaining(["retry", "fallback"]),
+    );
+    expect(vm.selectedRun?.metrics.duration).toMatchObject({ known: true, value: 240000 });
+    expect(vm.selectedRun?.metrics.tokens).toEqual({ known: false, value: null, unit: "token" });
+    expect(vm.selectedRun?.metrics.cost).toEqual({ known: false, value: null, unit: "currency" });
+    expect(vm.selectedRun?.metrics.latency).toEqual({
+      known: false,
+      value: null,
+      unit: "ms",
+    });
+  });
+
+  it("planned にない node/edge、skip、cancel を deviation として列挙する", () => {
+    const base = runView();
+    const planner = base.nodes.items[0]!;
+    const executor = {
+      ...base.nodes.items[2]!,
+      previousNodeId: planner.id,
+      state: "cancelled" as const,
+    };
+    const rogue = {
+      ...base.nodes.items[1]!,
+      id: "node-rogue",
+      contractNodeId: "rogue",
+      previousNodeId: executor.id,
+    };
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [
+        runView({
+          state: "cancelled",
+          currentNode: rogue,
+          nodes: { total: 3, limit: 20, truncated: false, items: [planner, executor, rogue] },
+          attempts: { total: 0, limit: 20, truncated: false, items: [] },
+        }),
+      ],
+    });
+
+    expect(vm.selectedRun?.deviations.map((item) => item.kind)).toEqual(
+      expect.arrayContaining(["unexpected_node", "unexpected_edge", "skip", "cancel"]),
+    );
+  });
+
+  it("複数種別の deviation が schema 上限を超えても bounded に切り詰める", () => {
+    const base = runView();
+    const nodes = Array.from({ length: 50 }, (_, index) => ({
+      ...base.nodes.items[0]!,
+      id: `node-overflow-${index}`,
+      contractNodeId: "rogue",
+      state: "cancelled" as const,
+      previousNodeId: `node-overflow-${(index + 49) % 50}`,
+      outputArtifactIds: [],
+    }));
+    const attempts = nodes.map((node, index) => ({
+      ...base.attempts.items[0]!,
+      id: `attempt-overflow-${index}`,
+      nodeId: node.id,
+      ordinal: 2,
+      state: "failed" as const,
+      previousAttemptId: null,
+    }));
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: null,
+      runViews: [
+        runView({
+          state: "cancelled",
+          currentNode: nodes.at(-1)!,
+          nodes: { total: 50, limit: 50, truncated: false, items: nodes },
+          attempts: { total: 50, limit: 50, truncated: false, items: attempts },
+        }),
+      ],
+      limit: 50,
+    });
+
+    expect(vm.selectedRun?.deviations).toHaveLength(200);
+    expect(vm.selectedRun?.deviationsTruncated).toBe(true);
+    expect(ProjectMapRunGraphViewModelSchema.safeParse(vm).success).toBe(true);
+  });
+
+  it("Graph Contract の direct branch edge を node 配列順だけで skip としない", () => {
+    const base = runView();
+    const planner = base.nodes.items[0]!;
+    const human = {
+      ...base.nodes.items[1]!,
+      id: "node-human",
+      contractNodeId: "human-pr",
+      previousNodeId: planner.id,
+    };
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [
+        runView({
+          currentNode: human,
+          nodes: { total: 2, limit: 20, truncated: false, items: [planner, human] },
+          attempts: { total: 0, limit: 20, truncated: false, items: [] },
+        }),
+      ],
+    });
+
+    expect(vm.selectedRun?.actual.transitions[0]?.isPlanned).toBe(true);
+    expect(vm.selectedRun?.deviations.map((item) => item.kind)).not.toContain("skip");
+  });
+});
+
+describe("[FR-VIS-026-AC4] Run Graph の一覧と deep link を bounded にする", () => {
+  it("run 一覧を limit で切り詰め、run/node の URL を返す", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView({ runId: "run-old", updatedAt: "2026-07-30T00:03:00.000Z" }), runView()],
+      selectedRunId: "run-old",
+      selectedNodeId: "node-executor",
+      limit: 1,
+    });
+
+    expect(vm.runs).toMatchObject({ total: 2, limit: 1, truncated: true });
+    expect(vm.runs.items.map((run) => run.runId)).toEqual(["run-old"]);
+    expect(vm.selectedRun?.deepLink).toContain("run=run-old");
+    expect(
+      vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")?.deepLink,
+    ).toContain("node=node-executor");
+  });
+
+  it("run 内の repository 表記ではなく選択 task の canonical ID で deep link を生成する", () => {
+    const canonicalTaskId = "Stanah/gh-gantt#330";
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: canonicalTaskId,
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      selectedRunId: "run-330",
+      selectedNodeId: "node-executor",
+    });
+
+    expect(vm.runs.items[0]?.taskId).toBe(canonicalTaskId);
+    expect(vm.runs.items[0]?.deepLink).toContain("task=Stanah%2Fgh-gantt%23330");
+    expect(vm.selectedRun?.taskId).toBe(canonicalTaskId);
+    expect(vm.selectedRun?.deepLink).toContain("task=Stanah%2Fgh-gantt%23330");
+    expect(
+      vm.selectedRun?.actual.nodes.find((node) => node.id === "node-executor")?.deepLink,
+    ).toContain("task=Stanah%2Fgh-gantt%23330");
+  });
+
+  it("planned node と edge も同じ limit の bounded collection にする", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      limit: 2,
+    });
+
+    expect(vm.selectedRun?.planned.nodes).toMatchObject({
+      total: FIXED_DEV_ROLE_GRAPH_CONTRACT.nodes.length,
+      limit: 2,
+      truncated: true,
+    });
+    expect(vm.selectedRun?.planned.nodes.items).toHaveLength(2);
+    expect(vm.selectedRun?.planned.edges).toMatchObject({
+      total: FIXED_DEV_ROLE_GRAPH_CONTRACT.edges.length,
+      limit: 2,
+      truncated: true,
+    });
+    expect(vm.selectedRun?.planned.edges.items).toHaveLength(2);
+  });
+
+  it("agent/UI 共通 response を strict schema で検証する", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: FIXED_DEV_ROLE_GRAPH_CONTRACT,
+      runViews: [runView()],
+      limit: 2,
+    });
+
+    expect(ProjectMapRunGraphViewModelSchema.safeParse(vm).success).toBe(true);
+    expect(ProjectMapRunGraphViewModelSchema.safeParse({ ...vm, unexpected: true }).success).toBe(
+      false,
+    );
+    expect(
+      ProjectMapRunGraphViewModelSchema.safeParse({
+        ...vm,
+        runs: { ...vm.runs, truncated: !vm.runs.truncated },
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe("[FR-VIS-026-AC5] Run Graph がない project の互換性を保つ", () => {
+  it("空の bounded collection と null detail を返す", () => {
+    const vm = buildProjectMapRunGraphViewModel({
+      taskId: "stanah/gh-gantt#330",
+      contract: null,
+      runViews: [],
+      limit: 20,
+    });
+
+    expect(vm.runs).toEqual({ total: 0, limit: 20, truncated: false, items: [] });
+    expect(vm.selectedRun).toBeNull();
   });
 });

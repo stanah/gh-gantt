@@ -528,19 +528,31 @@ describe("[NFR-STABILITY-014-AC2] [NFR-STABILITY-014-AC4] replay projection と 
       schemaVersion: "1",
       runId: "run-1",
       task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
       revision: 3,
       state: "running",
+      createdAt: timestamp,
+      updatedAt: timestamp,
       currentNode: node,
       activeAttempt: attempt,
       waitReason: null,
       budgets: { executorRetries: 0, improvementIterations: 0 },
       allowedNextTransitions: ["attempt_finished"],
+      nodes: { total: 2, limit: 1, truncated: true, items: [node] },
+      attempts: { total: 2, limit: 1, truncated: true, items: [attempt] },
       artifacts: { total: 2, limit: 1, truncated: true, items: [artifact] },
       evidence: { total: 2, limit: 1, truncated: true, items: [evidence] },
     });
 
+    expect(view.nodes).toMatchObject({ total: 2, limit: 1, truncated: true });
+    expect(view.attempts).toMatchObject({ total: 2, limit: 1, truncated: true });
     expect(view.artifacts).toMatchObject({ total: 2, limit: 1, truncated: true });
     expect(view.task).toEqual({ owner: "stanah", repo: "gh-gantt", issueNumber: 328 });
+    expect(view.contract).toEqual({
+      planId: "dev-role-fixed",
+      planVersion: "1",
+      schemaVersion: "1",
+    });
     expect(() =>
       RunGraphViewSchema.parse({
         ...view,

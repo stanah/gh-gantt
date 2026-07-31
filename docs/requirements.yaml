@@ -1010,6 +1010,43 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/grouping.test.ts
+      - id: FR-VIS-026
+        summary: Project Map の planned-vs-actual Run Graph 観測
+        acceptance_criteria:
+          - id: FR-VIS-026-AC1
+            description: 選択した task と run の planned node・edge と actual node・transition を同じ ViewModel で識別できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-026-AC2
+            description: run と node の実行状態、待機理由、attempt の actor・開始終了時刻・duration・artifact/evidence 要約を確認できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-026-AC3
+            description: retry・fallback・skip・cancel・planned にない node/edge を差分として表示し、取得できない token・cost・latency は 0 ではなく unknown とする
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-026-AC4
+            description: run ID と node ID の deep link、および task locator index により request 処理を 1 件以上 50 件以下に制限した bounded detail API を提供する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/cli/src/__tests__/server-api.test.ts
+              - packages/shared/src/__tests__/project-map.test.ts
+              - packages/ui/src/__tests__/project-map-run-graph.test.tsx
+          - id: FR-VIS-026-AC5
+            description: Run Graph が存在しない project でも従来の Project Map が動作し、実行履歴の空状態を表示する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/server-api.test.ts
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-026-AC6
+            description: planned-vs-actual panel をキーボードと支援技術から操作し、run と node を選択できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map-run-graph.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
@@ -1481,6 +1518,7 @@ areas:
             tests:
               - packages/cli/src/__tests__/run-command.test.ts
               - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/cli/src/__tests__/server-api.test.ts
               - packages/shared/src/__tests__/run-graph.test.ts
               - tests/workflow/project-config.test.ts
           - id: NFR-STABILITY-014-AC2
@@ -1507,6 +1545,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/run-graph-store.test.ts
+              - packages/cli/src/__tests__/server-api.test.ts
               - packages/shared/src/__tests__/run-graph.test.ts
           - id: NFR-STABILITY-014-AC5
             description: |

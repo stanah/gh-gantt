@@ -283,16 +283,66 @@ describe("[NFR-STABILITY-014-AC2] RunGraphControlPlane は start/applyEvent/insp
     expect(result.view).toMatchObject({
       state: "running",
       revision: 1,
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      createdAt: timestamp,
+      updatedAt: timestamp,
       currentNode: { contractNodeId: "planner", state: "ready", activeAttemptId: null },
       activeAttempt: null,
       waitReason: null,
       allowedNextTransitions: ["attempt_started"],
+      nodes: { total: 1, limit: 20, truncated: false, items: [{ contractNodeId: "planner" }] },
+      attempts: { total: 0, limit: 20, truncated: false, items: [] },
     });
 
     const restored = await new RunGraphControlPlane(root, deterministicDependencies()).inspect(
       result.view.runId,
     );
     expect(restored).toEqual(result.view);
+  });
+
+  it("node と attempt の履歴を指定 limit で bounded view にする", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-bounded-project-map-view");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_valid",
+      schemaId: "dev-role.plan",
+      prefix: "bounded-plan",
+    });
+
+    const view = await control.inspect(runId, 1);
+
+    expect(view.nodes).toMatchObject({ total: 2, limit: 1, truncated: true });
+    expect(view.nodes.items).toHaveLength(1);
+    expect(view.nodes.items[0]?.contractNodeId).toBe("implementer");
+    expect(view.attempts).toMatchObject({ total: 1, limit: 1, truncated: false });
+    expect(view.attempts.items[0]?.actor.id).toBe("planner-agent");
+  });
+
+  it("deep link 対象 node が末尾の limit 外でも bounded view に含める", async () => {
+    const { control } = await createControlPlane();
+    const runId = await startRun(control, "start-focused-project-map-view");
+    const started = await control.inspect(runId);
+    const plannerNodeId = started.currentNode?.id;
+    if (!plannerNodeId) throw new Error("planner node がありません");
+    await completeCurrentNode({
+      control,
+      runId,
+      role: "planner",
+      outcome: "plan_valid",
+      schemaId: "dev-role.plan",
+      prefix: "focused-plan",
+    });
+
+    const view = await control.inspect(runId, 1, plannerNodeId);
+
+    expect(view.nodes).toMatchObject({ total: 2, limit: 1, truncated: true });
+    expect(view.nodes.items.map((node) => node.id)).toEqual([plannerNodeId]);
+    expect(view.attempts.items.map((attempt) => attempt.nodeId)).toEqual([plannerNodeId]);
+    expect(view.artifacts.items.map((artifact) => artifact.nodeId)).toEqual([plannerNodeId]);
+    expect(view.evidence.items.map((evidence) => evidence.nodeId)).toEqual([plannerNodeId]);
   });
 
   it("unsupported binding と orchestrator 以外の start を fail-closed で拒否する", async () => {
