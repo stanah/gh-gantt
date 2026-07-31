@@ -46,9 +46,21 @@ export function createTaskCloseCommand(): Command {
             tasksFile.tasks[taskIndex] = result.task;
             await tasksStore.write(tasksFile);
             await storage.flush();
-            await executeWriteThroughPush(storage, config, tasksFile, [resolvedId], {
-              push: opts.push,
-            });
+            const writeThroughResult = await executeWriteThroughPush(
+              storage,
+              config,
+              tasksFile,
+              [resolvedId],
+              {
+                push: opts.push,
+              },
+            );
+            const persistedTask = writeThroughResult.tasksFile.tasks.find(
+              (task) => task.id === resolvedId,
+            );
+            if (!persistedTask) {
+              throw new Error(`Closed task was not persisted: ${resolvedId}`);
+            }
 
             const evidence = typeof opts.evidence === "string" ? opts.evidence.trim() : "";
             if (evidence.length === 0 && config.require_close_evidence !== true) {
@@ -56,9 +68,9 @@ export function createTaskCloseCommand(): Command {
             }
 
             if (opts.json) {
-              console.log(JSON.stringify(result.task, null, 2));
+              console.log(JSON.stringify(persistedTask, null, 2));
             } else {
-              console.log(`Closed task: ${resolvedId}`);
+              console.log(`Closed task: ${persistedTask.id}`);
             }
           },
         );

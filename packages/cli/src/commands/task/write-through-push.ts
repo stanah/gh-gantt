@@ -13,9 +13,11 @@ export interface WriteThroughPushOptions {
 
 export interface WriteThroughPushResult {
   status: "disabled" | "no-targets" | "pushed";
+  tasksFile: TasksFile;
   result?: PushResult;
 }
 
+/** atomic group 失敗時に同期内容を戻し、取得済みの remote watermark だけを維持する。 */
 function rollbackAtomicGroupSnapshots(
   beforePush: SyncState,
   afterPush: SyncState,
@@ -37,6 +39,10 @@ function rollbackAtomicGroupSnapshots(
   return { ...afterPush, snapshots };
 }
 
+/**
+ * update / close / link が変更した既存 Issue を即時同期する。
+ * draft の実体化は #298 の責務なので、remote API を呼ぶ前に fail-closed する。
+ */
 export async function executeWriteThroughPush(
   storage: ProjectStorageSession,
   config: Config,
@@ -45,7 +51,7 @@ export async function executeWriteThroughPush(
   options: WriteThroughPushOptions = {},
 ): Promise<WriteThroughPushResult> {
   if (options.push === false || config.sync.auto_push === false) {
-    return { status: "disabled" };
+    return { status: "disabled", tasksFile };
   }
 
   const targetIds = new Set(targetTaskIds);
@@ -86,7 +92,7 @@ export async function executeWriteThroughPush(
   }
 
   if (eligibleIds.size === 0) {
-    return { status: "no-targets" };
+    return { status: "no-targets", tasksFile };
   }
 
   const syncState = await storage.stateStore.read();
@@ -94,51 +100,88 @@ export async function executeWriteThroughPush(
     .map((diff) => diff.id)
     .filter((id) => eligibleIds.has(id));
   if (pendingIds.length === 0) {
-    return { status: "no-targets" };
+    return { status: "no-targets", tasksFile };
+  }
+
+  const unsupportedIds = pendingIds.filter((id) => tasksById.get(id)?.github_issue === null);
+  if (unsupportedIds.length > 0) {
+    throw new Error(
+      `write-through push は既存 Issue のみ対象です: ${unsupportedIds.sort().join(", ")}`,
+    );
   }
 
   const createClient = options.createClient ?? createGraphQLClient;
   const gql = await createClient();
-  const {
-    result,
-    tasksFile: updatedTasksFile,
-    syncState: updatedSyncState,
-  } = await executePush(gql, config, tasksFile, syncState, {
-    targetTaskIds: pendingIds,
-    saveProgress: async (nextTasksFile, nextSyncState) => {
-      await storage.tasksStore.write(nextTasksFile);
-      await storage.stateStore.write(nextSyncState);
-      await storage.flush();
-    },
-  });
-
   const pendingIdSet = new Set(pendingIds);
-  let finalSyncState = updatedSyncState;
-  let remainingIds = new Set(
-    computeLocalDiff(updatedTasksFile.tasks, finalSyncState)
-      .map((diff) => diff.id)
-      .filter((id) => pendingIdSet.has(id)),
-  );
+  const groupedPendingIds = new Set<string>();
+  const executionUnits: Array<{ ids: string[]; atomic: boolean }> = [];
   for (const groupIds of eligibleAtomicGroups) {
     const pendingGroupIds = groupIds.filter((id) => pendingIdSet.has(id));
-    if (!pendingGroupIds.some((id) => remainingIds.has(id))) continue;
-    finalSyncState = rollbackAtomicGroupSnapshots(syncState, finalSyncState, pendingGroupIds);
+    if (pendingGroupIds.length === 0) continue;
+    for (const id of pendingGroupIds) groupedPendingIds.add(id);
+    executionUnits.push({ ids: pendingGroupIds, atomic: true });
   }
-  remainingIds = new Set(
-    computeLocalDiff(updatedTasksFile.tasks, finalSyncState)
-      .map((diff) => diff.id)
-      .filter((id) => pendingIdSet.has(id)),
-  );
-
-  await storage.tasksStore.write(updatedTasksFile);
-  await storage.stateStore.write(finalSyncState);
-  await storage.flush();
-
-  if (remainingIds.size > 0) {
-    throw new Error(
-      `auto-push 後もローカル差分が残っています: ${[...remainingIds].sort().join(", ")}`,
-    );
+  for (const id of pendingIds) {
+    if (!groupedPendingIds.has(id)) executionUnits.push({ ids: [id], atomic: false });
   }
 
-  return { status: "pushed", result };
+  let currentTasksFile = tasksFile;
+  let currentSyncState = syncState;
+  const totalResult: PushResult = { created: 0, updated: 0, skipped: 0 };
+  // 各 target の成功直後に remote watermark を永続化する。
+  // link の mirror 群は後続失敗時に syncFields だけをまとめて戻し、全体を再送可能にする。
+  for (const unit of executionUnits) {
+    const beforeUnitSyncState = currentSyncState;
+    try {
+      for (const id of unit.ids) {
+        const {
+          result,
+          tasksFile: nextTasksFile,
+          syncState: nextSyncState,
+        } = await executePush(gql, config, currentTasksFile, currentSyncState, {
+          targetTaskIds: [id],
+          saveProgress: async (progressTasksFile, progressSyncState) => {
+            await storage.tasksStore.write(progressTasksFile);
+            await storage.stateStore.write(progressSyncState);
+            await storage.flush();
+          },
+        });
+
+        totalResult.created += result.created;
+        totalResult.updated += result.updated;
+        totalResult.skipped += result.skipped;
+        currentTasksFile = nextTasksFile;
+        currentSyncState = nextSyncState;
+
+        const remainingIds = new Set(
+          computeLocalDiff(currentTasksFile.tasks, currentSyncState)
+            .map((diff) => diff.id)
+            .filter((remainingId) => remainingId === id),
+        );
+        await storage.tasksStore.write(currentTasksFile);
+        await storage.stateStore.write(currentSyncState);
+        await storage.flush();
+
+        if (remainingIds.size > 0) {
+          throw new Error(
+            `auto-push 後もローカル差分が残っています: ${[...remainingIds].sort().join(", ")}`,
+          );
+        }
+      }
+    } catch (error) {
+      if (unit.atomic) {
+        currentSyncState = rollbackAtomicGroupSnapshots(
+          beforeUnitSyncState,
+          currentSyncState,
+          unit.ids,
+        );
+        await storage.tasksStore.write(currentTasksFile);
+        await storage.stateStore.write(currentSyncState);
+        await storage.flush();
+      }
+      throw error;
+    }
+  }
+
+  return { status: "pushed", tasksFile: currentTasksFile, result: totalResult };
 }

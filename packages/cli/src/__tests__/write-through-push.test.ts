@@ -6,6 +6,7 @@ import type { Config, SyncState, Task, TasksFile } from "@gh-gantt/shared";
 import { createTaskCloseCommand } from "../commands/task/close.js";
 import { createTaskLinkCommand } from "../commands/task/link.js";
 import { createTaskUpdateCommand } from "../commands/task/update.js";
+import { executeWriteThroughPush } from "../commands/task/write-through-push.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { computeLocalDiff } from "../sync/diff.js";
 import { extractSyncFields, hashTask } from "../sync/hash.js";
@@ -83,9 +84,10 @@ function makeGraphQLClient(
     failIssueId?: string;
     failAddSubIssue?: boolean;
     updatedAtAfterMutation?: string;
+    initialUpdatedAtByIssueId?: Record<string, string>;
   } = {},
 ) {
-  let mutationObserved = false;
+  const mutatedIssueIds = new Set<string>();
   return vi.fn(async (query: string, variables?: Record<string, unknown>) => {
     if (query.includes("issue(number:") && !query.includes("mutation")) {
       const issueNumbers = [...query.matchAll(/issue\(number:\s*(\d+)\)/g)].map((match) =>
@@ -98,9 +100,10 @@ function makeGraphQLClient(
             {
               number,
               updatedAt:
-                mutationObserved && options.updatedAtAfterMutation
+                mutatedIssueIds.has(`ISSUE_${number}`) && options.updatedAtAfterMutation
                   ? options.updatedAtAfterMutation
-                  : "2026-01-01T00:00:00Z",
+                  : (options.initialUpdatedAtByIssueId?.[`ISSUE_${number}`] ??
+                    "2026-01-01T00:00:00Z"),
               stateReason: null,
               closedAt: null,
             },
@@ -112,7 +115,7 @@ function makeGraphQLClient(
       throw new Error("外部 API エラー");
     }
     if (query.includes("updateIssue")) {
-      mutationObserved = true;
+      if (typeof variables?.issueId === "string") mutatedIssueIds.add(variables.issueId);
       return { updateIssue: { issue: { id: variables?.issueId } } };
     }
     if (query.includes("closeIssue")) {
@@ -156,14 +159,16 @@ async function initializeProject(
     last_synced_at: "2026-01-01T00:00:00Z",
     project_node_id: "PROJECT_1",
     id_map: Object.fromEntries(
-      tasks.map((task) => [
-        task.id,
-        {
-          issue_number: task.github_issue!,
-          issue_node_id: `ISSUE_${task.github_issue}`,
-          project_item_id: `ITEM_${task.github_issue}`,
-        },
-      ]),
+      tasks
+        .filter((task) => task.github_issue !== null)
+        .map((task) => [
+          task.id,
+          {
+            issue_number: task.github_issue!,
+            issue_node_id: `ISSUE_${task.github_issue}`,
+            project_item_id: `ITEM_${task.github_issue}`,
+          },
+        ]),
     ),
     field_ids: {},
     snapshots,
@@ -256,6 +261,60 @@ describe("[FR-SYNC-003-AC7] 変更系コマンドを write-through push でき�
       "owner/repo#2",
     ]);
     expect(syncState.last_synced_at).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("executeWriteThroughPush は永続化した最終 TasksFile を返す", async () => {
+    const baseTask = makeTask(1);
+    const dirtyTask = { ...baseTask, title: "変更後" };
+    await initializeProject(projectRoot, [dirtyTask], [baseTask]);
+    const gql = makeGraphQLClient({
+      updatedAtAfterMutation: "2026-01-02T00:00:00Z",
+    });
+
+    const writeThroughResult = await withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async (storage) => {
+        const config = await storage.configStore.read();
+        const tasksFile = await storage.tasksStore.read();
+        return executeWriteThroughPush(storage, config, tasksFile, ["owner/repo#1"], {
+          createClient: async () => gql as never,
+        });
+      },
+    );
+
+    expect(writeThroughResult.tasksFile.tasks[0]).toMatchObject({
+      id: "owner/repo#1",
+      title: "変更後",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
+    const persisted = await readProject(projectRoot);
+    expect(writeThroughResult.tasksFile).toEqual(persisted.tasksFile);
+  });
+
+  it("update --json は write-through 後の updated_at を出力する", async () => {
+    const task = makeTask(1);
+    await initializeProject(projectRoot, [task]);
+    createClientMock.mockResolvedValue(
+      makeGraphQLClient({
+        updatedAtAfterMutation: "2026-01-02T00:00:00Z",
+      }),
+    );
+
+    await createTaskUpdateCommand().parseAsync(["1", "--title", "JSON更新", "--json"], {
+      from: "user",
+    });
+
+    const jsonOutput = vi
+      .mocked(console.log)
+      .mock.calls.map(([value]) => value)
+      .find((value): value is string => typeof value === "string" && value.includes('"id"'));
+    expect(jsonOutput).toBeDefined();
+    expect(JSON.parse(jsonOutput!)).toMatchObject({
+      id: "owner/repo#1",
+      title: "JSON更新",
+      updated_at: "2026-01-02T00:00:00Z",
+    });
   });
 
   it("bulk update は実際に成功した task だけを同期する", async () => {
@@ -392,6 +451,64 @@ describe("[FR-SYNC-003-AC7] 変更系コマンドを write-through push でき�
     expect(syncState.snapshots["owner/repo#2"]?.syncFields?.title).toBe("タスク2");
   });
 
+  it("既存 task の後続 API 失敗時は先行成功の task と snapshot を永続化する", async () => {
+    const task1 = makeTask(1, { labels: ["対象"] });
+    const task2 = makeTask(2, { labels: ["対象"] });
+    await initializeProject(projectRoot, [task1, task2]);
+    const gql = makeGraphQLClient({
+      failIssueId: "ISSUE_2",
+      updatedAtAfterMutation: "2026-01-02T00:00:00Z",
+    });
+    createClientMock.mockResolvedValue(gql);
+
+    await createTaskUpdateCommand().parseAsync(["--filter-label", "対象", "--title", "一括変更"], {
+      from: "user",
+    });
+
+    const { tasksFile, syncState } = await readProject(projectRoot);
+    expect(process.exitCode).toBe(1);
+    expect(
+      gql.mock.calls
+        .filter(([query]) => (query as string).includes("updateIssue"))
+        .map(([, variables]) => variables?.issueId),
+    ).toEqual(["ISSUE_1", "ISSUE_2"]);
+    expect(computeLocalDiff(tasksFile.tasks, syncState).map((diff) => diff.id)).toEqual([
+      "owner/repo#2",
+    ]);
+    expect(syncState.snapshots["owner/repo#1"]?.syncFields?.title).toBe("一括変更");
+    expect(syncState.snapshots["owner/repo#1"]?.updated_at).toBe("2026-01-02T00:00:00Z");
+    expect(syncState.snapshots["owner/repo#2"]?.syncFields?.title).toBe("タスク2");
+  });
+
+  it("draft target は client 生成前に拒否しローカル差分を保持する", async () => {
+    const baseDraft = makeTask(1, {
+      id: "owner/repo#draft-1",
+      github_issue: null,
+      title: "変更前 draft",
+    });
+    const dirtyDraft = { ...baseDraft, title: "変更後 draft" };
+    await initializeProject(projectRoot, [dirtyDraft], [baseDraft]);
+
+    await createTaskUpdateCommand().parseAsync(["draft-1", "--title", "コマンド更新 draft"], {
+      from: "user",
+    });
+
+    const { tasksFile, syncState } = await readProject(projectRoot);
+    expect(process.exitCode).toBe(1);
+    expect(createClientMock).not.toHaveBeenCalled();
+    expect(console.error).toHaveBeenCalledWith(
+      "Failed to update task:",
+      expect.stringContaining("既存 Issue"),
+    );
+    expect(tasksFile.tasks[0]).toMatchObject({
+      id: "owner/repo#draft-1",
+      title: "コマンド更新 draft",
+    });
+    expect(computeLocalDiff(tasksFile.tasks, syncState).map((diff) => diff.id)).toEqual([
+      "owner/repo#draft-1",
+    ]);
+  });
+
   it("link group の child に marker があれば旧親と新親を含む全 target を送信しない", async () => {
     const baseChild = makeTask(1, { parent: "owner/repo#2" });
     const oldParent = makeTask(2, { sub_tasks: ["owner/repo#1"] });
@@ -454,7 +571,70 @@ describe("[FR-SYNC-003-AC7] 変更系コマンドを write-through push でき�
     expect(syncState.snapshots["owner/repo#1"]?.syncFields?.parent).toBeNull();
     expect(syncState.snapshots["owner/repo#2"]?.syncFields?.sub_tasks).toEqual([]);
     expect(syncState.snapshots["owner/repo#1"]?.updated_at).toBe("2026-01-02T00:00:00Z");
-    expect(syncState.snapshots["owner/repo#2"]?.updated_at).toBe("2026-01-02T00:00:00Z");
+    expect(syncState.snapshots["owner/repo#2"]?.updated_at).toBe("2026-01-01T00:00:00Z");
+  });
+
+  it("link group の後続 Issue 更新失敗時は先行成功の watermark を保って全差分を再送できる", async () => {
+    const child = makeTask(1);
+    const parent = makeTask(2);
+    await initializeProject(projectRoot, [child, parent]);
+    const gql = makeGraphQLClient({
+      failIssueId: "ISSUE_2",
+      updatedAtAfterMutation: "2026-01-02T00:00:00Z",
+    });
+    createClientMock.mockResolvedValue(gql);
+
+    await createTaskLinkCommand().parseAsync(["1", "--set-parent", "2"], {
+      from: "user",
+    });
+
+    const { tasksFile, syncState } = await readProject(projectRoot);
+    expect(process.exitCode).toBe(1);
+    expect(
+      gql.mock.calls
+        .filter(([query]) => (query as string).includes("updateIssue"))
+        .map(([, variables]) => variables?.issueId),
+    ).toEqual(["ISSUE_1", "ISSUE_2"]);
+    expect(
+      computeLocalDiff(tasksFile.tasks, syncState)
+        .map((diff) => diff.id)
+        .sort(),
+    ).toEqual(["owner/repo#1", "owner/repo#2"]);
+    expect(syncState.snapshots["owner/repo#1"]?.syncFields?.parent).toBeNull();
+    expect(syncState.snapshots["owner/repo#2"]?.syncFields?.sub_tasks).toEqual([]);
+    expect(syncState.snapshots["owner/repo#1"]?.updated_at).toBe("2026-01-02T00:00:00Z");
+    expect(syncState.snapshots["owner/repo#2"]?.updated_at).toBe("2026-01-01T00:00:00Z");
+
+    process.exitCode = undefined;
+    const retryGql = makeGraphQLClient({
+      initialUpdatedAtByIssueId: {
+        ISSUE_1: "2026-01-02T00:00:00Z",
+        ISSUE_2: "2026-01-01T00:00:00Z",
+      },
+      updatedAtAfterMutation: "2026-01-03T00:00:00Z",
+    });
+    await withProjectStorage(
+      projectRoot,
+      { mode: "write", scope: "shared-cache" },
+      async (storage) => {
+        const config = await storage.configStore.read();
+        const currentTasksFile = await storage.tasksStore.read();
+        await executeWriteThroughPush(
+          storage,
+          config,
+          currentTasksFile,
+          ["owner/repo#1", "owner/repo#2"],
+          {
+            createClient: async () => retryGql as never,
+            atomicTargetGroups: [["owner/repo#1", "owner/repo#2"]],
+          },
+        );
+      },
+    );
+
+    const retried = await readProject(projectRoot);
+    expect(process.exitCode).toBeUndefined();
+    expect(computeLocalDiff(retried.tasksFile.tasks, retried.syncState)).toEqual([]);
   });
 
   it("API 失敗時は exit code を失敗にし、ローカル差分を再送可能なまま保持する", async () => {

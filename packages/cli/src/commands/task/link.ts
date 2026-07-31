@@ -170,13 +170,21 @@ export function createTaskLinkCommand(): Command {
             const changedIds = tasksFile.tasks
               .filter((task) => originalHashes.get(task.id) !== hashTask(task))
               .map((task) => task.id);
-            await executeWriteThroughPush(storage, config, tasksFile, changedIds, {
-              push: opts.push,
-              atomicTargetGroups: [changedIds],
-            });
+            const writeThroughResult = await executeWriteThroughPush(
+              storage,
+              config,
+              tasksFile,
+              changedIds,
+              {
+                push: opts.push,
+                atomicTargetGroups: [changedIds],
+              },
+            );
 
             if (opts.json) {
-              const updated = tasksFile.tasks.find((t) => t.id === resolvedId);
+              const updated = writeThroughResult.tasksFile.tasks.find(
+                (task) => task.id === resolvedId,
+              );
               console.log(JSON.stringify(updated, null, 2));
             } else {
               for (const message of messages) console.log(message);

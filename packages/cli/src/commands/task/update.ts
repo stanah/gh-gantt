@@ -416,14 +416,26 @@ export function createTaskUpdateCommand(): Command {
               tasksFile.tasks[taskIndex] = result.task;
               await tasksStore.write(tasksFile);
               await storage.flush();
-              await executeWriteThroughPush(storage, config, tasksFile, [resolvedId], {
-                push: opts.push,
-              });
+              const writeThroughResult = await executeWriteThroughPush(
+                storage,
+                config,
+                tasksFile,
+                [resolvedId],
+                {
+                  push: opts.push,
+                },
+              );
+              const persistedTask = writeThroughResult.tasksFile.tasks.find(
+                (task) => task.id === resolvedId,
+              );
+              if (!persistedTask) {
+                throw new Error(`Updated task was not persisted: ${resolvedId}`);
+              }
 
               if (opts.json) {
-                console.log(JSON.stringify(result.task, null, 2));
+                console.log(JSON.stringify(persistedTask, null, 2));
               } else {
-                console.log(`Updated task: ${resolvedId}`);
+                console.log(`Updated task: ${persistedTask.id}`);
               }
             } else {
               // 複数taskを一括更新する
@@ -471,19 +483,23 @@ export function createTaskUpdateCommand(): Command {
 
               await tasksStore.write(tasksFile);
               await storage.flush();
-              await executeWriteThroughPush(
+              const writeThroughResult = await executeWriteThroughPush(
                 storage,
                 config,
                 tasksFile,
                 updatedTasks.map((task) => task.id),
                 { push: opts.push },
               );
+              const updatedIds = new Set(updatedTasks.map((task) => task.id));
+              const persistedTasks = writeThroughResult.tasksFile.tasks.filter((task) =>
+                updatedIds.has(task.id),
+              );
 
               if (opts.json) {
-                console.log(JSON.stringify({ updated: updatedTasks }, null, 2));
+                console.log(JSON.stringify({ updated: persistedTasks }, null, 2));
               } else {
-                console.log(`Updated ${updatedTasks.length} task(s).`);
-                for (const t of updatedTasks) {
+                console.log(`Updated ${persistedTasks.length} task(s).`);
+                for (const t of persistedTasks) {
                   const shortId = t.id.includes("#") ? t.id.split("#")[1] : t.id;
                   console.log(`  ${shortId}: ${t.title}`);
                 }
