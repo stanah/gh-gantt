@@ -504,6 +504,32 @@ describe("[FR-CLI-016-AC2] close evidence requirement の設定検証", () => {
   });
 });
 
+describe("[FR-SYNC-003-AC7] write-through push の設定契約を検証できる", () => {
+  it("auto_push を省略した場合は true を補完する", () => {
+    const parsed = ConfigSchema.parse(validConfig);
+
+    expect(parsed.sync.auto_push).toBe(true);
+  });
+
+  it("auto_push に明示した false を保持する", () => {
+    const parsed = ConfigSchema.parse({
+      ...validConfig,
+      sync: { ...validConfig.sync, auto_push: false },
+    });
+
+    expect(parsed.sync.auto_push).toBe(false);
+  });
+
+  it("auto_push が boolean 以外の場合は拒否する", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        ...validConfig,
+        sync: { ...validConfig.sync, auto_push: "true" },
+      }),
+    ).toThrow();
+  });
+});
+
 describe("TasksFileSchema", () => {
   it("[FR-CLI-011-AC1] acceptance_criteria 未指定の既存 task を空配列として受理する", () => {
     const data = {

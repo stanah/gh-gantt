@@ -183,6 +183,7 @@ export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
   sync: z
     .object({
       auto_create_issues: z.boolean(),
+      auto_push: z.boolean().default(true),
       conflict_policy: ConflictPolicySchema.optional(),
       field_mapping: z.object({
         start_date: z.string(),

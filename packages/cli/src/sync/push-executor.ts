@@ -124,9 +124,13 @@ export async function executePush(
   opts?: {
     force?: boolean;
     saveProgress?: (tasksFile: TasksFile, syncState: SyncState) => Promise<void>;
+    targetTaskIds?: readonly string[];
   },
 ): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
-  const diffs = computeLocalDiff(tasksFile.tasks, syncState);
+  const allDiffs = computeLocalDiff(tasksFile.tasks, syncState);
+  const targetTaskIds = opts?.targetTaskIds === undefined ? undefined : new Set(opts.targetTaskIds);
+  const diffs =
+    targetTaskIds === undefined ? allDiffs : allDiffs.filter((diff) => targetTaskIds.has(diff.id));
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
 
   if (diffs.length === 0) {

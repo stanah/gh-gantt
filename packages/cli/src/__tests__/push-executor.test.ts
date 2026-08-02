@@ -3082,4 +3082,61 @@ describe("executePush", () => {
       }
     });
   });
+
+  describe("[FR-SYNC-003-AC7] write-through push の対象を task ID で限定できる", () => {
+    it("対象外の dirty task は API 呼び出しと snapshot 更新の対象にしない", async () => {
+      const baseTask1 = makeTask("o/r#1", { github_issue: 1, title: "変更前1" });
+      const baseTask2 = makeTask("o/r#2", { github_issue: 2, title: "変更前2" });
+      const task1 = { ...baseTask1, title: "変更後1" };
+      const task2 = { ...baseTask2, title: "変更後2" };
+      const tasksFile: TasksFile = {
+        tasks: [task1, task2],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "2026-01-01T00:00:00Z",
+        project_node_id: "PVT_1",
+        id_map: {
+          "o/r#1": { issue_number: 1, issue_node_id: "ISSUE_1", project_item_id: "ITEM_1" },
+          "o/r#2": { issue_number: 2, issue_node_id: "ISSUE_2", project_item_id: "ITEM_2" },
+        },
+        field_ids: {},
+        snapshots: {
+          "o/r#1": {
+            hash: hashTask(baseTask1),
+            synced_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+            syncFields: extractSyncFields(baseTask1),
+          },
+          "o/r#2": {
+            hash: hashTask(baseTask2),
+            synced_at: "2026-01-01T00:00:00Z",
+            updated_at: "2026-01-01T00:00:00Z",
+            syncFields: extractSyncFields(baseTask2),
+          },
+        },
+      };
+      const originalTask2Snapshot = syncState.snapshots["o/r#2"];
+      const mockGql = makeMockGql();
+
+      const { result, syncState: newSyncState } = await executePush(
+        mockGql as any,
+        makeConfig(),
+        tasksFile,
+        syncState,
+        { targetTaskIds: ["o/r#1"] },
+      );
+
+      expect(result).toEqual({ created: 0, updated: 1, skipped: 0 });
+      const updateIssueCalls = mockGql.mock.calls.filter((call) =>
+        (call[0] as string).includes("updateIssue"),
+      );
+      expect(updateIssueCalls.map((call) => call[1]?.issueId)).toEqual(["ISSUE_1"]);
+      expect(newSyncState.snapshots["o/r#2"]).toBe(originalTask2Snapshot);
+      expect(computeLocalDiff(tasksFile.tasks, newSyncState).map((diff) => diff.id)).toEqual([
+        "o/r#2",
+      ]);
+      expect(newSyncState.last_synced_at).toBe("2026-01-01T00:00:00Z");
+    });
+  });
 });
