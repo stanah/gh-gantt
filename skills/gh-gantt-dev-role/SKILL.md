@@ -98,6 +98,7 @@ gh-gantt run show <run-id> --json
 - `human_decision` と `pr_observed` を raw `run event` に含めない。human authority は `gh-gantt run decide`、PR live evidence は read-only の `gh-gantt run observe-pr` からだけ投入する。
 - human gate は human authority の decision evidence、または契約で許可された edge への理由付き override でのみ解除する。
 - Run Graph event は Work Graph の task status を暗黙更新しない。GitHub への反映は既存 gh-gantt workflow に委ねる。
+- accepted outcome、claim release/reclaim 後の fan-in 再評価は `gh-gantt pull` と `gh-gantt list` を使い、共有 Work Graph Cache の内部ファイルを直接読み書きしない。
 
 `run` command がない既存 project では、従来どおり `.dev-flow` の schema-valid artifact を handoff とする。
 artifact が存在することを durable Run Graph event が受理された証拠にはしない。

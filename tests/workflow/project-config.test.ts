@@ -146,3 +146,22 @@ describe("[NFR-STABILITY-014-AC1] 共有 project config が versioned Graph Cont
     expect(workflow).toContain("gh-gantt run observe-pr");
   });
 });
+
+describe("[NFR-STABILITY-014-AC9] ready frontier は global/state/repository 上限内で isolated workspace を claim/lease し、heartbeat、release/reclaim、completion fencing、停止 gate、Run Graph audit、fan-in 再評価を持つ", () => {
+  it("共有 project config が global、state、repository の concurrency 上限を固定する", async () => {
+    const rawConfig = JSON.parse(await readRepoFile(".gantt-sync/gantt.config.json"));
+    const config = ConfigSchema.parse(rawConfig);
+
+    expect(config).toMatchObject({
+      dispatch: {
+        max_concurrency: 2,
+        state_concurrency: {
+          "In Progress": 2,
+        },
+        repository_concurrency: {
+          "stanah/gh-gantt": 2,
+        },
+      },
+    });
+  });
+});

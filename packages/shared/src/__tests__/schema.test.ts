@@ -403,6 +403,35 @@ describe("[NFR-STORE-001-AC1] 不正な形式のファイルを読み込んだ�
   });
 });
 
+describe("[NFR-STABILITY-014-AC9] bounded dispatch 設定を fail-closed に検証する", () => {
+  it("global・state・repository concurrency を受理する", () => {
+    const parsed = ConfigSchema.parse({
+      ...validConfig,
+      dispatch: {
+        max_concurrency: 3,
+        state_concurrency: { Todo: 2 },
+        repository_concurrency: { "stanah/my-repo": 1 },
+      },
+    });
+
+    expect(parsed.dispatch).toEqual({
+      max_concurrency: 3,
+      state_concurrency: { Todo: 2 },
+      repository_concurrency: { "stanah/my-repo": 1 },
+    });
+  });
+
+  it.each([
+    { max_concurrency: 0 },
+    { max_concurrency: 1.5 },
+    { max_concurrency: 1, state_concurrency: { Unknown: 1 } },
+    { max_concurrency: 1, repository_concurrency: { "Stanah/my-repo": 1 } },
+    { max_concurrency: 1, repository_concurrency: { invalid: 1 } },
+  ])("不正または未正規化の設定を拒否する: %j", (dispatch) => {
+    expect(() => ConfigSchema.parse({ ...validConfig, dispatch })).toThrow();
+  });
+});
+
 describe("[FR-SYNC-001-AC5] フィールド単位のコンフリクト解決ポリシーを検証できる", () => {
   it("21個の同期フィールドすべてで ours / theirs / manual を受理する", () => {
     expect(SYNC_FIELD_KEYS).toHaveLength(21);

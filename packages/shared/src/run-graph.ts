@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NormalizedRepositorySchema } from "./repository.js";
 
 export const RUN_GRAPH_ROLES = [
   "orchestrator",
@@ -453,6 +454,390 @@ export interface RunGraphEvidenceSubmission {
   reference: BoundedRunGraphReference;
 }
 
+/** repository coordination registry が発行する current claim の fencing proof。 */
+export interface DispatchClaimProof {
+  claimId: string;
+  fencingToken: number;
+  ownerId: string;
+  runId: string;
+}
+
+/** isolated workspace に対する期限付き claim。 */
+export interface DispatchClaim {
+  taskId: string;
+  repository: string;
+  state: string;
+  ownerId: string;
+  workspaceId: string;
+  runId: string;
+  claimId: string;
+  entityVersion: number;
+  fencingToken: number;
+  acquiredAt: string;
+  expiresAt: string;
+  dispatchPlanId: string;
+  dispatchPlanVersion: "1";
+}
+
+export type DispatchClaimOperation =
+  | "claim"
+  | "heartbeat"
+  | "release"
+  | "reclaim"
+  | "authorize_event";
+export type DispatchClaimRejectionCode =
+  | "event_payload_mismatch"
+  | "stale_entity_version"
+  | "dispatch_not_configured"
+  | "unknown_state"
+  | "global_capacity"
+  | "state_capacity"
+  | "repository_capacity"
+  | "task_already_claimed"
+  | "workspace_already_claimed"
+  | "claim_not_found"
+  | "stale_claim"
+  | "authorization_pending"
+  | "snapshot_mismatch"
+  | "lease_expired"
+  | "lease_not_expired";
+
+interface DispatchClaimAcceptedReceiptBase {
+  accepted: true;
+  eventId: string;
+  entityVersion: number;
+  stateUnchanged: false;
+  claim: DispatchClaim;
+}
+
+export type DispatchClaimAcceptedReceipt =
+  | (DispatchClaimAcceptedReceiptBase & { operation: "claim" })
+  | (DispatchClaimAcceptedReceiptBase & { operation: "heartbeat" })
+  | (DispatchClaimAcceptedReceiptBase & { operation: "release" })
+  | (DispatchClaimAcceptedReceiptBase & {
+      operation: "reclaim";
+      reclaimReason: "expired";
+    })
+  | (DispatchClaimAcceptedReceiptBase & {
+      operation: "reclaim";
+      reclaimReason: "owner_stopped";
+      evidenceId: string;
+    })
+  | (DispatchClaimAcceptedReceiptBase & {
+      operation: "authorize_event";
+      completion: DispatchCompletionAuthorization;
+      claimContinues: boolean;
+    });
+
+export type DispatchClaimReceipt =
+  | DispatchClaimAcceptedReceipt
+  | {
+      accepted: false;
+      operation: DispatchClaimOperation;
+      eventId: string;
+      entityVersion: number;
+      stateUnchanged: true;
+      code: DispatchClaimRejectionCode;
+      message: string;
+    };
+
+export const RUN_GRAPH_CLAIM_AUDIT_TYPES = [
+  "claim_acquired",
+  "claim_heartbeat",
+  "claim_released",
+  "claim_reclaimed",
+  "claim_event_authorized",
+] as const;
+
+export interface DispatchCompletionAuthorization {
+  runId: string;
+  taskId: string;
+  actorId: string;
+  commandFingerprint: string;
+}
+
+interface RunGraphClaimAuditCommandBase {
+  registryEventId: string;
+  registryEntityVersion: number;
+  claim: DispatchClaim;
+}
+
+export type RunGraphClaimAuditCommand =
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_acquired" | "claim_heartbeat" | "claim_released";
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_reclaimed";
+      reclaimReason: "expired";
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_reclaimed";
+      reclaimReason: "owner_stopped";
+      evidenceId: string;
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_event_authorized";
+      completion: DispatchCompletionAuthorization;
+    });
+
+export interface RunGraphClaimAuditInput {
+  schemaVersion: "1";
+  eventId: string;
+  actor: RunGraphActor;
+  receipt: Extract<DispatchClaimReceipt, { accepted: true }> & { claim: DispatchClaim };
+}
+
+export interface DispatchClaimAcquireInput {
+  schemaVersion: "1";
+  eventId: string;
+  expectedEntityVersion: number;
+  taskId: string;
+  repository: string;
+  state: string;
+  ownerId: string;
+  workspaceId: string;
+  runId: string;
+  leaseDurationSeconds: number;
+  dispatchPlanId: string;
+  dispatchPlanVersion: "1";
+  snapshotFingerprint: string;
+}
+
+export interface DispatchClaimHeartbeatInput {
+  schemaVersion: "1";
+  eventId: string;
+  expectedEntityVersion: number;
+  proof: DispatchClaimProof;
+  leaseDurationSeconds: number;
+}
+
+export interface DispatchClaimReleaseInput {
+  schemaVersion: "1";
+  eventId: string;
+  expectedEntityVersion: number;
+  proof: DispatchClaimProof;
+}
+
+export interface DispatchClaimReclaimInput {
+  schemaVersion: "1";
+  eventId: string;
+  expectedEntityVersion: number;
+  claimId: string;
+  reason: "expired" | "owner_stopped";
+  ownerStoppedEvidenceId?: string;
+}
+
+export interface DispatchClaimEventAuthorizationInput {
+  schemaVersion: "1";
+  eventId: string;
+  expectedEntityVersion: number;
+  proof: DispatchClaimProof;
+  runId: string;
+  taskId: string;
+  actorId: string;
+  commandFingerprint: string;
+}
+
+export const DispatchClaimProofSchema: z.ZodType<DispatchClaimProof> = z
+  .object({
+    claimId: z.string().trim().min(1),
+    fencingToken: z.number().int().positive(),
+    ownerId: z.string().trim().min(1),
+    runId: z.string().trim().min(1),
+  })
+  .strict();
+
+export const DispatchClaimRepositorySchema: z.ZodType<string> = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((value) => value.toLowerCase())
+  .pipe(NormalizedRepositorySchema);
+
+export const DispatchClaimSchema: z.ZodType<DispatchClaim> = z
+  .object({
+    taskId: z.string().trim().min(1),
+    repository: NormalizedRepositorySchema,
+    state: z.string().trim().min(1),
+    ownerId: z.string().trim().min(1),
+    workspaceId: z.string().trim().min(1),
+    runId: z.string().trim().min(1),
+    claimId: z.string().trim().min(1),
+    entityVersion: z.number().int().positive(),
+    fencingToken: z.number().int().positive(),
+    acquiredAt: z.string().datetime({ offset: true }),
+    expiresAt: z.string().datetime({ offset: true }),
+    dispatchPlanId: z.string().trim().min(1),
+    dispatchPlanVersion: z.literal("1"),
+  })
+  .strict();
+
+const DispatchClaimInputBaseSchema = z.object({
+  schemaVersion: z.literal("1"),
+  eventId: z.string().trim().min(1),
+  expectedEntityVersion: z.number().int().nonnegative(),
+});
+
+export const DispatchClaimAcquireInputSchema: z.ZodType<DispatchClaimAcquireInput> =
+  DispatchClaimInputBaseSchema.extend({
+    taskId: z.string().trim().min(1),
+    repository: DispatchClaimRepositorySchema,
+    state: z.string().trim().min(1),
+    ownerId: z.string().trim().min(1),
+    workspaceId: z.string().trim().min(1),
+    runId: z.string().trim().min(1),
+    leaseDurationSeconds: z.number().int().min(5).max(86_400),
+    dispatchPlanId: z.string().trim().min(1),
+    dispatchPlanVersion: z.literal("1"),
+    snapshotFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict();
+
+export const DispatchClaimHeartbeatInputSchema: z.ZodType<DispatchClaimHeartbeatInput> =
+  DispatchClaimInputBaseSchema.extend({
+    proof: DispatchClaimProofSchema,
+    leaseDurationSeconds: z.number().int().min(5).max(86_400),
+  }).strict();
+
+export const DispatchClaimReleaseInputSchema: z.ZodType<DispatchClaimReleaseInput> =
+  DispatchClaimInputBaseSchema.extend({ proof: DispatchClaimProofSchema }).strict();
+
+export const DispatchClaimReclaimInputSchema: z.ZodType<DispatchClaimReclaimInput> =
+  DispatchClaimInputBaseSchema.extend({
+    claimId: z.string().trim().min(1),
+    reason: z.enum(["expired", "owner_stopped"]),
+    ownerStoppedEvidenceId: z.string().trim().min(1).optional(),
+  })
+    .strict()
+    .superRefine((input, context) => {
+      if (input.reason === "owner_stopped" && !input.ownerStoppedEvidenceId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ownerStoppedEvidenceId"],
+          message: "owner_stopped reclaim には停止 evidence ID が必要です",
+        });
+      }
+      if (input.reason === "expired" && input.ownerStoppedEvidenceId) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["ownerStoppedEvidenceId"],
+          message: "expired reclaim に owner 停止 evidence は指定できません",
+        });
+      }
+    });
+
+export const DispatchClaimEventAuthorizationInputSchema: z.ZodType<DispatchClaimEventAuthorizationInput> =
+  DispatchClaimInputBaseSchema.extend({
+    proof: DispatchClaimProofSchema,
+    runId: z.string().trim().min(1),
+    taskId: z.string().trim().min(1),
+    actorId: z.string().trim().min(1),
+    commandFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  }).strict();
+
+const DispatchCompletionAuthorizationSchema: z.ZodType<DispatchCompletionAuthorization> = z
+  .object({
+    runId: z.string().trim().min(1),
+    taskId: z.string().trim().min(1),
+    actorId: z.string().trim().min(1),
+    commandFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+  })
+  .strict();
+
+const DispatchClaimAcceptedReceiptBaseSchema = z.object({
+  accepted: z.literal(true),
+  eventId: z.string().trim().min(1),
+  entityVersion: z.number().int().nonnegative(),
+  stateUnchanged: z.literal(false),
+  claim: DispatchClaimSchema,
+});
+
+const DispatchClaimAcceptedReceiptSchema: z.ZodType<DispatchClaimAcceptedReceipt> = z.union([
+  DispatchClaimAcceptedReceiptBaseSchema.extend({ operation: z.literal("claim") }).strict(),
+  DispatchClaimAcceptedReceiptBaseSchema.extend({ operation: z.literal("heartbeat") }).strict(),
+  DispatchClaimAcceptedReceiptBaseSchema.extend({ operation: z.literal("release") }).strict(),
+  DispatchClaimAcceptedReceiptBaseSchema.extend({
+    operation: z.literal("reclaim"),
+    reclaimReason: z.literal("expired"),
+  }).strict(),
+  DispatchClaimAcceptedReceiptBaseSchema.extend({
+    operation: z.literal("reclaim"),
+    reclaimReason: z.literal("owner_stopped"),
+    evidenceId: z.string().trim().min(1),
+  }).strict(),
+  DispatchClaimAcceptedReceiptBaseSchema.extend({
+    operation: z.literal("authorize_event"),
+    completion: DispatchCompletionAuthorizationSchema,
+    claimContinues: z.boolean(),
+  }).strict(),
+]);
+
+const DispatchClaimRejectedReceiptSchema = z
+  .object({
+    accepted: z.literal(false),
+    operation: z.enum(["claim", "heartbeat", "release", "reclaim", "authorize_event"]),
+    eventId: z.string().trim().min(1),
+    entityVersion: z.number().int().nonnegative(),
+    stateUnchanged: z.literal(true),
+    code: z.enum([
+      "event_payload_mismatch",
+      "stale_entity_version",
+      "dispatch_not_configured",
+      "unknown_state",
+      "global_capacity",
+      "state_capacity",
+      "repository_capacity",
+      "task_already_claimed",
+      "workspace_already_claimed",
+      "claim_not_found",
+      "stale_claim",
+      "authorization_pending",
+      "snapshot_mismatch",
+      "lease_expired",
+      "lease_not_expired",
+    ]),
+    message: z.string().trim().min(1),
+  })
+  .strict();
+
+export const DispatchClaimReceiptSchema: z.ZodType<DispatchClaimReceipt> = z.union([
+  DispatchClaimAcceptedReceiptSchema,
+  DispatchClaimRejectedReceiptSchema,
+]);
+
+const RunGraphClaimAuditCommandBaseSchema = z.object({
+  registryEventId: z.string().trim().min(1),
+  registryEntityVersion: z.number().int().positive(),
+  claim: DispatchClaimSchema,
+});
+
+export const RunGraphClaimAuditCommandSchema: z.ZodType<RunGraphClaimAuditCommand> = z.union([
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.enum(["claim_acquired", "claim_heartbeat", "claim_released"]),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_reclaimed"),
+    reclaimReason: z.literal("expired"),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_reclaimed"),
+    reclaimReason: z.literal("owner_stopped"),
+    evidenceId: z.string().trim().min(1),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_event_authorized"),
+    completion: DispatchCompletionAuthorizationSchema,
+  }).strict(),
+]);
+
+export const RunGraphClaimAuditInputSchema: z.ZodType<RunGraphClaimAuditInput> = z
+  .object({
+    schemaVersion: z.literal("1"),
+    eventId: z.string().trim().min(1),
+    actor: z.object({ id: z.string().min(1).max(200), role: z.enum(RUN_GRAPH_ROLES) }).strict(),
+    receipt: DispatchClaimAcceptedReceiptSchema,
+  })
+  .strict();
+
 const OpaqueIdSchema = z.string().min(1).max(200);
 const TimestampSchema = z.string().datetime({ offset: true });
 const ArtifactIdListSchema = z.array(OpaqueIdSchema);
@@ -667,7 +1052,20 @@ export interface RunGraphStartedCommand {
   firstNodeId: string;
 }
 
-export type RunGraphAcceptedCommand = RunGraphStartedCommand | RunGraphRunnerCommand;
+export type RunGraphAcceptedCommand =
+  | RunGraphStartedCommand
+  | RunGraphRunnerCommand
+  | RunGraphClaimAuditCommand;
+
+/** crash 後も exact completion だけを識別する immutable claim authorization binding。 */
+export interface RunGraphDispatchAuthorizationBinding {
+  claimId: string;
+  fencingToken: number;
+  ownerId: string;
+  runId: string;
+  taskId: string;
+  commandFingerprint: string;
+}
 
 export interface RunGraphAcceptedEvent {
   recordType: "accepted";
@@ -681,6 +1079,7 @@ export interface RunGraphAcceptedEvent {
   evidenceIds: string[];
   artifacts?: RunGraphArtifact[];
   evidence?: RunGraphEvidence[];
+  dispatchAuthorization?: RunGraphDispatchAuthorizationBinding;
   nextNodeId?: string;
   nextContractNodeId?: string;
   waitReason?: string;
@@ -696,6 +1095,7 @@ export const RUN_GRAPH_REJECTION_CODES = [
   "evidence_required",
   "pr_not_linked_to_task",
   "github_live_state_unavailable",
+  "stale_claim",
 ] as const;
 
 export type RunGraphRejectionCode = (typeof RUN_GRAPH_REJECTION_CODES)[number];
@@ -871,7 +1271,20 @@ const RunGraphStartedCommandSchema: z.ZodType<RunGraphStartedCommand> = z
 export const RunGraphAcceptedCommandSchema: z.ZodType<RunGraphAcceptedCommand> = z.union([
   RunGraphStartedCommandSchema,
   RunGraphRunnerCommandSchema,
+  RunGraphClaimAuditCommandSchema,
 ]);
+
+export const RunGraphDispatchAuthorizationBindingSchema: z.ZodType<RunGraphDispatchAuthorizationBinding> =
+  z
+    .object({
+      claimId: OpaqueIdSchema,
+      fencingToken: z.number().int().positive(),
+      ownerId: OpaqueIdSchema,
+      runId: OpaqueIdSchema,
+      taskId: OpaqueIdSchema,
+      commandFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict();
 
 export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
   .object({
@@ -886,6 +1299,7 @@ export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
     evidenceIds: z.array(OpaqueIdSchema),
     artifacts: z.array(RunGraphArtifactSchema).optional(),
     evidence: z.array(RunGraphEvidenceSchema).optional(),
+    dispatchAuthorization: RunGraphDispatchAuthorizationBindingSchema.optional(),
     nextNodeId: OpaqueIdSchema.optional(),
     nextContractNodeId: OpaqueIdSchema.optional(),
     waitReason: z.string().min(1).max(2000).optional(),
@@ -895,6 +1309,19 @@ export const RunGraphAcceptedEventSchema: z.ZodType<RunGraphAcceptedEvent> = z
     const submittedArtifactIds = (event.artifacts ?? []).map((artifact) => artifact.id);
     const submittedEvidenceIds = (event.evidence ?? []).map((evidence) => evidence.id);
     const checkpointUsesAttemptProducer = event.command.type === "run_paused";
+    if (
+      event.dispatchAuthorization &&
+      (event.dispatchAuthorization.runId !== event.runId ||
+        event.dispatchAuthorization.ownerId !== event.actor.id ||
+        (event.command.type !== "attempt_finished" &&
+          event.command.type !== "node_outcome_submitted"))
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dispatchAuthorization"],
+        message: "dispatch authorization は同じ Run/actor の completion/outcome にだけ指定できます",
+      });
+    }
     if (
       new Set(event.artifactIds).size !== event.artifactIds.length ||
       new Set(event.evidenceIds).size !== event.evidenceIds.length ||
@@ -1070,6 +1497,13 @@ export interface RunGraphBoundedCollection<T> {
   items: T[];
 }
 
+export interface RunGraphClaimAuditView {
+  eventId: string;
+  acceptedAt: string;
+  actor: RunGraphActor;
+  command: RunGraphClaimAuditCommand;
+}
+
 export interface RunGraphView {
   schemaVersion: "1";
   runId: string;
@@ -1088,6 +1522,7 @@ export interface RunGraphView {
   attempts: RunGraphBoundedCollection<RunGraphAttempt>;
   artifacts: RunGraphBoundedCollection<RunGraphArtifact>;
   evidence: RunGraphBoundedCollection<RunGraphEvidence>;
+  claimAudits: RunGraphBoundedCollection<RunGraphClaimAuditView>;
 }
 
 const RunGraphBudgetProjectionSchema: z.ZodType<RunGraphBudgetProjection> = z
@@ -1261,6 +1696,15 @@ const BoundedArtifactCollectionSchema = boundedCollectionSchema(RunGraphArtifact
 const BoundedEvidenceCollectionSchema = boundedCollectionSchema(RunGraphEvidenceSchema);
 const BoundedNodeCollectionSchema = boundedCollectionSchema(RunGraphNodeSchema);
 const BoundedAttemptCollectionSchema = boundedCollectionSchema(RunGraphAttemptSchema);
+const RunGraphClaimAuditViewSchema: z.ZodType<RunGraphClaimAuditView> = z
+  .object({
+    eventId: OpaqueIdSchema,
+    acceptedAt: TimestampSchema,
+    actor: RunGraphActorSchema,
+    command: RunGraphClaimAuditCommandSchema,
+  })
+  .strict();
+const BoundedClaimAuditCollectionSchema = boundedCollectionSchema(RunGraphClaimAuditViewSchema);
 
 export const RunGraphViewSchema: z.ZodType<RunGraphView> = z
   .object({
@@ -1281,5 +1725,6 @@ export const RunGraphViewSchema: z.ZodType<RunGraphView> = z
     attempts: BoundedAttemptCollectionSchema,
     artifacts: BoundedArtifactCollectionSchema,
     evidence: BoundedEvidenceCollectionSchema,
+    claimAudits: BoundedClaimAuditCollectionSchema,
   })
   .strict();

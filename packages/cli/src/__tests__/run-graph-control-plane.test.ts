@@ -1,16 +1,29 @@
-import { describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { describe, expect, it, vi } from "vitest";
+import { gitFixtureEnvironment } from "./git-fixture.js";
+import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import {
+  canonicalJsonStringify,
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   GANTT_DIR,
   RUN_GRAPH_DIR,
   RUN_GRAPH_RUNS_DIR,
+  type RunGraphRunnerCommandInput,
 } from "@gh-gantt/shared";
-import { RunGraphControlPlane } from "../run-graph/control-plane.js";
+import { RunGraphControlPlane, type DispatchClaimAuthority } from "../run-graph/control-plane.js";
 import { GraphContractStore } from "../store/graph-contract.js";
 import { RunGraphEventStore } from "../store/run-graph.js";
+import {
+  DispatchClaimStore,
+  createDispatchClaimStoreDependencies,
+  type DispatchClaimStoreDependencies,
+} from "../store/dispatch-claims.js";
+
+const execFileAsync = promisify(execFile);
 
 const timestamp = "2026-07-30T00:00:00.000Z";
 
@@ -38,6 +51,102 @@ const reference = (name: string) => ({
   sha256: `sha256:${"d".repeat(64)}`,
   byteLength: 256,
 });
+
+async function createClaimedControlPlane(
+  storeOverrides: Partial<DispatchClaimStoreDependencies> = {},
+) {
+  const root = await mkdtemp(join(tmpdir(), "gh-gantt-claimed-control-"));
+  await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
+  await mkdir(join(root, GANTT_DIR), { recursive: true });
+  await writeFile(
+    join(root, GANTT_DIR, "gantt.config.json"),
+    `${JSON.stringify({
+      version: "1",
+      project: {
+        name: "fixture",
+        github: { owner: "stanah", repo: "gh-gantt", project_number: 1 },
+      },
+      sync: {
+        auto_create_issues: false,
+        field_mapping: { start_date: "Start", end_date: "End" },
+      },
+      task_types: {
+        task: { label: "Task", display: "bar", color: "#000", github_label: null },
+      },
+      type_hierarchy: { task: [] },
+      statuses: { field_name: "Status", values: { Todo: { color: "#000", done: false } } },
+      gantt: {
+        default_view: "month",
+        working_days: [1, 2, 3, 4, 5],
+        colors: { critical_path: "#000", on_track: "#000", at_risk: "#000", overdue: "#000" },
+      },
+      dispatch: { max_concurrency: 1 },
+    })}\n`,
+  );
+  await new GraphContractStore(root).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+  const claims = new DispatchClaimStore(
+    root,
+    createDispatchClaimStoreDependencies({
+      now: () => "2026-08-02T00:00:00.000Z",
+      nextId: () => "claim-ready-frontier",
+      readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+      ...storeOverrides,
+    }),
+  );
+  const control = new RunGraphControlPlane(root, deterministicDependencies(), claims);
+  const runId = await startRun(control, "claimed-fixture-start");
+  const started = await control.inspect(runId);
+  const nodeId = started.currentNode?.id;
+  if (!nodeId) throw new Error("current node が必要です");
+  await control.applyEvent({
+    schemaVersion: "1",
+    eventId: "claimed-fixture-attempt-start",
+    runId,
+    actor: { id: "task-runner", role: "planner" },
+    command: { type: "attempt_started", nodeId, attemptId: "planner-attempt" },
+  });
+  const claimed = await claims.claim({
+    schemaVersion: "1",
+    eventId: "claimed-fixture-claim",
+    expectedEntityVersion: 0,
+    taskId: "stanah/gh-gantt#328",
+    repository: "stanah/gh-gantt",
+    state: "Todo",
+    ownerId: "task-runner",
+    workspaceId: "workspace:ready-frontier",
+    runId,
+    leaseDurationSeconds: 300,
+    dispatchPlanId: "dispatch-plan:ready-frontier",
+    dispatchPlanVersion: "1",
+    snapshotFingerprint: "d".repeat(64),
+  });
+  if (!claimed.accepted) throw new Error(claimed.message);
+  return { root, claims, control, runId, nodeId, claimed };
+}
+
+function commandEvidence(id: string) {
+  return {
+    id,
+    kind: "command_execution" as const,
+    artifactIds: [],
+    provenance: "task-runner",
+    reference: reference(id),
+  };
+}
+
+function withClaimAuthorityOverrides(
+  claims: DispatchClaimStore,
+  overrides: Partial<DispatchClaimAuthority>,
+): DispatchClaimAuthority {
+  return new Proxy(claims, {
+    get(target, property) {
+      const override = overrides[property as keyof DispatchClaimAuthority];
+      if (override) return override;
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as DispatchClaimAuthority;
+}
 
 type ExecutionRole = "planner" | "implementer" | "executor" | "reviewer";
 
@@ -373,6 +482,60 @@ describe("[NFR-STABILITY-014-AC2] RunGraphControlPlane は start/applyEvent/insp
 });
 
 describe("[NFR-STABILITY-014-AC6] fixed dev-role transition は accepted outcome event だけで進む", () => {
+  it("non-Git standalone completion は process locale に依存せず従来動作を保つ", async () => {
+    const previousLocale = process.env.LC_ALL;
+    process.env.LC_ALL = "ja_JP.UTF-8";
+    try {
+      const { control } = await createControlPlane();
+      const started = await control.start({
+        schemaVersion: "1",
+        eventId: "standalone-locale-start",
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      });
+      if (!started.accepted || !started.view.currentNode) throw new Error("start failure");
+      const runId = started.view.runId;
+      const nodeId = started.view.currentNode.id;
+      await control.applyEvent({
+        schemaVersion: "1",
+        eventId: "standalone-locale-attempt-start",
+        runId,
+        actor: { id: "planner-1", role: "planner" },
+        command: { type: "attempt_started", nodeId, attemptId: "standalone-locale-attempt" },
+      });
+
+      await expect(
+        control.applyEvent({
+          schemaVersion: "1",
+          eventId: "standalone-locale-attempt-finish",
+          runId,
+          actor: { id: "planner-1", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "standalone-locale-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["standalone-locale-evidence"],
+          },
+          evidence: [
+            {
+              id: "standalone-locale-evidence",
+              kind: "command_execution",
+              artifactIds: [],
+              provenance: "external-runner",
+              reference: reference("standalone-locale-command"),
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ accepted: true });
+    } finally {
+      if (previousLocale === undefined) delete process.env.LC_ALL;
+      else process.env.LC_ALL = previousLocale;
+    }
+  });
+
   it("planner の schema-valid outcome から新しい implementer Run Node を作る", async () => {
     const { root, control } = await createControlPlane();
     const started = await control.start({
@@ -2167,5 +2330,1498 @@ describe("[NFR-STABILITY-014-AC7] 旧 PR observation は未証明 linkage とし
         contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
       }),
     ).resolves.toMatchObject({ accepted: true, view: { state: "running", revision: 1 } });
+  });
+});
+
+describe("[NFR-STABILITY-014-AC9] claim lifecycle audit と completion fencing", () => {
+  it("claim audit は fixed dev-role topology を変えず、reclaim 後の旧 completion を拒否する", async () => {
+    let now = "2026-08-02T00:00:00.000Z";
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-claimed-control-"));
+    await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
+    await mkdir(join(root, GANTT_DIR), { recursive: true });
+    await writeFile(
+      join(root, GANTT_DIR, "gantt.config.json"),
+      `${JSON.stringify(
+        {
+          version: "1",
+          project: {
+            name: "fixture",
+            github: { owner: "stanah", repo: "gh-gantt", project_number: 1 },
+          },
+          sync: {
+            auto_create_issues: false,
+            field_mapping: { start_date: "Start", end_date: "End" },
+          },
+          task_types: {
+            task: { label: "Task", display: "bar", color: "#000", github_label: null },
+          },
+          type_hierarchy: { task: [] },
+          statuses: { field_name: "Status", values: { Todo: { color: "#000", done: false } } },
+          gantt: {
+            default_view: "month",
+            working_days: [1, 2, 3, 4, 5],
+            colors: { critical_path: "#000", on_track: "#000", at_risk: "#000", overdue: "#000" },
+          },
+          dispatch: { max_concurrency: 1 },
+        },
+        null,
+        2,
+      )}\n`,
+    );
+    await new GraphContractStore(root).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const claims = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        now: () => now,
+        nextId: () => "claim-329",
+        readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+      }),
+    );
+    const control = new RunGraphControlPlane(root, deterministicDependencies(), claims);
+    const runId = await startRun(control, "claimed-run-start");
+    const started = await control.inspect(runId);
+    const nodeId = started.currentNode?.id;
+    if (!nodeId) throw new Error("current node が必要です");
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "claimed-attempt-start",
+      runId,
+      actor: { id: "planner-claimed", role: "planner" },
+      command: { type: "attempt_started", nodeId, attemptId: "attempt-claimed" },
+    });
+
+    const claimed = await claims.claim({
+      schemaVersion: "1",
+      eventId: "registry-claim",
+      expectedEntityVersion: 0,
+      taskId: "stanah/gh-gantt#328",
+      repository: "stanah/gh-gantt",
+      state: "Todo",
+      ownerId: "planner-claimed",
+      workspaceId: "workspace:claimed",
+      runId,
+      leaseDurationSeconds: 60,
+      dispatchPlanId: "dispatch-plan:test",
+      dispatchPlanVersion: "1",
+      snapshotFingerprint: "d".repeat(64),
+    });
+    if (!claimed.accepted) throw new Error(claimed.message);
+    const audit = await control.recordClaimAudit({
+      schemaVersion: "1",
+      eventId: `audit:${claimed.eventId}`,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      receipt: claimed,
+    });
+    expect(audit).toMatchObject({
+      accepted: true,
+      view: {
+        revision: 3,
+        currentNode: { id: nodeId, state: "running", activeAttemptId: "attempt-claimed" },
+        nodes: { total: 1 },
+        claimAudits: {
+          total: 1,
+          items: [
+            {
+              command: {
+                type: "claim_acquired",
+                claim: {
+                  taskId: "stanah/gh-gantt#328",
+                  ownerId: "planner-claimed",
+                  runId,
+                  fencingToken: 1,
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    await expect(
+      control.recordClaimAudit({
+        schemaVersion: "1",
+        eventId: `audit:${claimed.eventId}`,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        receipt: claimed,
+      }),
+    ).resolves.toEqual(audit);
+    await expect(
+      control.recordClaimAudit({
+        schemaVersion: "1",
+        eventId: `audit:${claimed.eventId}:alternate`,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        receipt: claimed,
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "duplicate_event", stateUnchanged: true });
+    await expect(
+      control.recordClaimAudit({
+        schemaVersion: "1",
+        eventId: "audit:forged-registry-receipt",
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        receipt: { ...claimed, eventId: "forged-registry-receipt" },
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_claim", stateUnchanged: true });
+
+    const beforeBypass = await control.inspect(runId);
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "raw-completion-bypass",
+        runId,
+        actor: { id: "planner-claimed", role: "planner" },
+        command: {
+          type: "attempt_finished",
+          nodeId,
+          attemptId: "attempt-claimed",
+          outcome: "succeeded",
+          artifactIds: [],
+          evidenceIds: ["cross-run-command-evidence"],
+        },
+        evidence: [
+          {
+            id: "cross-run-command-evidence",
+            kind: "command_execution",
+            artifactIds: [],
+            provenance: "cross-runner",
+            reference: reference("cross-run-command"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_claim",
+      stateUnchanged: true,
+      view: { revision: beforeBypass.revision, activeAttempt: { state: "running" } },
+    });
+
+    const otherRunId = await startRun(control, "other-run-start");
+    const otherView = await control.inspect(otherRunId);
+    const otherNodeId = otherView.currentNode?.id;
+    if (!otherNodeId) throw new Error("other current node が必要です");
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "other-attempt-start",
+      runId: otherRunId,
+      actor: { id: "planner-claimed", role: "planner" },
+      command: { type: "attempt_started", nodeId: otherNodeId, attemptId: "other-attempt" },
+    });
+    await expect(
+      control.applyClaimedEvent(
+        {
+          schemaVersion: "1",
+          eventId: "cross-run-completion",
+          runId: otherRunId,
+          actor: { id: "planner-claimed", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId: otherNodeId,
+            attemptId: "other-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["stale-command-evidence"],
+          },
+          evidence: [
+            {
+              id: "stale-command-evidence",
+              kind: "command_execution",
+              artifactIds: [],
+              provenance: "stale-runner",
+              reference: reference("stale-command"),
+            },
+          ],
+        },
+        {
+          claimId: claimed.claim.claimId,
+          fencingToken: claimed.claim.fencingToken,
+          ownerId: claimed.claim.ownerId,
+          runId,
+        },
+        1,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_claim", stateUnchanged: true });
+
+    now = "2026-08-02T00:02:00.000Z";
+    const reclaimed = await claims.reclaim({
+      schemaVersion: "1",
+      eventId: "registry-reclaim",
+      expectedEntityVersion: 1,
+      claimId: claimed.claim.claimId,
+      reason: "expired",
+    });
+    if (!reclaimed.accepted || !reclaimed.claim) throw new Error("reclaim receipt が必要です");
+    const reclaimAudit = await control.recordClaimAudit({
+      schemaVersion: "1",
+      eventId: `audit:${reclaimed.eventId}`,
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      receipt: { ...reclaimed, claim: reclaimed.claim },
+    });
+    expect(reclaimAudit).toMatchObject({
+      accepted: true,
+      view: {
+        claimAudits: {
+          total: 2,
+          items: [
+            {},
+            {
+              command: {
+                type: "claim_reclaimed",
+                reclaimReason: "expired",
+                claim: { ownerId: "planner-claimed", runId, taskId: "stanah/gh-gantt#328" },
+              },
+            },
+          ],
+        },
+      },
+    });
+    const beforeStale = await control.inspect(runId);
+    await expect(
+      control.applyClaimedEvent(
+        {
+          schemaVersion: "1",
+          eventId: "stale-completion",
+          runId,
+          actor: { id: "planner-claimed", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "attempt-claimed",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["stale-completion-command"],
+          },
+          evidence: [
+            {
+              id: "stale-completion-command",
+              kind: "command_execution",
+              artifactIds: [],
+              provenance: "stale-completion-runner",
+              reference: reference("stale-completion-command"),
+            },
+          ],
+        },
+        {
+          claimId: claimed.claim.claimId,
+          fencingToken: claimed.claim.fencingToken,
+          ownerId: claimed.claim.ownerId,
+          runId,
+        },
+        2,
+      ),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_claim",
+      stateUnchanged: true,
+      view: { revision: beforeStale.revision, activeAttempt: { state: "running" } },
+    });
+  });
+
+  it("同じ claim で複数 event を認可し、更新 proof で heartbeat と release を継続する", async () => {
+    const { claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const first = await control.applyClaimedEvent(
+      {
+        schemaVersion: "1",
+        eventId: "claimed-planner-finish",
+        runId,
+        actor: { id: "task-runner", role: "planner" },
+        command: {
+          type: "attempt_finished",
+          nodeId,
+          attemptId: "planner-attempt",
+          outcome: "succeeded",
+          artifactIds: [],
+          evidenceIds: ["claimed-planner-command"],
+        },
+        evidence: [commandEvidence("claimed-planner-command")],
+      },
+      {
+        claimId: claimed.claim.claimId,
+        fencingToken: claimed.claim.fencingToken,
+        ownerId: claimed.claim.ownerId,
+        runId,
+      },
+      claimed.entityVersion,
+    );
+    expect(first).toMatchObject({
+      accepted: true,
+      claimAuthorization: {
+        receipt: { entityVersion: 2, claim: { entityVersion: 2, fencingToken: 2 } },
+        proof: { fencingToken: 2 },
+        audit: { recorded: true },
+      },
+    });
+    if (!first.accepted || !first.claimAuthorization) throw new Error("更新 proof が必要です");
+
+    const outcome = await control.applyClaimedEvent(
+      {
+        schemaVersion: "1",
+        eventId: "claimed-planner-outcome",
+        runId,
+        actor: { id: "task-runner", role: "planner" },
+        command: {
+          type: "node_outcome_submitted",
+          nodeId,
+          attemptId: "planner-attempt",
+          outcome: "plan_valid",
+          artifactIds: ["claimed-plan"],
+          evidenceIds: ["claimed-plan-validation"],
+        },
+        artifacts: [
+          {
+            id: "claimed-plan",
+            schemaId: "dev-role.plan",
+            schemaVersion: "1",
+            derivedFromArtifactIds: [],
+            reference: reference("claimed-plan"),
+          },
+        ],
+        evidence: [
+          {
+            id: "claimed-plan-validation",
+            kind: "artifact_validation",
+            artifactIds: ["claimed-plan"],
+            provenance: "task-runner",
+            reference: reference("claimed-plan-validation"),
+          },
+        ],
+      },
+      first.claimAuthorization.proof,
+      first.claimAuthorization.receipt.entityVersion,
+    );
+    expect(outcome).toMatchObject({
+      accepted: true,
+      view: { currentNode: { contractNodeId: "implementer" } },
+      claimAuthorization: { proof: { fencingToken: 3 } },
+    });
+    if (!outcome.accepted || !outcome.claimAuthorization)
+      throw new Error("outcome 更新 proof が必要です");
+    const implementerNodeId = outcome.view.currentNode?.id;
+    if (!implementerNodeId) throw new Error("implementer node が必要です");
+    await control.applyEvent({
+      schemaVersion: "1",
+      eventId: "claimed-implementer-start",
+      runId,
+      actor: { id: "task-runner", role: "implementer" },
+      command: {
+        type: "attempt_started",
+        nodeId: implementerNodeId,
+        attemptId: "implementer-attempt",
+      },
+    });
+    const implementerFinished = await control.applyClaimedEvent(
+      {
+        schemaVersion: "1",
+        eventId: "claimed-implementer-finish",
+        runId,
+        actor: { id: "task-runner", role: "implementer" },
+        command: {
+          type: "attempt_finished",
+          nodeId: implementerNodeId,
+          attemptId: "implementer-attempt",
+          outcome: "succeeded",
+          artifactIds: [],
+          evidenceIds: ["claimed-implementer-command"],
+        },
+        evidence: [commandEvidence("claimed-implementer-command")],
+      },
+      outcome.claimAuthorization.proof,
+      outcome.claimAuthorization.receipt.entityVersion,
+    );
+    expect(implementerFinished).toMatchObject({
+      accepted: true,
+      claimAuthorization: { proof: { fencingToken: 4 } },
+    });
+    if (!implementerFinished.accepted || !implementerFinished.claimAuthorization)
+      throw new Error("implementer 更新 proof が必要です");
+
+    const heartbeat = await claims.heartbeat({
+      schemaVersion: "1",
+      eventId: "claimed-after-events-heartbeat",
+      expectedEntityVersion: implementerFinished.claimAuthorization.receipt.entityVersion,
+      proof: implementerFinished.claimAuthorization.proof,
+      leaseDurationSeconds: 300,
+    });
+    expect(heartbeat).toMatchObject({
+      accepted: true,
+      entityVersion: 5,
+      claim: { fencingToken: 5 },
+    });
+    if (!heartbeat.accepted || !heartbeat.claim) throw new Error("heartbeat claim が必要です");
+    const released = await claims.release({
+      schemaVersion: "1",
+      eventId: "claimed-after-events-release",
+      expectedEntityVersion: heartbeat.entityVersion,
+      proof: {
+        claimId: heartbeat.claim.claimId,
+        fencingToken: heartbeat.claim.fencingToken,
+        ownerId: heartbeat.claim.ownerId,
+        runId: heartbeat.claim.runId,
+      },
+    });
+    expect(released).toMatchObject({ accepted: true, entityVersion: 6 });
+    await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 6, claims: [] });
+  });
+
+  it("domain reject は registry/journal を変更せず、同じ proof の修正 retry を受理する", async () => {
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const initialRegistry = await claims.snapshot();
+    const initialJournal = await new RunGraphEventStore(root).readJournal(runId);
+    await expect(
+      control.applyClaimedEvent(
+        {
+          schemaVersion: "1",
+          eventId: "claimed-missing-evidence",
+          runId,
+          actor: { id: "task-runner", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "planner-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: [],
+          },
+        },
+        proof,
+        claimed.entityVersion,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "evidence_required" });
+    await expect(claims.snapshot()).resolves.toEqual(initialRegistry);
+    await expect(new RunGraphEventStore(root).readJournal(runId)).resolves.toEqual(initialJournal);
+
+    await expect(
+      control.applyClaimedEvent(
+        {
+          schemaVersion: "1",
+          eventId: "claimed-stale-attempt",
+          runId,
+          actor: { id: "task-runner", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "other-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["claimed-stale-command"],
+          },
+          evidence: [commandEvidence("claimed-stale-command")],
+        },
+        proof,
+        claimed.entityVersion,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_attempt" });
+    await expect(claims.snapshot()).resolves.toEqual(initialRegistry);
+    await expect(new RunGraphEventStore(root).readJournal(runId)).resolves.toEqual(initialJournal);
+
+    const correctedFinish = await control.applyClaimedEvent(
+      {
+        schemaVersion: "1",
+        eventId: "claimed-corrected-finish",
+        runId,
+        actor: { id: "task-runner", role: "planner" },
+        command: {
+          type: "attempt_finished",
+          nodeId,
+          attemptId: "planner-attempt",
+          outcome: "succeeded",
+          artifactIds: [],
+          evidenceIds: ["claimed-corrected-command"],
+        },
+        evidence: [commandEvidence("claimed-corrected-command")],
+      },
+      proof,
+      claimed.entityVersion,
+    );
+    if (!correctedFinish.accepted || !correctedFinish.claimAuthorization)
+      throw new Error("修正後 completion が必要です");
+    const afterFinishRegistry = await claims.snapshot();
+
+    const outcomeBase = {
+      schemaVersion: "1" as const,
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "node_outcome_submitted" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        artifactIds: ["claimed-retry-plan"],
+        evidenceIds: ["claimed-retry-validation"],
+      },
+      artifacts: [
+        {
+          id: "claimed-retry-plan",
+          schemaId: "dev-role.plan",
+          schemaVersion: "1" as const,
+          derivedFromArtifactIds: [],
+          reference: reference("claimed-retry-plan"),
+        },
+      ],
+      evidence: [
+        {
+          id: "claimed-retry-validation",
+          kind: "artifact_validation" as const,
+          artifactIds: ["claimed-retry-plan"],
+          provenance: "task-runner",
+          reference: reference("claimed-retry-validation"),
+        },
+      ],
+    };
+    await expect(
+      control.applyClaimedEvent(
+        {
+          ...outcomeBase,
+          eventId: "claimed-invalid-outcome",
+          command: { ...outcomeBase.command, outcome: "not-a-contract-edge" },
+        },
+        correctedFinish.claimAuthorization.proof,
+        correctedFinish.claimAuthorization.receipt.entityVersion,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "invalid_transition" });
+    await expect(claims.snapshot()).resolves.toEqual(afterFinishRegistry);
+
+    await expect(
+      control.applyClaimedEvent(
+        {
+          ...outcomeBase,
+          eventId: "claimed-corrected-outcome",
+          command: { ...outcomeBase.command, outcome: "plan_valid" },
+        },
+        correctedFinish.claimAuthorization.proof,
+        correctedFinish.claimAuthorization.receipt.entityVersion,
+      ),
+    ).resolves.toMatchObject({
+      accepted: true,
+      claimAuthorization: { proof: { fencingToken: 3 } },
+    });
+  });
+
+  it("append 競合は pending を解除し、同じ proof で修正 event を継続できる", async () => {
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const originalAppend = RunGraphEventStore.prototype.appendAccepted;
+    let injected = false;
+    const appendSpy = vi
+      .spyOn(RunGraphEventStore.prototype, "appendAccepted")
+      .mockImplementation(async (event) => {
+        if (event.eventId === "claimed-conflicted-finish" && !injected) {
+          injected = true;
+          await originalAppend.call(new RunGraphEventStore(root), {
+            ...event,
+            eventId: "competing-finish",
+          });
+        }
+        return originalAppend.call(new RunGraphEventStore(root), event);
+      });
+    try {
+      const conflict = await control.applyClaimedEvent(
+        {
+          schemaVersion: "1",
+          eventId: "claimed-conflicted-finish",
+          runId,
+          actor: { id: "task-runner", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "planner-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["claimed-conflict-command"],
+          },
+          evidence: [commandEvidence("claimed-conflict-command")],
+        },
+        {
+          claimId: claimed.claim.claimId,
+          fencingToken: claimed.claim.fencingToken,
+          ownerId: claimed.claim.ownerId,
+          runId,
+        },
+        claimed.entityVersion,
+      );
+      expect(conflict).toMatchObject({
+        accepted: false,
+        code: "stale_attempt",
+        view: { activeAttempt: { state: "succeeded" } },
+      });
+      await expect(claims.snapshot()).resolves.toMatchObject({
+        entityVersion: 1,
+        claims: [{ claimId: claimed.claim.claimId, fencingToken: 1 }],
+        pendingAuthorizations: [],
+      });
+
+      await expect(
+        control.applyClaimedEvent(
+          {
+            schemaVersion: "1",
+            eventId: "claimed-after-conflict-outcome",
+            runId,
+            actor: { id: "task-runner", role: "planner" },
+            command: {
+              type: "node_outcome_submitted",
+              nodeId,
+              attemptId: "planner-attempt",
+              outcome: "plan_valid",
+              artifactIds: ["claimed-after-conflict-plan"],
+              evidenceIds: ["claimed-after-conflict-validation"],
+            },
+            artifacts: [
+              {
+                id: "claimed-after-conflict-plan",
+                schemaId: "dev-role.plan",
+                schemaVersion: "1",
+                derivedFromArtifactIds: [],
+                reference: reference("claimed-after-conflict-plan"),
+              },
+            ],
+            evidence: [
+              {
+                id: "claimed-after-conflict-validation",
+                kind: "artifact_validation",
+                artifactIds: ["claimed-after-conflict-plan"],
+                provenance: "task-runner",
+                reference: reference("claimed-after-conflict-validation"),
+              },
+            ],
+          },
+          {
+            claimId: claimed.claim.claimId,
+            fencingToken: claimed.claim.fencingToken,
+            ownerId: claimed.claim.ownerId,
+            runId,
+          },
+          claimed.entityVersion,
+        ),
+      ).resolves.toMatchObject({
+        accepted: true,
+        view: { currentNode: { contractNodeId: "implementer" } },
+        claimAuthorization: { proof: { fencingToken: 2 } },
+      });
+    } finally {
+      appendSpy.mockRestore();
+    }
+  });
+
+  it("dispatch config 有効時は claim 取得との race でも raw completion を fail-closed にする", async () => {
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const released = await claims.release({
+      schemaVersion: "1",
+      eventId: "raw-race-release",
+      expectedEntityVersion: claimed.entityVersion,
+      proof,
+    });
+    if (!released.accepted) throw new Error(released.message);
+
+    const rawInput = {
+      schemaVersion: "1" as const,
+      eventId: "raw-race-completion",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["raw-race-evidence"],
+      },
+      evidence: [commandEvidence("raw-race-evidence")],
+    };
+    const [raw, reacquired] = await Promise.all([
+      control.applyEvent(rawInput),
+      claims.claim({
+        schemaVersion: "1",
+        eventId: "raw-race-reclaim-owner",
+        expectedEntityVersion: released.entityVersion,
+        taskId: claimed.claim.taskId,
+        repository: claimed.claim.repository,
+        state: claimed.claim.state,
+        ownerId: claimed.claim.ownerId,
+        workspaceId: "workspace:raw-race",
+        runId,
+        leaseDurationSeconds: 300,
+        dispatchPlanId: "dispatch-plan:raw-race",
+        dispatchPlanVersion: "1",
+        snapshotFingerprint: "d".repeat(64),
+      }),
+    ]);
+    expect(raw).toMatchObject({ accepted: false, code: "stale_claim", stateUnchanged: true });
+    expect(reacquired).toMatchObject({ accepted: true });
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(journal.acceptedEvents.some((event) => event.eventId === rawInput.eventId)).toBe(false);
+  });
+
+  it("同一 control plane の concurrent completion は event/binding を混線させない", async () => {
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = (suffix: string) => ({
+      schemaVersion: "1" as const,
+      eventId: `concurrent-${suffix}`,
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: [`concurrent-evidence-${suffix}`],
+      },
+      evidence: [commandEvidence(`concurrent-evidence-${suffix}`)],
+    });
+    const results = await Promise.all([
+      control.applyClaimedEvent(completion("a"), proof, claimed.entityVersion),
+      control.applyClaimedEvent(completion("b"), proof, claimed.entityVersion),
+    ]);
+    expect(results.filter((result) => result.accepted)).toHaveLength(1);
+    expect(results.filter((result) => !result.accepted)).toMatchObject([
+      { code: "stale_claim", stateUnchanged: true },
+    ]);
+    const acceptedInput = results[0]!.accepted ? completion("a") : completion("b");
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    const completionEvents = journal.acceptedEvents.filter(
+      (event) => event.command.type === "attempt_finished",
+    );
+    expect(completionEvents).toHaveLength(1);
+    expect(completionEvents[0]).toMatchObject({
+      eventId: acceptedInput.eventId,
+      command: acceptedInput.command,
+      dispatchAuthorization: {
+        claimId: proof.claimId,
+        fencingToken: proof.fencingToken,
+        ownerId: proof.ownerId,
+        runId,
+      },
+    });
+    await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 2, claims: [{}] });
+  });
+
+  it("key 順を変えた claimed completion の exact retry を canonical binding に収束させる", async () => {
+    const { root, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "canonical-key-order-completion",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["canonical-key-order-evidence"],
+      },
+      evidence: [commandEvidence("canonical-key-order-evidence")],
+    } satisfies RunGraphRunnerCommandInput;
+    const evidence = completion.evidence[0]!;
+    const reordered = {
+      evidence: [
+        {
+          reference: {
+            byteLength: evidence.reference.byteLength,
+            sha256: evidence.reference.sha256,
+            uri: evidence.reference.uri,
+            kind: evidence.reference.kind,
+          },
+          provenance: evidence.provenance,
+          artifactIds: evidence.artifactIds,
+          kind: evidence.kind,
+          id: evidence.id,
+        },
+      ],
+      command: {
+        evidenceIds: completion.command.evidenceIds,
+        artifactIds: completion.command.artifactIds,
+        outcome: completion.command.outcome,
+        attemptId: completion.command.attemptId,
+        nodeId: completion.command.nodeId,
+        type: completion.command.type,
+      },
+      actor: { role: completion.actor.role, id: completion.actor.id },
+      runId: completion.runId,
+      eventId: completion.eventId,
+      schemaVersion: completion.schemaVersion,
+    } satisfies RunGraphRunnerCommandInput;
+    const expectedFingerprint = createHash("sha256")
+      .update(canonicalJsonStringify(completion))
+      .digest("hex");
+
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+    await expect(
+      control.applyClaimedEvent(reordered, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    const accepted = journal.acceptedEvents.filter((event) => event.eventId === completion.eventId);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.dispatchAuthorization?.commandFingerprint).toBe(expectedFingerprint);
+  });
+
+  it("receipt publish 後に reclaim された exact retry は旧 claim 継続 proof を返さない", async () => {
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "published-before-reclaim",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["published-before-reclaim-evidence"],
+      },
+      evidence: [commandEvidence("published-before-reclaim-evidence")],
+    };
+    const committed = await control.applyClaimedEvent(completion, proof, claimed.entityVersion);
+    if (!committed.accepted || !committed.claimAuthorization)
+      throw new Error("publish 済み authorization が必要です");
+    const reclaimed = await claims.reclaim({
+      schemaVersion: "1",
+      eventId: "reclaim-after-published-receipt",
+      expectedEntityVersion: committed.claimAuthorization.receipt.entityVersion,
+      claimId: claimed.claim.claimId,
+      reason: "owner_stopped",
+      ownerStoppedEvidenceId: "process-exit:published-owner",
+    });
+    expect(reclaimed).toMatchObject({ accepted: true, entityVersion: 3 });
+
+    const retry = await control.applyClaimedEvent(completion, proof, claimed.entityVersion);
+    expect(retry).toMatchObject({
+      accepted: true,
+      view: { activeAttempt: { state: "succeeded" } },
+    });
+    expect(retry).not.toHaveProperty("claimAuthorization");
+    await expect(
+      control.applyClaimedEvent(
+        { ...completion, eventId: "new-event-after-published-reclaim" },
+        committed.claimAuthorization.proof,
+        reclaimed.entityVersion,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_claim", stateUnchanged: true });
+
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      journal.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+    expect(
+      journal.acceptedEvents.some((event) => event.eventId === "new-event-after-published-reclaim"),
+    ).toBe(false);
+  });
+
+  it("pending 永続化後・append 前 crash は heartbeat を止め、同一 event retry だけを許可する", async () => {
+    let crashBeforeAppend = false;
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane({
+      afterAuthorizationPendingPublish: async () => {
+        if (crashBeforeAppend) throw new Error("authorization interrupted before append");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "crash-before-append",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["crash-before-append-evidence"],
+      },
+      evidence: [commandEvidence("crash-before-append-evidence")],
+    };
+
+    crashBeforeAppend = true;
+    await expect(control.applyClaimedEvent(completion, proof, 1)).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_attempt",
+      stateUnchanged: true,
+    });
+    crashBeforeAppend = false;
+    const afterCrash = await new RunGraphEventStore(root).readJournal(runId);
+    expect(afterCrash.acceptedEvents.some((event) => event.eventId === completion.eventId)).toBe(
+      false,
+    );
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      pendingAuthorizations: [{ eventId: completion.eventId, claimId: proof.claimId }],
+    });
+    await expect(
+      claims.heartbeat({
+        schemaVersion: "1",
+        eventId: "heartbeat-before-exact-retry",
+        expectedEntityVersion: 1,
+        proof,
+        leaseDurationSeconds: 300,
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "authorization_pending" });
+
+    await expect(control.applyClaimedEvent(completion, proof, 1)).resolves.toMatchObject({
+      accepted: true,
+      claimAuthorization: { proof: { fencingToken: 2 } },
+      view: { activeAttempt: { state: "succeeded" } },
+    });
+    const afterRetry = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      afterRetry.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+  });
+
+  it("pending exact retry が state 遷移で拒否された場合は pending を解除して修正を許可する", async () => {
+    let crashBeforeAppend = true;
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane({
+      afterAuthorizationPendingPublish: async () => {
+        if (crashBeforeAppend) throw new Error("authorization interrupted before append");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "pending-invalidated-completion",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["pending-invalidated-evidence"],
+      },
+      evidence: [commandEvidence("pending-invalidated-evidence")],
+    };
+
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_attempt" });
+    crashBeforeAppend = false;
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      pendingAuthorizations: [{ eventId: completion.eventId, claimId: proof.claimId }],
+    });
+
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "pending-invalidated-pause",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_paused",
+          checkpointArtifactId: "pending-invalidated-checkpoint",
+          evidenceIds: ["pending-invalidated-checkpoint-evidence"],
+          reason: "pending 中に accepted state を変更する",
+        },
+        artifacts: [
+          {
+            id: "pending-invalidated-checkpoint",
+            schemaId: "run.checkpoint",
+            schemaVersion: "1",
+            derivedFromArtifactIds: [],
+            reference: reference("pending-invalidated-checkpoint"),
+          },
+        ],
+        evidence: [
+          {
+            id: "pending-invalidated-checkpoint-evidence",
+            kind: "checkpoint",
+            artifactIds: ["pending-invalidated-checkpoint"],
+            provenance: "orchestrator-1",
+            reference: reference("pending-invalidated-checkpoint-evidence"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ accepted: true, view: { state: "paused" } });
+
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: false, code: "invalid_transition" });
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      claims: [{ claimId: proof.claimId, fencingToken: 1 }],
+      pendingAuthorizations: [],
+    });
+
+    const heartbeat = await claims.heartbeat({
+      schemaVersion: "1",
+      eventId: "pending-invalidated-heartbeat",
+      expectedEntityVersion: 1,
+      proof,
+      leaseDurationSeconds: 300,
+    });
+    if (!heartbeat.accepted) throw new Error(heartbeat.message);
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: "pending-invalidated-resume",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_resumed",
+          checkpointArtifactId: "pending-invalidated-checkpoint",
+          evidenceIds: ["pending-invalidated-checkpoint-evidence"],
+          sideEffectState: "not_started",
+        },
+      }),
+    ).resolves.toMatchObject({ accepted: true, view: { state: "running" } });
+    await expect(
+      control.applyClaimedEvent(
+        { ...completion, eventId: "pending-invalidated-corrected-completion" },
+        {
+          claimId: heartbeat.claim.claimId,
+          fencingToken: heartbeat.claim.fencingToken,
+          ownerId: heartbeat.claim.ownerId,
+          runId: heartbeat.claim.runId,
+        },
+        heartbeat.entityVersion,
+      ),
+    ).resolves.toMatchObject({
+      accepted: true,
+      claimAuthorization: { proof: { fencingToken: 3 } },
+    });
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(journal.acceptedEvents.some((event) => event.eventId === completion.eventId)).toBe(
+      false,
+    );
+  });
+
+  it("B が journal absent 観測後に A append crash と reclaim を挟んでも historical receipt へ収束する", async () => {
+    let crashBeforeFinalize = true;
+    const {
+      root,
+      claims,
+      control: controlA,
+      runId,
+      nodeId,
+      claimed,
+    } = await createClaimedControlPlane({
+      beforeAuthorizationFinalizePublish: async () => {
+        if (crashBeforeFinalize) throw new Error("authorization finalize interrupted");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "concurrent-absent-before-append",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["concurrent-absent-evidence"],
+      },
+      evidence: [commandEvidence("concurrent-absent-evidence")],
+    };
+    let resumeB!: () => void;
+    const waitForA = new Promise<void>((resolveBarrier) => {
+      resumeB = resolveBarrier;
+    });
+    let bObservedAbsent!: () => void;
+    const bObservedAbsentBarrier = new Promise<void>((resolveObserved) => {
+      bObservedAbsent = resolveObserved;
+    });
+    const authorityB = withClaimAuthorityOverrides(claims, {
+      assertCurrentClaim: async (...args) => {
+        bObservedAbsent();
+        await waitForA;
+        return claims.assertCurrentClaim(...args);
+      },
+    });
+    const controlB = new RunGraphControlPlane(root, deterministicDependencies(), authorityB);
+    const retryB = controlB.applyClaimedEvent(completion, proof, claimed.entityVersion);
+    await bObservedAbsentBarrier;
+
+    await expect(
+      controlA.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+    crashBeforeFinalize = false;
+    const reclaimed = await claims.reclaim({
+      schemaVersion: "1",
+      eventId: "concurrent-absent-reclaim",
+      expectedEntityVersion: claimed.entityVersion,
+      claimId: proof.claimId,
+      reason: "owner_stopped",
+      ownerStoppedEvidenceId: "process-exit:concurrent-absent",
+    });
+    expect(reclaimed).toMatchObject({ accepted: true, entityVersion: 2 });
+    resumeB();
+
+    const reconciled = await retryB;
+    expect(reconciled).toMatchObject({ accepted: true });
+    expect(reconciled).not.toHaveProperty("claimAuthorization");
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 3,
+      claims: [],
+      history: [{}, {}, { eventId: completion.eventId, operation: "authorize_event" }],
+    });
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      journal.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+    expect(
+      journal.acceptedEvents.filter((event) => event.eventId === `audit:${completion.eventId}`),
+    ).toHaveLength(1);
+  });
+
+  it("B validation 後に A append crash を挟んでも duplicate append をexact finalizeして単一CASにする", async () => {
+    let crashBeforeFinalize = true;
+    const {
+      root,
+      claims,
+      control: controlA,
+      runId,
+      nodeId,
+      claimed,
+    } = await createClaimedControlPlane({
+      beforeAuthorizationFinalizePublish: async () => {
+        if (crashBeforeFinalize) throw new Error("authorization finalize interrupted");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "concurrent-validated-before-append",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["concurrent-validated-evidence"],
+      },
+      evidence: [commandEvidence("concurrent-validated-evidence")],
+    };
+    let resumeB!: () => void;
+    const waitForA = new Promise<void>((resolveBarrier) => {
+      resumeB = resolveBarrier;
+    });
+    let bValidated!: () => void;
+    const bValidatedBarrier = new Promise<void>((resolveValidated) => {
+      bValidated = resolveValidated;
+    });
+    const authorityB = withClaimAuthorityOverrides(claims, {
+      commitAuthorizedEvent: async (...args) => {
+        bValidated();
+        await waitForA;
+        return claims.commitAuthorizedEvent(...args);
+      },
+    });
+    const controlB = new RunGraphControlPlane(root, deterministicDependencies(), authorityB);
+    const retryB = controlB.applyClaimedEvent(completion, proof, claimed.entityVersion);
+    await bValidatedBarrier;
+
+    await expect(
+      controlA.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+    crashBeforeFinalize = false;
+    resumeB();
+    const reconciled = await retryB;
+    if (!reconciled.accepted || !reconciled.claimAuthorization)
+      throw new Error("current claim authorization が必要です");
+    expect(reconciled.claimAuthorization).toMatchObject({
+      receipt: { entityVersion: 2, claimContinues: true },
+      proof: { fencingToken: 2 },
+    });
+
+    const [heartbeat, reclaim] = await Promise.all([
+      claims.heartbeat({
+        schemaVersion: "1",
+        eventId: "concurrent-finalized-heartbeat",
+        expectedEntityVersion: 2,
+        proof: reconciled.claimAuthorization.proof,
+        leaseDurationSeconds: 300,
+      }),
+      claims.reclaim({
+        schemaVersion: "1",
+        eventId: "concurrent-finalized-reclaim",
+        expectedEntityVersion: 2,
+        claimId: proof.claimId,
+        reason: "owner_stopped",
+        ownerStoppedEvidenceId: "process-exit:concurrent-finalized",
+      }),
+    ]);
+    expect([heartbeat, reclaim].filter((receipt) => receipt.accepted)).toHaveLength(1);
+    expect([heartbeat, reclaim].filter((receipt) => !receipt.accepted)).toMatchObject([
+      { code: "stale_entity_version", stateUnchanged: true },
+    ]);
+    await expect(claims.verifyReceipt(reconciled.claimAuthorization.receipt)).resolves.toBe(true);
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      journal.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+    expect(
+      journal.acceptedEvents.filter((event) => event.eventId === `audit:${completion.eventId}`),
+    ).toHaveLength(1);
+  });
+
+  it("exact caller と journal sequence conflict の場合だけ pending をrollbackする", async () => {
+    let crashBeforeAppend = true;
+    const { claims, control, runId, nodeId, claimed } = await createClaimedControlPlane({
+      afterAuthorizationPendingPublish: async () => {
+        if (crashBeforeAppend) throw new Error("pending before sequence conflict");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "pending-sequence-conflict",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["pending-sequence-conflict-evidence"],
+      },
+      evidence: [commandEvidence("pending-sequence-conflict-evidence")],
+    };
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_attempt" });
+    crashBeforeAppend = false;
+    await expect(
+      control.applyEvent({
+        schemaVersion: "1",
+        eventId: completion.eventId,
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "run_paused",
+          checkpointArtifactId: "pending-sequence-checkpoint",
+          evidenceIds: ["pending-sequence-checkpoint-evidence"],
+          reason: "同じ event ID の別 raw command を先行させる",
+        },
+        artifacts: [
+          {
+            id: "pending-sequence-checkpoint",
+            schemaId: "run.checkpoint",
+            schemaVersion: "1",
+            derivedFromArtifactIds: [],
+            reference: reference("pending-sequence-checkpoint"),
+          },
+        ],
+        evidence: [
+          {
+            id: "pending-sequence-checkpoint-evidence",
+            kind: "checkpoint",
+            artifactIds: ["pending-sequence-checkpoint"],
+            provenance: "orchestrator-1",
+            reference: reference("pending-sequence-checkpoint-evidence"),
+          },
+        ],
+      }),
+    ).resolves.toMatchObject({ accepted: true });
+
+    await expect(
+      control.applyClaimedEvent(
+        {
+          ...completion,
+          command: { ...completion.command, outcome: "failed" as const },
+        },
+        proof,
+        claimed.entityVersion,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "duplicate_event" });
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      pendingAuthorizations: [{ eventId: completion.eventId, claimId: proof.claimId }],
+    });
+
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: false, code: "duplicate_event" });
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      claims: [{ claimId: proof.claimId, fencingToken: 1 }],
+      pendingAuthorizations: [],
+    });
+    await expect(
+      claims.heartbeat({
+        schemaVersion: "1",
+        eventId: "pending-sequence-heartbeat",
+        expectedEntityVersion: claimed.entityVersion,
+        proof,
+        leaseDurationSeconds: 300,
+      }),
+    ).resolves.toMatchObject({ accepted: true, entityVersion: 2 });
+  });
+
+  it("Run Graph append 後の registry crash と reclaim 後は既存 event だけを冪等に読む", async () => {
+    let now = "2026-08-02T00:00:00.000Z";
+    let crashBeforePublish = false;
+    const { root, claims, control, runId, nodeId, claimed } = await createClaimedControlPlane({
+      now: () => now,
+      beforeAuthorizationFinalizePublish: async () => {
+        if (crashBeforePublish) throw new Error("authorization publish interrupted");
+      },
+    });
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "crash-after-append",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["crash-after-append-evidence"],
+      },
+      evidence: [commandEvidence("crash-after-append-evidence")],
+    };
+
+    crashBeforePublish = true;
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({
+      accepted: true,
+      view: { activeAttempt: { state: "succeeded" } },
+    });
+    crashBeforePublish = false;
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      claims: [{}],
+      pendingAuthorizations: [{ eventId: completion.eventId, claimId: proof.claimId }],
+    });
+    await expect(
+      claims.heartbeat({
+        schemaVersion: "1",
+        eventId: "heartbeat-during-pending",
+        expectedEntityVersion: 1,
+        proof,
+        leaseDurationSeconds: 300,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "authorization_pending",
+      stateUnchanged: true,
+      entityVersion: 1,
+    });
+    await expect(
+      claims.release({
+        schemaVersion: "1",
+        eventId: "release-during-pending",
+        expectedEntityVersion: 1,
+        proof,
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "authorization_pending" });
+    const afterCrash = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      afterCrash.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+    expect(
+      afterCrash.acceptedEvents.find((event) => event.eventId === completion.eventId),
+    ).toMatchObject({ dispatchAuthorization: { claimId: proof.claimId, fencingToken: 1 } });
+
+    now = "2026-08-02T00:10:00.000Z";
+    const reclaimed = await claims.reclaim({
+      schemaVersion: "1",
+      eventId: "crash-after-append-reclaim",
+      expectedEntityVersion: 1,
+      claimId: proof.claimId,
+      reason: "expired",
+    });
+    expect(reclaimed).toMatchObject({ accepted: true, entityVersion: 2 });
+    await expect(control.applyClaimedEvent(completion, proof, 1)).resolves.toMatchObject({
+      accepted: true,
+      view: { activeAttempt: { state: "succeeded" } },
+    });
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 3,
+      claims: [],
+      pendingAuthorizations: [],
+    });
+    await expect(
+      control.applyClaimedEvent(
+        { ...completion, eventId: "stale-after-reclaim-new-event" },
+        proof,
+        2,
+      ),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_claim" });
+    const finalJournal = await new RunGraphEventStore(root).readJournal(runId);
+    expect(
+      finalJournal.acceptedEvents.filter((event) => event.eventId === completion.eventId),
+    ).toHaveLength(1);
+    expect(
+      finalJournal.acceptedEvents.filter(
+        (event) =>
+          event.eventId === `audit:${completion.eventId}` &&
+          event.command.type === "claim_event_authorized",
+      ),
+    ).toHaveLength(1);
+    expect(
+      finalJournal.acceptedEvents.some(
+        (event) => event.eventId === "stale-after-reclaim-new-event",
+      ),
+    ).toBe(false);
+    await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 3, claims: [] });
   });
 });

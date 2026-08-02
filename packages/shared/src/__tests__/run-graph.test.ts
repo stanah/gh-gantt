@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   BoundedRunGraphReferenceSchema,
+  DispatchClaimAcquireInputSchema,
+  DispatchClaimReceiptSchema,
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   GraphContractSchema,
   RunGraphAcceptedEventSchema,
@@ -8,6 +10,7 @@ import {
   RunGraphArtifactSubmissionSchema,
   RunGraphAttemptSchema,
   RunGraphConfigSchema,
+  RunGraphClaimAuditCommandSchema,
   RunGraphEvidenceSchema,
   RunGraphEvidenceSubmissionSchema,
   RunGraphJournalSchema,
@@ -19,6 +22,182 @@ import {
   RunGraphViewSchema,
   type GraphContract,
 } from "../run-graph.js";
+
+describe("[NFR-STABILITY-014-AC9] claim acquire repository は canonical owner/repo に限定する", () => {
+  const input = {
+    schemaVersion: "1" as const,
+    eventId: "claim-input-1",
+    expectedEntityVersion: 0,
+    taskId: "stanah/gh-gantt#329",
+    repository: " Stanah/GH-Gantt ",
+    state: "Todo",
+    ownerId: "owner-1",
+    workspaceId: "workspace-1",
+    runId: "run-1",
+    leaseDurationSeconds: 60,
+    dispatchPlanId: "dispatch-plan-1",
+    dispatchPlanVersion: "1" as const,
+    snapshotFingerprint: "a".repeat(64),
+  };
+
+  it("lower-case 正規化後に owner/repo regex を検証する", () => {
+    expect(DispatchClaimAcquireInputSchema.parse(input).repository).toBe("stanah/gh-gantt");
+    for (const repository of ["stanah", "stanah/", "/gh-gantt", "stanah//gh-gantt"]) {
+      expect(DispatchClaimAcquireInputSchema.safeParse({ ...input, repository }).success).toBe(
+        false,
+      );
+    }
+  });
+});
+
+describe("[NFR-STABILITY-014-AC9] claim receipt は operation ごとの不正状態を拒否する", () => {
+  const claim = {
+    taskId: "stanah/gh-gantt#329",
+    repository: "stanah/gh-gantt",
+    state: "Todo",
+    ownerId: "owner-1",
+    workspaceId: "workspace-1",
+    runId: "run-1",
+    claimId: "claim-1",
+    entityVersion: 1,
+    fencingToken: 1,
+    acquiredAt: "2026-08-02T00:00:00.000Z",
+    expiresAt: "2026-08-02T00:05:00.000Z",
+    dispatchPlanId: "dispatch-plan-1",
+    dispatchPlanVersion: "1" as const,
+  };
+  const base = {
+    accepted: true as const,
+    eventId: "event-1",
+    entityVersion: 1,
+    stateUnchanged: false as const,
+    claim,
+  };
+
+  it("authorize_event は completion を必須にし、reclaim field を拒否する", () => {
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({ ...base, operation: "authorize_event" }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "authorize_event",
+        completion: {
+          runId: "run-1",
+          taskId: "stanah/gh-gantt#329",
+          actorId: "owner-1",
+          commandFingerprint: "a".repeat(64),
+        },
+        reclaimReason: "expired",
+      }),
+    ).toThrow();
+  });
+
+  it("claim と heartbeat は reclaim/completion field を拒否する", () => {
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "claim",
+        completion: {
+          runId: "run-1",
+          taskId: "stanah/gh-gantt#329",
+          actorId: "owner-1",
+          commandFingerprint: "a".repeat(64),
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "heartbeat",
+        reclaimReason: "expired",
+      }),
+    ).toThrow();
+  });
+
+  it("reclaim は reason と evidence の組を厳密に検証する", () => {
+    expect(() => DispatchClaimReceiptSchema.parse({ ...base, operation: "reclaim" })).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "reclaim",
+        reclaimReason: "expired",
+        evidenceId: "unexpected-evidence",
+      }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "reclaim",
+        reclaimReason: "owner_stopped",
+      }),
+    ).toThrow();
+  });
+});
+
+describe("[NFR-STABILITY-014-AC9] claim audit command は operation ごとの field 組を固定する", () => {
+  const claim = {
+    taskId: "stanah/gh-gantt#329",
+    repository: "stanah/gh-gantt",
+    state: "Todo",
+    ownerId: "owner-1",
+    workspaceId: "workspace-1",
+    runId: "run-1",
+    claimId: "claim-1",
+    entityVersion: 1,
+    fencingToken: 1,
+    acquiredAt: "2026-08-02T00:00:00.000Z",
+    expiresAt: "2026-08-02T00:05:00.000Z",
+    dispatchPlanId: "dispatch-plan-1",
+    dispatchPlanVersion: "1" as const,
+  };
+  const base = { registryEventId: "registry-event-1", registryEntityVersion: 1, claim };
+  const completion = {
+    runId: "run-1",
+    taskId: "stanah/gh-gantt#329",
+    actorId: "owner-1",
+    commandFingerprint: "a".repeat(64),
+  };
+
+  it("各 audit type の許可 field だけを受理する", () => {
+    const valid = [
+      { ...base, type: "claim_acquired" },
+      { ...base, type: "claim_heartbeat" },
+      { ...base, type: "claim_released" },
+      { ...base, type: "claim_reclaimed", reclaimReason: "expired" },
+      {
+        ...base,
+        type: "claim_reclaimed",
+        reclaimReason: "owner_stopped",
+        evidenceId: "process-exit:owner-1",
+      },
+      { ...base, type: "claim_event_authorized", completion },
+    ];
+
+    expect(
+      valid.every((command) => RunGraphClaimAuditCommandSchema.safeParse(command).success),
+    ).toBe(true);
+  });
+
+  it("reclaim/completion/evidence の欠落・混在を全て拒否する", () => {
+    const invalid = [
+      { ...base, type: "claim_acquired", completion },
+      { ...base, type: "claim_heartbeat", reclaimReason: "expired" },
+      { ...base, type: "claim_released", evidenceId: "unexpected" },
+      { ...base, type: "claim_reclaimed" },
+      { ...base, type: "claim_reclaimed", reclaimReason: "expired", evidenceId: "unexpected" },
+      { ...base, type: "claim_reclaimed", reclaimReason: "owner_stopped" },
+      { ...base, type: "claim_reclaimed", reclaimReason: "owner_stopped", completion },
+      { ...base, type: "claim_event_authorized" },
+      { ...base, type: "claim_event_authorized", completion, reclaimReason: "expired" },
+      { ...base, type: "claim_event_authorized", completion, evidenceId: "unexpected" },
+    ];
+
+    expect(
+      invalid.every((command) => !RunGraphClaimAuditCommandSchema.safeParse(command).success),
+    ).toBe(true);
+  });
+});
 
 describe("[NFR-STABILITY-014-AC3] Graph Contract が固定 dev-role graph の統制要素を表現する", () => {
   it("version、role、node、edge、artifact、evidence、authority、budget、human gate を検証する", () => {
@@ -542,6 +721,7 @@ describe("[NFR-STABILITY-014-AC2] [NFR-STABILITY-014-AC4] replay projection と 
       attempts: { total: 2, limit: 1, truncated: true, items: [attempt] },
       artifacts: { total: 2, limit: 1, truncated: true, items: [artifact] },
       evidence: { total: 2, limit: 1, truncated: true, items: [evidence] },
+      claimAudits: { total: 0, limit: 1, truncated: false, items: [] },
     });
 
     expect(view.nodes).toMatchObject({ total: 2, limit: 1, truncated: true });

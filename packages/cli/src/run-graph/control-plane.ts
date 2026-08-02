@@ -1,29 +1,76 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
+  canonicalJsonStringify,
+  DispatchClaimProofSchema,
+  RunGraphClaimAuditCommandSchema,
+  RunGraphClaimAuditInputSchema,
   RunGraphProjectionSchema,
   RunGraphRunnerCommandInputSchema,
   RunGraphStartInputSchema,
   RunGraphViewSchema,
   type GraphContract,
+  type DispatchClaimProof,
+  type DispatchClaim,
+  type DispatchClaimEventAuthorizationInput,
+  type DispatchClaimReceipt,
   type RunGraphAcceptedEvent,
   type RunGraphArtifact,
   type RunGraphEvidence,
   type RunGraphProjection,
   type RunGraphRejectionCode,
   type RunGraphRunnerCommandInput,
+  type RunGraphClaimAuditInput,
   type RunGraphStartInput,
   type RunGraphView,
+  type RunGraphDispatchAuthorizationBinding,
 } from "@gh-gantt/shared";
 import { GraphContractStore } from "../store/graph-contract.js";
 import { RunGraphEventStore } from "../store/run-graph.js";
+import {
+  DispatchClaimStore,
+  type AbortPendingAuthorizationResult,
+  type DispatchAuthorizedEventCommitContext,
+  type PendingAuthorizationInspection,
+} from "../store/dispatch-claims.js";
+import { isNotGitRepositoryError } from "../util/git-errors.js";
 
 export interface RunGraphControlPlaneDependencies {
   now: () => string;
   nextId: (kind: string) => string;
 }
 
+export interface DispatchClaimAuthority {
+  abortPendingAuthorization(
+    input: DispatchClaimEventAuthorizationInput,
+    inspectCommittedEvent: (
+      context: DispatchAuthorizedEventCommitContext,
+    ) => Promise<PendingAuthorizationInspection>,
+  ): Promise<AbortPendingAuthorizationResult>;
+  commitAuthorizedEvent(
+    input: DispatchClaimEventAuthorizationInput,
+    commit: (context: {
+      claim: DispatchClaim;
+      binding: RunGraphDispatchAuthorizationBinding;
+    }) => Promise<void>,
+    options?: { persistRejection?: boolean; historicalReconciliation?: boolean },
+  ): Promise<DispatchClaimReceipt>;
+  isDispatchConfigured(): Promise<boolean>;
+  isReceiptClaimCurrent(
+    receipt: Extract<DispatchClaimReceipt, { accepted: true; operation: "authorize_event" }>,
+  ): Promise<boolean>;
+  verifyReceipt(receipt: DispatchClaimReceipt): Promise<boolean>;
+  assertCurrentClaim(
+    proof: DispatchClaimProof,
+    expectedEntityVersion: number,
+  ): Promise<DispatchClaim>;
+}
+
 export type RunGraphCommandResult =
-  | { accepted: true; view: RunGraphView }
+  | {
+      accepted: true;
+      view: RunGraphView;
+      claimAuthorization?: DispatchClaimAuthorizationResult;
+    }
   | {
       accepted: false;
       code: RunGraphRejectionCode;
@@ -31,6 +78,21 @@ export type RunGraphCommandResult =
       stateUnchanged: true;
       view?: RunGraphView;
     };
+
+export interface DispatchClaimAuthorizationResult {
+  receipt: Extract<DispatchClaimReceipt, { accepted: true }>;
+  proof: DispatchClaimProof;
+  audit: { recorded: boolean; pending?: true; message?: string };
+}
+
+interface PreparedRunnerEvent {
+  event: RunGraphAcceptedEvent;
+  view: RunGraphView;
+}
+
+type PreparedRunnerEventResult =
+  | { accepted: true; prepared: PreparedRunnerEvent }
+  | Extract<RunGraphCommandResult, { accepted: false }>;
 
 const defaultDependencies: RunGraphControlPlaneDependencies = {
   now: () => new Date().toISOString(),
@@ -93,14 +155,337 @@ export class RunGraphControlPlane {
   private readonly contracts: GraphContractStore;
   private readonly events: RunGraphEventStore;
   private readonly dependencies: RunGraphControlPlaneDependencies;
+  private readonly claimAuthority: DispatchClaimAuthority;
 
   constructor(
     projectRoot: string,
     dependencies: RunGraphControlPlaneDependencies = defaultDependencies,
+    claimAuthority?: DispatchClaimAuthority,
   ) {
     this.contracts = new GraphContractStore(projectRoot);
     this.events = new RunGraphEventStore(projectRoot);
     this.dependencies = dependencies;
+    this.claimAuthority = claimAuthority ?? new DispatchClaimStore(projectRoot);
+  }
+
+  /**
+   * repository registry で current proof を再検証してから completion/outcome event を受理する。
+   * dispatch Config がない従来 repository は applyEvent を使い、この seam は bounded dispatch 専用とする。
+   */
+  async applyClaimedEvent(
+    rawInput: RunGraphRunnerCommandInput,
+    proof: DispatchClaimProof,
+    expectedEntityVersion: number,
+  ): Promise<RunGraphCommandResult> {
+    const input = RunGraphRunnerCommandInputSchema.parse(rawInput);
+    const parsedProof = DispatchClaimProofSchema.parse(proof);
+    const view = await this.inspect(input.runId);
+    if (
+      input.command.type !== "attempt_finished" &&
+      input.command.type !== "node_outcome_submitted"
+    ) {
+      return this.reject(
+        input,
+        "invalid_transition",
+        "claim proof は completion/outcome event にだけ使用できます",
+        view,
+      );
+    }
+    const taskId = `${view.task.owner}/${view.task.repo}#${view.task.issueNumber}`.toLowerCase();
+    const commandFingerprint = createHash("sha256")
+      .update(canonicalJsonStringify(input))
+      .digest("hex");
+    const authorizationInput = {
+      schemaVersion: "1",
+      eventId: input.eventId,
+      expectedEntityVersion,
+      proof: parsedProof,
+      runId: input.runId,
+      taskId,
+      actorId: input.actor.id,
+      commandFingerprint,
+    } as const;
+    const existingJournal = await this.events.readJournal(input.runId);
+    const existing = existingJournal.acceptedEvents.find(
+      (event) => event.eventId === input.eventId,
+    );
+    if (existing) {
+      const expectedBinding: RunGraphDispatchAuthorizationBinding = {
+        claimId: parsedProof.claimId,
+        fencingToken: parsedProof.fencingToken,
+        ownerId: parsedProof.ownerId,
+        runId: parsedProof.runId,
+        taskId,
+        commandFingerprint,
+      };
+      if (
+        canonicalJsonStringify(existing.command) !== canonicalJsonStringify(input.command) ||
+        canonicalJsonStringify(existing.dispatchAuthorization) !==
+          canonicalJsonStringify(expectedBinding)
+      ) {
+        const reconciled = await this.reconcileOrAbortAuthorization(input, authorizationInput);
+        if (reconciled) return reconciled;
+        return this.reject(
+          input,
+          "duplicate_event",
+          "completion event ID は異なる command に使用済みです",
+          view,
+        );
+      }
+      const replay = await this.claimAuthority.commitAuthorizedEvent(
+        authorizationInput,
+        async ({ binding }) => {
+          if (canonicalJsonStringify(binding) !== canonicalJsonStringify(expectedBinding)) {
+            throw new Error(
+              "stored event の authorization binding が current claim と一致しません",
+            );
+          }
+        },
+        { persistRejection: false, historicalReconciliation: true },
+      );
+      // append 後・registry publish 前 crash の後に reclaim されても、既存 event だけは冪等に読む。
+      if (!replay.accepted) return { accepted: true, view: await this.inspect(input.runId) };
+      const audit = await this.reconcileCompletionAudit(replay);
+      const claimIsCurrent =
+        replay.operation === "authorize_event" &&
+        (await this.claimAuthority.isReceiptClaimCurrent(replay));
+      return {
+        accepted: true,
+        view: await this.inspect(input.runId),
+        ...(claimIsCurrent
+          ? { claimAuthorization: this.claimAuthorizationResult(replay, audit) }
+          : {}),
+      };
+    }
+
+    let receipt: DispatchClaimReceipt;
+    let attemptedBinding: RunGraphDispatchAuthorizationBinding | undefined;
+    try {
+      await this.claimAuthority.assertCurrentClaim(parsedProof, expectedEntityVersion);
+    } catch {
+      const reconciled = await this.reconcileOrAbortAuthorization(input, authorizationInput);
+      if (reconciled) return reconciled;
+      return this.reject(input, "stale_claim", "current claim/fencing proof が一致しません", view);
+    }
+    const preparation = await this.validateAndBuildEvent(input);
+    if (!preparation.accepted) {
+      const reconciled = await this.reconcileOrAbortAuthorization(input, authorizationInput);
+      if (reconciled) return reconciled;
+      return preparation;
+    }
+    try {
+      receipt = await this.claimAuthority.commitAuthorizedEvent(
+        authorizationInput,
+        async ({ binding }) => {
+          attemptedBinding = binding;
+          try {
+            await this.events.appendAccepted({
+              ...preparation.prepared.event,
+              dispatchAuthorization: binding,
+            });
+          } catch (error) {
+            if ((await this.inspectCommittedEvent(input, binding)) === "exact_committed") return;
+            throw error;
+          }
+        },
+      );
+    } catch (error) {
+      if (attemptedBinding) {
+        const journal = await this.events.readJournal(input.runId);
+        const committed = journal.acceptedEvents.find(
+          (event) =>
+            event.eventId === input.eventId &&
+            canonicalJsonStringify(event.command) === canonicalJsonStringify(input.command) &&
+            canonicalJsonStringify(event.dispatchAuthorization) ===
+              canonicalJsonStringify(attemptedBinding),
+        );
+        if (committed) return { accepted: true, view: await this.inspect(input.runId) };
+      }
+      return {
+        accepted: false,
+        code: "stale_attempt",
+        message: `claim transaction 内の event commit に失敗しました: ${error instanceof Error ? error.message : String(error)}`,
+        stateUnchanged: true,
+        view: await this.inspect(input.runId),
+      };
+    }
+    if (!receipt.accepted) return this.reject(input, "stale_claim", receipt.message, view);
+    const audit = await this.reconcileCompletionAudit(receipt);
+    return {
+      accepted: true,
+      view: await this.inspect(input.runId),
+      claimAuthorization: this.claimAuthorizationResult(receipt, audit),
+    };
+  }
+
+  private async inspectCommittedEvent(
+    input: RunGraphRunnerCommandInput,
+    binding: RunGraphDispatchAuthorizationBinding,
+  ): Promise<PendingAuthorizationInspection> {
+    const journal = await this.events.readJournal(input.runId);
+    const event = journal.acceptedEvents.find((candidate) => candidate.eventId === input.eventId);
+    if (!event) return "absent";
+    return canonicalJsonStringify(event.command) === canonicalJsonStringify(input.command) &&
+      canonicalJsonStringify(event.dispatchAuthorization) === canonicalJsonStringify(binding)
+      ? "exact_committed"
+      : "conflict";
+  }
+
+  private async reconcileOrAbortAuthorization(
+    input: RunGraphRunnerCommandInput,
+    authorizationInput: DispatchClaimEventAuthorizationInput,
+  ): Promise<RunGraphCommandResult | null> {
+    const resolution = await this.claimAuthority.abortPendingAuthorization(
+      authorizationInput,
+      ({ binding }) => this.inspectCommittedEvent(input, binding),
+    );
+    if (resolution.status !== "exact_committed") return null;
+    const receipt = resolution.receipt;
+    const audit = await this.reconcileCompletionAudit(receipt);
+    const claimIsCurrent = await this.claimAuthority.isReceiptClaimCurrent(receipt);
+    return {
+      accepted: true,
+      view: await this.inspect(input.runId),
+      ...(claimIsCurrent
+        ? { claimAuthorization: this.claimAuthorizationResult(receipt, audit) }
+        : {}),
+    };
+  }
+
+  private claimAuthorizationResult(
+    receipt: Extract<DispatchClaimReceipt, { accepted: true }>,
+    audit: DispatchClaimAuthorizationResult["audit"],
+  ): DispatchClaimAuthorizationResult {
+    return {
+      receipt,
+      proof: {
+        claimId: receipt.claim.claimId,
+        fencingToken: receipt.claim.fencingToken,
+        ownerId: receipt.claim.ownerId,
+        runId: receipt.claim.runId,
+      },
+      audit,
+    };
+  }
+
+  private async reconcileCompletionAudit(
+    receipt: Extract<DispatchClaimReceipt, { accepted: true }>,
+  ): Promise<DispatchClaimAuthorizationResult["audit"]> {
+    try {
+      const audit = await this.recordClaimAudit({
+        schemaVersion: "1",
+        eventId: `audit:${receipt.eventId}`,
+        actor: { id: "registry:completion", role: "orchestrator" },
+        receipt: { ...receipt, claim: receipt.claim },
+      });
+      if (!audit.accepted) throw new Error(audit.message);
+      return { recorded: true };
+    } catch (error) {
+      return {
+        recorded: false,
+        pending: true,
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  /** registry-first command を workspace-local Run Graph audit へ冪等に反映する。 */
+  async recordClaimAudit(rawInput: RunGraphClaimAuditInput): Promise<RunGraphCommandResult> {
+    const input = RunGraphClaimAuditInputSchema.parse(rawInput);
+    const receipt = input.receipt;
+    const runId = receipt.claim.runId;
+    const journal = await this.events.readJournal(runId);
+    const expectedAuditEventId = `audit:${receipt.eventId}`;
+    if (input.eventId !== expectedAuditEventId) {
+      return {
+        accepted: false,
+        code: "duplicate_event",
+        message: `claim audit event ID は receipt から一意に導出する必要があります: ${expectedAuditEventId}`,
+        stateUnchanged: true,
+        view: await this.inspect(runId),
+      };
+    }
+    const existing = journal.acceptedEvents.find((event) => event.eventId === input.eventId);
+    const typeByOperation = {
+      claim: "claim_acquired",
+      heartbeat: "claim_heartbeat",
+      release: "claim_released",
+      reclaim: "claim_reclaimed",
+      authorize_event: "claim_event_authorized",
+    } as const;
+    const command = RunGraphClaimAuditCommandSchema.parse({
+      type: typeByOperation[receipt.operation],
+      registryEventId: receipt.eventId,
+      registryEntityVersion: receipt.entityVersion,
+      claim: receipt.claim,
+      ...(receipt.operation === "reclaim"
+        ? {
+            reclaimReason: receipt.reclaimReason,
+            ...(receipt.reclaimReason === "owner_stopped"
+              ? { evidenceId: receipt.evidenceId }
+              : {}),
+          }
+        : {}),
+      ...(receipt.operation === "authorize_event" ? { completion: receipt.completion } : {}),
+    });
+    const existingRegistryAudit = journal.acceptedEvents.find(
+      (event) =>
+        "registryEventId" in event.command &&
+        event.command.registryEventId === receipt.eventId &&
+        event.eventId !== expectedAuditEventId,
+    );
+    if (existingRegistryAudit) {
+      return {
+        accepted: false,
+        code: "duplicate_event",
+        message: `registry event は別の audit event ID で記録済みです: ${receipt.eventId}`,
+        stateUnchanged: true,
+        view: await this.inspect(runId),
+      };
+    }
+    if (!(await this.claimAuthority.verifyReceipt(receipt))) {
+      return {
+        accepted: false,
+        code: "stale_claim",
+        message: "claim audit receipt は repository registry の durable receipt と一致しません",
+        stateUnchanged: true,
+        view: await this.inspect(runId),
+      };
+    }
+    if (existing) {
+      if (canonicalJsonStringify(existing.command) === canonicalJsonStringify(command)) {
+        return { accepted: true, view: await this.inspect(runId) };
+      }
+      return {
+        accepted: false,
+        code: "duplicate_event",
+        message: `Run Graph event ID は異なる audit に使用済みです: ${input.eventId}`,
+        stateUnchanged: true,
+        view: await this.inspect(runId),
+      };
+    }
+    if (input.actor.role !== "orchestrator") {
+      return {
+        accepted: false,
+        code: "authority_denied",
+        message: "claim audit は orchestrator authority が必要です",
+        stateUnchanged: true,
+        view: await this.inspect(runId),
+      };
+    }
+    const event: RunGraphAcceptedEvent = {
+      recordType: "accepted",
+      eventId: input.eventId,
+      sequence: journal.acceptedEvents.length + 1,
+      runId,
+      acceptedAt: this.dependencies.now(),
+      actor: input.actor,
+      command,
+      artifactIds: [],
+      evidenceIds: [],
+    };
+    await this.events.appendAccepted(event);
+    return { accepted: true, view: await this.inspect(runId) };
   }
 
   async start(rawInput: RunGraphStartInput): Promise<RunGraphCommandResult> {
@@ -161,6 +546,36 @@ export class RunGraphControlPlane {
   }
 
   async applyEvent(rawInput: RunGraphRunnerCommandInput): Promise<RunGraphCommandResult> {
+    const input = RunGraphRunnerCommandInputSchema.parse(rawInput);
+    if (
+      input.command.type === "attempt_finished" ||
+      input.command.type === "node_outcome_submitted"
+    ) {
+      try {
+        if (await this.claimAuthority.isDispatchConfigured()) {
+          return this.rejectAndRecord(
+            input,
+            "stale_claim",
+            "dispatch 有効 repository の completion/outcome は claim authorization が必要です",
+            await this.inspect(input.runId),
+          );
+        }
+      } catch (error) {
+        if (!isNotGitRepositoryError(error)) throw error;
+      }
+    }
+    const prepared = await this.validateAndBuildEvent(input);
+    if (!prepared.accepted) {
+      return this.rejectAndRecord(input, prepared.code, prepared.message, prepared.view!);
+    }
+    await this.events.appendAccepted(prepared.prepared.event);
+    return { accepted: true, view: await this.inspect(input.runId) };
+  }
+
+  /** domain validation と event materialize を永続化から分離した explicit seam。 */
+  private async validateAndBuildEvent(
+    rawInput: RunGraphRunnerCommandInput,
+  ): Promise<PreparedRunnerEventResult> {
     const input = RunGraphRunnerCommandInputSchema.parse(rawInput);
     const journal = await this.events.readJournal(input.runId);
     const projection = this.replay(journal);
@@ -698,8 +1113,7 @@ export class RunGraphControlPlane {
       ...(nextContractNodeId ? { nextContractNodeId } : {}),
       ...(waitReason ? { waitReason } : {}),
     };
-    await this.events.appendAccepted(event);
-    return { accepted: true, view: await this.inspect(input.runId) };
+    return { accepted: true, prepared: { event, view } };
   }
 
   async inspect(runId: string, limit = 20, focusNodeId?: string): Promise<RunGraphView> {
@@ -730,6 +1144,25 @@ export class RunGraphControlPlane {
       limit,
       focusNodeId ? (item) => item.nodeId === focusNodeId : null,
     );
+    const allClaimAudits = journal.acceptedEvents
+      .filter((event) =>
+        (
+          [
+            "claim_acquired",
+            "claim_heartbeat",
+            "claim_released",
+            "claim_reclaimed",
+            "claim_event_authorized",
+          ] as const
+        ).includes(event.command.type as never),
+      )
+      .map((event) => ({
+        eventId: event.eventId,
+        acceptedAt: event.acceptedAt,
+        actor: event.actor,
+        command: event.command,
+      }));
+    const claimAudits = allClaimAudits.slice(-limit);
     return RunGraphViewSchema.parse({
       schemaVersion: "1",
       runId: projection.run.id,
@@ -772,6 +1205,12 @@ export class RunGraphControlPlane {
         truncated: projection.evidence.length > evidence.length,
         items: evidence,
       },
+      claimAudits: {
+        total: allClaimAudits.length,
+        limit,
+        truncated: allClaimAudits.length > claimAudits.length,
+        items: claimAudits,
+      },
     });
   }
 
@@ -780,7 +1219,16 @@ export class RunGraphControlPlane {
     code: RunGraphRejectionCode,
     message: string,
     view: RunGraphView,
-  ): Promise<RunGraphCommandResult> {
+  ): Promise<Extract<RunGraphCommandResult, { accepted: false }>> {
+    return { accepted: false, code, message, stateUnchanged: true, view };
+  }
+
+  private async rejectAndRecord(
+    input: RunGraphRunnerCommandInput,
+    code: RunGraphRejectionCode,
+    message: string,
+    view: RunGraphView,
+  ): Promise<Extract<RunGraphCommandResult, { accepted: false }>> {
     await this.events.appendRejection({
       recordType: "rejected",
       rejectionId: this.dependencies.nextId("rejection"),
@@ -1062,6 +1510,16 @@ export class RunGraphControlPlane {
 
       const currentNode = projection.nodes.find((node) => node.id === projection.run.currentNodeId);
       if (!currentNode) throw new Error("current node が projection に存在しません");
+
+      if (
+        command.type === "claim_acquired" ||
+        command.type === "claim_heartbeat" ||
+        command.type === "claim_released" ||
+        command.type === "claim_reclaimed" ||
+        command.type === "claim_event_authorized"
+      ) {
+        continue;
+      }
 
       if (command.type === "attempt_started") {
         const previous = projection.attempts

@@ -622,6 +622,17 @@ describe("Graph Contract の公開文書契約", () => {
     expect(projectWorkflow).toContain("JSON/schema/manual gate");
     expect(projectWorkflow).toContain("現行 (#328)");
     expect(projectWorkflow).toContain("製品control plane");
+    expect(projectWorkflow).toContain("`gh-gantt pull`");
+    expect(projectWorkflow).toContain("`gh-gantt list`");
+    expect(projectWorkflow).toContain("共有 Work Graph Cache の内部ファイルは直接読み書きしない");
+
+    const workflowSkill = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
+    const devRoleSkill = await readRepoFile("skills/gh-gantt-dev-role/SKILL.md");
+    for (const content of [workflowSkill, devRoleSkill]) {
+      expect(content).toContain("`gh-gantt pull`");
+      expect(content).toContain("`gh-gantt list`");
+      expect(content).toContain("共有 Work Graph Cache の内部ファイル");
+    }
 
     const sharedSkillPaths = [
       "skills/gh-gantt-dev-role/SKILL.md",
@@ -648,7 +659,7 @@ describe("Graph Contract の公開文書契約", () => {
     expect(mapSection.length).toBeLessThan(700);
   });
 
-  it("NFR-STABILITY-014はAC1からAC8をcoverage状態と分離して固有意味のまま保持する", async () => {
+  it("NFR-STABILITY-014はAC1からAC9をcoverage状態と分離して固有意味のまま保持する", async () => {
     const requirements = RequirementsSchema.parse(
       parse(await readRepoFile("docs/requirements.yaml")) as unknown,
     );
@@ -657,7 +668,7 @@ describe("Graph Contract の公開文書契約", () => {
     const criteria = requirement?.acceptance_criteria ?? [];
 
     expect(criteria.map((entry) => entry.id)).toEqual(
-      Array.from({ length: 8 }, (_, index) => `NFR-STABILITY-014-AC${index + 1}`),
+      Array.from({ length: 9 }, (_, index) => `NFR-STABILITY-014-AC${index + 1}`),
     );
     const meanings: Record<string, string[]> = {
       "NFR-STABILITY-014-AC1": [
@@ -693,6 +704,21 @@ describe("Graph Contract の公開文書契約", () => {
       ],
       "NFR-STABILITY-014-AC7": ["bypass", "authority", "evidence", "human gate"],
       "NFR-STABILITY-014-AC8": ["bounded parallelism", "Work Graph", "versioned extension"],
+      "NFR-STABILITY-014-AC9": [
+        "ready frontier",
+        "global/state/repository",
+        "isolated workspace",
+        "claim/lease",
+        "heartbeat",
+        "release/reclaim",
+        "completion fencing",
+        "domain validation",
+        "更新 proof",
+        "修正 retry",
+        "停止 gate",
+        "Run Graph audit",
+        "fan-in 再評価",
+      ],
     };
 
     for (const entry of criteria) {

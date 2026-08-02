@@ -174,6 +174,13 @@ export interface DoctorConfig {
   stale_in_progress_days?: number;
 }
 
+/** ready frontier の同時実行上限。未指定の軸は global 上限だけを使う。 */
+export interface DispatchConfig {
+  max_concurrency: number;
+  state_concurrency?: Record<string, number>;
+  repository_concurrency?: Record<string, number>;
+}
+
 export interface Config {
   version: string;
   project: {
@@ -189,6 +196,8 @@ export interface Config {
   sprints?: SprintConfig[];
   task_templates?: TaskTemplates;
   doctor?: DoctorConfig;
+  /** 外部 runner へ渡す ready frontier の bounded concurrency 設定。 */
+  dispatch?: DispatchConfig;
   /** 外側ループの停止条件（ADR-016 案C / ADR-017）。未設定でも既存挙動は変わらない。 */
   loop?: LoopConfig;
   /** 単一 Issue Run Graph が exact binding する versioned Graph Contract。 */

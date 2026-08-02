@@ -104,6 +104,15 @@
       }
     ]
   },
+  "dispatch": {
+    "max_concurrency": 2,
+    "state_concurrency": {
+      "In Progress": 2
+    },
+    "repository_concurrency": {
+      "stanah/gh-gantt": 2
+    }
+  },
   "run_graph": {
     "plan_id": "dev-role-fixed",
     "plan_version": "1",

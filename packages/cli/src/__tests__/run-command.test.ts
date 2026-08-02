@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import {
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   type Config,
@@ -9,12 +11,32 @@ import {
   type TasksFile,
 } from "@gh-gantt/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createRunCommand } from "../commands/run.js";
+import { gitFixtureEnvironment } from "./git-fixture.js";
+import { canonicalFingerprint, createRunCommand } from "../commands/run.js";
 import { buildProgram } from "../program.js";
 import type { RunGraphPrObservation } from "../loop/pr-evidence.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { ConfigStore } from "../store/config.js";
+import { DispatchClaimStore } from "../store/dispatch-claims.js";
+import { GraphContractStore } from "../store/graph-contract.js";
+import { withProjectStorage } from "../store/project-storage.js";
 import { TasksStore } from "../store/tasks.js";
+
+const execFileAsync = promisify(execFile);
+
+describe("dispatch fingerprint を正規化する", () => {
+  it("mixed-case key を locale ではなく code unit 順で固定する", () => {
+    const expected = createHash("sha256")
+      .update(JSON.stringify({ Z: 1, a: 2 }))
+      .digest("hex");
+    const localeLike = createHash("sha256")
+      .update(JSON.stringify({ a: 2, Z: 1 }))
+      .digest("hex");
+
+    expect(canonicalFingerprint({ a: 2, Z: 1 })).toBe(expected);
+    expect(canonicalFingerprint({ a: 2, Z: 1 })).not.toBe(localeLike);
+  });
+});
 
 function makeConfig(): Config {
   return {
@@ -78,6 +100,613 @@ const reference = (name: string) => ({
   uri: `.dev-flow/328/${name}.json`,
   sha256: `sha256:${"d".repeat(64)}`,
   byteLength: 256,
+});
+
+describe("[NFR-STABILITY-014-AC9] run bounded dispatch CLI contract", () => {
+  it("dispatch/claim/heartbeat/release/reclaim を JSON-first public command として公開する", async () => {
+    const originalExitCode = process.exitCode;
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-run-dispatch-command-"));
+    const workspaceMapPath = join(root, "workspace-map.json");
+    const gateSnapshotPath = join(root, "gate-snapshot.json");
+    const dispatchPlanPath = join(root, "dispatch-plan.json");
+    await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
+    await mkdir(join(root, ".gantt-sync"), { recursive: true });
+    const config: Config = {
+      ...makeConfig(),
+      statuses: {
+        field_name: "Status",
+        values: { Todo: { color: "#000", done: false, category: "todo" } },
+      },
+      dispatch: { max_concurrency: 2 },
+    };
+    await new ConfigStore(root).write(config);
+    await withProjectStorage(
+      root,
+      { mode: "write", scope: "all" },
+      async ({ tasksStore, stateStore }) => {
+        await tasksStore.write({
+          tasks: [makeTask({ custom_fields: { Status: "Todo" } })],
+          cache: { comments: {}, reactions: {} },
+        });
+        await stateStore.write({
+          last_synced_at: "2026-08-02T00:00:00.000Z",
+          project_node_id: "PVT_fixture",
+          id_map: {},
+          field_ids: {},
+          snapshots: {},
+        });
+      },
+    );
+    await writeFile(
+      workspaceMapPath,
+      `${JSON.stringify({ "stanah/gh-gantt#328": "workspace:328" })}\n`,
+    );
+    await writeFile(
+      gateSnapshotPath,
+      `${JSON.stringify({
+        schemaVersion: "1",
+        sourceRevision: "review-system:1",
+        observedAt: "2026-08-02T00:00:00.000Z",
+        reviewGateTaskIds: [],
+        humanGateTaskIds: [],
+      })}\n`,
+    );
+    await new GraphContractStore(root).install(FIXED_DEV_ROLE_GRAPH_CONTRACT);
+    const started = await new RunGraphControlPlane(root).start({
+      schemaVersion: "1",
+      eventId: "dispatch-run-start",
+      actor: { id: "orchestrator-1", role: "orchestrator" },
+      task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+      contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+    });
+    if (!started.accepted) throw new Error(started.message);
+    const currentNodeId = started.view.currentNode?.id;
+    if (!currentNodeId) throw new Error("current node が必要です");
+    await new RunGraphControlPlane(root).applyEvent({
+      schemaVersion: "1",
+      eventId: "dispatch-attempt-start",
+      runId: started.view.runId,
+      actor: { id: "planner-2", role: "planner" },
+      command: { type: "attempt_started", nodeId: currentNodeId, attemptId: "dispatch-attempt" },
+    });
+
+    const logs: string[] = [];
+    vi.spyOn(process, "cwd").mockReturnValue(root);
+    vi.spyOn(console, "log").mockImplementation((value) => logs.push(String(value)));
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const names = createRunCommand().commands.map((item) => item.name());
+      expect(names).toEqual(
+        expect.arrayContaining(["dispatch", "claim", "heartbeat", "release", "reclaim"]),
+      );
+
+      await createRunCommand().parseAsync(
+        [
+          "dispatch",
+          "--workspace-map",
+          workspaceMapPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--json",
+        ],
+        { from: "user" },
+      );
+      const initialPlan = JSON.parse(logs.at(-1)!);
+      expect(initialPlan).toMatchObject({
+        planVersion: "1",
+        registryEntityVersion: 0,
+        selected: [{ taskId: "stanah/gh-gantt#328", workspaceId: "workspace:328" }],
+        capacity: { global: { limit: 2, used: 0 } },
+      });
+      await writeFile(dispatchPlanPath, `${JSON.stringify(initialPlan)}\n`);
+
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-invalid-repository",
+          "--expected-version",
+          "0",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "invalid_input",
+        stateUnchanged: true,
+      });
+      await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+        entityVersion: 0,
+        claims: [],
+      });
+      process.exitCode = undefined;
+
+      for (const emptyVersion of ["", "   "]) {
+        await createRunCommand().parseAsync(
+          [
+            "claim",
+            "--event-id",
+            `claim-empty-version-${emptyVersion.length}`,
+            "--expected-version",
+            emptyVersion,
+            "--task",
+            "stanah/gh-gantt#328",
+            "--repository",
+            "stanah/gh-gantt",
+            "--state",
+            "Todo",
+            "--owner",
+            "planner-2",
+            "--workspace",
+            "workspace:328",
+            "--run",
+            started.view.runId,
+            "--plan-file",
+            dispatchPlanPath,
+            "--gate-snapshot",
+            gateSnapshotPath,
+            "--actor",
+            "orchestrator-1",
+            "--json",
+          ],
+          { from: "user" },
+        );
+        expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+          accepted: false,
+          code: "invalid_input",
+          stateUnchanged: true,
+        });
+        await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+          entityVersion: 0,
+          claims: [],
+        });
+        process.exitCode = undefined;
+      }
+
+      await writeFile(
+        gateSnapshotPath,
+        `${JSON.stringify({
+          schemaVersion: "1",
+          sourceRevision: "review-system:2",
+          observedAt: "2026-08-02T00:01:00.000Z",
+          reviewGateTaskIds: ["stanah/gh-gantt#328"],
+          humanGateTaskIds: [],
+        })}\n`,
+      );
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-stale-gate-snapshot",
+          "--expected-version",
+          "0",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah/gh-gantt",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "stale_entity_version",
+      });
+      await writeFile(
+        gateSnapshotPath,
+        `${JSON.stringify({
+          schemaVersion: "1",
+          sourceRevision: "review-system:1",
+          observedAt: "2026-08-02T00:00:00.000Z",
+          reviewGateTaskIds: [],
+          humanGateTaskIds: [],
+        })}\n`,
+      );
+
+      await withProjectStorage(root, { mode: "write", scope: "all" }, async ({ tasksStore }) => {
+        const current = await tasksStore.read();
+        await tasksStore.write({ ...current, has_conflicts: true });
+      });
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-stale-work-graph",
+          "--expected-version",
+          "0",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah/gh-gantt",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "stale_entity_version",
+      });
+      await withProjectStorage(root, { mode: "write", scope: "all" }, async ({ tasksStore }) => {
+        const current = await tasksStore.read();
+        await tasksStore.write({ ...current, has_conflicts: false });
+      });
+
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-cli-1",
+          "--expected-version",
+          "0",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah/gh-gantt",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--lease-seconds",
+          "60",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      const claimed = JSON.parse(logs.at(-1)!) as {
+        accepted: true;
+        entityVersion: number;
+        claim: { claimId: string; fencingToken: number; ownerId: string; runId: string };
+        audit: { recorded: boolean };
+      };
+      expect(claimed).toMatchObject({
+        accepted: true,
+        entityVersion: 1,
+        audit: { recorded: true },
+      });
+
+      await createRunCommand().parseAsync(
+        [
+          "heartbeat",
+          "--event-id",
+          "heartbeat-cli-1",
+          "--expected-version",
+          "1",
+          "--claim",
+          claimed.claim.claimId,
+          "--fencing-token",
+          String(claimed.claim.fencingToken),
+          "--owner",
+          claimed.claim.ownerId,
+          "--run",
+          claimed.claim.runId,
+          "--actor",
+          "orchestrator-1",
+          "--lease-seconds",
+          "60",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      const heartbeat = JSON.parse(logs.at(-1)!) as { claim: { fencingToken: number } };
+      expect(heartbeat).toMatchObject({
+        accepted: true,
+        entityVersion: 2,
+        audit: { recorded: true },
+      });
+
+      const authorizedEventPath = join(root, "authorized-event.json");
+      await writeFile(
+        authorizedEventPath,
+        `${JSON.stringify({
+          schemaVersion: "1",
+          eventId: "authorized-cli-finish",
+          actor: { id: "planner-2", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId: currentNodeId,
+            attemptId: "dispatch-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["authorized-cli-command"],
+          },
+          evidence: [
+            {
+              id: "authorized-cli-command",
+              kind: "command_execution",
+              artifactIds: [],
+              provenance: "authorized-cli-runner",
+              reference: {
+                kind: "command",
+                uri: "command://authorized-cli",
+                sha256: `sha256:${"a".repeat(64)}`,
+                byteLength: 1,
+              },
+            },
+          ],
+          claim: {
+            expectedEntityVersion: 2,
+            proof: {
+              claimId: claimed.claim.claimId,
+              fencingToken: heartbeat.claim.fencingToken,
+              ownerId: claimed.claim.ownerId,
+              runId: claimed.claim.runId,
+            },
+          },
+        })}\n`,
+      );
+      await createRunCommand().parseAsync(
+        ["event", started.view.runId, "--file", authorizedEventPath, "--json"],
+        { from: "user" },
+      );
+      const authorized = JSON.parse(logs.at(-1)!) as {
+        claimAuthorization: {
+          receipt: { entityVersion: number; operation: string };
+          proof: { claimId: string; fencingToken: number; ownerId: string; runId: string };
+        };
+      };
+      expect(authorized).toMatchObject({
+        accepted: true,
+        claimAuthorization: {
+          receipt: { operation: "authorize_event", entityVersion: 3 },
+          proof: { fencingToken: 3 },
+          audit: { recorded: true },
+        },
+      });
+
+      await createRunCommand().parseAsync(
+        [
+          "release",
+          "--event-id",
+          "release-cli-1",
+          "--expected-version",
+          "3",
+          "--claim",
+          authorized.claimAuthorization.proof.claimId,
+          "--fencing-token",
+          String(authorized.claimAuthorization.proof.fencingToken),
+          "--owner",
+          authorized.claimAuthorization.proof.ownerId,
+          "--run",
+          authorized.claimAuthorization.proof.runId,
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: true,
+        entityVersion: 4,
+        audit: { recorded: true },
+      });
+
+      await createRunCommand().parseAsync(
+        [
+          "dispatch",
+          "--workspace-map",
+          workspaceMapPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--json",
+        ],
+        { from: "user" },
+      );
+      const secondPlan = JSON.parse(logs.at(-1)!);
+      expect(secondPlan).toMatchObject({ registryEntityVersion: 4 });
+      await writeFile(dispatchPlanPath, `${JSON.stringify(secondPlan)}\n`);
+
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-cli-2",
+          "--expected-version",
+          "4",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah/gh-gantt",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--lease-seconds",
+          "60",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      const claimedAgain = JSON.parse(logs.at(-1)!) as {
+        claim: { claimId: string; fencingToken: number; ownerId: string; runId: string };
+      };
+      await createRunCommand().parseAsync(
+        [
+          "reclaim",
+          "--event-id",
+          "reclaim-cli-1",
+          "--expected-version",
+          "5",
+          "--claim",
+          claimedAgain.claim.claimId,
+          "--reason",
+          "owner_stopped",
+          "--owner-stopped-evidence",
+          "process-exit:planner-2",
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: true,
+        entityVersion: 6,
+        audit: { recorded: true },
+      });
+
+      const staleEventPath = join(root, "stale-completion.json");
+      await writeFile(
+        staleEventPath,
+        `${JSON.stringify({
+          schemaVersion: "1",
+          eventId: "stale-cli-completion",
+          actor: { id: "planner-2", role: "planner" },
+          command: {
+            type: "node_outcome_submitted",
+            nodeId: currentNodeId,
+            attemptId: "dispatch-attempt",
+            outcome: "plan_valid",
+            artifactIds: ["stale-cli-plan"],
+            evidenceIds: ["stale-cli-plan-validation"],
+          },
+          artifacts: [
+            {
+              id: "stale-cli-plan",
+              schemaId: "dev-role.plan",
+              schemaVersion: "1",
+              derivedFromArtifactIds: [],
+              reference: {
+                kind: "workspace",
+                uri: ".dev-flow/328/stale-cli-plan.json",
+                sha256: `sha256:${"b".repeat(64)}`,
+                byteLength: 1,
+              },
+            },
+          ],
+          evidence: [
+            {
+              id: "stale-cli-plan-validation",
+              kind: "artifact_validation",
+              artifactIds: ["stale-cli-plan"],
+              provenance: "stale-cli-runner",
+              reference: {
+                kind: "workspace",
+                uri: ".dev-flow/328/stale-cli-plan-validation.json",
+                sha256: `sha256:${"a".repeat(64)}`,
+                byteLength: 1,
+              },
+            },
+          ],
+          claim: {
+            expectedEntityVersion: 6,
+            proof: {
+              claimId: claimedAgain.claim.claimId,
+              fencingToken: claimedAgain.claim.fencingToken,
+              ownerId: claimedAgain.claim.ownerId,
+              runId: claimedAgain.claim.runId,
+            },
+          },
+        })}\n`,
+      );
+      await createRunCommand().parseAsync(
+        ["event", started.view.runId, "--file", staleEventPath, "--json"],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "stale_claim",
+        stateUnchanged: true,
+      });
+
+      const missingProofPath = join(root, "missing-claim-proof.json");
+      await writeFile(
+        missingProofPath,
+        `${JSON.stringify({
+          schemaVersion: "1",
+          eventId: "missing-cli-proof",
+          actor: { id: "planner-2", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId: currentNodeId,
+            attemptId: "dispatch-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: [],
+          },
+        })}\n`,
+      );
+      await createRunCommand().parseAsync(
+        ["event", started.view.runId, "--file", missingProofPath, "--json"],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "stale_claim",
+        stateUnchanged: true,
+      });
+    } finally {
+      process.exitCode = originalExitCode;
+      vi.restoreAllMocks();
+      await rm(root, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 function expectedBoundedReference(kind: "command" | "github", uri: string, value: unknown) {
@@ -275,6 +904,11 @@ describe("[NFR-STABILITY-014-AC1] run CLI は durable control plane を操作す
   it("run group を登録し、OPEN Issue から exact-bound run を開始して bounded view を表示する", async () => {
     const runGroup = buildProgram().commands.find((command) => command.name() === "run");
     expect(runGroup?.commands.map((command) => command.name())).toEqual([
+      "dispatch",
+      "claim",
+      "heartbeat",
+      "release",
+      "reclaim",
       "start",
       "event",
       "show",

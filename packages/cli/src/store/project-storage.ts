@@ -17,6 +17,7 @@ import { ConfigStore } from "./config.js";
 import { LoopStateStore } from "./loop-state.js";
 import { SyncStateStore } from "./state.js";
 import { TasksStore } from "./tasks.js";
+import { gitCommandEnvironment, isNotGitRepositoryError } from "../util/git-errors.js";
 
 const execFileAsync = promisify(execFile);
 const LAYOUT_VERSION = "v1";
@@ -210,41 +211,6 @@ function parseWorktreeList(output: string): string[] {
     .map((entry) => entry.slice("worktree ".length));
 }
 
-function isNotGitRepository(error: unknown): boolean {
-  const stderr = String((error as { stderr?: unknown }).stderr ?? "");
-  return stderr.includes("not a git repository") || stderr.includes("not a git work tree");
-}
-
-function gitCommandEnvironment(): NodeJS.ProcessEnv {
-  const environment = { ...process.env };
-  // pre-push等のGit hookはrepository選択用envをexportすることがある。
-  // projectRootを正本とするsubprocessへ継承すると、-Cよりenvが優先され別repositoryを操作し得る。
-  for (const name of [
-    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
-    "GIT_CONFIG",
-    "GIT_CONFIG_PARAMETERS",
-    "GIT_CONFIG_COUNT",
-    "GIT_OBJECT_DIRECTORY",
-    "GIT_DIR",
-    "GIT_WORK_TREE",
-    "GIT_IMPLICIT_WORK_TREE",
-    "GIT_GRAFT_FILE",
-    "GIT_INDEX_FILE",
-    "GIT_NO_REPLACE_OBJECTS",
-    "GIT_REPLACE_REF_BASE",
-    "GIT_PREFIX",
-    "GIT_SHALLOW_FILE",
-    "GIT_COMMON_DIR",
-    "GIT_CEILING_DIRECTORIES",
-    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
-  ]) {
-    delete environment[name];
-  }
-  // Git の診断文を安定させ、non-git 判定がprocess localeに依存しないようにする。
-  environment.LC_ALL = "C";
-  return environment;
-}
-
 async function runGit(projectRoot: string, args: string[]): Promise<string> {
   try {
     const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
@@ -255,7 +221,7 @@ async function runGit(projectRoot: string, args: string[]): Promise<string> {
     });
     return result.stdout.trim();
   } catch (error) {
-    if (isNotGitRepository(error)) {
+    if (isNotGitRepositoryError(error)) {
       throw new ProjectStorageError("NOT_A_GIT_REPOSITORY", "Git repository ではありません", {
         cause: error,
       });
