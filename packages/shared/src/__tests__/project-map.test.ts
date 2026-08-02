@@ -410,6 +410,7 @@ function runView(overrides: Partial<RunGraphView> = {}): RunGraphView {
     attempts: { total: attempts.length, limit: 20, truncated: false, items: attempts },
     artifacts: { total: 0, limit: 20, truncated: false, items: [] },
     evidence: { total: 0, limit: 20, truncated: false, items: [] },
+    claimAudits: { total: 0, limit: 20, truncated: false, items: [] },
     ...overrides,
   };
 }

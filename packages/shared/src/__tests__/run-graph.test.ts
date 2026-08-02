@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   BoundedRunGraphReferenceSchema,
+  DispatchClaimReceiptSchema,
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   GraphContractSchema,
   RunGraphAcceptedEventSchema,
@@ -19,6 +20,91 @@ import {
   RunGraphViewSchema,
   type GraphContract,
 } from "../run-graph.js";
+
+describe("[NFR-STABILITY-014-AC9] claim receipt は operation ごとの不正状態を拒否する", () => {
+  const claim = {
+    taskId: "stanah/gh-gantt#329",
+    repository: "stanah/gh-gantt",
+    state: "Todo",
+    ownerId: "owner-1",
+    workspaceId: "workspace-1",
+    runId: "run-1",
+    claimId: "claim-1",
+    entityVersion: 1,
+    fencingToken: 1,
+    acquiredAt: "2026-08-02T00:00:00.000Z",
+    expiresAt: "2026-08-02T00:05:00.000Z",
+    dispatchPlanId: "dispatch-plan-1",
+    dispatchPlanVersion: "1" as const,
+  };
+  const base = {
+    accepted: true as const,
+    eventId: "event-1",
+    entityVersion: 1,
+    stateUnchanged: false as const,
+    claim,
+  };
+
+  it("authorize_event は completion を必須にし、reclaim field を拒否する", () => {
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({ ...base, operation: "authorize_event" }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "authorize_event",
+        completion: {
+          runId: "run-1",
+          taskId: "stanah/gh-gantt#329",
+          actorId: "owner-1",
+          commandFingerprint: "a".repeat(64),
+        },
+        reclaimReason: "expired",
+      }),
+    ).toThrow();
+  });
+
+  it("claim と heartbeat は reclaim/completion field を拒否する", () => {
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "claim",
+        completion: {
+          runId: "run-1",
+          taskId: "stanah/gh-gantt#329",
+          actorId: "owner-1",
+          commandFingerprint: "a".repeat(64),
+        },
+      }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "heartbeat",
+        reclaimReason: "expired",
+      }),
+    ).toThrow();
+  });
+
+  it("reclaim は reason と evidence の組を厳密に検証する", () => {
+    expect(() => DispatchClaimReceiptSchema.parse({ ...base, operation: "reclaim" })).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "reclaim",
+        reclaimReason: "expired",
+        evidenceId: "unexpected-evidence",
+      }),
+    ).toThrow();
+    expect(() =>
+      DispatchClaimReceiptSchema.parse({
+        ...base,
+        operation: "reclaim",
+        reclaimReason: "owner_stopped",
+      }),
+    ).toThrow();
+  });
+});
 
 describe("[NFR-STABILITY-014-AC3] Graph Contract が固定 dev-role graph の統制要素を表現する", () => {
   it("version、role、node、edge、artifact、evidence、authority、budget、human gate を検証する", () => {
@@ -542,6 +628,7 @@ describe("[NFR-STABILITY-014-AC2] [NFR-STABILITY-014-AC4] replay projection と 
       attempts: { total: 2, limit: 1, truncated: true, items: [attempt] },
       artifacts: { total: 2, limit: 1, truncated: true, items: [artifact] },
       evidence: { total: 2, limit: 1, truncated: true, items: [evidence] },
+      claimAudits: { total: 0, limit: 1, truncated: false, items: [] },
     });
 
     expect(view.nodes).toMatchObject({ total: 2, limit: 1, truncated: true });

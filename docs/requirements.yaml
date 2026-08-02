@@ -1584,6 +1584,32 @@ areas:
               stable ID と event lineage を壊さない versioned extension として追加できる
             status: uncovered
             tests: []
+          - id: NFR-STABILITY-014-AC9
+            description: |
+              ready frontier は global/state/repository 上限内で isolated workspace を claim/lease し、shared strict dispatch
+              plan schema と schema-validated current gate snapshot の source revision / canonical fingerprint を持つ。claim は
+              Work Graph read lease 内で current Work Graph/loop/sync/gate/registry/Run binding を再検証し、独立した registry
+              CAS 直前にも combined snapshot fingerprint を照合する。claim registry lock の dead owner recovery は観測した
+              owner nonce に bind した exclusive recovery claim と atomic retire を使う。completion fencing は副作用なし
+              domain validation 後、event/payload/binding/current claim lineage の repository-shared pending authorization を
+              append 前に永続化する。pending 中の heartbeat/release/別 event は fail-closed、exact retry だけが append と
+              receipt publish を再開し、claim 継続時は更新 proof を返す。heartbeat、明示 release/reclaim を current proof
+              で統制する。domain reject / append 競合は pending を解除して original proof の修正 retry を
+              許可する。append 後 crash / expired または owner_stopped reclaim は既存 binding event だけを historical
+              reconciliation/audit し継続 proof を返さない。proof なし raw completion と stale owner の新規 append は拒否する。
+              audit event ID は receipt event ID から一意に導出し durable registry receipt と照合する。不明な停止 gate は
+              全 frontier を fail-closed、operator-visible bounded Run Graph audit、fan-in 再評価、期限切れ release 拒否を持つ
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/dispatch-claim-store.test.ts
+              - packages/cli/src/__tests__/regressions/issue-329-ready-frontier.test.ts
+              - packages/cli/src/__tests__/run-command.test.ts
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
+              - packages/shared/src/__tests__/dispatch-plan.test.ts
+              - packages/shared/src/__tests__/run-graph.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
+              - tests/workflow/gh-gantt-workflow-skill.test.ts
+              - tests/workflow/project-config.test.ts
       - id: NFR-STABILITY-015
         summary: Work Graph Cache のsnapshot整合性とrepository lease
         acceptance_criteria:

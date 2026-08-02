@@ -94,6 +94,39 @@ resume は外部副作用の状態を必須入力とし、`unknown` は自動再
 `run observe-pr` は live `closingIssuesReferences` で Run 対象 Issue への exact linkage を確認し、
 未結線または取得不完全の PR では Run を完了しない。
 
+## Bounded dispatch
+
+この repository は `.gantt-sync/gantt.config.json` の `dispatch.max_concurrency` を global 上限、
+`dispatch.state_concurrency` と `dispatch.repository_concurrency` を追加上限として使う。
+gh-gantt は次の lifecycle を control plane の公開 CLI contract として提供する。
+
+1. `gh-gantt pull` で GitHub Projects 由来の Work Graph を更新し、dependency readiness と同期状態を確認する。
+2. `gh-gantt run dispatch --workspace-map <path> --gate-snapshot <path>` で Config の global / state / repository 上限内にある ready frontier の dispatch plan をファイルへ保存する。gate snapshot は strict JSON の `schemaVersion` / `sourceRevision` / `observedAt` / review/human IDs を持つ。plan は shared strict schema の `planVersion: "1"`、`planId`、`registryEntityVersion`、`generatedAt`、候補、除外理由、capacity と Work Graph/gate/combined fingerprint を持つ。
+3. dispatch plan の各 task に `gh-gantt run claim --plan-file <path> --gate-snapshot <path>` を実行する。claim は Work Graph read lease 内で current Work Graph、loop、sync、current gate snapshot、registry を再計算し、selected task の repository / state / workspace、Run Graph の task binding、plan lineage / version / fingerprint を検証してから、独立した registry CAS で claim receipt を確定する。固定 lock order は Work Graph read lease → claim registry lock とし、Work Graph lease を registry storage に流用しない。
+4. 外部 runner が task ごとに別の isolated workspace を用意する。同じ workspace を複数 claim で共有しない。
+5. 実行中は lease が失効する前に `gh-gantt run heartbeat` を送り、current owner と fencing version を更新する。
+6. completion fencing として、registry lock 内で current claim proof と Run / task / actor lineage を検証し、Run Graph の transition、attempt、artifact、evidence を明示的な副作用なしの domain validation seam で検証する。reject では registry と journal を変更せず、同じ current proof で修正 event を retry できる。dispatch Config が有効なら proof なしの completion/outcome は一律に拒否する。
+7. validation 後、event ID / payload fingerprint / current claim lineage と dispatch authorization binding を repository-shared pending authorization として先に永続化する。pending 中の heartbeat / release / 別 event は `authorization_pending` で拒否する。同じ event ID / payload / binding の retry だけが binding 付き Run Graph event を append でき、append 成功後だけ durable receipt が entity version と fencing token を進め、claim を維持したまま更新 proof を返す。sequence 競合では pending を解除して original proof を維持する。
+8. pending publish 後・append 前、または append 後・receipt publish 前に中断した場合、exact retry だけを reconciliation する。claim が current なら receipt と更新 proof を回収する。先に expired / owner_stopped reclaim された場合は pending を terminalize し、既存 event だけを historical audit できるが新規 event と継続 proof は受け取れない。receipt publish 後は stored receipt に収束する。
+9. task / Run の正常終了または中止時は `gh-gantt run release` で claim を明示解放する。中間 event の認可は release ではない。期限切れ claim の release は `lease_expired` で拒否し、expired reclaim を使う。
+10. owner 停止を evidence ID で確認した場合、または lease が失効した場合だけ、別 owner が `gh-gantt run reclaim` を実行する。旧 owner の heartbeat、release、event authorization は stale として拒否される。
+11. accepted outcome event、release、reclaim の後は共有 Work Graph Cache を読み直し、dependency を再評価して fan-in を解く。全 upstream task が完了した downstream task だけを次の dispatch 対象にする。
+
+claim lifecycle は `claim_acquired` / `claim_heartbeat` / `claim_released` / `claim_reclaimed` / `claim_event_authorized` として
+workspace-local の Run Graph audit へ記録する。audit は event ID、fingerprint、entity version、run / task lineage を
+repository-shared durable registry receipt と照合し、偽造・stale receipt は `stale_claim` で拒否する。audit event ID は
+`audit:${receipt.eventId}` に固定し、同じ registry event の別 ID 追記を拒否する。receipt 確定後、
+local audit の追記前に中断した場合は、同じ event ID で command を再実行して reconciliation する。
+`gh-gantt run show` は `claimAudits` の total / limit / truncated / bounded items を JSON と人間表示で公開する。
+
+sync conflict、open iteration、review gate、human gate のいずれかがある task は dispatch しない。
+Work Graph に存在しない task ID を含む不明な gate snapshot は `gate_snapshot_inconsistent` で frontier 全体を停止する。
+claim registry の不整合、Config にない status、plan 生成後に変化した dependency / gate / claim も fail-closed とする。
+
+gh-gantt が提供するのは schema-validated な dispatch plan と event contract だけである。
+agent/provider/shell runner を内蔵しないほか、workspace を作成しない。外部 runner が isolated workspace の
+作成、process の起動、成果物の生成を担当し、gh-gantt は GitHub task status を暗黙更新しない。
+
 ## Dev-Role Config
 
 `gh-gantt-dev-role` スキル用の設定。orchestrator / planner / implementer / executor / reviewer の各ロールが参照する。

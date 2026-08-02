@@ -7,6 +7,7 @@ import type {
   Config,
   Dependency,
   DoctorConfig,
+  DispatchConfig,
   LinkedPullRequest,
   SprintConfig,
   Statuses,
@@ -159,6 +160,20 @@ const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
   stale_in_progress_days: z.number().int().positive().optional(),
 });
 
+const NormalizedRepositorySchema = z
+  .string()
+  .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/);
+
+export const DispatchConfigSchema: z.ZodType<DispatchConfig> = z
+  .object({
+    max_concurrency: z.number().int().positive(),
+    state_concurrency: z.record(z.string().trim().min(1), z.number().int().positive()).optional(),
+    repository_concurrency: z
+      .record(NormalizedRepositorySchema, z.number().int().positive())
+      .optional(),
+  })
+  .strict();
+
 const ConflictPolicyChoiceSchema = z.enum(["ours", "theirs", "manual"]);
 const ConflictPolicySchema = z
   .object(
@@ -170,58 +185,71 @@ const ConflictPolicySchema = z
 
 // `default_view` の z.preprocess が input 型を unknown に広げるため、
 // Input 引数を unknown に明示して TS の input 型不整合を回避する。
-export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z.object({
-  version: z.string(),
-  project: z.object({
-    name: z.string(),
-    github: z.object({
-      owner: z.string(),
-      repo: z.string(),
-      project_number: z.number(),
-    }),
-  }),
-  sync: z
-    .object({
-      auto_create_issues: z.boolean(),
-      auto_push: z.boolean().default(true),
-      conflict_policy: ConflictPolicySchema.optional(),
-      field_mapping: z.object({
-        start_date: z.string(),
-        end_date: z.string(),
-        // deprecated: Status フィールド名の正は statuses.field_name (#315)。
-        // 既存 config の後方互換のため受理するが、値は無視される。
-        status: z.string().optional(),
-        type: z.string().nullable().optional(),
-        priority: z.string().optional(),
-        estimate_hours: z.string().optional(),
+export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z
+  .object({
+    version: z.string(),
+    project: z.object({
+      name: z.string(),
+      github: z.object({
+        owner: z.string(),
+        repo: z.string(),
+        project_number: z.number(),
       }),
-    })
-    .passthrough(),
-  task_types: z.record(TaskTypeSchema),
-  type_hierarchy: z.record(z.array(z.string())),
-  statuses: StatusesSchema,
-  gantt: z.object({
-    default_view: z.preprocess((v) => (v === "day" ? "week" : v), ViewScaleSchema),
-    working_days: z.array(z.number()),
-    holidays: z.array(CalendarHolidaySchema).optional(),
-    at_risk_threshold_days: z.number().int().positive().optional(),
-    colors: z.object({
-      critical_path: z.string(),
-      on_track: z.string(),
-      at_risk: z.string(),
-      overdue: z.string(),
     }),
-  }),
-  grouping: GroupingSchema.optional(),
-  sprints: z.array(SprintSchema).optional(),
-  task_templates: TaskTemplatesSchema.optional(),
-  doctor: DoctorConfigSchema.optional(),
-  loop: LoopConfigSchema.optional(),
-  run_graph: RunGraphConfigSchema.optional(),
-  require_review_for_types: z.array(z.string().trim().min(1)).default([]),
-  require_close_evidence: z.boolean().default(false),
-  max_task_size_hours: z.number().positive().optional(),
-});
+    sync: z
+      .object({
+        auto_create_issues: z.boolean(),
+        auto_push: z.boolean().default(true),
+        conflict_policy: ConflictPolicySchema.optional(),
+        field_mapping: z.object({
+          start_date: z.string(),
+          end_date: z.string(),
+          // deprecated: Status フィールド名の正は statuses.field_name (#315)。
+          // 既存 config の後方互換のため受理するが、値は無視される。
+          status: z.string().optional(),
+          type: z.string().nullable().optional(),
+          priority: z.string().optional(),
+          estimate_hours: z.string().optional(),
+        }),
+      })
+      .passthrough(),
+    task_types: z.record(TaskTypeSchema),
+    type_hierarchy: z.record(z.array(z.string())),
+    statuses: StatusesSchema,
+    gantt: z.object({
+      default_view: z.preprocess((v) => (v === "day" ? "week" : v), ViewScaleSchema),
+      working_days: z.array(z.number()),
+      holidays: z.array(CalendarHolidaySchema).optional(),
+      at_risk_threshold_days: z.number().int().positive().optional(),
+      colors: z.object({
+        critical_path: z.string(),
+        on_track: z.string(),
+        at_risk: z.string(),
+        overdue: z.string(),
+      }),
+    }),
+    grouping: GroupingSchema.optional(),
+    sprints: z.array(SprintSchema).optional(),
+    task_templates: TaskTemplatesSchema.optional(),
+    doctor: DoctorConfigSchema.optional(),
+    dispatch: DispatchConfigSchema.optional(),
+    loop: LoopConfigSchema.optional(),
+    run_graph: RunGraphConfigSchema.optional(),
+    require_review_for_types: z.array(z.string().trim().min(1)).default([]),
+    require_close_evidence: z.boolean().default(false),
+    max_task_size_hours: z.number().positive().optional(),
+  })
+  .superRefine((config, context) => {
+    for (const state of Object.keys(config.dispatch?.state_concurrency ?? {})) {
+      if (!(state in config.statuses.values)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["dispatch", "state_concurrency", state],
+          message: "state_concurrency のキーは configured status と一致する必要があります",
+        });
+      }
+    }
+  });
 
 export const TasksFileSchema: z.ZodType<TasksFile> = z.object({
   tasks: z.array(TaskSchema),

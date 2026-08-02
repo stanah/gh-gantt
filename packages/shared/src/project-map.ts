@@ -142,9 +142,364 @@ export interface ProjectMapOptions {
   nextActionsLimit?: number;
 }
 
+/** repository-shared claim registry から得た lease snapshot。 */
+export interface DispatchClaimSnapshot {
+  taskId: string;
+  repository: string;
+  state: string;
+  ownerId: string;
+  workspaceId: string;
+  runId: string;
+  claimId: string;
+  entityVersion: number;
+  acquiredAt: string;
+  expiresAt: string;
+}
+
+export const DISPATCH_EXCLUSION_REASONS = [
+  "dispatch_not_configured",
+  "already_done",
+  "not_ready_state",
+  "unknown_state",
+  "dependency_blocked",
+  "review_gate",
+  "human_gate",
+  "sync_conflict",
+  "open_iteration",
+  "parent_container",
+  "active_claim",
+  "claim_reclaim_required",
+  "registry_snapshot_inconsistent",
+  "gate_snapshot_inconsistent",
+  "workspace_claimed",
+  "workspace_missing",
+  "global_capacity",
+  "state_capacity",
+  "repository_capacity",
+] as const;
+
+export type DispatchExclusionReason = (typeof DISPATCH_EXCLUSION_REASONS)[number];
+
+const DispatchFingerprintSchema = z.string().regex(/^[0-9a-f]{64}$/);
+const DispatchTaskIdSchema = z.string().min(1);
+const DispatchTaskIdsSchema = z
+  .array(DispatchTaskIdSchema)
+  .refine((ids) => new Set(ids).size === ids.length, "task ID は重複できません");
+const DispatchCapacitySlotSchema = z
+  .object({
+    limit: z.number().int().nonnegative(),
+    used: z.number().int().nonnegative(),
+    remaining: z.number().int().nonnegative(),
+  })
+  .strict()
+  .superRefine((slot, context) => {
+    if (slot.remaining !== Math.max(0, slot.limit - slot.used)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["remaining"],
+        message: "remaining は limit と used から導出した値でなければなりません",
+      });
+    }
+  });
+
+/** review / human gate の authoritative snapshot 入力。 */
+export interface DispatchGateSnapshot {
+  schemaVersion: "1";
+  sourceRevision: string;
+  observedAt: string;
+  reviewGateTaskIds: string[];
+  humanGateTaskIds: string[];
+}
+
+export const DispatchGateSnapshotSchema: z.ZodType<DispatchGateSnapshot> = z
+  .object({
+    schemaVersion: z.literal("1"),
+    sourceRevision: z.string().min(1),
+    observedAt: z.string().datetime({ offset: true }),
+    reviewGateTaskIds: DispatchTaskIdsSchema,
+    humanGateTaskIds: DispatchTaskIdsSchema,
+  })
+  .strict();
+export interface DispatchPlanInput {
+  tasks: Task[];
+  config: Config;
+  now: string;
+  syncConflictTaskIds: string[];
+  openIterationTaskIds: string[];
+  reviewGateTaskIds: string[];
+  humanGateTaskIds: string[];
+  claims: DispatchClaimSnapshot[];
+  registryEntityVersion: number;
+  workGraphFingerprint: string;
+  gateSnapshotFingerprint: string;
+  gateSnapshotSourceRevision: string;
+  snapshotFingerprint: string;
+  workspaceByTaskId: Record<string, string>;
+}
+
+export interface DispatchPlanItem {
+  taskId: string;
+  repository: string;
+  state: string;
+  workspaceId: string;
+}
+
+export interface DispatchPlan {
+  planVersion: "1";
+  planId: string;
+  registryEntityVersion: number;
+  context: {
+    syncConflictTaskIds: string[];
+    openIterationTaskIds: string[];
+    reviewGateTaskIds: string[];
+    humanGateTaskIds: string[];
+    workspaceByTaskId: Record<string, string>;
+    workGraphFingerprint: string;
+    gateSnapshotFingerprint: string;
+    gateSnapshotSourceRevision: string;
+    snapshotFingerprint: string;
+  };
+  generatedAt: string;
+  selected: DispatchPlanItem[];
+  excluded: Array<{ taskId: string; reason: DispatchExclusionReason }>;
+  capacity: {
+    global: { limit: number; used: number; remaining: number };
+    states: Record<string, { limit: number; used: number; remaining: number }>;
+    repositories: Record<string, { limit: number; used: number; remaining: number }>;
+  };
+}
+
+const DispatchPlanItemSchema: z.ZodType<DispatchPlanItem> = z
+  .object({
+    taskId: DispatchTaskIdSchema,
+    repository: z
+      .string()
+      .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/),
+    state: z.string().min(1),
+    workspaceId: z.string().min(1),
+  })
+  .strict();
+
+/** dispatch plan file と builder 出力の双方で使う完全な公開 schema。 */
+export const DispatchPlanSchema: z.ZodType<DispatchPlan> = z
+  .object({
+    planVersion: z.literal("1"),
+    planId: z.string().min(1),
+    registryEntityVersion: z.number().int().nonnegative(),
+    context: z
+      .object({
+        syncConflictTaskIds: DispatchTaskIdsSchema,
+        openIterationTaskIds: DispatchTaskIdsSchema,
+        reviewGateTaskIds: DispatchTaskIdsSchema,
+        humanGateTaskIds: DispatchTaskIdsSchema,
+        workspaceByTaskId: z.record(z.string().min(1)),
+        workGraphFingerprint: DispatchFingerprintSchema,
+        gateSnapshotFingerprint: DispatchFingerprintSchema,
+        gateSnapshotSourceRevision: z.string().min(1),
+        snapshotFingerprint: DispatchFingerprintSchema,
+      })
+      .strict(),
+    generatedAt: z.string().datetime({ offset: true }),
+    selected: z.array(DispatchPlanItemSchema),
+    excluded: z.array(
+      z
+        .object({
+          taskId: DispatchTaskIdSchema,
+          reason: z.enum(DISPATCH_EXCLUSION_REASONS),
+        })
+        .strict(),
+    ),
+    capacity: z
+      .object({
+        global: DispatchCapacitySlotSchema,
+        states: z.record(DispatchCapacitySlotSchema),
+        repositories: z.record(DispatchCapacitySlotSchema),
+      })
+      .strict(),
+  })
+  .strict();
 const RISK_LABELS = new Set(["risk", "spike", "external"]);
 const PRIORITY_WEIGHT: Record<string, number> = { critical: 10, high: 6, medium: 3, low: 1 };
 const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function normalizeRepository(value: string): string | null {
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(normalized)
+    ? normalized
+    : null;
+}
+
+/**
+ * Work Graph snapshot から、外部 runner が claim 可能な bounded dispatch plan を pure に導出する。
+ * 時計・filesystem・Store には触れず、期限判定用の時刻も入力として受け取る。
+ */
+export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
+  const configured = input.config.dispatch;
+  const limit = configured?.max_concurrency ?? 0;
+  const now = Date.parse(input.now);
+  const registrySnapshotInconsistent =
+    !Number.isFinite(now) ||
+    !Number.isInteger(input.registryEntityVersion) ||
+    input.registryEntityVersion < 0 ||
+    new Set(input.claims.map((claim) => claim.taskId)).size !== input.claims.length ||
+    new Set(input.claims.map((claim) => claim.workspaceId)).size !== input.claims.length ||
+    new Set(input.claims.map((claim) => claim.claimId)).size !== input.claims.length ||
+    input.claims.some(
+      (claim) =>
+        !Number.isInteger(claim.entityVersion) ||
+        claim.entityVersion < 1 ||
+        !Object.hasOwn(input.config.statuses.values, claim.state) ||
+        normalizeRepository(claim.repository) === null ||
+        !Number.isFinite(Date.parse(claim.acquiredAt)) ||
+        !Number.isFinite(Date.parse(claim.expiresAt)) ||
+        Date.parse(claim.acquiredAt) >= Date.parse(claim.expiresAt),
+    );
+  const activeClaims = input.claims.filter(
+    (claim) => Number.isFinite(Date.parse(claim.expiresAt)) && Date.parse(claim.expiresAt) > now,
+  );
+  const activeTasks = new Set(activeClaims.map((claim) => claim.taskId));
+  const activeWorkspaces = new Set(activeClaims.map((claim) => claim.workspaceId));
+  const expiredTasks = new Set(
+    input.claims.filter((claim) => Date.parse(claim.expiresAt) <= now).map((claim) => claim.taskId),
+  );
+  const expiredWorkspaces = new Set(
+    input.claims
+      .filter((claim) => Date.parse(claim.expiresAt) <= now)
+      .map((claim) => claim.workspaceId),
+  );
+  const usedStates = new Map<string, number>();
+  const usedRepositories = new Map<string, number>();
+  for (const claim of activeClaims) {
+    usedStates.set(claim.state, (usedStates.get(claim.state) ?? 0) + 1);
+    const repository = normalizeRepository(claim.repository);
+    if (repository) usedRepositories.set(repository, (usedRepositories.get(repository) ?? 0) + 1);
+  }
+
+  const readiness = buildReadiness(input.tasks, input.config, new Set());
+  const gateSets = {
+    sync_conflict: new Set(input.syncConflictTaskIds),
+    open_iteration: new Set(input.openIterationTaskIds),
+    review_gate: new Set(input.reviewGateTaskIds),
+    human_gate: new Set(input.humanGateTaskIds),
+  } as const;
+  const knownTaskIds = new Set(input.tasks.map((task) => task.id));
+  const gateSnapshotInconsistent = Object.values(gateSets).some((ids) =>
+    [...ids].some((id) => !knownTaskIds.has(id)),
+  );
+  const selected: DispatchPlanItem[] = [];
+  const excluded: DispatchPlan["excluded"] = [];
+  const selectedWorkspaces = new Set<string>();
+  const selectedStates = new Map<string, number>();
+  const selectedRepositories = new Map<string, number>();
+
+  for (const task of [...input.tasks].sort((left, right) => left.id.localeCompare(right.id))) {
+    let reason: DispatchExclusionReason | null = null;
+    const statusValue = getStatusValue(task, input.config);
+    const state =
+      typeof task.custom_fields[input.config.statuses.field_name] === "string"
+        ? String(task.custom_fields[input.config.statuses.field_name])
+        : "";
+    const repository = normalizeRepository(task.github_repo);
+    const workspaceId = input.workspaceByTaskId[task.id];
+    if (registrySnapshotInconsistent) reason = "registry_snapshot_inconsistent";
+    else if (gateSnapshotInconsistent) reason = "gate_snapshot_inconsistent";
+    else if (!configured) reason = "dispatch_not_configured";
+    else if (isTaskDone(task, input.config)) reason = "already_done";
+    else if (!statusValue) reason = "unknown_state";
+    else if (input.config.task_types[task.type]?.display !== "bar" || task.sub_tasks.length > 0)
+      reason = "parent_container";
+    else if (
+      getBlockingTaskIds(task, new Map(input.tasks.map((item) => [item.id, item])), input.config)
+        .length > 0
+    )
+      reason = "dependency_blocked";
+    else if (gateSets.review_gate.has(task.id) || needsReview(task, input.config))
+      reason = "review_gate";
+    else if (gateSets.human_gate.has(task.id)) reason = "human_gate";
+    else if (gateSets.sync_conflict.has(task.id)) reason = "sync_conflict";
+    else if (gateSets.open_iteration.has(task.id)) reason = "open_iteration";
+    else if (activeTasks.has(task.id)) reason = "active_claim";
+    else if (expiredTasks.has(task.id)) reason = "claim_reclaim_required";
+    else if (!workspaceId) reason = "workspace_missing";
+    else if (activeWorkspaces.has(workspaceId) || selectedWorkspaces.has(workspaceId))
+      reason = "workspace_claimed";
+    else if (expiredWorkspaces.has(workspaceId)) reason = "claim_reclaim_required";
+    else if (!readiness[task.id]?.isReady) reason = "not_ready_state";
+    else if (!repository) reason = "unknown_state";
+    else if (activeClaims.length + selected.length >= limit) reason = "global_capacity";
+    else {
+      const stateLimit = configured.state_concurrency?.[state] ?? limit;
+      const stateUsed = (usedStates.get(state) ?? 0) + (selectedStates.get(state) ?? 0);
+      const repositoryLimit = configured.repository_concurrency?.[repository] ?? limit;
+      const repositoryUsed =
+        (usedRepositories.get(repository) ?? 0) + (selectedRepositories.get(repository) ?? 0);
+      if (stateUsed >= stateLimit) reason = "state_capacity";
+      else if (repositoryUsed >= repositoryLimit) reason = "repository_capacity";
+    }
+
+    if (reason) {
+      excluded.push({ taskId: task.id, reason });
+      continue;
+    }
+    selected.push({ taskId: task.id, repository: repository!, state, workspaceId });
+    selectedWorkspaces.add(workspaceId);
+    selectedStates.set(state, (selectedStates.get(state) ?? 0) + 1);
+    selectedRepositories.set(repository!, (selectedRepositories.get(repository!) ?? 0) + 1);
+  }
+
+  const states = Object.fromEntries(
+    Object.entries(configured?.state_concurrency ?? {}).map(([state, stateLimit]) => {
+      const used = usedStates.get(state) ?? 0;
+      return [state, { limit: stateLimit, used, remaining: Math.max(0, stateLimit - used) }];
+    }),
+  );
+  const repositories = Object.fromEntries(
+    Object.entries(configured?.repository_concurrency ?? {}).map(
+      ([repository, repositoryLimit]) => {
+        const used = usedRepositories.get(repository) ?? 0;
+        return [
+          repository,
+          { limit: repositoryLimit, used, remaining: Math.max(0, repositoryLimit - used) },
+        ];
+      },
+    ),
+  );
+  const lineage = [
+    ...selected.map((item) => `selected:${item.taskId}@${item.workspaceId}`),
+    ...excluded.map((item) => `excluded:${item.taskId}@${item.reason}`),
+  ].join(",");
+  const context = {
+    syncConflictTaskIds: [...input.syncConflictTaskIds].sort(),
+    openIterationTaskIds: [...input.openIterationTaskIds].sort(),
+    reviewGateTaskIds: [...input.reviewGateTaskIds].sort(),
+    humanGateTaskIds: [...input.humanGateTaskIds].sort(),
+    workspaceByTaskId: Object.fromEntries(
+      Object.entries(input.workspaceByTaskId).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+    workGraphFingerprint: input.workGraphFingerprint,
+    gateSnapshotFingerprint: input.gateSnapshotFingerprint,
+    gateSnapshotSourceRevision: input.gateSnapshotSourceRevision,
+    snapshotFingerprint: input.snapshotFingerprint,
+  };
+  return DispatchPlanSchema.parse({
+    planVersion: "1",
+    planId: `dispatch-plan:v1:r${input.registryEntityVersion}:${lineage}:context:${encodeURIComponent(JSON.stringify(context))}`,
+    registryEntityVersion: input.registryEntityVersion,
+    context,
+    generatedAt: input.now,
+    selected,
+    excluded,
+    capacity: {
+      global: {
+        limit,
+        used: activeClaims.length,
+        remaining: Math.max(0, limit - activeClaims.length),
+      },
+      states,
+      repositories,
+    },
+  });
+}
 
 function getStatusValue(task: Task, config: Config): StatusValue | undefined {
   const name = task.custom_fields[config.statuses.field_name];
