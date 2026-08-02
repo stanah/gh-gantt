@@ -3,8 +3,10 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import {
   buildDispatchPlan,
+  canonicalJsonStringify,
   DispatchGateSnapshotSchema,
   DispatchClaimProofSchema,
+  DispatchClaimRepositorySchema,
   DispatchPlanSchema,
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   RunGraphRunnerCommandInputSchema,
@@ -21,6 +23,7 @@ import { RunGraphControlPlane, type RunGraphCommandResult } from "../run-graph/c
 import { GraphContractStore } from "../store/graph-contract.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { DispatchClaimStore } from "../store/dispatch-claims.js";
+import { isNotGitRepositoryError } from "../util/git-errors.js";
 
 const SIDE_EFFECT_STATES = ["not_started", "committed", "reconciled", "unknown"] as const;
 const HUMAN_DECISIONS = ["approved", "rejected", "override"] as const;
@@ -29,27 +32,18 @@ class RunCommandError extends Error {
   constructor(
     readonly code: string,
     message: string,
+    readonly stateUnchanged?: true,
   ) {
     super(message);
   }
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, canonicalize(item)]),
-    );
-  }
-  return value;
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
 }
 
-function canonicalFingerprint(value: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(canonicalize(value)))
-    .digest("hex");
+export function canonicalFingerprint(value: unknown): string {
+  return sha256Hex(canonicalJsonStringify(value));
 }
 
 async function readGateSnapshot(projectRoot: string, path: string) {
@@ -83,17 +77,23 @@ function dispatchSnapshotLineage(
 }
 
 function parsePositiveInteger(value: string, option: string): number {
+  if (value.trim().length === 0) {
+    throw new RunCommandError("invalid_input", `${option} は正の整数で指定してください`, true);
+  }
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1) {
-    throw new RunCommandError("invalid_input", `${option} は正の整数で指定してください`);
+    throw new RunCommandError("invalid_input", `${option} は正の整数で指定してください`, true);
   }
   return parsed;
 }
 
 function parseNonnegativeInteger(value: string, option: string): number {
+  if (value.trim().length === 0) {
+    throw new RunCommandError("invalid_input", `${option} は0以上の整数で指定してください`, true);
+  }
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 0) {
-    throw new RunCommandError("invalid_input", `${option} は0以上の整数で指定してください`);
+    throw new RunCommandError("invalid_input", `${option} は0以上の整数で指定してください`, true);
   }
   return parsed;
 }
@@ -192,7 +192,7 @@ export function formatRunGraphView(view: RunGraphView): string {
     `claim audits: ${view.claimAudits.items.length}/${view.claimAudits.total} (limit=${view.claimAudits.limit}, truncated=${view.claimAudits.truncated})`,
     ...view.claimAudits.items.map(
       (audit) =>
-        `  - ${audit.command.type} ${audit.command.claim.taskId} owner=${audit.command.claim.ownerId} run=${audit.command.claim.runId} fencing=${audit.command.claim.fencingToken}${audit.command.reclaimReason ? ` reason=${audit.command.reclaimReason}` : ""}`,
+        `  - ${audit.command.type} ${audit.command.claim.taskId} owner=${audit.command.claim.ownerId} run=${audit.command.claim.runId} fencing=${audit.command.claim.fencingToken}${"reclaimReason" in audit.command ? ` reason=${audit.command.reclaimReason}` : ""}`,
     ),
   ];
   return lines.join("\n");
@@ -217,8 +217,15 @@ function outputResult(
 function outputError(error: unknown, json: boolean | undefined): void {
   const code = error instanceof RunCommandError ? error.code : "run_command_failed";
   const message = error instanceof Error ? error.message : String(error);
+  const stateUnchanged = error instanceof RunCommandError ? error.stateUnchanged : undefined;
   if (json) {
-    console.log(JSON.stringify({ accepted: false, code, message }, null, 2));
+    console.log(
+      JSON.stringify(
+        { accepted: false, code, message, ...(stateUnchanged ? { stateUnchanged } : {}) },
+        null,
+        2,
+      ),
+    );
   } else {
     console.error(`Run command failed [${code}]: ${message}`);
   }
@@ -236,11 +243,6 @@ function outputJsonFirst(result: unknown, json?: boolean): void {
   ) {
     process.exitCode = 1;
   }
-}
-
-function isNotGitRepositoryError(error: unknown): boolean {
-  const stderr = String((error as { stderr?: unknown }).stderr ?? "");
-  return stderr.includes("not a git repository") || stderr.includes("not a git work tree");
 }
 
 async function reconcileClaimAudit(
@@ -380,23 +382,26 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
               const openIteration = [...(state.loop?.iterations ?? [])]
                 .reverse()
                 .find((iteration) => iteration.outcome === undefined);
-              return buildDispatchPlan({
-                tasks: state.tasks.tasks,
-                config: state.config,
-                now: new Date().toISOString(),
-                syncConflictTaskIds: state.tasks.has_conflicts
-                  ? state.tasks.tasks.map((task) => task.id)
-                  : [],
-                openIterationTaskIds: openIteration?.selectedTask
-                  ? [openIteration.selectedTask]
-                  : [],
-                reviewGateTaskIds: gate.snapshot.reviewGateTaskIds,
-                humanGateTaskIds: gate.snapshot.humanGateTaskIds,
-                claims: registry.claims,
-                registryEntityVersion: registry.entityVersion,
-                ...lineage,
-                workspaceByTaskId,
-              });
+              return buildDispatchPlan(
+                {
+                  tasks: state.tasks.tasks,
+                  config: state.config,
+                  now: new Date().toISOString(),
+                  syncConflictTaskIds: state.tasks.has_conflicts
+                    ? state.tasks.tasks.map((task) => task.id)
+                    : [],
+                  openIterationTaskIds: openIteration?.selectedTask
+                    ? [openIteration.selectedTask]
+                    : [],
+                  reviewGateTaskIds: gate.snapshot.reviewGateTaskIds,
+                  humanGateTaskIds: gate.snapshot.humanGateTaskIds,
+                  claims: registry.claims,
+                  registryEntityVersion: registry.entityVersion,
+                  ...lineage,
+                  workspaceByTaskId,
+                },
+                { fingerprint: sha256Hex },
+              );
             },
           );
           outputJsonFirst(result, options.json);
@@ -443,6 +448,14 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
         }) => {
           try {
             const projectRoot = process.cwd();
+            const repository = DispatchClaimRepositorySchema.safeParse(options.repository);
+            if (!repository.success) {
+              throw new RunCommandError(
+                "invalid_input",
+                "--repository は canonical owner/repo 形式で指定してください",
+                true,
+              );
+            }
             const plan = DispatchPlanSchema.parse(
               JSON.parse(await readFile(resolve(projectRoot, options.planFile), "utf8")),
             );
@@ -472,23 +485,26 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                 const openIteration = [...(state.loop?.iterations ?? [])]
                   .reverse()
                   .find((iteration) => iteration.outcome === undefined);
-                const currentPlan = buildDispatchPlan({
-                  tasks: state.tasks.tasks,
-                  config: state.config,
-                  now: new Date().toISOString(),
-                  syncConflictTaskIds: state.tasks.has_conflicts
-                    ? state.tasks.tasks.map((task) => task.id)
-                    : [],
-                  openIterationTaskIds: openIteration?.selectedTask
-                    ? [openIteration.selectedTask]
-                    : [],
-                  reviewGateTaskIds: gate.snapshot.reviewGateTaskIds,
-                  humanGateTaskIds: gate.snapshot.humanGateTaskIds,
-                  claims: registry.claims,
-                  registryEntityVersion: registry.entityVersion,
-                  ...lineage,
-                  workspaceByTaskId: plan.context.workspaceByTaskId,
-                });
+                const currentPlan = buildDispatchPlan(
+                  {
+                    tasks: state.tasks.tasks,
+                    config: state.config,
+                    now: new Date().toISOString(),
+                    syncConflictTaskIds: state.tasks.has_conflicts
+                      ? state.tasks.tasks.map((task) => task.id)
+                      : [],
+                    openIterationTaskIds: openIteration?.selectedTask
+                      ? [openIteration.selectedTask]
+                      : [],
+                    reviewGateTaskIds: gate.snapshot.reviewGateTaskIds,
+                    humanGateTaskIds: gate.snapshot.humanGateTaskIds,
+                    claims: registry.claims,
+                    registryEntityVersion: registry.entityVersion,
+                    ...lineage,
+                    workspaceByTaskId: plan.context.workspaceByTaskId,
+                  },
+                  { fingerprint: sha256Hex },
+                );
                 if (currentPlan.planId !== plan.planId) {
                   throw new RunCommandError(
                     "stale_entity_version",
@@ -499,7 +515,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                 if (
                   !selected ||
                   selected.workspaceId !== options.workspace ||
-                  selected.repository !== options.repository.toLowerCase() ||
+                  selected.repository !== repository.data ||
                   selected.state !== options.state
                 ) {
                   throw new RunCommandError(
@@ -528,7 +544,7 @@ export function createRunCommand(dependencies: RunCommandDependencies = {}): Com
                     eventId: parseRequiredText(options.eventId, "--event-id"),
                     expectedEntityVersion,
                     taskId: parseRequiredText(options.task, "--task"),
-                    repository: parseRequiredText(options.repository, "--repository"),
+                    repository: repository.data,
                     state: parseRequiredText(options.state, "--state"),
                     ownerId: parseRequiredText(options.owner, "--owner"),
                     workspaceId: parseRequiredText(options.workspace, "--workspace"),

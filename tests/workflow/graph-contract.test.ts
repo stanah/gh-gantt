@@ -622,6 +622,17 @@ describe("Graph Contract の公開文書契約", () => {
     expect(projectWorkflow).toContain("JSON/schema/manual gate");
     expect(projectWorkflow).toContain("現行 (#328)");
     expect(projectWorkflow).toContain("製品control plane");
+    expect(projectWorkflow).toContain("`gh-gantt pull`");
+    expect(projectWorkflow).toContain("`gh-gantt list`");
+    expect(projectWorkflow).toContain("共有 Work Graph Cache の内部ファイルは直接読み書きしない");
+
+    const workflowSkill = await readRepoFile("skills/gh-gantt-workflow/SKILL.md");
+    const devRoleSkill = await readRepoFile("skills/gh-gantt-dev-role/SKILL.md");
+    for (const content of [workflowSkill, devRoleSkill]) {
+      expect(content).toContain("`gh-gantt pull`");
+      expect(content).toContain("`gh-gantt list`");
+      expect(content).toContain("共有 Work Graph Cache の内部ファイル");
+    }
 
     const sharedSkillPaths = [
       "skills/gh-gantt-dev-role/SKILL.md",

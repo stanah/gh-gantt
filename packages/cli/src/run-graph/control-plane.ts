@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import {
+  canonicalJsonStringify,
   DispatchClaimProofSchema,
+  RunGraphClaimAuditCommandSchema,
   RunGraphClaimAuditInputSchema,
   RunGraphProjectionSchema,
   RunGraphRunnerCommandInputSchema,
@@ -30,6 +32,7 @@ import {
   type DispatchAuthorizedEventCommitContext,
   type PendingAuthorizationInspection,
 } from "../store/dispatch-claims.js";
+import { isNotGitRepositoryError } from "../util/git-errors.js";
 
 export interface RunGraphControlPlaneDependencies {
   now: () => string;
@@ -214,8 +217,9 @@ export class RunGraphControlPlane {
         commandFingerprint,
       };
       if (
-        JSON.stringify(existing.command) !== JSON.stringify(input.command) ||
-        JSON.stringify(existing.dispatchAuthorization) !== JSON.stringify(expectedBinding)
+        canonicalJsonStringify(existing.command) !== canonicalJsonStringify(input.command) ||
+        canonicalJsonStringify(existing.dispatchAuthorization) !==
+          canonicalJsonStringify(expectedBinding)
       ) {
         const reconciled = await this.reconcileOrAbortAuthorization(input, authorizationInput);
         if (reconciled) return reconciled;
@@ -229,7 +233,7 @@ export class RunGraphControlPlane {
       const replay = await this.claimAuthority.commitAuthorizedEvent(
         authorizationInput,
         async ({ binding }) => {
-          if (JSON.stringify(binding) !== JSON.stringify(expectedBinding)) {
+          if (canonicalJsonStringify(binding) !== canonicalJsonStringify(expectedBinding)) {
             throw new Error(
               "stored event の authorization binding が current claim と一致しません",
             );
@@ -289,8 +293,9 @@ export class RunGraphControlPlane {
         const committed = journal.acceptedEvents.find(
           (event) =>
             event.eventId === input.eventId &&
-            JSON.stringify(event.command) === JSON.stringify(input.command) &&
-            JSON.stringify(event.dispatchAuthorization) === JSON.stringify(attemptedBinding),
+            canonicalJsonStringify(event.command) === canonicalJsonStringify(input.command) &&
+            canonicalJsonStringify(event.dispatchAuthorization) ===
+              canonicalJsonStringify(attemptedBinding),
         );
         if (committed) return { accepted: true, view: await this.inspect(input.runId) };
       }
@@ -318,8 +323,8 @@ export class RunGraphControlPlane {
     const journal = await this.events.readJournal(input.runId);
     const event = journal.acceptedEvents.find((candidate) => candidate.eventId === input.eventId);
     if (!event) return "absent";
-    return JSON.stringify(event.command) === JSON.stringify(input.command) &&
-      JSON.stringify(event.dispatchAuthorization) === JSON.stringify(binding)
+    return canonicalJsonStringify(event.command) === canonicalJsonStringify(input.command) &&
+      canonicalJsonStringify(event.dispatchAuthorization) === canonicalJsonStringify(binding)
       ? "exact_committed"
       : "conflict";
   }
@@ -406,7 +411,7 @@ export class RunGraphControlPlane {
       reclaim: "claim_reclaimed",
       authorize_event: "claim_event_authorized",
     } as const;
-    const command = {
+    const command = RunGraphClaimAuditCommandSchema.parse({
       type: typeByOperation[receipt.operation],
       registryEventId: receipt.eventId,
       registryEntityVersion: receipt.entityVersion,
@@ -420,7 +425,7 @@ export class RunGraphControlPlane {
           }
         : {}),
       ...(receipt.operation === "authorize_event" ? { completion: receipt.completion } : {}),
-    };
+    });
     const existingRegistryAudit = journal.acceptedEvents.find(
       (event) =>
         "registryEventId" in event.command &&
@@ -446,7 +451,7 @@ export class RunGraphControlPlane {
       };
     }
     if (existing) {
-      if (JSON.stringify(existing.command) === JSON.stringify(command)) {
+      if (canonicalJsonStringify(existing.command) === canonicalJsonStringify(command)) {
         return { accepted: true, view: await this.inspect(runId) };
       }
       return {
@@ -554,9 +559,7 @@ export class RunGraphControlPlane {
           );
         }
       } catch (error) {
-        const stderr = String((error as { stderr?: unknown }).stderr ?? "");
-        if (!stderr.includes("not a git repository") && !stderr.includes("not a git work tree"))
-          throw error;
+        if (!isNotGitRepositoryError(error)) throw error;
       }
     }
     const prepared = await this.validateAndBuildEvent(input);

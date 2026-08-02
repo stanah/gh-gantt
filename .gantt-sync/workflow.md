@@ -110,7 +110,7 @@ gh-gantt は次の lifecycle を control plane の公開 CLI contract として�
 8. pending publish 後・append 前、または append 後・receipt publish 前に中断した場合、exact retry だけを reconciliation する。claim が current なら receipt と更新 proof を回収する。先に expired / owner_stopped reclaim された場合は pending を terminalize し、既存 event だけを historical audit できるが新規 event と継続 proof は受け取れない。receipt publish 後は stored receipt に収束する。
 9. task / Run の正常終了または中止時は `gh-gantt run release` で claim を明示解放する。中間 event の認可は release ではない。期限切れ claim の release は `lease_expired` で拒否し、expired reclaim を使う。
 10. owner 停止を evidence ID で確認した場合、または lease が失効した場合だけ、別 owner が `gh-gantt run reclaim` を実行する。旧 owner の heartbeat、release、event authorization は stale として拒否される。
-11. accepted outcome event、release、reclaim の後は共有 Work Graph Cache を読み直し、dependency を再評価して fan-in を解く。全 upstream task が完了した downstream task だけを次の dispatch 対象にする。
+11. accepted outcome event、release、reclaim の後は `gh-gantt pull` で GitHub 由来の Work Graph を更新し、`gh-gantt list` で dependency readiness を再評価して fan-in を解く。共有 Work Graph Cache の内部ファイルは直接読み書きしない。全 upstream task が完了した downstream task だけを次の dispatch 対象にする。
 
 claim lifecycle は `claim_acquired` / `claim_heartbeat` / `claim_released` / `claim_reclaimed` / `claim_event_authorized` として
 workspace-local の Run Graph audit へ記録する。audit は event ID、fingerprint、entity version、run / task lineage を

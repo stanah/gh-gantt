@@ -12,16 +12,31 @@ import {
 } from "@gh-gantt/shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { gitFixtureEnvironment } from "./git-fixture.js";
-import { createRunCommand } from "../commands/run.js";
+import { canonicalFingerprint, createRunCommand } from "../commands/run.js";
 import { buildProgram } from "../program.js";
 import type { RunGraphPrObservation } from "../loop/pr-evidence.js";
 import { RunGraphControlPlane } from "../run-graph/control-plane.js";
 import { ConfigStore } from "../store/config.js";
+import { DispatchClaimStore } from "../store/dispatch-claims.js";
 import { GraphContractStore } from "../store/graph-contract.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { TasksStore } from "../store/tasks.js";
 
 const execFileAsync = promisify(execFile);
+
+describe("canonical dispatch fingerprint", () => {
+  it("mixed-case key を locale ではなく code unit 順で固定する", () => {
+    const expected = createHash("sha256")
+      .update(JSON.stringify({ Z: 1, a: 2 }))
+      .digest("hex");
+    const localeLike = createHash("sha256")
+      .update(JSON.stringify({ a: 2, Z: 1 }))
+      .digest("hex");
+
+    expect(canonicalFingerprint({ a: 2, Z: 1 })).toBe(expected);
+    expect(canonicalFingerprint({ a: 2, Z: 1 })).not.toBe(localeLike);
+  });
+});
 
 function makeConfig(): Config {
   return {
@@ -184,6 +199,88 @@ describe("[NFR-STABILITY-014-AC9] run bounded dispatch CLI contract", () => {
         capacity: { global: { limit: 2, used: 0 } },
       });
       await writeFile(dispatchPlanPath, `${JSON.stringify(initialPlan)}\n`);
+
+      await createRunCommand().parseAsync(
+        [
+          "claim",
+          "--event-id",
+          "claim-invalid-repository",
+          "--expected-version",
+          "0",
+          "--task",
+          "stanah/gh-gantt#328",
+          "--repository",
+          "stanah",
+          "--state",
+          "Todo",
+          "--owner",
+          "planner-2",
+          "--workspace",
+          "workspace:328",
+          "--run",
+          started.view.runId,
+          "--plan-file",
+          dispatchPlanPath,
+          "--gate-snapshot",
+          gateSnapshotPath,
+          "--actor",
+          "orchestrator-1",
+          "--json",
+        ],
+        { from: "user" },
+      );
+      expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+        accepted: false,
+        code: "invalid_input",
+        stateUnchanged: true,
+      });
+      await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+        entityVersion: 0,
+        claims: [],
+      });
+      process.exitCode = undefined;
+
+      for (const emptyVersion of ["", "   "]) {
+        await createRunCommand().parseAsync(
+          [
+            "claim",
+            "--event-id",
+            `claim-empty-version-${emptyVersion.length}`,
+            "--expected-version",
+            emptyVersion,
+            "--task",
+            "stanah/gh-gantt#328",
+            "--repository",
+            "stanah/gh-gantt",
+            "--state",
+            "Todo",
+            "--owner",
+            "planner-2",
+            "--workspace",
+            "workspace:328",
+            "--run",
+            started.view.runId,
+            "--plan-file",
+            dispatchPlanPath,
+            "--gate-snapshot",
+            gateSnapshotPath,
+            "--actor",
+            "orchestrator-1",
+            "--json",
+          ],
+          { from: "user" },
+        );
+        expect(JSON.parse(logs.at(-1)!)).toMatchObject({
+          accepted: false,
+          code: "invalid_input",
+          stateUnchanged: true,
+        });
+        await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+          entityVersion: 0,
+          claims: [],
+        });
+        process.exitCode = undefined;
+      }
 
       await writeFile(
         gateSnapshotPath,

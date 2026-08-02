@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { NormalizedRepositorySchema } from "./repository.js";
 
 export const RUN_GRAPH_ROLES = [
   "orchestrator",
@@ -555,15 +556,29 @@ export interface DispatchCompletionAuthorization {
   commandFingerprint: string;
 }
 
-export interface RunGraphClaimAuditCommand {
-  type: (typeof RUN_GRAPH_CLAIM_AUDIT_TYPES)[number];
+interface RunGraphClaimAuditCommandBase {
   registryEventId: string;
   registryEntityVersion: number;
   claim: DispatchClaim;
-  reclaimReason?: "expired" | "owner_stopped";
-  evidenceId?: string;
-  completion?: DispatchCompletionAuthorization;
 }
+
+export type RunGraphClaimAuditCommand =
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_acquired" | "claim_heartbeat" | "claim_released";
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_reclaimed";
+      reclaimReason: "expired";
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_reclaimed";
+      reclaimReason: "owner_stopped";
+      evidenceId: string;
+    })
+  | (RunGraphClaimAuditCommandBase & {
+      type: "claim_event_authorized";
+      completion: DispatchCompletionAuthorization;
+    });
 
 export interface RunGraphClaimAuditInput {
   schemaVersion: "1";
@@ -632,12 +647,17 @@ export const DispatchClaimProofSchema: z.ZodType<DispatchClaimProof> = z
   })
   .strict();
 
+export const DispatchClaimRepositorySchema: z.ZodType<string> = z
+  .string()
+  .trim()
+  .min(1)
+  .transform((value) => value.toLowerCase())
+  .pipe(NormalizedRepositorySchema);
+
 export const DispatchClaimSchema: z.ZodType<DispatchClaim> = z
   .object({
     taskId: z.string().trim().min(1),
-    repository: z
-      .string()
-      .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/),
+    repository: NormalizedRepositorySchema,
     state: z.string().trim().min(1),
     ownerId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),
@@ -661,11 +681,7 @@ const DispatchClaimInputBaseSchema = z.object({
 export const DispatchClaimAcquireInputSchema: z.ZodType<DispatchClaimAcquireInput> =
   DispatchClaimInputBaseSchema.extend({
     taskId: z.string().trim().min(1),
-    repository: z
-      .string()
-      .trim()
-      .min(1)
-      .transform((value) => value.toLowerCase()),
+    repository: DispatchClaimRepositorySchema,
     state: z.string().trim().min(1),
     ownerId: z.string().trim().min(1),
     workspaceId: z.string().trim().min(1),
@@ -788,17 +804,30 @@ export const DispatchClaimReceiptSchema: z.ZodType<DispatchClaimReceipt> = z.uni
   DispatchClaimRejectedReceiptSchema,
 ]);
 
-export const RunGraphClaimAuditCommandSchema: z.ZodType<RunGraphClaimAuditCommand> = z
-  .object({
-    type: z.enum(RUN_GRAPH_CLAIM_AUDIT_TYPES),
-    registryEventId: z.string().trim().min(1),
-    registryEntityVersion: z.number().int().positive(),
-    claim: DispatchClaimSchema,
-    reclaimReason: z.enum(["expired", "owner_stopped"]).optional(),
-    evidenceId: z.string().trim().min(1).optional(),
-    completion: DispatchCompletionAuthorizationSchema.optional(),
-  })
-  .strict();
+const RunGraphClaimAuditCommandBaseSchema = z.object({
+  registryEventId: z.string().trim().min(1),
+  registryEntityVersion: z.number().int().positive(),
+  claim: DispatchClaimSchema,
+});
+
+export const RunGraphClaimAuditCommandSchema: z.ZodType<RunGraphClaimAuditCommand> = z.union([
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.enum(["claim_acquired", "claim_heartbeat", "claim_released"]),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_reclaimed"),
+    reclaimReason: z.literal("expired"),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_reclaimed"),
+    reclaimReason: z.literal("owner_stopped"),
+    evidenceId: z.string().trim().min(1),
+  }).strict(),
+  RunGraphClaimAuditCommandBaseSchema.extend({
+    type: z.literal("claim_event_authorized"),
+    completion: DispatchCompletionAuthorizationSchema,
+  }).strict(),
+]);
 
 export const RunGraphClaimAuditInputSchema: z.ZodType<RunGraphClaimAuditInput> = z
   .object({

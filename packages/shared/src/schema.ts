@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LoopConfigSchema } from "./loop-state.js";
+import { NormalizedRepositorySchema } from "./repository.js";
 import { RunGraphConfigSchema } from "./run-graph.js";
 import type {
   AcceptanceCriterion,
@@ -159,10 +160,6 @@ const CalendarHolidaySchema: z.ZodType<CalendarHoliday> = z.object({
 const DoctorConfigSchema: z.ZodType<DoctorConfig> = z.object({
   stale_in_progress_days: z.number().int().positive().optional(),
 });
-
-const NormalizedRepositorySchema = z
-  .string()
-  .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/);
 
 export const DispatchConfigSchema: z.ZodType<DispatchConfig> = z
   .object({

@@ -479,6 +479,60 @@ describe("[NFR-STABILITY-014-AC2] RunGraphControlPlane は start/applyEvent/insp
 });
 
 describe("[NFR-STABILITY-014-AC6] fixed dev-role transition は accepted outcome event だけで進む", () => {
+  it("non-Git standalone completion は process locale に依存せず従来動作を保つ", async () => {
+    const previousLocale = process.env.LC_ALL;
+    process.env.LC_ALL = "ja_JP.UTF-8";
+    try {
+      const { control } = await createControlPlane();
+      const started = await control.start({
+        schemaVersion: "1",
+        eventId: "standalone-locale-start",
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        task: { owner: "stanah", repo: "gh-gantt", issueNumber: 328 },
+        contract: { planId: "dev-role-fixed", planVersion: "1", schemaVersion: "1" },
+      });
+      if (!started.accepted || !started.view.currentNode) throw new Error("start failure");
+      const runId = started.view.runId;
+      const nodeId = started.view.currentNode.id;
+      await control.applyEvent({
+        schemaVersion: "1",
+        eventId: "standalone-locale-attempt-start",
+        runId,
+        actor: { id: "planner-1", role: "planner" },
+        command: { type: "attempt_started", nodeId, attemptId: "standalone-locale-attempt" },
+      });
+
+      await expect(
+        control.applyEvent({
+          schemaVersion: "1",
+          eventId: "standalone-locale-attempt-finish",
+          runId,
+          actor: { id: "planner-1", role: "planner" },
+          command: {
+            type: "attempt_finished",
+            nodeId,
+            attemptId: "standalone-locale-attempt",
+            outcome: "succeeded",
+            artifactIds: [],
+            evidenceIds: ["standalone-locale-evidence"],
+          },
+          evidence: [
+            {
+              id: "standalone-locale-evidence",
+              kind: "command_execution",
+              artifactIds: [],
+              provenance: "external-runner",
+              reference: reference("standalone-locale-command"),
+            },
+          ],
+        }),
+      ).resolves.toMatchObject({ accepted: true });
+    } finally {
+      if (previousLocale === undefined) delete process.env.LC_ALL;
+      else process.env.LC_ALL = previousLocale;
+    }
+  });
+
   it("planner の schema-valid outcome から新しい implementer Run Node を作る", async () => {
     const { root, control } = await createControlPlane();
     const started = await control.start({

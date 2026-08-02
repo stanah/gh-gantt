@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { canonicalJsonStringify, compareCodeUnits } from "./canonical-json.js";
+import { NormalizedRepositorySchema, normalizeRepository } from "./repository.js";
 import type { Task, Config, StatusValue, StatusCategory, GroupingFacet } from "./types.js";
 import {
   calculateCriticalPath,
@@ -161,6 +163,7 @@ export const DISPATCH_EXCLUSION_REASONS = [
   "already_done",
   "not_ready_state",
   "unknown_state",
+  "invalid_repository",
   "dependency_blocked",
   "review_gate",
   "human_gate",
@@ -272,9 +275,7 @@ export interface DispatchPlan {
 const DispatchPlanItemSchema: z.ZodType<DispatchPlanItem> = z
   .object({
     taskId: DispatchTaskIdSchema,
-    repository: z
-      .string()
-      .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/),
+    repository: NormalizedRepositorySchema,
     state: z.string().min(1),
     workspaceId: z.string().min(1),
   })
@@ -284,7 +285,7 @@ const DispatchPlanItemSchema: z.ZodType<DispatchPlanItem> = z
 export const DispatchPlanSchema: z.ZodType<DispatchPlan> = z
   .object({
     planVersion: z.literal("1"),
-    planId: z.string().min(1),
+    planId: z.string().regex(/^dispatch-plan:v1:r\d+:[0-9a-f]{64}$/),
     registryEntityVersion: z.number().int().nonnegative(),
     context: z
       .object({
@@ -322,18 +323,19 @@ const RISK_LABELS = new Set(["risk", "spike", "external"]);
 const PRIORITY_WEIGHT: Record<string, number> = { critical: 10, high: 6, medium: 3, low: 1 };
 const PRIORITY_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
 
-function normalizeRepository(value: string): string | null {
-  const normalized = value.trim().toLowerCase();
-  return /^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?$/.test(normalized)
-    ? normalized
-    : null;
-}
-
 /**
  * Work Graph snapshot から、外部 runner が claim 可能な bounded dispatch plan を pure に導出する。
  * 時計・filesystem・Store には触れず、期限判定用の時刻も入力として受け取る。
  */
-export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
+export interface DispatchPlanDependencies {
+  /** canonical JSON を同期的に固定長 SHA-256 hex へ変換する。 */
+  fingerprint: (canonicalJson: string) => string;
+}
+
+export function buildDispatchPlan(
+  input: DispatchPlanInput,
+  dependencies: DispatchPlanDependencies,
+): DispatchPlan {
   const configured = input.config.dispatch;
   const limit = configured?.max_concurrency ?? 0;
   const now = Date.parse(input.now);
@@ -375,7 +377,6 @@ export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
     if (repository) usedRepositories.set(repository, (usedRepositories.get(repository) ?? 0) + 1);
   }
 
-  const readiness = buildReadiness(input.tasks, input.config, new Set());
   const gateSets = {
     sync_conflict: new Set(input.syncConflictTaskIds),
     open_iteration: new Set(input.openIterationTaskIds),
@@ -386,13 +387,14 @@ export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
   const gateSnapshotInconsistent = Object.values(gateSets).some((ids) =>
     [...ids].some((id) => !knownTaskIds.has(id)),
   );
+  const taskById = new Map(input.tasks.map((task) => [task.id, task]));
   const selected: DispatchPlanItem[] = [];
   const excluded: DispatchPlan["excluded"] = [];
   const selectedWorkspaces = new Set<string>();
   const selectedStates = new Map<string, number>();
   const selectedRepositories = new Map<string, number>();
 
-  for (const task of [...input.tasks].sort((left, right) => left.id.localeCompare(right.id))) {
+  for (const task of [...input.tasks].sort((left, right) => compareCodeUnits(left.id, right.id))) {
     let reason: DispatchExclusionReason | null = null;
     const statusValue = getStatusValue(task, input.config);
     const state =
@@ -406,12 +408,10 @@ export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
     else if (!configured) reason = "dispatch_not_configured";
     else if (isTaskDone(task, input.config)) reason = "already_done";
     else if (!statusValue) reason = "unknown_state";
+    else if (!repository) reason = "invalid_repository";
     else if (input.config.task_types[task.type]?.display !== "bar" || task.sub_tasks.length > 0)
       reason = "parent_container";
-    else if (
-      getBlockingTaskIds(task, new Map(input.tasks.map((item) => [item.id, item])), input.config)
-        .length > 0
-    )
+    else if (getBlockingTaskIds(task, taskById, input.config).length > 0)
       reason = "dependency_blocked";
     else if (gateSets.review_gate.has(task.id) || needsReview(task, input.config))
       reason = "review_gate";
@@ -424,8 +424,7 @@ export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
     else if (activeWorkspaces.has(workspaceId) || selectedWorkspaces.has(workspaceId))
       reason = "workspace_claimed";
     else if (expiredWorkspaces.has(workspaceId)) reason = "claim_reclaim_required";
-    else if (!readiness[task.id]?.isReady) reason = "not_ready_state";
-    else if (!repository) reason = "unknown_state";
+    else if (!isDispatchReady(task, taskById, input.config)) reason = "not_ready_state";
     else if (activeClaims.length + selected.length >= limit) reason = "global_capacity";
     else {
       const stateLimit = configured.state_concurrency?.[state] ?? limit;
@@ -464,40 +463,52 @@ export function buildDispatchPlan(input: DispatchPlanInput): DispatchPlan {
       },
     ),
   );
-  const lineage = [
-    ...selected.map((item) => `selected:${item.taskId}@${item.workspaceId}`),
-    ...excluded.map((item) => `excluded:${item.taskId}@${item.reason}`),
-  ].join(",");
   const context = {
     syncConflictTaskIds: [...input.syncConflictTaskIds].sort(),
     openIterationTaskIds: [...input.openIterationTaskIds].sort(),
     reviewGateTaskIds: [...input.reviewGateTaskIds].sort(),
     humanGateTaskIds: [...input.humanGateTaskIds].sort(),
     workspaceByTaskId: Object.fromEntries(
-      Object.entries(input.workspaceByTaskId).sort(([left], [right]) => left.localeCompare(right)),
+      Object.entries(input.workspaceByTaskId).sort(([left], [right]) =>
+        compareCodeUnits(left, right),
+      ),
     ),
     workGraphFingerprint: input.workGraphFingerprint,
     gateSnapshotFingerprint: input.gateSnapshotFingerprint,
     gateSnapshotSourceRevision: input.gateSnapshotSourceRevision,
     snapshotFingerprint: input.snapshotFingerprint,
   };
+  const capacity = {
+    global: {
+      limit,
+      used: activeClaims.length,
+      remaining: Math.max(0, limit - activeClaims.length),
+    },
+    states,
+    repositories,
+  };
+  const planFingerprint = dependencies.fingerprint(
+    canonicalJsonStringify({
+      planVersion: "1",
+      registryEntityVersion: input.registryEntityVersion,
+      selected,
+      excluded,
+      context,
+      capacity,
+    }),
+  );
+  if (!/^[0-9a-f]{64}$/.test(planFingerprint)) {
+    throw new Error("dispatch plan fingerprint は64桁の lower-case SHA-256 hex が必要です");
+  }
   return DispatchPlanSchema.parse({
     planVersion: "1",
-    planId: `dispatch-plan:v1:r${input.registryEntityVersion}:${lineage}:context:${encodeURIComponent(JSON.stringify(context))}`,
+    planId: `dispatch-plan:v1:r${input.registryEntityVersion}:${planFingerprint}`,
     registryEntityVersion: input.registryEntityVersion,
     context,
     generatedAt: input.now,
     selected,
     excluded,
-    capacity: {
-      global: {
-        limit,
-        used: activeClaims.length,
-        remaining: Math.max(0, limit - activeClaims.length),
-      },
-      states,
-      repositories,
-    },
+    capacity,
   });
 }
 
@@ -647,6 +658,14 @@ function classifyColumn(
   // 依存解除済み。明示的に backlog に置かれたものはパーク扱い、それ以外は着手可能。
   if (category === "backlog") return { column: "backlog", reason: "backlog" };
   return { column: "ready_now", reason: "ready" };
+}
+
+/**
+ * dispatch 候補が ready_now に分類されるかだけを判定する。
+ * UI 用 readiness の下流解除数は計算せず、依存辺の走査までに留める。
+ */
+function isDispatchReady(task: Task, taskById: Map<string, Task>, config: Config): boolean {
+  return classifyColumn(task, taskById, config).column === "ready_now";
 }
 
 /**

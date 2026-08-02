@@ -55,6 +55,25 @@ async function coordinationLockPath(root: string, version = "v1"): Promise<strin
   return join(common, "gh-gantt", "coordination", version, projectKey, "LOCK");
 }
 
+function recoveryPathKey(value: string): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+function recoveryClaimMarkerPath(lockPath: string, ownerNonce: string): string {
+  return join(lockPath, `recovery-claim-${recoveryPathKey(ownerNonce)}.json`);
+}
+
+function recoverySuccessorMarkerPath(
+  lockPath: string,
+  ownerNonce: string,
+  predecessorNonce: string,
+): string {
+  return join(
+    lockPath,
+    `recovery-successor-${recoveryPathKey(ownerNonce)}-${recoveryPathKey(predecessorNonce)}.json`,
+  );
+}
+
 function waitForChildMessage<T>(child: ChildProcess, type: string): Promise<T> {
   return new Promise((resolveMessage, rejectMessage) => {
     const onMessage = (message: unknown) => {
@@ -104,6 +123,18 @@ function acquire(eventId = "event-claim-1") {
     dispatchPlanVersion: "1" as const,
     snapshotFingerprint: "d".repeat(64),
   };
+}
+
+function reverseObjectKeyOrder(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(reverseObjectKeyOrder);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .reverse()
+        .map(([key, item]) => [key, reverseObjectKeyOrder(item)]),
+    );
+  }
+  return value;
 }
 
 describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () => {
@@ -387,10 +418,16 @@ describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () =>
         fencingToken: 2,
       },
     });
+    if (!authorized.accepted || authorized.operation !== "authorize_event") {
+      throw new Error("authorize_event receipt が必要です");
+    }
     await expect(claims.snapshot()).resolves.toMatchObject({
       entityVersion: 2,
       claims: [{ claimId: claimed.claim.claimId, entityVersion: 2, fencingToken: 2 }],
     });
+    const reordered = reverseObjectKeyOrder(authorized) as typeof authorized;
+    await expect(claims.verifyReceipt(reordered)).resolves.toBe(true);
+    await expect(claims.isReceiptClaimCurrent(reordered)).resolves.toBe(true);
   });
 
   it("pending authorization を owner_stopped reclaim で terminalize し新規 append を拒否する", async () => {
@@ -867,6 +904,84 @@ describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () =>
     });
   });
 
+  it("最終検証後に停止した live recovery claimant を年齢だけで takeover して successor LOCK を消去しない", async () => {
+    const root = await repository();
+    const lockPath = await coordinationLockPath(root);
+    const deadPid = 2_147_483_647;
+    const deadNonce = randomUUID();
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        startedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+
+    let resumeFirst!: () => void;
+    const firstResumeBarrier = new Promise<void>((resolveResume) => {
+      resumeFirst = resolveResume;
+    });
+    let firstValidated!: () => void;
+    const firstValidatedBarrier = new Promise<void>((resolveValidated) => {
+      firstValidated = resolveValidated;
+    });
+    const first = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        now: () => "2026-08-02T00:00:00.000Z",
+        nextId: () => "claim-paused-recovery",
+        waitTimeoutMs: 2_000,
+        isProcessAlive: (pid) => pid !== deadPid,
+        readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+        afterRecoveryClaimValidated: async (expectedOwnerNonce) => {
+          expect(expectedOwnerNonce).toBe(deadNonce);
+          firstValidated();
+          await firstResumeBarrier;
+        },
+      }),
+    );
+    const firstResult = first.claim({
+      ...acquire("paused-recovery"),
+      expectedEntityVersion: 99,
+      taskId: "fixture/repository#2",
+      workspaceId: "workspace:paused-recovery",
+    });
+    await firstValidatedBarrier;
+
+    let successorReachedRegistry = false;
+    const successor = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        now: () => "2026-08-02T00:01:01.000Z",
+        nextId: () => "claim-successor-recovery",
+        waitTimeoutMs: 300,
+        isProcessAlive: (pid) => pid !== deadPid,
+        readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+        beforeRegistryPublish: async () => {
+          successorReachedRegistry = true;
+        },
+      }),
+    );
+    const successorResult = successor.claim(acquire("successor-recovery"));
+
+    try {
+      await expect(successorResult).rejects.toThrow("dispatch claim registry は使用中です");
+      expect(successorReachedRegistry).toBe(false);
+      resumeFirst();
+      await expect(firstResult).resolves.toMatchObject({
+        accepted: false,
+        code: "stale_entity_version",
+      });
+    } finally {
+      resumeFirst();
+      await Promise.allSettled([firstResult, successorResult]);
+    }
+  }, 10_000);
+
   it("O1 用 recovery marker が残って O2 が crash しても O3 が復旧して single CAS に収束する", async () => {
     const root = await repository();
     const lockPath = await coordinationLockPath(root);
@@ -982,7 +1097,7 @@ process.disconnect?.();
       ) as { pid: number; nonce: string };
       expect(ownerAfterOldRecovery).toEqual(liveOwner);
       await expect(
-        readFile(join(lockPath, `recovery-claim-${deadNonce}.json`), "utf8"),
+        readFile(recoveryClaimMarkerPath(lockPath, deadNonce), "utf8"),
       ).resolves.toContain(deadNonce);
       await new Promise<void>((resolveImmediate) => setImmediate(resolveImmediate));
       expect(oldSettled).toBe(false);
@@ -1074,8 +1189,10 @@ await store.claim(JSON.parse(rawInput));
         claimantNonce: string;
       }>(child, "recovery_candidate_written");
       expect(created.expectedOwnerNonce).toBe(deadNonce);
-      const markerPath = join(lockPath, `recovery-claim-${deadNonce}.json`);
-      const candidatePath = `${markerPath}.candidate-${created.claimantNonce}`;
+      const markerPath = recoveryClaimMarkerPath(lockPath, deadNonce);
+      const candidatePath = `${markerPath}.candidate-${recoveryPathKey(created.claimantNonce)}`;
+      expect(markerPath).not.toContain(deadNonce);
+      expect(candidatePath).not.toContain(created.claimantNonce);
       await expect(readFile(candidatePath, "utf8")).resolves.toContain(created.claimantNonce);
       await expect(readFile(markerPath, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
 
@@ -1119,7 +1236,7 @@ await store.claim(JSON.parse(rawInput));
         startedAt: "2026-08-02T00:00:00.000Z",
       })}\n`,
     );
-    await writeFile(join(lockPath, `recovery-claim-${deadNonce}.json`), '{"schemaVersion":');
+    await writeFile(recoveryClaimMarkerPath(lockPath, deadNonce), '{"schemaVersion":');
 
     const recovered = new DispatchClaimStore(
       root,
@@ -1134,6 +1251,221 @@ await store.claim(JSON.parse(rawInput));
       accepted: true,
       entityVersion: 1,
       claim: { claimId: "claim-after-malformed-marker" },
+    });
+  });
+
+  it("foreign host の recovery claimant は生死を推測せず fail-closed にする", async () => {
+    const root = await repository();
+    const lockPath = await coordinationLockPath(root);
+    const deadPid = 2_147_483_647;
+    const deadNonce = randomUUID();
+    const foreignRecoveryNonce = randomUUID();
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        startedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    await writeFile(
+      recoveryClaimMarkerPath(lockPath, deadNonce),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        expectedOwnerNonce: deadNonce,
+        claimant: {
+          pid: deadPid - 1,
+          hostname: "foreign.example.invalid",
+          nonce: foreignRecoveryNonce,
+          claimedAt: "2026-08-02T00:00:00.000Z",
+        },
+      })}\n`,
+    );
+
+    const contender = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        waitTimeoutMs: 30,
+        isProcessAlive: (pid) => pid !== deadPid,
+      }),
+    );
+    await expect(contender.claim(acquire("foreign-recovery"))).rejects.toThrow(
+      "dispatch claim registry は使用中です",
+    );
+    await expect(readFile(join(lockPath, "owner.json"), "utf8")).resolves.toContain(deadNonce);
+  });
+
+  it("recovery generation chain は最大 hop を超えたら fail-closed にする", async () => {
+    const root = await repository();
+    const lockPath = await coordinationLockPath(root);
+    const deadOwnerPid = 2_147_483_647;
+    const deadNonce = randomUUID();
+    const generationNonces = Array.from({ length: 65 }, () => randomUUID());
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadOwnerPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        startedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    const marker = (index: number) => ({
+      schemaVersion: "1",
+      expectedOwnerNonce: deadNonce,
+      claimant: {
+        pid: deadOwnerPid - index - 1,
+        hostname: hostname(),
+        nonce: generationNonces[index]!,
+        claimedAt: "2026-08-02T00:00:00.000Z",
+      },
+    });
+    await writeFile(recoveryClaimMarkerPath(lockPath, deadNonce), `${JSON.stringify(marker(0))}\n`);
+    for (let index = 0; index < 64; index += 1) {
+      const successorPath = recoverySuccessorMarkerPath(
+        lockPath,
+        deadNonce,
+        generationNonces[index]!,
+      );
+      expect(successorPath).not.toContain(deadNonce);
+      expect(successorPath).not.toContain(generationNonces[index]!);
+      await writeFile(successorPath, `${JSON.stringify(marker(index + 1))}\n`);
+    }
+
+    const contender = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        waitTimeoutMs: 30,
+        isProcessAlive: () => false,
+      }),
+    );
+    await expect(contender.claim(acquire("overlong-recovery-chain"))).rejects.toThrow(
+      "dispatch claim registry は使用中です",
+    );
+    await expect(readFile(join(lockPath, "owner.json"), "utf8")).resolves.toContain(deadNonce);
+  });
+
+  it("dead recovery claimant への複数 successor は一つだけが CAS を確定する", async () => {
+    const root = await repository();
+    const lockPath = await coordinationLockPath(root);
+    const deadOwnerPid = 2_147_483_647;
+    const deadRecoveryPid = deadOwnerPid - 1;
+    const deadNonce = randomUUID();
+    const deadRecoveryNonce = randomUUID();
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadOwnerPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        startedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    await writeFile(
+      recoveryClaimMarkerPath(lockPath, deadNonce),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        expectedOwnerNonce: deadNonce,
+        claimant: {
+          pid: deadRecoveryPid,
+          hostname: hostname(),
+          nonce: deadRecoveryNonce,
+          claimedAt: "2026-08-02T00:00:00.000Z",
+        },
+      })}\n`,
+    );
+    const contender = (pid: number, claimId: string) =>
+      new DispatchClaimStore(
+        root,
+        createDispatchClaimStoreDependencies({
+          processIdentity: { pid, hostname: hostname() },
+          isProcessAlive: (observedPid) =>
+            observedPid !== deadOwnerPid && observedPid !== deadRecoveryPid,
+          nextId: () => claimId,
+          waitTimeoutMs: 2_000,
+          readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+        }),
+      );
+
+    const results = await Promise.all([
+      contender(41_001, "claim-successor-a").claim(acquire("successor-a")),
+      contender(41_002, "claim-successor-b").claim({
+        ...acquire("successor-b"),
+        taskId: "fixture/repository#2",
+        workspaceId: "workspace:2",
+      }),
+    ]);
+
+    expect(results.filter((result) => result.accepted)).toHaveLength(1);
+    expect(results.filter((result) => !result.accepted)).toMatchObject([
+      { code: "stale_entity_version", stateUnchanged: true },
+    ]);
+    await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      claims: expect.any(Array),
+    });
+  });
+
+  it("successor recovery claimant も crash 済みなら次 generation が復旧する", async () => {
+    const root = await repository();
+    const lockPath = await coordinationLockPath(root);
+    const deadOwnerPid = 2_147_483_647;
+    const firstRecoveryPid = deadOwnerPid - 1;
+    const successorRecoveryPid = deadOwnerPid - 2;
+    const deadNonce = randomUUID();
+    const firstRecoveryNonce = randomUUID();
+    const successorRecoveryNonce = randomUUID();
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadOwnerPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        startedAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    const recoveryClaim = (pid: number, nonce: string) => ({
+      schemaVersion: "1",
+      expectedOwnerNonce: deadNonce,
+      claimant: {
+        pid,
+        hostname: hostname(),
+        nonce,
+        claimedAt: "2026-08-02T00:00:00.000Z",
+      },
+    });
+    await writeFile(
+      recoveryClaimMarkerPath(lockPath, deadNonce),
+      `${JSON.stringify(recoveryClaim(firstRecoveryPid, firstRecoveryNonce))}\n`,
+    );
+    await writeFile(
+      recoverySuccessorMarkerPath(lockPath, deadNonce, firstRecoveryNonce),
+      `${JSON.stringify(recoveryClaim(successorRecoveryPid, successorRecoveryNonce))}\n`,
+    );
+
+    const recovered = new DispatchClaimStore(
+      root,
+      createDispatchClaimStoreDependencies({
+        isProcessAlive: (pid) =>
+          ![deadOwnerPid, firstRecoveryPid, successorRecoveryPid].includes(pid),
+        nextId: () => "claim-after-successor-crash",
+        waitTimeoutMs: 2_000,
+        readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+      }),
+    );
+    await expect(recovered.claim(acquire("after-successor-crash"))).resolves.toMatchObject({
+      accepted: true,
+      entityVersion: 1,
+      claim: { claimId: "claim-after-successor-crash" },
     });
   });
 
@@ -1153,7 +1485,7 @@ await store.claim(JSON.parse(rawInput));
         startedAt: "2026-08-02T00:00:00.000Z",
       })}\n`,
     );
-    await writeFile(join(lockPath, `recovery-claim-${deadNonce}.json`), "");
+    await writeFile(recoveryClaimMarkerPath(lockPath, deadNonce), "");
 
     const recovered = new DispatchClaimStore(
       root,

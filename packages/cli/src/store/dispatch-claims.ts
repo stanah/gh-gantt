@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { z } from "zod";
 import {
   ConfigSchema,
+  canonicalJsonStringify,
   DispatchClaimAcquireInputSchema,
   DispatchClaimEventAuthorizationInputSchema,
   DispatchClaimHeartbeatInputSchema,
@@ -26,11 +27,12 @@ import {
   type DispatchConfig,
   type RunGraphDispatchAuthorizationBinding,
 } from "@gh-gantt/shared";
+import { gitCommandEnvironment } from "../util/git-errors.js";
 
 const execFileAsync = promisify(execFile);
 const REGISTRY_VERSION = "v1";
 const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
-const RECOVERY_CLAIM_STALE_MS = 60_000;
+const MAX_RECOVERY_GENERATIONS = 64;
 
 interface DispatchClaimHistoryEvent {
   eventId: string;
@@ -109,6 +111,11 @@ export interface DispatchClaimStoreDependencies {
   afterDeadOwnerObserved?: (ownerNonce: string) => Promise<void>;
   /** test only: recovery claim candidate 完全書込後・atomic publish 前の crash を模擬する。 */
   afterRecoveryClaimCandidateWritten?: (
+    expectedOwnerNonce: string,
+    claimantNonce: string,
+  ) => Promise<void>;
+  /** test only: recovery winner の最終検証後・LOCK retire 前の停止を模擬する。 */
+  afterRecoveryClaimValidated?: (
     expectedOwnerNonce: string,
     claimantNonce: string,
   ) => Promise<void>;
@@ -271,22 +278,12 @@ function sleep(milliseconds: number): Promise<void> {
   return new Promise((resolveSleep) => setTimeout(resolveSleep, milliseconds));
 }
 
-function canonicalize(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonicalize);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, item]) => [key, canonicalize(item)]),
-    );
-  }
-  return value;
+function canonicalJsonEquals(left: unknown, right: unknown): boolean {
+  return canonicalJsonStringify(left) === canonicalJsonStringify(right);
 }
 
 function fingerprint(value: unknown): string {
-  return createHash("sha256")
-    .update(JSON.stringify(canonicalize(value)))
-    .digest("hex");
+  return createHash("sha256").update(canonicalJsonStringify(value)).digest("hex");
 }
 
 function isProcessAlive(pid: number): boolean {
@@ -320,14 +317,10 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
 }
 
 async function runGit(projectRoot: string, args: string[]): Promise<string> {
-  const environment = { ...process.env };
-  for (const name of ["GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE"]) {
-    delete environment[name];
-  }
   const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
     encoding: "utf8",
     timeout: 10_000,
-    env: environment,
+    env: gitCommandEnvironment(),
   });
   return result.stdout.trim();
 }
@@ -356,7 +349,47 @@ async function resolveLayout(projectRoot: string): Promise<RegistryLayout> {
 }
 
 function recoveryClaimPath(lockPath: string, expectedOwnerNonce: string): string {
-  return join(lockPath, `recovery-claim-${expectedOwnerNonce}.json`);
+  return join(lockPath, `recovery-claim-${fingerprint(expectedOwnerNonce)}.json`);
+}
+
+function recoverySuccessorPath(
+  lockPath: string,
+  expectedOwnerNonce: string,
+  predecessor: string,
+): string {
+  return join(
+    lockPath,
+    `recovery-successor-${fingerprint(expectedOwnerNonce)}-${fingerprint(predecessor)}.json`,
+  );
+}
+
+function parseRecoveryClaim(
+  raw: string,
+  expectedOwnerNonce: string,
+): z.infer<typeof RecoveryClaimSchema> | null {
+  try {
+    const claim = RecoveryClaimSchema.parse(JSON.parse(raw));
+    return claim.expectedOwnerNonce === expectedOwnerNonce ? claim : null;
+  } catch {
+    return null;
+  }
+}
+
+function createRecoveryClaim(
+  expectedOwnerNonce: string,
+  owner: z.infer<typeof LockOwnerSchema>,
+  dependencies: DispatchClaimStoreDependencies,
+): z.infer<typeof RecoveryClaimSchema> {
+  return RecoveryClaimSchema.parse({
+    schemaVersion: "1",
+    expectedOwnerNonce,
+    claimant: {
+      pid: owner.pid,
+      hostname: owner.hostname,
+      nonce: owner.nonce,
+      claimedAt: dependencies.now(),
+    },
+  });
 }
 
 async function publishRecoveryClaim(
@@ -365,7 +398,7 @@ async function publishRecoveryClaim(
   recoveryClaim: z.infer<typeof RecoveryClaimSchema>,
   dependencies: DispatchClaimStoreDependencies,
 ): Promise<void> {
-  const candidatePath = `${markerPath}.candidate-${claimantNonce}`;
+  const candidatePath = `${markerPath}.candidate-${fingerprint(claimantNonce)}`;
   await writeFile(candidatePath, `${JSON.stringify(recoveryClaim, null, 2)}\n`, { flag: "wx" });
   try {
     await dependencies.afterRecoveryClaimCandidateWritten?.(
@@ -377,6 +410,116 @@ async function publishRecoveryClaim(
   } finally {
     await rm(candidatePath, { force: true }).catch(() => undefined);
   }
+}
+
+async function retireObservedDeadOwnerGeneration(
+  layout: RegistryLayout,
+  observedOwner: z.infer<typeof LockOwnerSchema>,
+  contender: z.infer<typeof LockOwnerSchema>,
+  dependencies: DispatchClaimStoreDependencies,
+): Promise<boolean> {
+  let markerPath = recoveryClaimPath(layout.lockPath, observedOwner.nonce);
+  let markerRaw = await readOptional(markerPath);
+  if (markerRaw === null) {
+    await publishRecoveryClaim(
+      markerPath,
+      contender.nonce,
+      createRecoveryClaim(observedOwner.nonce, contender, dependencies),
+      dependencies,
+    );
+    markerRaw = await readOptional(markerPath);
+    if (markerRaw === null) return false;
+  }
+
+  const visitedMarkers = new Set<string>();
+  for (let generation = 0; generation < MAX_RECOVERY_GENERATIONS; generation += 1) {
+    if (visitedMarkers.has(markerPath)) return false;
+    visitedMarkers.add(markerPath);
+    const recoveryClaim = parseRecoveryClaim(markerRaw, observedOwner.nonce);
+    const predecessor = recoveryClaim
+      ? recoveryClaim.claimant.nonce
+      : `malformed-${fingerprint(markerRaw)}`;
+    const successorPath = recoverySuccessorPath(layout.lockPath, observedOwner.nonce, predecessor);
+
+    if (recoveryClaim?.claimant.nonce === contender.nonce) {
+      const [validatedOwnerRaw, validatedRecoveryRaw, validatedSuccessorRaw] = await Promise.all([
+        readOptional(join(layout.lockPath, "owner.json")),
+        readOptional(markerPath),
+        readOptional(successorPath),
+      ]);
+      if (
+        !validatedOwnerRaw ||
+        validatedRecoveryRaw !== markerRaw ||
+        validatedSuccessorRaw !== null
+      ) {
+        return false;
+      }
+      const validatedOwner = LockOwnerSchema.parse(JSON.parse(validatedOwnerRaw));
+      const validatedRecovery = parseRecoveryClaim(validatedRecoveryRaw, observedOwner.nonce);
+      if (
+        validatedOwner.nonce !== observedOwner.nonce ||
+        validatedRecovery?.claimant.nonce !== contender.nonce
+      ) {
+        return false;
+      }
+      await dependencies.afterRecoveryClaimValidated?.(
+        validatedOwner.nonce,
+        validatedRecovery.claimant.nonce,
+      );
+      const [latestOwnerRaw, latestRecoveryRaw, successorRaw] = await Promise.all([
+        readOptional(join(layout.lockPath, "owner.json")),
+        readOptional(markerPath),
+        readOptional(successorPath),
+      ]);
+      if (!latestOwnerRaw || latestRecoveryRaw !== markerRaw || successorRaw !== null) return false;
+      const latestOwner = LockOwnerSchema.parse(JSON.parse(latestOwnerRaw));
+      const latestRecovery = parseRecoveryClaim(latestRecoveryRaw, observedOwner.nonce);
+      if (
+        latestOwner.nonce !== observedOwner.nonce ||
+        latestRecovery?.claimant.nonce !== contender.nonce
+      ) {
+        return false;
+      }
+      // recovery marker は observed owner generation に、successor marker は predecessor claimant
+      // generation に hard-link no-replace で束縛される。tip winner 自身が live の間は他 contender が
+      // successor を作れない。pause seam 後にも owner/marker/tip を再検証するため、この再検証から
+      // rename まで compliant writer は LOCK を retire できず、winner crash 後だけ次 generation が
+      // 同じ規則で選出される。
+      const recovered = `${layout.lockPath}.recovered-${fingerprint(observedOwner.nonce)}-${randomUUID()}`;
+      await rename(layout.lockPath, recovered);
+      const retiredOwner = LockOwnerSchema.parse(
+        JSON.parse(await readFile(join(recovered, "owner.json"), "utf8")),
+      );
+      if (retiredOwner.nonce !== observedOwner.nonce) {
+        throw new Error("retire 対象の lock owner generation が変化しました");
+      }
+      await rm(recovered, { recursive: true, force: true });
+      return true;
+    }
+
+    if (recoveryClaim) {
+      if (recoveryClaim.claimant.hostname !== dependencies.processIdentity.hostname) return false;
+      if (dependencies.isProcessAlive(recoveryClaim.claimant.pid)) return false;
+    }
+
+    const successorRaw = await readOptional(successorPath);
+    if (successorRaw !== null) {
+      markerPath = successorPath;
+      markerRaw = successorRaw;
+      continue;
+    }
+    await publishRecoveryClaim(
+      successorPath,
+      contender.nonce,
+      createRecoveryClaim(observedOwner.nonce, contender, dependencies),
+      dependencies,
+    );
+    const publishedRaw = await readOptional(successorPath);
+    if (publishedRaw === null) return false;
+    markerPath = successorPath;
+    markerRaw = publishedRaw;
+  }
+  return false;
 }
 
 async function acquireLock(
@@ -414,88 +557,9 @@ async function acquireLock(
           !dependencies.isProcessAlive(current.pid)
         ) {
           await dependencies.afterDeadOwnerObserved?.(current.nonce);
-          const markerPath = recoveryClaimPath(layout.lockPath, current.nonce);
-          const existingRecoveryRaw = await readOptional(markerPath);
           try {
-            if (existingRecoveryRaw !== null) {
-              let existingRecovery: z.infer<typeof RecoveryClaimSchema>;
-              try {
-                existingRecovery = RecoveryClaimSchema.parse(JSON.parse(existingRecoveryRaw));
-              } catch {
-                const [latestOwnerRaw, latestRecoveryRaw] = await Promise.all([
-                  readOptional(join(layout.lockPath, "owner.json")),
-                  readOptional(markerPath),
-                ]);
-                if (!latestOwnerRaw || latestRecoveryRaw !== existingRecoveryRaw) continue;
-                const latestOwner = LockOwnerSchema.parse(JSON.parse(latestOwnerRaw));
-                if (latestOwner.nonce !== current.nonce) continue;
-                const recovered = `${layout.lockPath}.recovered-${current.nonce}-${randomUUID()}`;
-                await rename(layout.lockPath, recovered);
-                await rm(recovered, { recursive: true, force: true });
-                continue;
-              }
-              const claimedAt = Date.parse(existingRecovery.claimant.claimedAt);
-              const age = Date.parse(dependencies.now()) - claimedAt;
-              const claimantDead =
-                existingRecovery.claimant.hostname === dependencies.processIdentity.hostname &&
-                !dependencies.isProcessAlive(existingRecovery.claimant.pid);
-              const markerStale =
-                existingRecovery.expectedOwnerNonce !== current.nonce ||
-                claimantDead ||
-                (Number.isFinite(age) && age >= RECOVERY_CLAIM_STALE_MS);
-              if (!markerStale) {
-                if (Date.now() >= deadline) throw new Error("dispatch claim registry は使用中です");
-                await sleep(10);
-                continue;
-              }
-              const [latestOwnerRaw, latestRecoveryRaw] = await Promise.all([
-                readOptional(join(layout.lockPath, "owner.json")),
-                readOptional(markerPath),
-              ]);
-              if (!latestOwnerRaw || !latestRecoveryRaw) continue;
-              const latestOwner = LockOwnerSchema.parse(JSON.parse(latestOwnerRaw));
-              const latestRecovery = RecoveryClaimSchema.parse(JSON.parse(latestRecoveryRaw));
-              if (
-                latestOwner.nonce !== current.nonce ||
-                latestRecovery.expectedOwnerNonce !== existingRecovery.expectedOwnerNonce ||
-                latestRecovery.claimant.nonce !== existingRecovery.claimant.nonce
-              ) {
-                continue;
-              }
-              const recovered = `${layout.lockPath}.recovered-${current.nonce}-${randomUUID()}`;
-              await rename(layout.lockPath, recovered);
-              await rm(recovered, { recursive: true, force: true });
+            if (await retireObservedDeadOwnerGeneration(layout, current, owner, dependencies))
               continue;
-            }
-            const recoveryClaim = RecoveryClaimSchema.parse({
-              schemaVersion: "1",
-              expectedOwnerNonce: current.nonce,
-              claimant: {
-                pid: owner.pid,
-                hostname: owner.hostname,
-                nonce: owner.nonce,
-                claimedAt: dependencies.now(),
-              },
-            });
-            await publishRecoveryClaim(markerPath, owner.nonce, recoveryClaim, dependencies);
-            const [latestOwnerRaw, latestRecoveryRaw] = await Promise.all([
-              readOptional(join(layout.lockPath, "owner.json")),
-              readOptional(markerPath),
-            ]);
-            if (!latestOwnerRaw || !latestRecoveryRaw) continue;
-            const latestOwner = LockOwnerSchema.parse(JSON.parse(latestOwnerRaw));
-            const latestRecovery = RecoveryClaimSchema.parse(JSON.parse(latestRecoveryRaw));
-            if (
-              latestOwner.nonce !== current.nonce ||
-              latestRecovery.expectedOwnerNonce !== current.nonce ||
-              latestRecovery.claimant.nonce !== owner.nonce
-            ) {
-              continue;
-            }
-            const recovered = `${layout.lockPath}.recovered-${current.nonce}-${randomUUID()}`;
-            await rename(layout.lockPath, recovered);
-            await rm(recovered, { recursive: true, force: true });
-            continue;
           } catch (recoveryError) {
             if (
               !["ENOENT", "EEXIST", "ENOTEMPTY"].includes(
@@ -641,7 +705,7 @@ export class DispatchClaimStore {
         (claim) => claim.claimId === authorization.claim.claimId,
       );
       const current = registry.claims[index];
-      if (!current || JSON.stringify(current) !== JSON.stringify(authorization.claim)) {
+      if (!current || !canonicalJsonEquals(current, authorization.claim)) {
         throw new Error("pending authorization の claim lineage が失効しました");
       }
       receiptClaim = DispatchClaimSchema.parse({
@@ -1017,7 +1081,7 @@ export class DispatchClaimStore {
         authorization.claim.runId !== command.runId ||
         authorization.claim.taskId !== command.taskId ||
         authorization.actorId !== command.actorId ||
-        JSON.stringify(authorization.binding) !== JSON.stringify(expectedBinding)
+        !canonicalJsonEquals(authorization.binding, expectedBinding)
       ) {
         return { status: "conflict" };
       }
@@ -1035,7 +1099,7 @@ export class DispatchClaimStore {
       const current = registry.claims.find(
         (claim) => claim.claimId === authorization.claim.claimId,
       );
-      if (!current || JSON.stringify(current) !== JSON.stringify(authorization.claim))
+      if (!current || !canonicalJsonEquals(current, authorization.claim))
         return { status: "conflict" };
       registry.authorizations.splice(index, 1);
       await this.publishRegistry(layout, registry);
@@ -1149,7 +1213,7 @@ export class DispatchClaimStore {
         return reject("stale_claim", "authorization は既に reclaim されています");
       const index = registry.claims.findIndex((claim) => claim.claimId === pending.claim.claimId);
       const current = registry.claims[index];
-      if (!current || JSON.stringify(current) !== JSON.stringify(pending.claim))
+      if (!current || !canonicalJsonEquals(current, pending.claim))
         return reject("stale_claim", "pending authorization の claim lineage が失効しました");
 
       try {
@@ -1182,9 +1246,9 @@ export class DispatchClaimStore {
     try {
       const registry = await this.readRegistry(layout);
       const stored = registry.receipts.find((item) => item.eventId === parsed.eventId);
-      if (!stored || JSON.stringify(stored.receipt) !== JSON.stringify(parsed)) return false;
+      if (!stored || !canonicalJsonEquals(stored.receipt, parsed)) return false;
       const current = registry.claims.find((claim) => claim.claimId === parsed.claim.claimId);
-      return current !== undefined && JSON.stringify(current) === JSON.stringify(parsed.claim);
+      return current !== undefined && canonicalJsonEquals(current, parsed.claim);
     } finally {
       await release();
     }
@@ -1197,8 +1261,7 @@ export class DispatchClaimStore {
       const registry = await this.readRegistry(layout);
       return registry.receipts.some(
         (stored) =>
-          stored.eventId === receipt.eventId &&
-          JSON.stringify(stored.receipt) === JSON.stringify(receipt),
+          stored.eventId === receipt.eventId && canonicalJsonEquals(stored.receipt, receipt),
       );
     } finally {
       await release();

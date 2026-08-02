@@ -11,6 +11,19 @@ const WORK_GRAPH_FINGERPRINT = "1".repeat(64);
 const GATE_SNAPSHOT_FINGERPRINT = "2".repeat(64);
 const SNAPSHOT_FINGERPRINT = "3".repeat(64);
 
+const testFingerprint = (canonicalJson: string): string => {
+  let value = 0;
+  for (let index = 0; index < canonicalJson.length; index += 1) {
+    value = (Math.imul(value, 31) + canonicalJson.charCodeAt(index)) >>> 0;
+  }
+  return value.toString(16).padStart(8, "0").repeat(8);
+};
+
+const buildPlan = (data: DispatchPlanInput) =>
+  buildDispatchPlan(data, {
+    fingerprint: testFingerprint,
+  });
+
 const config: Config = {
   version: "1",
   project: { name: "P", github: { owner: "stanah", repo: "gh-gantt", project_number: 1 } },
@@ -88,13 +101,13 @@ const input = (tasks: Task[]): DispatchPlanInput => ({
 
 describe("dispatch plan の公開 schema", () => {
   it("root の未知 field を拒否する", () => {
-    const plan = buildDispatchPlan(input([task("stanah/gh-gantt#1")]));
+    const plan = buildPlan(input([task("stanah/gh-gantt#1")]));
 
     expect(DispatchPlanSchema.safeParse({ ...plan, unexpected: true }).success).toBe(false);
   });
 
   it("context・item・excluded・capacity 内の未知 field も拒否する", () => {
-    const plan = buildDispatchPlan(input([task("stanah/gh-gantt#1")]));
+    const plan = buildPlan(input([task("stanah/gh-gantt#1")]));
     const invalidPlans = [
       { ...plan, context: { ...plan.context, unexpected: true } },
       { ...plan, selected: [{ ...plan.selected[0]!, unexpected: true }] },
@@ -118,7 +131,7 @@ describe("dispatch plan の公開 schema", () => {
   });
 
   it("generatedAt の不正な日時を拒否する", () => {
-    const plan = buildDispatchPlan(input([task("stanah/gh-gantt#1")]));
+    const plan = buildPlan(input([task("stanah/gh-gantt#1")]));
 
     expect(DispatchPlanSchema.safeParse({ ...plan, generatedAt: "not-a-timestamp" }).success).toBe(
       false,
@@ -126,7 +139,7 @@ describe("dispatch plan の公開 schema", () => {
   });
 
   it("未知の exclusion reason を拒否する", () => {
-    const plan = buildDispatchPlan(input([task("stanah/gh-gantt#1")]));
+    const plan = buildPlan(input([task("stanah/gh-gantt#1")]));
 
     expect(
       DispatchPlanSchema.safeParse({
@@ -137,7 +150,7 @@ describe("dispatch plan の公開 schema", () => {
   });
 
   it("capacity の負数と導出値の不整合を拒否する", () => {
-    const plan = buildDispatchPlan(input([task("stanah/gh-gantt#1")]));
+    const plan = buildPlan(input([task("stanah/gh-gantt#1")]));
     const negative = {
       ...plan,
       capacity: {
@@ -163,7 +176,7 @@ describe("dispatch plan の公開 schema", () => {
     const invalidInput = input([task("stanah/gh-gantt#1")]);
     invalidInput.snapshotFingerprint = "not-a-fingerprint";
 
-    expect(() => buildDispatchPlan(invalidInput)).toThrow();
+    expect(() => buildPlan(invalidInput)).toThrow();
   });
 });
 
@@ -188,8 +201,66 @@ describe("dispatch gate snapshot の公開 schema", () => {
 });
 
 describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差から安定導出する", () => {
+  it("dependency lookup 用 task Map は候補 loop の外で一度だけ構築する", () => {
+    const source = buildDispatchPlan.toString();
+    const taskMapAllocations = source.match(/new Map\(input\.tasks\.map/g) ?? [];
+    const taskMapIndex = source.indexOf("new Map(input.tasks.map");
+    const candidateLoopIndex = source.indexOf("for (const task");
+
+    expect(taskMapAllocations).toHaveLength(1);
+    expect(taskMapIndex).toBeGreaterThanOrEqual(0);
+    expect(taskMapIndex).toBeLessThan(candidateLoopIndex);
+    expect(source).toContain("getBlockingTaskIds(task, taskById");
+    expect(source).not.toContain("buildReadiness(");
+    expect(source).not.toContain("calculateDownstreamUnlockCount(");
+  });
+
+  it("長い依存チェーンでも dispatch readiness を入力サイズの定数倍で評価する", () => {
+    const chainLength = 1_024;
+    let statusReads = 0;
+    const chain = Array.from({ length: chainLength }, (_, index) => {
+      const id = `stanah/gh-gantt#${index + 1}`;
+      const customFields: Task["custom_fields"] = {};
+      Object.defineProperty(customFields, "Status", {
+        enumerable: true,
+        get: () => {
+          statusReads += 1;
+          return "Todo";
+        },
+      });
+      return task(id, {
+        custom_fields: customFields,
+        blocked_by:
+          index === 0
+            ? []
+            : [
+                {
+                  task: `stanah/gh-gantt#${index}`,
+                  type: "finish-to-start",
+                  lag: 0,
+                },
+              ],
+      });
+    });
+    const data = input(chain);
+    data.config = {
+      ...data.config,
+      dispatch: {
+        ...data.config.dispatch!,
+        max_concurrency: chainLength,
+      },
+    };
+
+    const result = buildPlan(data);
+
+    expect(result.selected.map((item) => item.taskId)).toEqual(["stanah/gh-gantt#1"]);
+    expect(result.excluded).toHaveLength(chainLength - 1);
+    expect(result.excluded.every((item) => item.reason === "dependency_blocked")).toBe(true);
+    expect(statusReads).toBeLessThanOrEqual(chainLength * 20);
+  });
+
   it("stable task ID 順に global concurrency まで選ぶ", () => {
-    const result = buildDispatchPlan(
+    const result = buildPlan(
       input([task("stanah/gh-gantt#3"), task("stanah/gh-gantt#1"), task("stanah/gh-gantt#2")]),
     );
 
@@ -202,7 +273,39 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
       reason: "global_capacity",
     });
     expect(result).toMatchObject({ planVersion: "1", registryEntityVersion: 0 });
-    expect(result.planId).toContain("dispatch-plan:v1:r0:selected:stanah/gh-gantt#1");
+    expect(result.planId).toMatch(/^dispatch-plan:v1:r0:[0-9a-f]{64}$/);
+  });
+
+  it("planId は task 数によらず固定長で key 挿入順にも依存しない", () => {
+    const small = input([task("stanah/gh-gantt#1")]);
+    const reordered = {
+      ...small,
+      workspaceByTaskId: Object.fromEntries(Object.entries(small.workspaceByTaskId).reverse()),
+    };
+    const changedCapacity = {
+      ...small,
+      config: {
+        ...small.config,
+        dispatch: { ...small.config.dispatch!, max_concurrency: 3 },
+      },
+    };
+    const large = input(
+      Array.from({ length: 1_000 }, (_, index) => task(`stanah/gh-gantt#${index + 1}`)),
+    );
+
+    expect(buildPlan(small).planId).toBe(buildPlan(reordered).planId);
+    expect(buildPlan(changedCapacity).planId).not.toBe(buildPlan(small).planId);
+    expect(buildPlan(large).planId).toMatch(/^dispatch-plan:v1:r0:[0-9a-f]{64}$/);
+    expect(buildPlan(large).planId).toHaveLength(buildPlan(small).planId.length);
+  });
+
+  it("不正な github_repo は unknown state と区別して除外する", () => {
+    const invalid = task("stanah/gh-gantt#1", { github_repo: "stanah" });
+
+    expect(buildPlan(input([invalid]))).toMatchObject({
+      selected: [],
+      excluded: [{ taskId: invalid.id, reason: "invalid_repository" }],
+    });
   });
 
   it("dependency・review/human・sync conflict・open iteration・親コンテナを除外する", () => {
@@ -221,7 +324,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
     data.syncConflictTaskIds = [conflict.id];
     data.openIterationTaskIds = [iteration.id];
 
-    const result = buildDispatchPlan(data);
+    const result = buildPlan(data);
     expect(
       Object.fromEntries(result.excluded.map((item) => [item.taskId, item.reason])),
     ).toMatchObject({
@@ -238,7 +341,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
     const data = input([task("stanah/gh-gantt#1"), task("stanah/gh-gantt#2")]);
     data.humanGateTaskIds = ["stanah/gh-gantt#999"];
 
-    expect(buildDispatchPlan(data)).toMatchObject({
+    expect(buildPlan(data)).toMatchObject({
       selected: [],
       excluded: [
         { taskId: "stanah/gh-gantt#1", reason: "gate_snapshot_inconsistent" },
@@ -268,7 +371,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
     ];
     data.workspaceByTaskId[second.id] = "workspace:occupied";
 
-    const result = buildDispatchPlan(data);
+    const result = buildPlan(data);
     expect(result.selected).toHaveLength(1);
     expect(result.selected[0]?.taskId).toBe(third.id);
     expect(result.excluded).toContainEqual({ taskId: first.id, reason: "active_claim" });
@@ -298,7 +401,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
       },
     };
 
-    expect(buildDispatchPlan(data)).toMatchObject({
+    expect(buildPlan(data)).toMatchObject({
       selected: [{ taskId: first.id }],
       excluded: [
         { taskId: sameState.id, reason: "state_capacity" },
@@ -317,9 +420,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
       ],
     });
     expect(
-      buildDispatchPlan(input([upstreamA, upstreamB, downstream])).selected.map(
-        (item) => item.taskId,
-      ),
+      buildPlan(input([upstreamA, upstreamB, downstream])).selected.map((item) => item.taskId),
     ).not.toContain(downstream.id);
 
     const completed = [
@@ -327,7 +428,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
       { ...upstreamB, state: "closed" as const },
       downstream,
     ];
-    expect(buildDispatchPlan(input(completed)).selected.map((item) => item.taskId)).toContain(
+    expect(buildPlan(input(completed)).selected.map((item) => item.taskId)).toContain(
       downstream.id,
     );
   });
@@ -349,14 +450,14 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
         expiresAt: "2026-08-01T23:00:00.000Z",
       },
     ];
-    expect(buildDispatchPlan(expired)).toMatchObject({
+    expect(buildPlan(expired)).toMatchObject({
       selected: [],
       excluded: [{ taskId: candidate.id, reason: "claim_reclaim_required" }],
     });
 
     const inconsistent = input([candidate]);
     inconsistent.claims = [expired.claims[0]!, { ...expired.claims[0]!, claimId: "claim:other" }];
-    expect(buildDispatchPlan(inconsistent)).toMatchObject({
+    expect(buildPlan(inconsistent)).toMatchObject({
       selected: [],
       excluded: [{ taskId: candidate.id, reason: "registry_snapshot_inconsistent" }],
     });
@@ -369,7 +470,7 @@ describe("[NFR-STABILITY-014-AC9] ready frontier を gate と容量の交差か�
         expiresAt: "2026-08-02T01:00:00.000Z",
       },
     ];
-    expect(buildDispatchPlan(unknownClaimState)).toMatchObject({
+    expect(buildPlan(unknownClaimState)).toMatchObject({
       selected: [],
       excluded: [{ taskId: candidate.id, reason: "registry_snapshot_inconsistent" }],
     });
