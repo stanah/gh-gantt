@@ -219,7 +219,22 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
   }
 
   const cleaned = applyTaskDeletion(input.tasksFile, input.syncState, plan, input.now);
-  if (commandPlan?.ok) cleaned.tasksFile.tasks = commandPlan.tasks;
+  if (commandPlan?.ok) {
+    const repairedTaskIds = new Set([
+      ...plan.repair.parentCleared,
+      ...plan.repair.subTaskRemoved,
+      ...plan.repair.blockedByRemoved,
+    ]);
+    const repairTimestamps = new Map(
+      cleaned.tasksFile.tasks
+        .filter((task) => repairedTaskIds.has(task.id))
+        .map((task) => [task.id, task.updated_at] as const),
+    );
+    cleaned.tasksFile.tasks = commandPlan.tasks.map((task) => {
+      const repairedAt = repairTimestamps.get(task.id);
+      return repairedAt === undefined ? task : { ...task, updated_at: repairedAt };
+    });
+  }
 
   let pulled: { tasksFile: TasksFile; syncState: SyncState };
   try {

@@ -263,6 +263,73 @@ describe("[NFR-STABILITY-014-AC8] mutation proposal制御プレーン", () => {
     expect(remoteExecutor).not.toHaveBeenCalled();
   });
 
+  it("不正なJSON値は例外を送出せず副作用なしのrejection receiptへ閉じる", async () => {
+    const repositoryMethods = {
+      readAll: vi.fn(),
+      recordReceipt: vi.fn(),
+      acknowledgeAudit: vi.fn(),
+      claimApplication: vi.fn(),
+      fenceApplication: vi.fn(),
+      releaseApplication: vi.fn(),
+    };
+    const lifecycleMethods = {
+      loadSnapshot: vi.fn(),
+      resolveOrigin: vi.fn(),
+      validateApply: vi.fn(),
+      verifyHumanApproval: vi.fn(),
+      executeStep: vi.fn(),
+      appendAudit: vi.fn(),
+    };
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    const throwingGetter = Object.defineProperty({}, "schemaVersion", {
+      enumerable: true,
+      get() {
+        throw new Error("getter must not escape");
+      },
+    });
+    const revokedProxy = Proxy.revocable({}, {});
+    revokedProxy.revoke();
+    const control = new MutationProposalControlPlane(
+      repositoryMethods as never,
+      new WorkGraphCommandEngine(config),
+      {
+        ...lifecycleMethods,
+        mutationCoordination: memoryMutationCoordination(),
+      } as never,
+    );
+
+    for (const invalid of [
+      null,
+      undefined,
+      1,
+      "invalid",
+      [],
+      { commandId: 1 },
+      { commandId: "" },
+      1n,
+      cyclic,
+      throwingGetter,
+      revokedProxy.proxy,
+    ]) {
+      await expect(control.execute(invalid)).resolves.toMatchObject({
+        accepted: false,
+        commandId: "invalid-command",
+        commandFingerprint: expect.stringMatching(/^[0-9a-f]{64}$/),
+        errorCode: "invalid_command",
+        stateUnchanged: true,
+      });
+    }
+    await expect(control.execute({ commandId: "malformed-command" })).resolves.toMatchObject({
+      accepted: false,
+      commandId: "malformed-command",
+      errorCode: "invalid_command",
+      stateUnchanged: true,
+    });
+    for (const method of Object.values(repositoryMethods)) expect(method).not.toHaveBeenCalled();
+    for (const method of Object.values(lifecycleMethods)) expect(method).not.toHaveBeenCalled();
+  });
+
   it("human approval→partial apply→explicit reconcile→auditへexact retryで収束する", async () => {
     const repository = new MemoryRepository();
     const audits: MutationProposalAuditEvent[] = [];

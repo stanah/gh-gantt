@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { z } from "zod";
@@ -14,6 +14,8 @@ import {
   type RepositoryCoordinationLayout,
 } from "./repository-coordination-layout.js";
 import type { MutationReservationProof } from "./dispatch-claims.js";
+
+const MAX_LOCK_RECOVERY_GENERATIONS = 64;
 
 export interface MutationApplicationLease {
   proposalId: string;
@@ -84,14 +86,49 @@ const LockOwnerSchema = z
   })
   .strict();
 
+const LockRecoveryClaimSchema = z
+  .object({
+    schemaVersion: z.literal("1"),
+    expectedOwnerNonce: z.string().uuid(),
+    claimant: z
+      .object({
+        pid: z.number().int().positive(),
+        hostname: z.string().min(1),
+        nonce: z.string().uuid(),
+        claimedAt: z.string().datetime(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export class MutationProposalLockError extends Error {
+  constructor(
+    readonly code: "ownerless_lock" | "corrupt_lock_owner",
+    message: string,
+  ) {
+    super(message);
+    this.name = "MutationProposalLockError";
+  }
+}
+
 export interface MutationProposalStoreDependencies {
   resolveLayout?: (projectRoot: string) => Promise<RepositoryCoordinationLayout>;
   now?: () => string;
   isProcessAlive?: (pid: number) => boolean;
   processIdentity?: { pid: number; hostname: string };
+  waitTimeoutMs?: number;
   /** テスト専用: recordReceiptがjournal lock取得を試みる直前のbarrier。 */
   beforeRecordLockAcquire?: () => Promise<void>;
+  /** テスト専用: dead owner観測後の決定的なinterleaving point。 */
+  afterDeadOwnerObserved?: (ownerNonce: string) => Promise<void>;
+  /** テスト専用: recovery winnerの最終検証後・LOCK retire前の停止を模擬する。 */
+  afterRecoveryClaimValidated?: (
+    expectedOwnerNonce: string,
+    claimantNonce: string,
+  ) => Promise<void>;
 }
+
+type ResolvedMutationProposalStoreDependencies = Required<MutationProposalStoreDependencies>;
 
 export interface MutationProposalRecordOptions {
   /** nullはproposal新規作成、数値は既存proposal revisionのCASを表す。 */
@@ -130,6 +167,166 @@ async function readOptional(path: string): Promise<string | null> {
   }
 }
 
+function recoveryClaimPath(lockPath: string, expectedOwnerNonce: string): string {
+  return join(lockPath, `recovery-claim-${expectedOwnerNonce}.json`);
+}
+
+function recoverySuccessorPath(
+  lockPath: string,
+  expectedOwnerNonce: string,
+  predecessorNonce: string,
+): string {
+  return join(lockPath, `recovery-successor-${expectedOwnerNonce}-${predecessorNonce}.json`);
+}
+
+function parseRecoveryClaim(
+  raw: string,
+  expectedOwnerNonce: string,
+): z.infer<typeof LockRecoveryClaimSchema> | null {
+  try {
+    const claim = LockRecoveryClaimSchema.parse(JSON.parse(raw));
+    return claim.expectedOwnerNonce === expectedOwnerNonce ? claim : null;
+  } catch {
+    return null;
+  }
+}
+
+function createRecoveryClaim(
+  expectedOwnerNonce: string,
+  owner: z.infer<typeof LockOwnerSchema>,
+  dependencies: ResolvedMutationProposalStoreDependencies,
+): z.infer<typeof LockRecoveryClaimSchema> {
+  return LockRecoveryClaimSchema.parse({
+    schemaVersion: "1",
+    expectedOwnerNonce,
+    claimant: {
+      pid: owner.pid,
+      hostname: owner.hostname,
+      nonce: owner.nonce,
+      claimedAt: dependencies.now(),
+    },
+  });
+}
+
+async function publishRecoveryClaim(
+  markerPath: string,
+  claimantNonce: string,
+  claim: z.infer<typeof LockRecoveryClaimSchema>,
+): Promise<void> {
+  const candidate = `${markerPath}.candidate-${claimantNonce}`;
+  await writeFile(candidate, `${JSON.stringify(claim, null, 2)}\n`, { flag: "wx" });
+  try {
+    // hard linkで既存winnerを上書きせず、claimをatomicに公開する。
+    await link(candidate, markerPath);
+  } finally {
+    await rm(candidate, { force: true }).catch(() => undefined);
+  }
+}
+
+async function retireObservedDeadOwnerGeneration(
+  lockPath: string,
+  observedOwner: z.infer<typeof LockOwnerSchema>,
+  contender: z.infer<typeof LockOwnerSchema>,
+  dependencies: ResolvedMutationProposalStoreDependencies,
+): Promise<boolean> {
+  let markerPath = recoveryClaimPath(lockPath, observedOwner.nonce);
+  let markerRaw = await readOptional(markerPath);
+  if (markerRaw === null) {
+    await publishRecoveryClaim(
+      markerPath,
+      contender.nonce,
+      createRecoveryClaim(observedOwner.nonce, contender, dependencies),
+    );
+    markerRaw = await readOptional(markerPath);
+    if (markerRaw === null) return false;
+  }
+
+  const visitedMarkers = new Set<string>();
+  for (let generation = 0; generation < MAX_LOCK_RECOVERY_GENERATIONS; generation += 1) {
+    if (visitedMarkers.has(markerPath)) return false;
+    visitedMarkers.add(markerPath);
+    const recoveryClaim = parseRecoveryClaim(markerRaw, observedOwner.nonce);
+    const predecessor =
+      recoveryClaim?.claimant.nonce ??
+      `malformed-${createHash("sha256").update(markerRaw).digest("hex")}`;
+    const successorPath = recoverySuccessorPath(lockPath, observedOwner.nonce, predecessor);
+
+    if (recoveryClaim?.claimant.nonce === contender.nonce) {
+      const [validatedOwnerRaw, validatedRecoveryRaw, validatedSuccessorRaw] = await Promise.all([
+        readOptional(join(lockPath, "owner.json")),
+        readOptional(markerPath),
+        readOptional(successorPath),
+      ]);
+      if (
+        !validatedOwnerRaw ||
+        validatedRecoveryRaw !== markerRaw ||
+        validatedSuccessorRaw !== null
+      ) {
+        return false;
+      }
+      const validatedOwner = LockOwnerSchema.parse(JSON.parse(validatedOwnerRaw));
+      const validatedRecovery = parseRecoveryClaim(validatedRecoveryRaw, observedOwner.nonce);
+      if (
+        validatedOwner.nonce !== observedOwner.nonce ||
+        validatedRecovery?.claimant.nonce !== contender.nonce
+      ) {
+        return false;
+      }
+      await dependencies.afterRecoveryClaimValidated?.(
+        validatedOwner.nonce,
+        validatedRecovery.claimant.nonce,
+      );
+      const [latestOwnerRaw, latestRecoveryRaw, latestSuccessorRaw] = await Promise.all([
+        readOptional(join(lockPath, "owner.json")),
+        readOptional(markerPath),
+        readOptional(successorPath),
+      ]);
+      if (!latestOwnerRaw || latestRecoveryRaw !== markerRaw || latestSuccessorRaw !== null) {
+        return false;
+      }
+      const latestOwner = LockOwnerSchema.parse(JSON.parse(latestOwnerRaw));
+      const latestRecovery = parseRecoveryClaim(latestRecoveryRaw, observedOwner.nonce);
+      if (
+        latestOwner.nonce !== observedOwner.nonce ||
+        latestRecovery?.claimant.nonce !== contender.nonce
+      ) {
+        return false;
+      }
+      const recovered = `${lockPath}.recovered-${observedOwner.nonce}-${randomUUID()}`;
+      await rename(lockPath, recovered);
+      const retiredOwner = LockOwnerSchema.parse(
+        JSON.parse(await readFile(join(recovered, "owner.json"), "utf8")),
+      );
+      if (retiredOwner.nonce !== observedOwner.nonce) {
+        throw new Error("retire 対象の mutation proposal lock owner 世代が変化しました");
+      }
+      await rm(recovered, { recursive: true, force: true });
+      return true;
+    }
+
+    if (recoveryClaim) {
+      if (recoveryClaim.claimant.hostname !== dependencies.processIdentity.hostname) return false;
+      if (dependencies.isProcessAlive(recoveryClaim.claimant.pid)) return false;
+    }
+    const successorRaw = await readOptional(successorPath);
+    if (successorRaw !== null) {
+      markerPath = successorPath;
+      markerRaw = successorRaw;
+      continue;
+    }
+    await publishRecoveryClaim(
+      successorPath,
+      contender.nonce,
+      createRecoveryClaim(observedOwner.nonce, contender, dependencies),
+    );
+    const publishedRaw = await readOptional(successorPath);
+    if (publishedRaw === null) return false;
+    markerPath = successorPath;
+    markerRaw = publishedRaw;
+  }
+  return false;
+}
+
 async function writeAtomic(path: string, value: unknown): Promise<void> {
   await mkdir(dirname(path), { recursive: true });
   const temporary = `${path}.${randomUUID()}.tmp`;
@@ -157,7 +354,7 @@ function sleep(milliseconds: number): Promise<void> {
 
 /** proposal journal専用root/LOCKを使い、claim/cache journalと共有しない。 */
 export class MutationProposalStore {
-  private readonly dependencies: Required<MutationProposalStoreDependencies>;
+  private readonly dependencies: ResolvedMutationProposalStoreDependencies;
 
   constructor(
     private readonly projectRoot: string,
@@ -168,7 +365,11 @@ export class MutationProposalStore {
       now: dependencies.now ?? (() => new Date().toISOString()),
       isProcessAlive: dependencies.isProcessAlive ?? defaultIsProcessAlive,
       processIdentity: dependencies.processIdentity ?? { pid: process.pid, hostname: hostname() },
+      waitTimeoutMs: dependencies.waitTimeoutMs ?? 5_000,
       beforeRecordLockAcquire: dependencies.beforeRecordLockAcquire ?? (async () => undefined),
+      afterDeadOwnerObserved: dependencies.afterDeadOwnerObserved ?? (async () => undefined),
+      afterRecoveryClaimValidated:
+        dependencies.afterRecoveryClaimValidated ?? (async () => undefined),
     };
   }
 
@@ -181,32 +382,69 @@ export class MutationProposalStore {
       nonce: randomUUID(),
       acquiredAt: this.dependencies.now(),
     });
-    const deadline = Date.now() + 5_000;
+    const deadline = Date.now() + this.dependencies.waitTimeoutMs;
     while (true) {
+      const candidate = `${lockPath}.candidate-${owner.nonce}`;
       try {
-        await mkdir(lockPath);
-        await writeFile(join(lockPath, "owner.json"), `${JSON.stringify(owner, null, 2)}\n`, {
+        await mkdir(candidate);
+        await writeFile(join(candidate, "owner.json"), `${JSON.stringify(owner, null, 2)}\n`, {
           flag: "wx",
         });
+        await rename(candidate, lockPath);
         break;
       } catch (error) {
+        await rm(candidate, { recursive: true, force: true }).catch(() => undefined);
         const code = (error as NodeJS.ErrnoException).code;
         if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
         const raw = await readOptional(join(lockPath, "owner.json"));
-        if (raw) {
-          const existing = LockOwnerSchema.parse(JSON.parse(raw));
+        if (raw === null) {
+          // releaseとの競合でLOCK自体が消えた可能性があるため、deadlineまでは再試行する。
+          // atomic candidate publishで空のlegacy LOCKは安全に置換できるが、内容を持つownerless
+          // LOCKは生存中の旧writerと区別できないため、推測で削除しない。
+          if (Date.now() >= deadline) {
+            throw new MutationProposalLockError(
+              "ownerless_lock",
+              "mutation proposal store lock にowner.jsonがありません。全writerの停止を確認してLOCKを手動回収してください",
+            );
+          }
+          await sleep(20);
+          continue;
+        }
+        if (raw !== null) {
+          let existing: z.infer<typeof LockOwnerSchema>;
+          try {
+            existing = LockOwnerSchema.parse(JSON.parse(raw));
+          } catch {
+            if (Date.now() >= deadline) {
+              throw new MutationProposalLockError(
+                "corrupt_lock_owner",
+                "mutation proposal store lock のowner.jsonが破損しています。全writerの停止を確認してLOCKを手動回収してください",
+              );
+            }
+            await sleep(20);
+            continue;
+          }
           if (
             existing.hostname === owner.hostname &&
             !this.dependencies.isProcessAlive(existing.pid)
           ) {
-            const recovered = `${lockPath}.recovered-${existing.nonce}-${randomUUID()}`;
+            await this.dependencies.afterDeadOwnerObserved(existing.nonce);
             try {
-              await rename(lockPath, recovered);
-              await rm(recovered, { recursive: true, force: true });
-              continue;
+              if (
+                await retireObservedDeadOwnerGeneration(
+                  lockPath,
+                  existing,
+                  owner,
+                  this.dependencies,
+                )
+              ) {
+                continue;
+              }
             } catch (recoveryError) {
               const recoveryCode = (recoveryError as NodeJS.ErrnoException).code;
-              if (recoveryCode !== "ENOENT") throw recoveryError;
+              if (!["ENOENT", "EEXIST", "ENOTEMPTY"].includes(recoveryCode ?? "")) {
+                throw recoveryError;
+              }
             }
           }
         }

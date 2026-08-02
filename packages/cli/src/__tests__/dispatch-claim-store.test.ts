@@ -427,7 +427,47 @@ describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () =>
       leaseDurationSeconds: 60,
     });
     if (!reserved.accepted) throw new Error("reservation fixture failed");
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: "22222222-2222-4222-8222-222222222222",
+        expectedEntityVersion: 1,
+        affectedTaskIds: ["fixture/repository#1"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 1,
+      code: "mutation_reservation_conflict",
+    });
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: reserved.reservation.ownerNonce,
+        expectedEntityVersion: 1,
+        affectedTaskIds: ["fixture/repository#2"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 1,
+      code: "mutation_reservation_conflict",
+    });
     const inFlight = await claims.beginMutationSideEffect(reserved.reservation);
+
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: "22222222-2222-4222-8222-222222222222",
+        expectedEntityVersion: 2,
+        affectedTaskIds: ["fixture/repository#1"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 2,
+      code: "mutation_reservation_conflict",
+    });
     currentTime = "2026-08-02T00:01:01.000Z";
 
     await expect(

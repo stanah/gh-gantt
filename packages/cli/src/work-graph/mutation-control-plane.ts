@@ -357,6 +357,33 @@ function storedTrustedApproval(
   };
 }
 
+function invalidMutationCommandId(rawCommand: unknown): string {
+  try {
+    if (typeof rawCommand !== "object" || rawCommand === null || Array.isArray(rawCommand)) {
+      return "invalid-command";
+    }
+    const commandId = (rawCommand as { commandId?: unknown }).commandId;
+    return typeof commandId === "string" && commandId.length > 0 ? commandId : "invalid-command";
+  } catch {
+    return "invalid-command";
+  }
+}
+
+function invalidMutationCommandFingerprint(rawCommand: unknown): string {
+  try {
+    return mutationCommandFingerprint(rawCommand);
+  } catch {
+    let valueType = "uninspectable";
+    try {
+      valueType =
+        rawCommand === null ? "null" : Array.isArray(rawCommand) ? "array" : typeof rawCommand;
+    } catch {
+      // revoked Proxy等はraw値へ再アクセスせず固定sentinelへ閉じる。
+    }
+    return mutationCommandFingerprint({ kind: "invalid-mutation-command", valueType });
+  }
+}
+
 /** propose/decide/apply/reconcile lifecycleをexecute + inspectの2入口へ閉じ込める。 */
 export class MutationProposalControlPlane {
   private readonly now: () => string;
@@ -396,16 +423,21 @@ export class MutationProposalControlPlane {
   }
 
   async execute(rawCommand: unknown): Promise<MutationProposalReceipt> {
-    const parsed = MutationProposalCommandSchema.safeParse(rawCommand);
-    if (!parsed.success) {
-      const fallback = rawCommand as { commandId?: string };
+    let parsed: ReturnType<typeof MutationProposalCommandSchema.safeParse> | null = null;
+    try {
+      parsed = MutationProposalCommandSchema.safeParse(rawCommand);
+    } catch {
+      // getter / Proxyを含むuntrusted objectも例外で境界を破らず、typed rejectionへ閉じる。
+    }
+    if (!parsed?.success) {
+      const fallbackCommandId = invalidMutationCommandId(rawCommand);
       return this.rejection(
-        fallback.commandId ?? "invalid-command",
-        mutationCommandFingerprint(rawCommand),
+        fallbackCommandId,
+        invalidMutationCommandFingerprint(rawCommand),
         null,
         0,
         "invalid_command",
-        parsed.error.issues[0]?.message ?? "invalid command",
+        parsed?.error.issues[0]?.message ?? "invalid command",
       );
     }
     const command = parsed.data;

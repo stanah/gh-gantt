@@ -231,7 +231,9 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
 
   it("hard-delete reconciliationが返したtasksを最終mirrorへ反映する", async () => {
     const target = makeTask("owner/repo#1");
-    const survivor = makeTask("owner/repo#2");
+    const survivor = makeTask("owner/repo#2", {
+      blocked_by: [{ task: target.id, type: "finish-to-start", lag: 0 }],
+    });
     const tasksFile = makeTasksFile([target, survivor]);
     const syncState = makeSyncState(tasksFile.tasks.map((task) => task.id));
     const commandTypes: string[] = [];
@@ -242,7 +244,13 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
           return {
             ok: true,
             operation: "hard_delete_plan",
-            tasks: command.tasks.filter((task) => task.id !== command.deletedTaskId),
+            tasks: command.tasks
+              .filter((task) => task.id !== command.deletedTaskId)
+              .map((task) => ({
+                ...task,
+                title: "engine plan反映済み",
+                blocked_by: task.blocked_by.filter((dep) => dep.task !== command.deletedTaskId),
+              })),
             affectedTaskIds: [command.deletedTaskId],
             primitives: [],
           };
@@ -265,16 +273,32 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
       syncState,
       taskId: target.id,
       yes: true,
+      now: "2026-02-01T00:00:00.000Z",
       commandEngine,
       deleteGithubIssue: async () => {},
-      forcePull: async (cleaned) => cleaned,
+      forcePull: async (cleaned) => {
+        expect(cleaned.tasksFile.tasks).toEqual([
+          expect.objectContaining({
+            id: survivor.id,
+            title: "engine plan反映済み",
+            blocked_by: [],
+            updated_at: "2026-02-01T00:00:00.000Z",
+          }),
+        ]);
+        return cleaned;
+      },
     });
 
     expect(result).toMatchObject({ ok: true });
     if (!result.ok) throw new Error(result.error);
     expect(commandTypes).toEqual(["hard_delete_plan", "hard_delete_reconciliation"]);
     expect(result.tasksFile.tasks).toEqual([
-      expect.objectContaining({ id: survivor.id, title: "reconciliation反映済み" }),
+      expect.objectContaining({
+        id: survivor.id,
+        title: "reconciliation反映済み",
+        blocked_by: [],
+        updated_at: "2026-02-01T00:00:00.000Z",
+      }),
     ]);
   });
 

@@ -1311,14 +1311,16 @@ export class DispatchClaimStore {
     const command = MutationReservationInputSchema.parse(input);
     return this.transact(async (layout, registry) => {
       const affected = new Set(command.affectedTaskIds);
+      const affectedTaskIds = [...affected].sort();
+      const now = this.dependencies.now();
       const current = registry.mutationReservations.find(
         (reservation) => reservation.proposalId === command.proposalId,
       );
       if (
         current &&
         current.ownerNonce === command.ownerNonce &&
-        (current.sideEffectState === "in_flight" ||
-          Date.parse(current.expiresAt) > Date.parse(this.dependencies.now()))
+        canonicalJsonEquals(current.affectedTaskIds, affectedTaskIds) &&
+        (current.sideEffectState === "in_flight" || Date.parse(current.expiresAt) > Date.parse(now))
       ) {
         return {
           accepted: true as const,
@@ -1358,14 +1360,34 @@ export class DispatchClaimStore {
           message: "mutation 対象 task に有効な dispatch claim があります",
         };
       }
-      const now = this.dependencies.now();
       if (current && command.expectedEntityVersion === registry.entityVersion) {
+        if (!canonicalJsonEquals(current.affectedTaskIds, affectedTaskIds)) {
+          return {
+            accepted: false as const,
+            entityVersion: registry.entityVersion,
+            code: "mutation_reservation_conflict" as const,
+            message: "既存 mutation reservation と対象 task が一致しません",
+          };
+        }
+        // 別ownerはlease失効後だけtakeoverできる。in_flightは状態を維持して
+        // reconcile-onlyへ継承し、旧ownerのremote結果publishをfenceする。
+        if (
+          current.ownerNonce !== command.ownerNonce &&
+          Date.parse(current.expiresAt) > Date.parse(now)
+        ) {
+          return {
+            accepted: false as const,
+            entityVersion: registry.entityVersion,
+            code: "mutation_reservation_conflict" as const,
+            message: "有効期限内の mutation reservation は別ownerへ移譲できません",
+          };
+        }
         const entityVersion = registry.entityVersion + 1;
         const reservation = MutationReservationProofSchema.parse({
           ...current,
           ownerNonce: command.ownerNonce,
           fencingToken: entityVersion,
-          affectedTaskIds: [...new Set(command.affectedTaskIds)].sort(),
+          affectedTaskIds: current.affectedTaskIds,
           expiresAt: new Date(Date.parse(now) + command.leaseDurationSeconds * 1000).toISOString(),
           sideEffectState: current.sideEffectState,
         });
@@ -1397,7 +1419,7 @@ export class DispatchClaimStore {
         proposalId: command.proposalId,
         ownerNonce: command.ownerNonce,
         fencingToken: entityVersion,
-        affectedTaskIds: [...new Set(command.affectedTaskIds)].sort(),
+        affectedTaskIds,
         expiresAt: new Date(Date.parse(now) + command.leaseDurationSeconds * 1000).toISOString(),
         sideEffectState: "idle",
       });

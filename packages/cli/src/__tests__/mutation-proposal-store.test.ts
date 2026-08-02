@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
@@ -131,6 +132,206 @@ function receipt(commandId: string, current: MutationProposal): MutationProposal
 }
 
 describe("[NFR-STABILITY-014-AC8] mutation proposal storeのCAS", () => {
+  it("空のownerless legacy LOCKはatomic candidate publishで安全に置換する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-ownerless-lock-"));
+    const layout: RepositoryCoordinationLayout = {
+      projectRoot: root,
+      projectIdentity: "example/public#1",
+      projectKey: "public",
+      commonDir: root,
+      canonicalWorkspaceId: "workspace:cas",
+      linkedWorktrees: [root],
+      linkedProjectRoots: [root],
+      claimRoot: join(root, "claims"),
+      mutationProposalRoot: join(root, "proposals"),
+      config: {} as RepositoryCoordinationLayout["config"],
+    };
+    await mkdir(join(layout.mutationProposalRoot, "LOCK"), { recursive: true });
+    const store = new MutationProposalStore(root, { resolveLayout: async () => layout });
+
+    await expect(store.readAll()).resolves.toMatchObject({
+      projectIdentity: layout.projectIdentity,
+      revision: 0,
+    });
+  });
+
+  it("内容を持つownerless legacy LOCKは推測で削除せずtyped errorでfail-closedにする", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-ownerless-lock-"));
+    const layout: RepositoryCoordinationLayout = {
+      projectRoot: root,
+      projectIdentity: "example/public#1",
+      projectKey: "public",
+      commonDir: root,
+      canonicalWorkspaceId: "workspace:cas",
+      linkedWorktrees: [root],
+      linkedProjectRoots: [root],
+      claimRoot: join(root, "claims"),
+      mutationProposalRoot: join(root, "proposals"),
+      config: {} as RepositoryCoordinationLayout["config"],
+    };
+    const lockPath = join(layout.mutationProposalRoot, "LOCK");
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(join(lockPath, "partial-owner.tmp"), "incomplete\n");
+    const store = new MutationProposalStore(root, {
+      resolveLayout: async () => layout,
+      waitTimeoutMs: 0,
+    });
+
+    await expect(store.readAll()).rejects.toMatchObject({
+      name: "MutationProposalLockError",
+      code: "ownerless_lock",
+    });
+  });
+
+  it.each(["", '{"schemaVersion":'])(
+    "破損したowner.json (%s) はgeneric busyへ潰さずtyped errorにする",
+    async (rawOwner) => {
+      const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-corrupt-lock-"));
+      const layout: RepositoryCoordinationLayout = {
+        projectRoot: root,
+        projectIdentity: "example/public#1",
+        projectKey: "public",
+        commonDir: root,
+        canonicalWorkspaceId: "workspace:cas",
+        linkedWorktrees: [root],
+        linkedProjectRoots: [root],
+        claimRoot: join(root, "claims"),
+        mutationProposalRoot: join(root, "proposals"),
+        config: {} as RepositoryCoordinationLayout["config"],
+      };
+      const lockPath = join(layout.mutationProposalRoot, "LOCK");
+      await mkdir(lockPath, { recursive: true });
+      await writeFile(join(lockPath, "owner.json"), rawOwner);
+      const store = new MutationProposalStore(root, {
+        resolveLayout: async () => layout,
+        waitTimeoutMs: 0,
+      });
+
+      await expect(store.readAll()).rejects.toMatchObject({
+        name: "MutationProposalLockError",
+        code: "corrupt_lock_owner",
+      });
+    },
+  );
+
+  it("dead ownerを同時観測しても世代bound recovery winnerだけがLOCKをretireする", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-lock-recovery-"));
+    const layout: RepositoryCoordinationLayout = {
+      projectRoot: root,
+      projectIdentity: "example/public#1",
+      projectKey: "public",
+      commonDir: root,
+      canonicalWorkspaceId: "workspace:cas",
+      linkedWorktrees: [root],
+      linkedProjectRoots: [root],
+      claimRoot: join(root, "claims"),
+      mutationProposalRoot: join(root, "proposals"),
+      config: {} as RepositoryCoordinationLayout["config"],
+    };
+    const deadPid = 2_147_483_647;
+    const deadNonce = randomUUID();
+    const lockPath = join(layout.mutationProposalRoot, "LOCK");
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        acquiredAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    let observed = 0;
+    let releaseBarrier!: () => void;
+    const barrier = new Promise<void>((resolveBarrier) => {
+      releaseBarrier = resolveBarrier;
+    });
+    const makeStore = () =>
+      new MutationProposalStore(root, {
+        resolveLayout: async () => layout,
+        isProcessAlive: (pid) => pid !== deadPid,
+        afterDeadOwnerObserved: async (ownerNonce) => {
+          expect(ownerNonce).toBe(deadNonce);
+          observed += 1;
+          if (observed === 2) releaseBarrier();
+          await barrier;
+        },
+      });
+
+    const registries = await Promise.all([makeStore().readAll(), makeStore().readAll()]);
+
+    expect(observed).toBe(2);
+    expect(registries).toEqual([
+      expect.objectContaining({ projectIdentity: layout.projectIdentity, revision: 0 }),
+      expect.objectContaining({ projectIdentity: layout.projectIdentity, revision: 0 }),
+    ]);
+  });
+
+  it("最終検証後に停止したlive recovery winnerを後続contenderが奪取しない", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-live-recovery-"));
+    const layout: RepositoryCoordinationLayout = {
+      projectRoot: root,
+      projectIdentity: "example/public#1",
+      projectKey: "public",
+      commonDir: root,
+      canonicalWorkspaceId: "workspace:cas",
+      linkedWorktrees: [root],
+      linkedProjectRoots: [root],
+      claimRoot: join(root, "claims"),
+      mutationProposalRoot: join(root, "proposals"),
+      config: {} as RepositoryCoordinationLayout["config"],
+    };
+    const deadPid = 2_147_483_647;
+    const deadNonce = randomUUID();
+    const lockPath = join(layout.mutationProposalRoot, "LOCK");
+    await mkdir(lockPath, { recursive: true });
+    await writeFile(
+      join(lockPath, "owner.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        pid: deadPid,
+        hostname: hostname(),
+        nonce: deadNonce,
+        acquiredAt: "2026-08-02T00:00:00.000Z",
+      })}\n`,
+    );
+    let validated!: () => void;
+    const validatedBarrier = new Promise<void>((resolveValidated) => {
+      validated = resolveValidated;
+    });
+    let resume!: () => void;
+    const resumeBarrier = new Promise<void>((resolveResume) => {
+      resume = resolveResume;
+    });
+    const first = new MutationProposalStore(root, {
+      resolveLayout: async () => layout,
+      isProcessAlive: (pid) => pid !== deadPid,
+      afterRecoveryClaimValidated: async (expectedOwnerNonce) => {
+        expect(expectedOwnerNonce).toBe(deadNonce);
+        validated();
+        await resumeBarrier;
+      },
+    });
+    const firstRead = first.readAll();
+    await validatedBarrier;
+
+    try {
+      const contender = new MutationProposalStore(root, {
+        resolveLayout: async () => layout,
+        isProcessAlive: (pid) => pid !== deadPid,
+        waitTimeoutMs: 0,
+      });
+      await expect(contender.readAll()).rejects.toThrow("mutation proposal store は使用中です");
+    } finally {
+      resume();
+    }
+    await expect(firstRead).resolves.toMatchObject({
+      projectIdentity: layout.projectIdentity,
+      revision: 0,
+    });
+  });
+
   it("2 process相当のapply reservationは単一lock transactionで一方だけ勝つ", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-cas-"));
     const layout: RepositoryCoordinationLayout = {
@@ -286,7 +487,7 @@ describe("[NFR-STABILITY-014-AC8] mutation proposal storeのCAS", () => {
     await expect(store.assertApplication(newOwner.lease)).resolves.toEqual(newOwner.lease);
   });
 
-  it("journal lock待機中のreservation takeover後は旧ownerのstep CASを拒否し新ownerだけが確定する", async () => {
+  it("journal lock待機中に期限切れreservationをtakeoverすると旧ownerのstep CASを拒否する", async () => {
     const root = await mkdtemp(join(tmpdir(), "gh-gantt-proposal-journal-takeover-"));
     await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
     await mkdir(join(root, ".gantt-sync"), { recursive: true });
@@ -339,7 +540,7 @@ describe("[NFR-STABILITY-014-AC8] mutation proposal storeのCAS", () => {
       commandId: "apply-journal",
       commandFingerprint: mutationCommandFingerprint({ commandId: "apply-journal" }),
       ownerNonce: "11111111-1111-4111-8111-111111111111",
-      leaseDurationSeconds: 60,
+      leaseDurationSeconds: 120,
     });
     if (!oldApplication.ok) throw new Error("旧application owner fixtureを取得できません");
     const oldReservation = await claimStore.reserveMutation({
@@ -374,6 +575,7 @@ describe("[NFR-STABILITY-014-AC8] mutation proposal storeのCAS", () => {
       withMutationReservation: claimStore.withMutationReservation.bind(claimStore),
     });
     await recordAttempted.promise;
+    now = "2026-08-02T00:01:01.000Z";
     const newReservation = await claimStore.reserveMutation({
       proposalId: applying.proposalId,
       ownerNonce: "22222222-2222-4222-8222-222222222222",
@@ -390,7 +592,7 @@ describe("[NFR-STABILITY-014-AC8] mutation proposal storeのCAS", () => {
       steps: [{ state: "not_started" }],
     });
 
-    now = "2026-08-02T00:01:01.000Z";
+    now = "2026-08-02T00:02:01.000Z";
     const newApplication = await store.claimApplication({
       proposalId: applying.proposalId,
       commandId: "apply-journal",
