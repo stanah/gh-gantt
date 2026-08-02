@@ -192,7 +192,9 @@ export class RunGraphControlPlane {
       );
     }
     const taskId = `${view.task.owner}/${view.task.repo}#${view.task.issueNumber}`.toLowerCase();
-    const commandFingerprint = createHash("sha256").update(JSON.stringify(input)).digest("hex");
+    const commandFingerprint = createHash("sha256")
+      .update(canonicalJsonStringify(input))
+      .digest("hex");
     const authorizationInput = {
       schemaVersion: "1",
       eventId: input.eventId,

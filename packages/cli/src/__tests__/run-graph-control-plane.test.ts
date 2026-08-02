@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import { gitFixtureEnvironment } from "./git-fixture.js";
 import { execFile } from "node:child_process";
@@ -6,10 +7,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import {
+  canonicalJsonStringify,
   FIXED_DEV_ROLE_GRAPH_CONTRACT,
   GANTT_DIR,
   RUN_GRAPH_DIR,
   RUN_GRAPH_RUNS_DIR,
+  type RunGraphRunnerCommandInput,
 } from "@gh-gantt/shared";
 import { RunGraphControlPlane, type DispatchClaimAuthority } from "../run-graph/control-plane.js";
 import { GraphContractStore } from "../store/graph-contract.js";
@@ -3103,6 +3106,75 @@ describe("[NFR-STABILITY-014-AC9] claim lifecycle audit と completion fencing",
       },
     });
     await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 2, claims: [{}] });
+  });
+
+  it("key 順を変えた claimed completion の exact retry を canonical binding に収束させる", async () => {
+    const { root, control, runId, nodeId, claimed } = await createClaimedControlPlane();
+    const proof = {
+      claimId: claimed.claim.claimId,
+      fencingToken: claimed.claim.fencingToken,
+      ownerId: claimed.claim.ownerId,
+      runId,
+    };
+    const completion = {
+      schemaVersion: "1" as const,
+      eventId: "canonical-key-order-completion",
+      runId,
+      actor: { id: "task-runner", role: "planner" as const },
+      command: {
+        type: "attempt_finished" as const,
+        nodeId,
+        attemptId: "planner-attempt",
+        outcome: "succeeded" as const,
+        artifactIds: [],
+        evidenceIds: ["canonical-key-order-evidence"],
+      },
+      evidence: [commandEvidence("canonical-key-order-evidence")],
+    } satisfies RunGraphRunnerCommandInput;
+    const evidence = completion.evidence[0]!;
+    const reordered = {
+      evidence: [
+        {
+          reference: {
+            byteLength: evidence.reference.byteLength,
+            sha256: evidence.reference.sha256,
+            uri: evidence.reference.uri,
+            kind: evidence.reference.kind,
+          },
+          provenance: evidence.provenance,
+          artifactIds: evidence.artifactIds,
+          kind: evidence.kind,
+          id: evidence.id,
+        },
+      ],
+      command: {
+        evidenceIds: completion.command.evidenceIds,
+        artifactIds: completion.command.artifactIds,
+        outcome: completion.command.outcome,
+        attemptId: completion.command.attemptId,
+        nodeId: completion.command.nodeId,
+        type: completion.command.type,
+      },
+      actor: { role: completion.actor.role, id: completion.actor.id },
+      runId: completion.runId,
+      eventId: completion.eventId,
+      schemaVersion: completion.schemaVersion,
+    } satisfies RunGraphRunnerCommandInput;
+    const expectedFingerprint = createHash("sha256")
+      .update(canonicalJsonStringify(completion))
+      .digest("hex");
+
+    await expect(
+      control.applyClaimedEvent(completion, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+    await expect(
+      control.applyClaimedEvent(reordered, proof, claimed.entityVersion),
+    ).resolves.toMatchObject({ accepted: true });
+
+    const journal = await new RunGraphEventStore(root).readJournal(runId);
+    const accepted = journal.acceptedEvents.filter((event) => event.eventId === completion.eventId);
+    expect(accepted).toHaveLength(1);
+    expect(accepted[0]?.dispatchAuthorization?.commandFingerprint).toBe(expectedFingerprint);
   });
 
   it("receipt publish 後に reclaim された exact retry は旧 claim 継続 proof を返さない", async () => {
