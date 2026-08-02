@@ -24,7 +24,7 @@ import { TasksStore } from "../store/tasks.js";
 
 const execFileAsync = promisify(execFile);
 
-describe("canonical dispatch fingerprint", () => {
+describe("dispatch fingerprint を正規化する", () => {
   it("mixed-case key を locale ではなく code unit 順で固定する", () => {
     const expected = createHash("sha256")
       .update(JSON.stringify({ Z: 1, a: 2 }))
