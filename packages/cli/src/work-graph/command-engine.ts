@@ -17,6 +17,7 @@ import {
 } from "../sync/mutation-remote-projection.js";
 
 export type WorkGraphCommandErrorCode =
+  | "invalid_command"
   | "task_not_found"
   | "invalid_task_type"
   | "invalid_hierarchy"
@@ -980,7 +981,11 @@ export class WorkGraphCommandEngine {
           error: `Unknown type: ${type}`,
         };
       }
-      if (parentType && !(this.config.type_hierarchy[parentType] ?? []).includes(type)) {
+      if (
+        parentType &&
+        Object.keys(this.config.type_hierarchy).length > 0 &&
+        !(this.config.type_hierarchy[parentType] ?? []).includes(type)
+      ) {
         return {
           ok: false as const,
           code: "invalid_hierarchy" as const,
@@ -1032,11 +1037,20 @@ export class WorkGraphCommandEngine {
       const blockerResult = requireTask(intent.blockerTaskId);
       if (!blockerResult.ok) return blockerResult;
       const task = taskResult.task;
+      const dependencyExists = task.blocked_by.some((item) => item.task === intent.blockerTaskId);
+      if (
+        (intent.operation === "add" && dependencyExists) ||
+        (intent.operation === "remove" && !dependencyExists)
+      ) {
+        return {
+          ok: false,
+          code: "invalid_command",
+          error: `依存関係が変化しない操作です: ${intent.operation} ${intent.blockerTaskId}`,
+        };
+      }
       task.blocked_by =
         intent.operation === "add"
-          ? task.blocked_by.some((item) => item.task === intent.blockerTaskId)
-            ? task.blocked_by
-            : [...task.blocked_by, { task: intent.blockerTaskId, type: "finish-to-start", lag: 0 }]
+          ? [...task.blocked_by, { task: intent.blockerTaskId, type: "finish-to-start", lag: 0 }]
           : task.blocked_by.filter((item) => item.task !== intent.blockerTaskId);
       task.updated_at = this.now();
       addStep(
@@ -1158,6 +1172,20 @@ export class WorkGraphCommandEngine {
         { kind: "reopen_cancelled_task", beforeFingerprint },
       );
     } else {
+      if (new Set(intent.sourceTaskIds).size !== intent.sourceTaskIds.length) {
+        return {
+          ok: false,
+          code: "invalid_command",
+          error: "merge sourceTaskIds に重複は許可されません",
+        };
+      }
+      if (intent.sourceTaskIds.includes(intent.targetTaskId)) {
+        return {
+          ok: false,
+          code: "invalid_command",
+          error: "merge target は source と別 task である必要があります",
+        };
+      }
       const targetResult = requireTask(intent.targetTaskId);
       if (!targetResult.ok) return targetResult;
       for (const sourceId of intent.sourceTaskIds) {

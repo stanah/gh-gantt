@@ -96,6 +96,14 @@ describe("[NFR-STABILITY-014-AC8] Work Graph mutation 公開 contract", () => {
       }).success,
     ).toBe(false);
     expect(
+      WorkGraphMutationIntentSchema.safeParse({
+        kind: "merge",
+        sourceTaskIds: ["stanah/gh-gantt#11", "stanah/gh-gantt#11"],
+        targetTaskId: "stanah/gh-gantt#10",
+        sourceDisposition: "close",
+      }).success,
+    ).toBe(false);
+    expect(
       WorkGraphMutationIntentSchema.safeParse({ kind: "delete", targetTaskId: "x/y#1" }).success,
     ).toBe(false);
   });

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { SyncState, Task, TasksFile } from "@gh-gantt/shared";
 import { applyTaskDeletion, executeTaskDeletion, planTaskDeletion } from "../commands/delete.js";
+import type { WorkGraphCommandEngine } from "../work-graph/command-engine.js";
 
 function makeTask(id: string, overrides: Partial<Task> = {}): Task {
   const issueNumber = Number(id.split("#")[1]);
@@ -226,6 +227,55 @@ describe("[FR-CLI-017-AC1] delete command は誤作成 Issue と mirror 参照�
     expect(result.tasksFile.tasks.map((task) => task.id)).toEqual(["owner/repo#3"]);
     expect(result.tasksFile.tasks[0]!.blocked_by).toEqual([]);
     expect(result.syncState.id_map["other/project#2"]).toBeUndefined();
+  });
+
+  it("hard-delete reconciliationが返したtasksを最終mirrorへ反映する", async () => {
+    const target = makeTask("owner/repo#1");
+    const survivor = makeTask("owner/repo#2");
+    const tasksFile = makeTasksFile([target, survivor]);
+    const syncState = makeSyncState(tasksFile.tasks.map((task) => task.id));
+    const commandTypes: string[] = [];
+    const commandEngine = {
+      executeCommand(command) {
+        commandTypes.push(command.type);
+        if (command.type === "hard_delete_plan") {
+          return {
+            ok: true,
+            operation: "hard_delete_plan",
+            tasks: command.tasks.filter((task) => task.id !== command.deletedTaskId),
+            affectedTaskIds: [command.deletedTaskId],
+            primitives: [],
+          };
+        }
+        if (command.type === "hard_delete_reconciliation") {
+          return {
+            ok: true,
+            operation: "hard_delete_reconciliation",
+            tasks: command.tasks.map((task) => ({ ...task, title: "reconciliation反映済み" })),
+            affectedTaskIds: [command.deletedTaskId],
+            primitives: [],
+          };
+        }
+        throw new Error(`unexpected command: ${command.type}`);
+      },
+    } as Pick<WorkGraphCommandEngine, "executeCommand">;
+
+    const result = await executeTaskDeletion({
+      tasksFile,
+      syncState,
+      taskId: target.id,
+      yes: true,
+      commandEngine,
+      deleteGithubIssue: async () => {},
+      forcePull: async (cleaned) => cleaned,
+    });
+
+    expect(result).toMatchObject({ ok: true });
+    if (!result.ok) throw new Error(result.error);
+    expect(commandTypes).toEqual(["hard_delete_plan", "hard_delete_reconciliation"]);
+    expect(result.tasksFile.tasks).toEqual([
+      expect.objectContaining({ id: survivor.id, title: "reconciliation反映済み" }),
+    ]);
   });
 
   it("--yes がない場合は GitHub Issue を削除しない", async () => {

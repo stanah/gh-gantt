@@ -476,6 +476,10 @@ const WorkGraphMutationIntentSchemaValue: z.ZodType<WorkGraphMutationIntent> = z
       sourceDisposition: z.literal("close"),
     })
     .strict()
+    .refine((value) => new Set(value.sourceTaskIds).size === value.sourceTaskIds.length, {
+      path: ["sourceTaskIds"],
+      message: "merge sourceTaskIds に重複は許可されません",
+    })
     .refine((value) => !value.sourceTaskIds.includes(value.targetTaskId), {
       message: "merge target は source と別 task である必要があります",
     }),

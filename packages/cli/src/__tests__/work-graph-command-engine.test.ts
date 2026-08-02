@@ -172,6 +172,76 @@ describe("[NFR-STABILITY-014-AC8] Work Graph変更commandの共通engine", () =>
     if (!drift.ok) expect(drift.code).toBe("scope_drift");
   });
 
+  it("既存依存の追加と存在しない依存の削除をno-opとして拒否する", () => {
+    const blocker = task("example/public#1");
+    const target = task("example/public#2", {
+      blocked_by: [{ task: blocker.id, type: "finish-to-start", lag: 0 }],
+    });
+
+    expect(
+      engine.planMutation([blocker, target], {
+        kind: "dependency",
+        operation: "add",
+        taskId: target.id,
+        blockerTaskId: blocker.id,
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+    expect(
+      engine.planMutation([blocker, task("example/public#3")], {
+        kind: "dependency",
+        operation: "remove",
+        taskId: "example/public#3",
+        blockerTaskId: blocker.id,
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+  });
+
+  it("type hierarchy未設定時はparent付きaddとsplitを許可する", () => {
+    const hierarchyFreeEngine = new WorkGraphCommandEngine({ ...config, type_hierarchy: {} });
+    const parent = task("example/public#1", { type: "epic" });
+
+    expect(
+      hierarchyFreeEngine.planMutation([parent], {
+        kind: "add",
+        parentTaskId: parent.id,
+        task: { clientId: "child", title: "子task", type: "task" },
+      }),
+    ).toMatchObject({ ok: true });
+    expect(
+      hierarchyFreeEngine.planMutation([parent], {
+        kind: "split",
+        targetTaskId: parent.id,
+        children: [
+          { clientId: "first", title: "first", type: "task" },
+          { clientId: "second", title: "second", type: "task" },
+        ],
+        sourceDisposition: "keep",
+      }),
+    ).toMatchObject({ ok: true });
+  });
+
+  it("schemaを介さないmerge計画でもsource重複とtarget混入を拒否する", () => {
+    const target = task("example/public#1");
+    const source = task("example/public#2");
+
+    expect(
+      engine.planMutation([target, source], {
+        kind: "merge",
+        sourceTaskIds: [source.id, source.id],
+        targetTaskId: target.id,
+        sourceDisposition: "close",
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+    expect(
+      engine.planMutation([target, source], {
+        kind: "merge",
+        sourceTaskIds: [source.id, target.id],
+        targetTaskId: target.id,
+        sourceDisposition: "close",
+      }),
+    ).toMatchObject({ ok: false, code: "invalid_command" });
+  });
+
   it("Run subtree scope内のaddはtop-level root escapeを拒否する", () => {
     const root = task("example/public#1", { type: "epic" });
     const result = engine.planMutation(

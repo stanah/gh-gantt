@@ -46,7 +46,7 @@ export interface TaskDeletionInput {
   now?: string;
   deleteGithubIssue: (input: DeleteGithubIssueInput) => Promise<void>;
   forcePull: (input: ForcePullInput) => Promise<{ tasksFile: TasksFile; syncState: SyncState }>;
-  commandEngine?: WorkGraphCommandEngine;
+  commandEngine?: Pick<WorkGraphCommandEngine, "executeCommand">;
 }
 
 export type TaskDeletionResult =
@@ -244,6 +244,17 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
       error: `削除後の再同期で対象 task への参照が残っています: ${danglingReferences.join(", ")}`,
     };
   }
+  const reconciliation = input.commandEngine?.executeCommand({
+    type: "hard_delete_reconciliation",
+    deletedTaskId: plan.taskId,
+    tasks: pulled.tasksFile.tasks,
+  });
+  if (reconciliation && !reconciliation.ok) {
+    return { ok: false, error: reconciliation.error };
+  }
+  if (reconciliation?.ok) {
+    pulled.tasksFile = { ...pulled.tasksFile, tasks: reconciliation.tasks };
+  }
 
   return {
     ok: true,
@@ -306,17 +317,6 @@ export function createDeleteCommand(): Command {
             } else {
               console.error(result.error);
             }
-            process.exitCode = 1;
-            return;
-          }
-
-          const reconciliation = new WorkGraphCommandEngine(config).executeCommand({
-            type: "hard_delete_reconciliation",
-            deletedTaskId: result.taskId,
-            tasks: result.tasksFile.tasks,
-          });
-          if (!reconciliation.ok) {
-            console.error(reconciliation.error);
             process.exitCode = 1;
             return;
           }

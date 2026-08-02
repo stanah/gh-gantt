@@ -13,6 +13,7 @@ import {
 } from "../store/dispatch-claims.js";
 import { MutationProposalStore } from "../store/mutation-proposals.js";
 import { resolveRepositoryCoordinationLayout } from "../store/repository-coordination-layout.js";
+import { isNotGitRepositoryError } from "../util/git-errors.js";
 
 const execFileAsync = promisify(execFile);
 const CONFIG = `${JSON.stringify(
@@ -40,6 +41,13 @@ const CONFIG = `${JSON.stringify(
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-"));
   await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
+  await mkdir(join(root, ".gantt-sync"), { recursive: true });
+  await writeFile(join(root, ".gantt-sync", "gantt.config.json"), CONFIG);
+  return root;
+}
+
+async function standaloneProject(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-standalone-"));
   await mkdir(join(root, ".gantt-sync"), { recursive: true });
   await writeFile(join(root, ".gantt-sync", "gantt.config.json"), CONFIG);
   return root;
@@ -159,6 +167,49 @@ function reverseObjectKeyOrder(value: unknown): unknown {
 }
 
 describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () => {
+  it("Git管理外ではproject rootを単一workspaceのcoordination layoutとして使う", async () => {
+    const root = await standaloneProject();
+    const layout = await resolveRepositoryCoordinationLayout(root);
+    const canonicalRoot = await realpath(root);
+
+    expect(layout.projectRoot).toBe(canonicalRoot);
+    expect(layout.commonDir).toBe(canonicalRoot);
+    expect(layout.linkedWorktrees).toEqual([canonicalRoot]);
+    expect(layout.linkedProjectRoots).toEqual([canonicalRoot]);
+    expect(layout.claimRoot).toContain(join(canonicalRoot, "gh-gantt", "coordination", "v1"));
+  });
+
+  it("configのないGit管理外rootではstandalone caller向けnon-Git signalを維持する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-no-config-"));
+    let observed: unknown;
+
+    try {
+      await resolveRepositoryCoordinationLayout(root);
+    } catch (error) {
+      observed = error;
+    }
+
+    expect(isNotGitRepositoryError(observed)).toBe(true);
+  });
+
+  it("repository判定後のmixed Git異常をnon-Git fallbackで隠さない", async () => {
+    const root = await standaloneProject();
+    const canonicalRoot = await realpath(root);
+    const repositoryDisappeared = Object.assign(new Error("repository disappeared"), {
+      stderr: "fatal: not a git repository",
+    });
+
+    await expect(
+      resolveRepositoryCoordinationLayout(root, {
+        runGit: async (_projectRoot, args) => {
+          if (args.includes("--show-toplevel")) return canonicalRoot;
+          if (args.includes("--git-common-dir")) throw repositoryDisappeared;
+          throw new Error("worktree probe permission denied");
+        },
+      }),
+    ).rejects.toBe(repositoryDisappeared);
+  });
+
   it("coordination namespace は v1 を使用し、旧 1 namespace へ fallback しない", async () => {
     const root = await repository();
     const claims = store(root, () => "2026-08-02T00:00:00.000Z");
