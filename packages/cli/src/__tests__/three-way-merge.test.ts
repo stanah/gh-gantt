@@ -144,6 +144,23 @@ describe("[FR-SYNC-001-AC1] ローカル・リモート両方が変更した場�
       expect(result.conflicts).toHaveLength(1);
       expect(result.conflicts[0].field).toBe("labels");
     });
+
+    it("[NFR-STABILITY-014-AC8] sub_tasks のremote-only並べ替えを採用する", () => {
+      const base = makeSyncFields({ sub_tasks: ["repo#1", "repo#2", "repo#3"] });
+      const incoming = makeSyncFields({ sub_tasks: ["repo#3", "repo#1", "repo#2"] });
+      const result = threeWayMerge(base, base, incoming);
+      expect(result.conflicts).toEqual([]);
+      expect(result.merged.sub_tasks).toEqual(incoming.sub_tasks);
+    });
+
+    it("[NFR-STABILITY-014-AC8] 異なる両側のsub_tasks並べ替えをconflictにする", () => {
+      const base = makeSyncFields({ sub_tasks: ["repo#1", "repo#2", "repo#3"] });
+      const current = makeSyncFields({ sub_tasks: ["repo#2", "repo#1", "repo#3"] });
+      const incoming = makeSyncFields({ sub_tasks: ["repo#1", "repo#3", "repo#2"] });
+      const result = threeWayMerge(base, current, incoming);
+      expect(result.conflicts.map((item) => item.field)).toEqual(["sub_tasks"]);
+      expect(result.merged.sub_tasks).toEqual(current.sub_tasks);
+    });
   });
 
   describe("blocked_by with type/lag", () => {

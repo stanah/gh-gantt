@@ -14,6 +14,7 @@ import {
   parseEstimateHours,
 } from "@gh-gantt/shared";
 import type { Task, TaskTemplates } from "@gh-gantt/shared";
+import { WorkGraphCommandEngine } from "../work-graph/command-engine.js";
 
 const TaskTemplateContentSchema = z.string();
 
@@ -303,16 +304,17 @@ export function createCreateCommand(): Command {
             );
           }
 
-          // parent指定時は親のsub_tasksも更新する
-          // （parentの存在は正規化時に検証済み）
-          if (parent) {
-            const parentTask = tasksFile.tasks.find((t) => t.id === parent);
-            if (parentTask && !parentTask.sub_tasks.includes(taskId)) {
-              parentTask.sub_tasks.push(taskId);
-            }
+          const graphValidation = new WorkGraphCommandEngine(config).executeCommand({
+            type: "create",
+            tasks: tasksFile.tasks,
+            task,
+          });
+          if (!graphValidation.ok) {
+            console.error(graphValidation.error);
+            process.exitCode = 1;
+            return;
           }
-
-          tasksFile.tasks.push(task);
+          tasksFile.tasks = graphValidation.tasks;
           await tasksStore.write(tasksFile);
           await storage.flush();
 

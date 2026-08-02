@@ -1581,9 +1581,27 @@ areas:
           - id: NFR-STABILITY-014-AC8
             description: |
               bounded parallelism と approval-gated な Work Graph 変更を、
-              stable ID と event lineage を壊さない versioned extension として追加できる
-            status: uncovered
-            tests: []
+              stable ID と event lineage を壊さない versioned extension として追加できる。
+              remote副作用中はlease expiry後もdispatchと排他し、nested targetはorigin/ancestorまで予約する。
+              compensationは最新successor descriptorをimmutable invalidation lineageへ記録する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/hash.test.ts
+              - packages/cli/src/__tests__/human-approval-authority.test.ts
+              - packages/cli/src/__tests__/mutation-proposal-control-plane.test.ts
+              - packages/cli/src/__tests__/mutation-proposal-store.test.ts
+              - packages/cli/src/__tests__/production-mutation-environment.test.ts
+              - packages/cli/src/__tests__/production-mutation-store-crash.test.ts
+              - packages/cli/src/__tests__/push-executor.test.ts
+              - packages/cli/src/__tests__/push-relationships.test.ts
+              - packages/cli/src/__tests__/regressions/issue-331-work-graph-mutation.test.ts
+              - packages/cli/src/__tests__/run-graph-control-plane.test.ts
+              - packages/cli/src/__tests__/sub-issue-order.test.ts
+              - packages/cli/src/__tests__/three-way-merge.test.ts
+              - packages/cli/src/__tests__/work-graph-command-engine.test.ts
+              - packages/shared/src/__tests__/work-graph-mutation.test.ts
+              - tests/workflow/gh-gantt-decompose-skill.test.ts
+              - tests/workflow/mutation-proposal-workflow.test.ts
           - id: NFR-STABILITY-014-AC9
             description: |
               ready frontier は global/state/repository 上限内で isolated workspace を claim/lease し、shared strict dispatch

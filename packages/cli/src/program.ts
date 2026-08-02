@@ -21,6 +21,7 @@ import { loopCommand } from "./commands/loop.js";
 import { deleteCommand } from "./commands/delete.js";
 import { createRunCommand } from "./commands/run.js";
 import { storageCommand } from "./commands/storage.js";
+import { createMutationCommand } from "./commands/mutation.js";
 
 export function buildProgram(): Command {
   const program = new Command();
@@ -44,6 +45,7 @@ export function buildProgram(): Command {
   program.addCommand(deleteCommand);
   program.addCommand(createRunCommand());
   program.addCommand(storageCommand);
+  program.addCommand(createMutationCommand());
 
   // Flattened task commands (formerly under `task` subcommand)
   program.addCommand(createTaskListCommand());

@@ -3824,4 +3824,269 @@ describe("[NFR-STABILITY-014-AC9] claim lifecycle audit と completion fencing",
     ).toBe(false);
     await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 3, claims: [] });
   });
+
+  describe("[NFR-STABILITY-014-AC8][Issue #331] Work Graph無効化とreplan gate", () => {
+    const successorPlanRevision = {
+      planId: "dev-role-fixed",
+      fromVersion: "1",
+      proposedVersion: "1+proposal.proposal-331",
+      reasonProposalId: "proposal-331",
+    };
+
+    it("invalidationはwaiting_humanへ投影しverified human replanだけが新しいstable nodeへ進める", async () => {
+      const { root, control } = await createControlPlane();
+      const runId = await startRun(control, "issue-331-start");
+      const before = await control.inspect(runId, 100);
+      const previousNodeId = before.currentNode!.id;
+      const contract = { ...before.contract };
+      const accepted = await control.applyMutationAudit({
+        schemaVersion: "1",
+        eventId: "issue-331-invalidated",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "work_graph_invalidated",
+          proposalId: "proposal-331",
+          proposalRevision: 4,
+          coverageFingerprint: "a".repeat(64),
+          affectedTaskIds: ["stanah/gh-gantt#328"],
+          successorPlanRevision,
+        },
+      });
+      expect(accepted).toMatchObject({
+        accepted: true,
+        view: {
+          state: "waiting_human",
+          currentNode: { id: previousNodeId, state: "waiting_human" },
+          contract,
+        },
+      });
+
+      const forged = await control.applyMutationAudit({
+        schemaVersion: "1",
+        eventId: "issue-331-replan-wrong-binding",
+        runId,
+        actor: { id: "MDQ6VXNlcjEyMw==", role: "human" },
+        command: {
+          type: "work_graph_replan_accepted",
+          proposalId: "proposal-331",
+          proposalRevision: 5,
+          verifiedHumanDecision: {
+            decision: "approved",
+            evidenceId: "human-decision-331",
+            authorNodeId: "MDQ6VXNlcjEyMw==",
+            proposalFingerprint: "a".repeat(64),
+            authorityConfigFingerprint: "b".repeat(64),
+            receiptFingerprint: "c".repeat(64),
+          },
+          graphContractBinding: contract,
+          successorPlanRevision,
+          successorNodeId: "node-successor-331",
+        },
+      });
+      expect(forged).toMatchObject({
+        accepted: false,
+        code: "authority_denied",
+        stateUnchanged: true,
+        view: { state: "waiting_human", currentNode: { id: previousNodeId } },
+      });
+
+      const verifiedControl = new RunGraphControlPlane(root, {
+        ...deterministicDependencies(),
+        verifyReplanApproval: async (command) =>
+          command.verifiedHumanDecision.receiptFingerprint === "c".repeat(64),
+      });
+      const wrongBinding = await verifiedControl.applyMutationAudit({
+        schemaVersion: "1",
+        eventId: "issue-331-replan-wrong-contract",
+        runId,
+        actor: { id: "MDQ6VXNlcjEyMw==", role: "human" },
+        command: {
+          type: "work_graph_replan_accepted",
+          proposalId: "proposal-331",
+          proposalRevision: 5,
+          verifiedHumanDecision: {
+            decision: "approved",
+            evidenceId: "human-decision-331",
+            authorNodeId: "MDQ6VXNlcjEyMw==",
+            proposalFingerprint: "a".repeat(64),
+            authorityConfigFingerprint: "b".repeat(64),
+            receiptFingerprint: "c".repeat(64),
+          },
+          graphContractBinding: { ...contract, planVersion: "changed" },
+          successorPlanRevision,
+          successorNodeId: "node-successor-331",
+        },
+      });
+      expect(wrongBinding).toMatchObject({
+        accepted: false,
+        code: "unsupported_contract_binding",
+        stateUnchanged: true,
+      });
+
+      const replanned = await verifiedControl.applyMutationAudit({
+        schemaVersion: "1",
+        eventId: "issue-331-replan-accepted",
+        runId,
+        actor: { id: "MDQ6VXNlcjEyMw==", role: "human" },
+        command: {
+          type: "work_graph_replan_accepted",
+          proposalId: "proposal-331",
+          proposalRevision: 5,
+          verifiedHumanDecision: {
+            decision: "approved",
+            evidenceId: "human-decision-331",
+            authorNodeId: "MDQ6VXNlcjEyMw==",
+            proposalFingerprint: "a".repeat(64),
+            authorityConfigFingerprint: "b".repeat(64),
+            receiptFingerprint: "c".repeat(64),
+          },
+          graphContractBinding: contract,
+          successorPlanRevision,
+          successorNodeId: "node-successor-331",
+        },
+      });
+      expect(replanned).toMatchObject({
+        accepted: true,
+        view: {
+          state: "running",
+          currentNode: {
+            id: "node-successor-331",
+            state: "ready",
+            previousNodeId,
+          },
+          contract,
+        },
+      });
+      const journal = await new RunGraphEventStore(root).readJournal(runId);
+      expect(journal.acceptedEvents.map((event) => event.eventId)).toEqual([
+        "issue-331-start",
+        "issue-331-invalidated",
+        "issue-331-replan-accepted",
+      ]);
+      expect(journal.acceptedEvents[0]!.command).toMatchObject({
+        type: "run_started",
+        contract,
+      });
+    });
+
+    it("compensationのimmutable invalidation lineageより古いsuccessor descriptorを拒否する", async () => {
+      const { root, control } = await createControlPlane();
+      const runId = await startRun(control, "issue-331-compensation-lineage-start");
+      const view = await control.inspect(runId);
+      const compensatedSuccessor = {
+        ...successorPlanRevision,
+        proposedVersion: "1+compensation.proposal-331",
+      };
+      for (const [eventId, successor] of [
+        ["issue-331-original-invalidation", successorPlanRevision],
+        ["issue-331-compensation-invalidation", compensatedSuccessor],
+      ] as const) {
+        await expect(
+          control.applyMutationAudit({
+            schemaVersion: "1",
+            eventId,
+            runId,
+            actor: { id: "gh-gantt:mutation-control-plane", role: "orchestrator" },
+            command: {
+              type: "work_graph_invalidated",
+              proposalId: "proposal-331",
+              proposalRevision: 6,
+              coverageFingerprint: "a".repeat(64),
+              affectedTaskIds: ["stanah/gh-gantt#328"],
+              successorPlanRevision: successor,
+            },
+          }),
+        ).resolves.toMatchObject({ accepted: true });
+      }
+      const verified = new RunGraphControlPlane(root, {
+        ...deterministicDependencies(),
+        verifyReplanApproval: async () => true,
+      });
+      const commandBase = {
+        type: "work_graph_replan_accepted" as const,
+        proposalId: "proposal-331",
+        proposalRevision: 7,
+        verifiedHumanDecision: {
+          decision: "approved" as const,
+          evidenceId: "human-decision-compensated",
+          authorNodeId: "U_REVIEWER",
+          proposalFingerprint: "a".repeat(64),
+          authorityConfigFingerprint: "b".repeat(64),
+          receiptFingerprint: "c".repeat(64),
+        },
+        graphContractBinding: view.contract,
+      };
+      await expect(
+        verified.applyMutationAudit({
+          schemaVersion: "1",
+          eventId: "issue-331-stale-successor",
+          runId,
+          actor: { id: "U_REVIEWER", role: "human" },
+          command: {
+            ...commandBase,
+            successorPlanRevision,
+            successorNodeId: "stale-successor-node",
+          },
+        }),
+      ).resolves.toMatchObject({
+        accepted: false,
+        code: "evidence_required",
+        stateUnchanged: true,
+      });
+      await expect(
+        verified.applyMutationAudit({
+          schemaVersion: "1",
+          eventId: "issue-331-compensated-successor",
+          runId,
+          actor: { id: "U_REVIEWER", role: "human" },
+          command: {
+            ...commandBase,
+            successorPlanRevision: compensatedSuccessor,
+            successorNodeId: "compensated-successor-node",
+          },
+        }),
+      ).resolves.toMatchObject({ accepted: true });
+    });
+
+    it("created/running Attemptがある間はeventをappendせずactive_attempt_conflictにする", async () => {
+      const { root, control } = await createControlPlane();
+      const runId = await startRun(control, "issue-331-active-start");
+      const view = await control.inspect(runId);
+      await control.applyEvent({
+        schemaVersion: "1",
+        eventId: "issue-331-attempt-start",
+        runId,
+        actor: { id: "planner-1", role: "planner" },
+        command: {
+          type: "attempt_started",
+          nodeId: view.currentNode!.id,
+          attemptId: "attempt-331",
+        },
+      });
+      const rejected = await control.applyMutationAudit({
+        schemaVersion: "1",
+        eventId: "issue-331-invalidated-active",
+        runId,
+        actor: { id: "orchestrator-1", role: "orchestrator" },
+        command: {
+          type: "work_graph_invalidated",
+          proposalId: "proposal-331",
+          proposalRevision: 4,
+          coverageFingerprint: "b".repeat(64),
+          affectedTaskIds: ["stanah/gh-gantt#328"],
+          successorPlanRevision,
+        },
+      });
+      expect(rejected).toMatchObject({
+        accepted: false,
+        code: "active_attempt_conflict",
+        stateUnchanged: true,
+      });
+      const journal = await new RunGraphEventStore(root).readJournal(runId);
+      expect(
+        journal.acceptedEvents.some((event) => event.eventId === "issue-331-invalidated-active"),
+      ).toBe(false);
+    });
+  });
 });

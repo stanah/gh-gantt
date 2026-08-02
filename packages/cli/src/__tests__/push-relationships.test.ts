@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { applyBlockedByLinks } from "../github/issues.js";
 import type { Task, Dependency } from "@gh-gantt/shared";
 import type { BlockedByLink } from "../github/sub-issues.js";
+import { reprioritizeSubIssue } from "../github/mutations.js";
 
 const baseTask: Task = {
   id: "owner/repo#1",
@@ -29,6 +30,50 @@ const baseTask: Task = {
 };
 
 // mergeRemoteIntoLocal tests removed — replaced by 3-way merge in three-way-merge.test.ts
+
+describe("[NFR-STABILITY-014-AC8] reprioritizeSubIssue要求", () => {
+  it("公式inputとissue/clientMutationIdだけを要求する", async () => {
+    let query = "";
+    let variables: Record<string, unknown> = {};
+    const gql = (async (document: string, input: Record<string, unknown>) => {
+      query = document;
+      variables = input;
+      return { reprioritizeSubIssue: { issue: { id: "I_parent" }, clientMutationId: null } };
+    }) as never;
+    await reprioritizeSubIssue(gql, {
+      parentIssueNodeId: "I_parent",
+      subIssueNodeId: "I_child",
+      beforeNodeId: "I_before",
+    });
+    expect(query).toContain("reprioritizeSubIssue");
+    expect(query).not.toContain("subIssue { id }");
+    expect(query).toContain("clientMutationId");
+    expect(variables).toEqual({
+      issueId: "I_parent",
+      subIssueId: "I_child",
+      beforeId: "I_before",
+      afterId: undefined,
+    });
+  });
+
+  it("before/afterの両指定と両欠損を拒否する", async () => {
+    const gql = (async () => ({})) as never;
+    await expect(
+      reprioritizeSubIssue(gql, {
+        parentIssueNodeId: "I_parent",
+        subIssueNodeId: "I_child",
+      }),
+    ).rejects.toThrow("どちらか一方");
+    await expect(
+      reprioritizeSubIssue(gql, {
+        parentIssueNodeId: "I_parent",
+        subIssueNodeId: "I_child",
+        beforeNodeId: "I_before",
+        afterNodeId: "I_after",
+      }),
+    ).rejects.toThrow("どちらか一方");
+  });
+});
 
 describe("applyBlockedByLinks", () => {
   it("applies blocked_by links to tasks", () => {

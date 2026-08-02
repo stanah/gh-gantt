@@ -1052,10 +1052,75 @@ export interface RunGraphStartedCommand {
   firstNodeId: string;
 }
 
+export type RunGraphMutationAuditCommand =
+  | {
+      type: "work_graph_mutation_audit";
+      auditType:
+        | "proposal_created"
+        | "proposal_approved"
+        | "proposal_rejected"
+        | "proposal_expired"
+        | "proposal_superseded"
+        | "proposal_apply_step"
+        | "proposal_applied"
+        | "proposal_reconciled"
+        | "proposal_compensated";
+      proposalId: string;
+      proposalRevision: number;
+      detailFingerprint: string;
+    }
+  | {
+      type: "work_graph_invalidated";
+      proposalId: string;
+      proposalRevision: number;
+      coverageFingerprint: string;
+      affectedTaskIds: string[];
+      successorPlanRevision: {
+        planId: string;
+        fromVersion: string;
+        proposedVersion: string;
+        reasonProposalId: string;
+      };
+    }
+  | {
+      type: "work_graph_replan_accepted";
+      proposalId: string;
+      proposalRevision: number;
+      verifiedHumanDecision: {
+        decision: "approved";
+        evidenceId: string;
+        authorNodeId: string;
+        proposalFingerprint: string;
+        authorityConfigFingerprint: string;
+        receiptFingerprint: string;
+      };
+      graphContractBinding: {
+        planId: string;
+        planVersion: string;
+        schemaVersion: string;
+      };
+      successorPlanRevision: {
+        planId: string;
+        fromVersion: string;
+        proposedVersion: string;
+        reasonProposalId: string;
+      };
+      successorNodeId: string;
+    };
+
+export interface RunGraphMutationAuditInput {
+  schemaVersion: "1";
+  eventId: string;
+  runId: string;
+  actor: RunGraphActor;
+  command: RunGraphMutationAuditCommand;
+}
+
 export type RunGraphAcceptedCommand =
   | RunGraphStartedCommand
   | RunGraphRunnerCommand
-  | RunGraphClaimAuditCommand;
+  | RunGraphClaimAuditCommand
+  | RunGraphMutationAuditCommand;
 
 /** crash 後も exact completion だけを識別する immutable claim authorization binding。 */
 export interface RunGraphDispatchAuthorizationBinding {
@@ -1096,6 +1161,7 @@ export const RUN_GRAPH_REJECTION_CODES = [
   "pr_not_linked_to_task",
   "github_live_state_unavailable",
   "stale_claim",
+  "active_attempt_conflict",
 ] as const;
 
 export type RunGraphRejectionCode = (typeof RUN_GRAPH_REJECTION_CODES)[number];
@@ -1268,10 +1334,83 @@ const RunGraphStartedCommandSchema: z.ZodType<RunGraphStartedCommand> = z
   })
   .strict();
 
+const SuccessorPlanRevisionSchema = z
+  .object({
+    planId: z.string().min(1),
+    fromVersion: z.string().min(1),
+    proposedVersion: z.string().min(1),
+    reasonProposalId: z.string().min(1),
+  })
+  .strict();
+
+export const RunGraphMutationAuditCommandSchema: z.ZodType<RunGraphMutationAuditCommand> =
+  z.discriminatedUnion("type", [
+    z
+      .object({
+        type: z.literal("work_graph_mutation_audit"),
+        auditType: z.enum([
+          "proposal_created",
+          "proposal_approved",
+          "proposal_rejected",
+          "proposal_expired",
+          "proposal_superseded",
+          "proposal_apply_step",
+          "proposal_applied",
+          "proposal_reconciled",
+          "proposal_compensated",
+        ]),
+        proposalId: z.string().min(1),
+        proposalRevision: z.number().int().positive(),
+        detailFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("work_graph_invalidated"),
+        proposalId: z.string().min(1),
+        proposalRevision: z.number().int().positive(),
+        coverageFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+        affectedTaskIds: z.array(z.string().min(1)).min(1).max(100),
+        successorPlanRevision: SuccessorPlanRevisionSchema,
+      })
+      .strict(),
+    z
+      .object({
+        type: z.literal("work_graph_replan_accepted"),
+        proposalId: z.string().min(1),
+        proposalRevision: z.number().int().positive(),
+        verifiedHumanDecision: z
+          .object({
+            decision: z.literal("approved"),
+            evidenceId: z.string().min(1),
+            authorNodeId: z.string().min(1),
+            proposalFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+            authorityConfigFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+            receiptFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+          })
+          .strict(),
+        graphContractBinding: ContractReferenceSchema,
+        successorPlanRevision: SuccessorPlanRevisionSchema,
+        successorNodeId: OpaqueIdSchema,
+      })
+      .strict(),
+  ]);
+
+export const RunGraphMutationAuditInputSchema: z.ZodType<RunGraphMutationAuditInput> = z
+  .object({
+    schemaVersion: z.literal("1"),
+    eventId: OpaqueIdSchema,
+    runId: OpaqueIdSchema,
+    actor: RunGraphActorSchema,
+    command: RunGraphMutationAuditCommandSchema,
+  })
+  .strict();
+
 export const RunGraphAcceptedCommandSchema: z.ZodType<RunGraphAcceptedCommand> = z.union([
   RunGraphStartedCommandSchema,
   RunGraphRunnerCommandSchema,
   RunGraphClaimAuditCommandSchema,
+  RunGraphMutationAuditCommandSchema,
 ]);
 
 export const RunGraphDispatchAuthorizationBindingSchema: z.ZodType<RunGraphDispatchAuthorizationBinding> =

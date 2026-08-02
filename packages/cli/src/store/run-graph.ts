@@ -45,7 +45,7 @@ interface RunGraphPendingLocatorTransaction {
 }
 
 export interface RunGraphEventStoreDependencies {
-  /** test only: journal commit と派生 index commit の境界を模擬する。 */
+  /** テスト専用: journal commitと派生index commitの境界を模擬する。 */
   afterJournalCommit?: () => Promise<void>;
 }
 

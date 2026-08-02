@@ -20,6 +20,15 @@ export interface IssueRelationships {
   blockedBy: Array<{ number: number; repository: string }>;
 }
 
+class RelationshipPaginationError extends Error {}
+
+function isExplicitlyUnsupportedRelationshipCapability(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /Cannot query field ["'](?:subIssues|blockedBy)["'] on type ["']Issue["']|Field ["'](?:subIssues|blockedBy)["'] .*does(?: not|n't) exist on type ["']Issue["']/i.test(
+    message,
+  );
+}
+
 export async function fetchIssueRelationships(
   gql: typeof graphql,
   owner: string,
@@ -27,21 +36,74 @@ export async function fetchIssueRelationships(
   issueNumber: number,
 ): Promise<IssueRelationships> {
   try {
-    const result: any = await gql(ISSUE_RELATIONSHIPS_QUERY, { owner, repo, number: issueNumber });
-    const issue = result.repository.issue;
+    const relationships: IssueRelationships = { subIssues: [], blockedBy: [] };
+    let subIssuesCursor: string | null = null;
+    let blockedByCursor: string | null = null;
+    let hasNextSubIssues = true;
+    let hasNextBlockedBy = true;
+    while (hasNextSubIssues || hasNextBlockedBy) {
+      const result: any = await gql(ISSUE_RELATIONSHIPS_QUERY, {
+        owner,
+        repo,
+        number: issueNumber,
+        subIssuesCursor,
+        blockedByCursor,
+      });
+      const issue = result?.repository?.issue;
+      if (
+        !issue ||
+        !issue.subIssues ||
+        !Array.isArray(issue.subIssues.nodes) ||
+        !issue.subIssues.pageInfo ||
+        !issue.blockedBy ||
+        !Array.isArray(issue.blockedBy.nodes) ||
+        !issue.blockedBy.pageInfo
+      ) {
+        throw new Error("relationship responseが不完全です");
+      }
+      relationships.subIssues.push(
+        ...(issue.subIssues?.nodes ?? []).map((si: any) => ({
+          number: si.number,
+          repository: si.repository.nameWithOwner,
+        })),
+      );
+      relationships.blockedBy.push(
+        ...(issue.blockedBy?.nodes ?? []).map((bi: any) => ({
+          number: bi.number,
+          repository: bi.repository.nameWithOwner,
+        })),
+      );
+      hasNextSubIssues = issue.subIssues?.pageInfo?.hasNextPage === true;
+      hasNextBlockedBy = issue.blockedBy?.pageInfo?.hasNextPage === true;
+      const nextSubIssuesCursor = issue.subIssues?.pageInfo?.endCursor ?? null;
+      const nextBlockedByCursor = issue.blockedBy?.pageInfo?.endCursor ?? null;
+      if (
+        (hasNextSubIssues && (!nextSubIssuesCursor || nextSubIssuesCursor === subIssuesCursor)) ||
+        (hasNextBlockedBy && (!nextBlockedByCursor || nextBlockedByCursor === blockedByCursor))
+      ) {
+        throw new RelationshipPaginationError("relationship cursorが前進しません");
+      }
+      subIssuesCursor = hasNextSubIssues ? nextSubIssuesCursor : subIssuesCursor;
+      blockedByCursor = hasNextBlockedBy ? nextBlockedByCursor : blockedByCursor;
+    }
     return {
-      subIssues: (issue.subIssues?.nodes ?? []).map((si: any) => ({
-        number: si.number,
-        repository: si.repository.nameWithOwner,
-      })),
-      blockedBy: (issue.blockedBy?.nodes ?? []).map((bi: any) => ({
-        number: bi.number,
-        repository: bi.repository.nameWithOwner,
-      })),
+      subIssues: [
+        ...new Map(
+          relationships.subIssues.map((item) => [`${item.repository}#${item.number}`, item]),
+        ).values(),
+      ],
+      blockedBy: [
+        ...new Map(
+          relationships.blockedBy.map((item) => [`${item.repository}#${item.number}`, item]),
+        ).values(),
+      ],
     };
-  } catch {
-    // Relationships API may not be available for all repos
-    return { subIssues: [], blockedBy: [] };
+  } catch (error) {
+    if (error instanceof RelationshipPaginationError) throw error;
+    if (isExplicitlyUnsupportedRelationshipCapability(error)) {
+      return { subIssues: [], blockedBy: [] };
+    }
+    throw error;
   }
 }
 

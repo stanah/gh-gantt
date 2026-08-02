@@ -127,6 +127,33 @@ gh-gantt が提供するのは schema-validated な dispatch plan と event cont
 agent/provider/shell runner を内蔵しないほか、workspace を作成しない。外部 runner が isolated workspace の
 作成、process の起動、成果物の生成を担当し、gh-gantt は GitHub task status を暗黙更新しない。
 
+## Approval-gated Work Graph mutation
+
+実行中の観測からtaskのsplit/add/merge/reorder/cancel/dependency変更が必要になった場合、外部runnerは
+GitHub Issueを直接変更せず、origin Runがclaim releasedかつpaused/waiting_human、active Attemptなしの
+mutation checkpointへ停止する。その後、schemaVersion 1 commandを次の公開入口へ渡す。
+
+```bash
+gh-gantt mutation execute --input '<proposal command JSON>'
+gh-gantt mutation show <proposal-id> [--full] [--limit <n>] [--offset <n>]
+```
+
+`mutation show --full` の `approvalRequests` は、decision・compensation・各 Run の replan
+それぞれについて proposal/revision/fingerprint/expiry に束縛された canonical machine block を返す。
+人間は対象 Issue comment へ該当 block を貼り、comment ID を execute command に指定する。
+
+policyはdefault-denyであり、cancelは常にtrusted human approvalを要求する。propose receiptのsingle machine blockを
+origin Issueへ人間が投稿し、decide commandはそのGitHub commentRefだけを渡す。CLIはapproval commentを投稿しない。
+applyは全linked worktreeのcomplete coverage proof、claim/Run binding、source/task/policy revisionを再検証する。
+`unknown`または`partially_applied`では同じremote mutationを再送せず、correlation markerまたはlive relation/stateを
+確認した明示`reconcile`を行う。reconcile中はdurableな`reconciling`状態とmutation fencing proofを保持し、exactな
+postconditionをproposal journalへ確定した後にin-flight reservationを通常leaseへ戻して解放する。apply後のRunは
+`work_graph_invalidated`でwaiting_humanへ停止し、same Graph Contract
+bindingとverified human decisionを持つ`work_graph_replan_accepted`だけがsuccessor Plan nodeへ進める。
+Graph Contract/Org Graph変更はmutation proposalに含めず、外部human-authority operationとnew Runで扱う。
+
+詳細は`docs/adr/ADR-025-approval-gated-work-graph-mutation.md`を正典とする。
+
 ## Dev-Role Config
 
 `gh-gantt-dev-role` スキル用の設定。orchestrator / planner / implementer / executor / reviewer の各ロールが参照する。

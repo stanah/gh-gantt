@@ -7,6 +7,19 @@ export function resolveTaskType(
   typeFieldName?: string | null,
   issueTypeName?: string | null,
 ): string {
+  return (
+    resolveTaskTypeBinding(labels, customFields, taskTypes, typeFieldName, issueTypeName) ?? "task"
+  );
+}
+
+/** remote bindingだけからtask typeを解決する。unmappedは安全側でnullを返す。 */
+export function resolveTaskTypeBinding(
+  labels: string[],
+  customFields: Record<string, unknown>,
+  taskTypes: Record<string, TaskType>,
+  typeFieldName?: string | null,
+  issueTypeName?: string | null,
+): string | null {
   // 1. Organization Issue Type takes highest priority
   if (issueTypeName) {
     for (const [typeName, typeDef] of Object.entries(taskTypes)) {
@@ -35,6 +48,5 @@ export function resolveTaskType(
     }
   }
 
-  // 4. Default
-  return "task";
+  return null;
 }

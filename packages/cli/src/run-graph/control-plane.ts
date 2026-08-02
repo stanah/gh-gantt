@@ -5,6 +5,7 @@ import {
   RunGraphClaimAuditCommandSchema,
   RunGraphClaimAuditInputSchema,
   RunGraphProjectionSchema,
+  RunGraphMutationAuditInputSchema,
   RunGraphRunnerCommandInputSchema,
   RunGraphStartInputSchema,
   RunGraphViewSchema,
@@ -17,6 +18,7 @@ import {
   type RunGraphArtifact,
   type RunGraphEvidence,
   type RunGraphProjection,
+  type RunGraphMutationAuditInput,
   type RunGraphRejectionCode,
   type RunGraphRunnerCommandInput,
   type RunGraphClaimAuditInput,
@@ -37,6 +39,9 @@ import { isNotGitRepositoryError } from "../util/git-errors.js";
 export interface RunGraphControlPlaneDependencies {
   now: () => string;
   nextId: (kind: string) => string;
+  verifyReplanApproval?: (
+    command: Extract<RunGraphMutationAuditInput["command"], { type: "work_graph_replan_accepted" }>,
+  ) => Promise<boolean>;
 }
 
 export interface DispatchClaimAuthority {
@@ -166,6 +171,169 @@ export class RunGraphControlPlane {
     this.events = new RunGraphEventStore(projectRoot);
     this.dependencies = dependencies;
     this.claimAuthority = claimAuthority ?? new DispatchClaimStore(projectRoot);
+  }
+
+  /**
+   * mutation proposalの監査と再計画gateをimmutable Run Graph eventとして受理する。
+   * runner commandとは別入口にし、Graph Contract bindingや既存IDを上書きしない。
+   */
+  async applyMutationAudit(rawInput: RunGraphMutationAuditInput): Promise<RunGraphCommandResult> {
+    const input = RunGraphMutationAuditInputSchema.parse(rawInput);
+    const journal = await this.events.readJournal(input.runId);
+    const existing = journal.acceptedEvents.find((event) => event.eventId === input.eventId);
+    if (existing) {
+      if (
+        canonicalJsonStringify(existing.command) === canonicalJsonStringify(input.command) &&
+        existing.actor.id === input.actor.id &&
+        existing.actor.role === input.actor.role
+      ) {
+        return { accepted: true, view: await this.inspect(input.runId) };
+      }
+      return {
+        accepted: false,
+        code: "duplicate_event",
+        message: "同じeventIdに異なるmutation audit payloadは使用できません",
+        stateUnchanged: true,
+        view: await this.inspect(input.runId),
+      };
+    }
+
+    const projection = this.replay(journal);
+    const currentNode = projection.nodes.find((node) => node.id === projection.run.currentNodeId);
+    if (!currentNode) {
+      return {
+        accepted: false,
+        code: "invalid_transition",
+        message: "current nodeが存在しません",
+        stateUnchanged: true,
+        view: await this.inspect(input.runId),
+      };
+    }
+    const activeAttempt = currentNode.activeAttemptId
+      ? (projection.attempts.find((attempt) => attempt.id === currentNode.activeAttemptId) ?? null)
+      : null;
+    const rejectMutation = async (
+      code: RunGraphRejectionCode,
+      message: string,
+    ): Promise<RunGraphCommandResult> => ({
+      accepted: false,
+      code,
+      message,
+      stateUnchanged: true,
+      view: await this.inspect(input.runId),
+    });
+
+    if (input.command.type === "work_graph_invalidated") {
+      if (input.actor.role !== "orchestrator") {
+        return rejectMutation("authority_denied", "invalidationはorchestratorだけが記録できます");
+      }
+      const legalRunStates = new Set(["pending", "running", "paused", "waiting_human"]);
+      const legalNodeStates = new Set(["pending", "ready", "running", "paused", "waiting_human"]);
+      if (!legalRunStates.has(projection.run.state) || !legalNodeStates.has(currentNode.state)) {
+        return rejectMutation("invalid_transition", "terminal run/nodeはinvalidateできません");
+      }
+      if (activeAttempt?.state === "created" || activeAttempt?.state === "running") {
+        return rejectMutation(
+          "active_attempt_conflict",
+          "active Attemptがterminal化するまでinvalidationを受理できません",
+        );
+      }
+      if (
+        input.command.successorPlanRevision.planId !== projection.run.contract.planId ||
+        input.command.successorPlanRevision.fromVersion !== projection.run.contract.planVersion
+      ) {
+        return rejectMutation(
+          "unsupported_contract_binding",
+          "invalidationのsuccessor planは対象RunのGraph Contract/Planに一致する必要があります",
+        );
+      }
+    }
+
+    if (input.command.type === "work_graph_replan_accepted") {
+      const replanCommand = input.command;
+      if (
+        !this.dependencies.verifyReplanApproval ||
+        !(await this.dependencies.verifyReplanApproval(replanCommand))
+      ) {
+        return rejectMutation(
+          "authority_denied",
+          "replan acceptanceにstored trusted approval receiptが必要です",
+        );
+      }
+      if (input.actor.role !== "human") {
+        return rejectMutation(
+          "authority_denied",
+          "replan acceptanceはverified humanだけが実行できます",
+        );
+      }
+      if (projection.run.state !== "waiting_human" || currentNode.state !== "waiting_human") {
+        return rejectMutation("invalid_transition", "replan acceptanceにはwaiting_humanが必要です");
+      }
+      if (activeAttempt !== null) {
+        return rejectMutation(
+          "active_attempt_conflict",
+          "replan acceptanceにはactive Attemptなしが必要です",
+        );
+      }
+      if (
+        canonicalJsonStringify(replanCommand.graphContractBinding) !==
+        canonicalJsonStringify(projection.run.contract)
+      ) {
+        return rejectMutation(
+          "unsupported_contract_binding",
+          "既存RunのGraph Contract bindingは変更できません",
+        );
+      }
+      if (
+        replanCommand.verifiedHumanDecision.authorNodeId !== input.actor.id ||
+        replanCommand.successorPlanRevision.reasonProposalId !== replanCommand.proposalId
+      ) {
+        return rejectMutation(
+          "evidence_required",
+          "human decisionまたはsuccessor plan bindingが一致しません",
+        );
+      }
+      const latestInvalidation = [...journal.acceptedEvents]
+        .reverse()
+        .find(
+          (event) =>
+            event.command.type === "work_graph_invalidated" &&
+            event.command.proposalId === replanCommand.proposalId,
+        );
+      if (
+        !latestInvalidation ||
+        latestInvalidation.command.type !== "work_graph_invalidated" ||
+        canonicalJsonStringify(latestInvalidation.command.successorPlanRevision) !==
+          canonicalJsonStringify(replanCommand.successorPlanRevision)
+      ) {
+        return rejectMutation(
+          "evidence_required",
+          "replan successorは最新のimmutable invalidation lineageと一致する必要があります",
+        );
+      }
+      if (projection.nodes.some((node) => node.id === replanCommand.successorNodeId)) {
+        return rejectMutation("duplicate_event", "successor node IDは既存nodeと重複できません");
+      }
+    }
+
+    await this.events.appendAccepted({
+      recordType: "accepted",
+      eventId: input.eventId,
+      sequence: journal.acceptedEvents.length + 1,
+      runId: input.runId,
+      acceptedAt: this.dependencies.now(),
+      actor: input.actor,
+      command: input.command,
+      artifactIds: [],
+      evidenceIds:
+        input.command.type === "work_graph_replan_accepted"
+          ? [input.command.verifiedHumanDecision.evidenceId]
+          : [],
+      ...(input.command.type === "work_graph_invalidated"
+        ? { waitReason: "work_graph_replan_required" }
+        : {}),
+    });
+    return { accepted: true, view: await this.inspect(input.runId) };
   }
 
   /**
@@ -1518,6 +1686,36 @@ export class RunGraphControlPlane {
         command.type === "claim_reclaimed" ||
         command.type === "claim_event_authorized"
       ) {
+        continue;
+      }
+
+      if (command.type === "work_graph_mutation_audit") {
+        continue;
+      }
+      if (command.type === "work_graph_invalidated") {
+        projection.run.state = "waiting_human";
+        currentNode.state = "waiting_human";
+        currentNode.updatedAt = event.acceptedAt;
+        continue;
+      }
+      if (command.type === "work_graph_replan_accepted") {
+        currentNode.state = "cancelled";
+        currentNode.updatedAt = event.acceptedAt;
+        projection.nodes.push({
+          id: command.successorNodeId,
+          runId: projection.run.id,
+          contractNodeId: currentNode.contractNodeId,
+          state: "ready",
+          actor: actorForContractNode(currentNode.contractNodeId),
+          createdAt: event.acceptedAt,
+          updatedAt: event.acceptedAt,
+          activeAttemptId: null,
+          previousNodeId: currentNode.id,
+          inputArtifactIds: [...currentNode.inputArtifactIds],
+          outputArtifactIds: [],
+        });
+        projection.run.currentNodeId = command.successorNodeId;
+        projection.run.state = "running";
         continue;
       }
 

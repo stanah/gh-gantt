@@ -1,5 +1,6 @@
 import type { LoopConfig } from "./loop-state.js";
 import type { RunGraphConfig } from "./run-graph.js";
+import type { MutationApprovalConfig, MutationPolicyConfig } from "./work-graph-mutation.js";
 
 export type TaskDisplay = "bar" | "summary" | "milestone";
 export type DependencyType =
@@ -202,6 +203,10 @@ export interface Config {
   loop?: LoopConfig;
   /** 単一 Issue Run Graph が exact binding する versioned Graph Contract。 */
   run_graph?: RunGraphConfig;
+  /** 実行中の Work Graph mutation を自動承認できる versioned policy。未設定は全て human gate。 */
+  mutation_policy?: MutationPolicyConfig;
+  /** human decide の唯一の trust source。秘密値ではなく GitHub stable User node ID だけを持つ。 */
+  mutation_approval?: MutationApprovalConfig;
   require_review_for_types?: string[];
   require_close_evidence?: boolean;
   max_task_size_hours?: number;

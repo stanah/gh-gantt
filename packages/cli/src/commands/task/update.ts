@@ -3,14 +3,8 @@ import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { executeWriteThroughPush } from "./write-through-push.js";
 import type { Config, Task } from "@gh-gantt/shared";
-import {
-  computeStatusDateUpdates,
-  normalizeAcceptanceCriteria,
-  normalizeTaskRoleLogin,
-  serializeTaskCloseEvidenceBody,
-} from "@gh-gantt/shared";
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+import { normalizeAcceptanceCriteria } from "@gh-gantt/shared";
+import { WorkGraphCommandEngine } from "../../work-graph/command-engine.js";
 
 export interface TaskUpdateOptions {
   title?: string;
@@ -39,229 +33,9 @@ export function applyTaskUpdate(
   opts: TaskUpdateOptions,
   config: Config,
 ): { task: Task; error?: string } {
-  const hasUpdateField = Object.values(opts).some((v) => v !== undefined);
-  if (!hasUpdateField) {
-    return { task, error: "Specify at least one update option." };
-  }
-
-  if (opts.type && !config.task_types[opts.type]) {
-    const typeKeys = Object.keys(config.task_types);
-    return {
-      task,
-      error: `Unknown task type: "${opts.type}". Available: ${typeKeys.join(", ")}`,
-    };
-  }
-
-  if (opts.state && opts.state !== "open" && opts.state !== "closed") {
-    return { task, error: `Invalid state: "${opts.state}". Must be "open" or "closed".` };
-  }
-
-  if (opts.evidence !== undefined && opts.state !== "closed") {
-    return { task, error: "--evidence can only be used when closing a task." };
-  }
-
-  if (opts.startDate && opts.startDate !== "none" && !DATE_RE.test(opts.startDate)) {
-    return { task, error: `Invalid start date format: "${opts.startDate}". Use YYYY-MM-DD.` };
-  }
-
-  if (opts.endDate && opts.endDate !== "none" && !DATE_RE.test(opts.endDate)) {
-    return { task, error: `Invalid end date format: "${opts.endDate}". Use YYYY-MM-DD.` };
-  }
-
-  const updated = { ...task };
-  const oldReviewer = task.reviewer ?? null;
-
-  if (opts.title) updated.title = opts.title;
-  if (opts.body !== undefined) updated.body = opts.body;
-  if (opts.type) {
-    // 旧typeのgithub_labelを除去し、新typeのgithub_labelを追加する
-    const oldTypeDef = config.task_types[task.type];
-    const newTypeDef = config.task_types[opts.type];
-    if (oldTypeDef?.github_label) {
-      updated.labels = updated.labels.filter((l) => l !== oldTypeDef.github_label);
-    }
-    if (newTypeDef?.github_label && !updated.labels.includes(newTypeDef.github_label)) {
-      updated.labels = [...updated.labels, newTypeDef.github_label];
-    }
-    updated.type = opts.type;
-  }
-  if (opts.state) updated.state = opts.state;
-
-  if (opts.startDate) {
-    updated.start_date = opts.startDate === "none" ? null : opts.startDate;
-  }
-  if (opts.endDate) {
-    updated.end_date = opts.endDate === "none" ? null : opts.endDate;
-  }
-
-  if (updated.start_date && updated.end_date && updated.start_date > updated.end_date) {
-    return {
-      task,
-      error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).`,
-    };
-  }
-
-  if (opts.assignee) {
-    if (!updated.assignees.includes(opts.assignee)) {
-      updated.assignees = [...updated.assignees, opts.assignee];
-    }
-  }
-  if (opts.removeAssignee) {
-    updated.assignees = updated.assignees.filter((a) => a !== opts.removeAssignee);
-  }
-
-  if (opts.assignImplementer !== undefined) {
-    const parsed = parseRoleOption("--assign-implementer", opts.assignImplementer);
-    if (parsed.error) return { task, error: parsed.error };
-    updated.implementer = parsed.value;
-  }
-  if (opts.assignReviewer !== undefined) {
-    const parsed = parseRoleOption("--assign-reviewer", opts.assignReviewer);
-    if (parsed.error) return { task, error: parsed.error };
-    updated.reviewer = parsed.value;
-    if (!isSameLogin(oldReviewer, updated.reviewer)) {
-      updated.review_approved_by = null;
-      updated.review_approved_at = null;
-    }
-  }
-  if (
-    updated.implementer &&
-    updated.reviewer &&
-    updated.implementer.toLowerCase() === updated.reviewer.toLowerCase()
-  ) {
-    return {
-      task,
-      error: `Reviewer must be different from implementer: "${updated.reviewer}".`,
-    };
-  }
-
-  if (opts.requireReview !== undefined) {
-    updated.require_review = opts.requireReview;
-  }
-  if (opts.clearReviewApproval) {
-    updated.review_approved_by = null;
-    updated.review_approved_at = null;
-  }
-  if (opts.approveReview !== undefined) {
-    const parsed = parseRoleOption("--approve-review", opts.approveReview);
-    if (parsed.error) return { task, error: parsed.error };
-    if (!updated.reviewer) {
-      return { task, error: "Cannot approve review before assigning a reviewer." };
-    }
-    if (!isSameLogin(parsed.value, updated.reviewer)) {
-      return {
-        task,
-        error: `Review must be approved by assigned reviewer "${updated.reviewer}".`,
-      };
-    }
-    updated.review_approved_by = updated.reviewer;
-    updated.review_approved_at = new Date().toISOString();
-  }
-
-  if (opts.milestone !== undefined) {
-    updated.milestone = opts.milestone === "none" ? null : opts.milestone;
-  }
-
-  if (opts.status) {
-    const statusField = config.statuses.field_name;
-    if (!config.statuses.values[opts.status]) {
-      return {
-        task,
-        error: `Unknown status: "${opts.status}". Available: ${Object.keys(config.statuses.values).join(", ")}`,
-      };
-    }
-    const oldStatus = updated.custom_fields[statusField] as string | undefined;
-    updated.custom_fields = { ...updated.custom_fields, [statusField]: opts.status };
-    const dateUpdates = computeStatusDateUpdates(oldStatus, opts.status, config.statuses.values, {
-      start_date: updated.start_date,
-      end_date: updated.end_date,
-    });
-    if (dateUpdates.start_date && !opts.startDate) updated.start_date = dateUpdates.start_date;
-    if (dateUpdates.end_date && !opts.endDate) updated.end_date = dateUpdates.end_date;
-
-    if (updated.start_date && updated.end_date && updated.start_date > updated.end_date) {
-      return {
-        task,
-        error: `Invalid date range: start_date (${updated.start_date}) is after end_date (${updated.end_date}).`,
-      };
-    }
-  }
-
-  if (opts.priority) {
-    const priority = opts.priority.toLowerCase();
-    const validPriorities = ["critical", "high", "medium", "low"];
-    if (!validPriorities.includes(priority)) {
-      return {
-        task,
-        error: `Invalid priority: "${opts.priority}". Available: ${validPriorities.join(", ")}`,
-      };
-    }
-    const priorityFieldName = config.sync?.field_mapping?.priority;
-    if (!priorityFieldName) {
-      return {
-        task,
-        error: `Priority field is not configured. Set sync.field_mapping.priority in config.`,
-      };
-    }
-    updated.custom_fields = { ...updated.custom_fields, [priorityFieldName]: priority };
-  }
-
-  if (opts.label) {
-    if (!updated.labels.includes(opts.label)) {
-      updated.labels = [...updated.labels, opts.label];
-    }
-  }
-  if (opts.removeLabel) {
-    updated.labels = updated.labels.filter((l) => l !== opts.removeLabel);
-  }
-
-  if (opts.state === "closed") {
-    const reviewError = validateTaskCloseReview(updated, config);
-    if (reviewError) {
-      return { task, error: reviewError };
-    }
-
-    const acceptanceCriteriaError = validateTaskCloseAcceptanceCriteria(updated);
-    if (acceptanceCriteriaError) {
-      return { task, error: acceptanceCriteriaError };
-    }
-
-    const evidence = opts.evidence?.trim() ?? "";
-    if (config.require_close_evidence === true && evidence.length === 0) {
-      return { task, error: 'Close evidence is required. Provide --evidence "<summary>".' };
-    }
-    if (evidence.length > 0) {
-      updated.body = serializeTaskCloseEvidenceBody(
-        updated.body,
-        evidence,
-        new Date().toISOString(),
-      );
-    }
-  }
-
-  updated.updated_at = new Date().toISOString();
-
-  return { task: updated };
+  const projected = new WorkGraphCommandEngine(config).projectTaskUpdate(task, opts);
+  return projected.ok ? { task: projected.task } : { task, error: projected.error };
 }
-
-function parseRoleOption(
-  optionName: "--assign-implementer" | "--assign-reviewer" | "--approve-review",
-  value: string,
-): { value: string | null; error?: string } {
-  const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return { value: null, error: `${optionName} requires a GitHub login or "none".` };
-  }
-  if (trimmed.toLowerCase() === "none") {
-    return { value: null };
-  }
-  const normalized = normalizeTaskRoleLogin(trimmed);
-  if (!normalized) {
-    return { value: null, error: `${optionName} requires a GitHub login or "none".` };
-  }
-  return { value: normalized };
-}
-
 function isSameLogin(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return a == null && b == null;
   return a.toLowerCase() === b.toLowerCase();
@@ -405,15 +179,18 @@ export function createTaskUpdateCommand(): Command {
                 return;
               }
 
-              const result = applyTaskUpdate(tasksFile.tasks[taskIndex], updateOpts, config);
-
-              if (result.error) {
-                console.error(result.error);
+              const graphValidation = new WorkGraphCommandEngine(config).executeCommand({
+                type: "update",
+                tasks: tasksFile.tasks,
+                taskId: resolvedId,
+                updates: updateOpts,
+              });
+              if (!graphValidation.ok) {
+                console.error(graphValidation.error);
                 process.exitCode = 1;
                 return;
               }
-
-              tasksFile.tasks[taskIndex] = result.task;
+              tasksFile.tasks = graphValidation.tasks;
               await tasksStore.write(tasksFile);
               await storage.flush();
               const writeThroughResult = await executeWriteThroughPush(
@@ -465,14 +242,18 @@ export function createTaskUpdateCommand(): Command {
 
               const updatedTasks: Task[] = [];
               for (const task of matched) {
-                const idx = tasksFile.tasks.findIndex((t) => t.id === task.id);
-                const result = applyTaskUpdate(tasksFile.tasks[idx], updateOpts, config);
-                if (result.error) {
-                  console.error(`Error updating ${task.id}: ${result.error}`);
+                const planned = new WorkGraphCommandEngine(config).executeCommand({
+                  type: "update",
+                  tasks: tasksFile.tasks,
+                  taskId: task.id,
+                  updates: updateOpts,
+                });
+                if (!planned.ok) {
+                  console.error(`Error updating ${task.id}: ${planned.error}`);
                   continue;
                 }
-                tasksFile.tasks[idx] = result.task;
-                updatedTasks.push(result.task);
+                tasksFile.tasks = planned.tasks;
+                updatedTasks.push(tasksFile.tasks.find((candidate) => candidate.id === task.id)!);
               }
 
               if (updatedTasks.length === 0) {

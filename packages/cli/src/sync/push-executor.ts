@@ -1,12 +1,14 @@
 import type { graphql } from "@octokit/graphql";
-import type { Config, SyncFields, Task, SyncState, TasksFile, TaskType } from "@gh-gantt/shared";
-import {
-  DEFAULT_ESTIMATE_HOURS_FIELD,
-  parseEstimateHours,
-  serializeAcceptanceCriteriaBody,
-  serializeTaskReviewBody,
-  serializeTaskRolesBody,
+import type {
+  Config,
+  MutationPrimitiveOperation,
+  SyncFields,
+  Task,
+  SyncState,
+  TasksFile,
+  TaskType,
 } from "@gh-gantt/shared";
+import { DEFAULT_ESTIMATE_HOURS_FIELD, parseEstimateHours } from "@gh-gantt/shared";
 import { computeLocalDiff } from "./diff.js";
 import { hashTask, hashSyncFields, extractSyncFields } from "./hash.js";
 import {
@@ -30,6 +32,7 @@ import {
   addProjectItem,
   addSubIssue,
   removeSubIssue,
+  reprioritizeSubIssue,
   updateIssue,
   updateIssueIssueType,
   setIssueState,
@@ -41,6 +44,10 @@ import {
   type UpdateIssueFields,
 } from "../github/mutations.js";
 import { formatError } from "../util/format.js";
+import {
+  createMutationRemoteProjection,
+  serializeTaskBodyForGithub,
+} from "./mutation-remote-projection.js";
 
 export interface PushResult {
   created: number;
@@ -48,25 +55,36 @@ export interface PushResult {
   skipped: number;
 }
 
-function serializeTaskBodyForGithub(task: Task): string | undefined {
-  const bodyWithAcceptanceCriteria = serializeAcceptanceCriteriaBody(
-    task.body,
-    task.acceptance_criteria,
-    {
-      includeEmptyBlock: task.acceptance_criteria_slot === true,
-    },
-  );
-  const bodyWithRoles = serializeTaskRolesBody(bodyWithAcceptanceCriteria, {
-    implementer: task.implementer,
-    reviewer: task.reviewer,
-  });
-  return (
-    serializeTaskReviewBody(bodyWithRoles, {
-      require_review: task.require_review,
-      review_approved_by: task.review_approved_by,
-      review_approved_at: task.review_approved_at,
-    }) ?? undefined
-  );
+/** proposal storeへ副作用結果を返すため、送信前に永続化されたstep予約。 */
+export interface PushStepReservation {
+  stepId: string;
+  operation: MutationPrimitiveOperation;
+  targetTaskId: string;
+  correlationToken: string | null;
+  expectedPostcondition: Record<string, unknown>;
+}
+
+/** GitHub mutationの応答境界で確定する構造化結果。 */
+export interface PushStepOutcome {
+  stepId: string;
+  operation: MutationPrimitiveOperation;
+  targetTaskId: string;
+  state: "committed" | "unknown" | "reconciled";
+  diagnostic: string | null;
+  remoteIdentifiers?: {
+    issueId?: string;
+    issueNumber?: number;
+    projectItemId?: string;
+  };
+}
+
+function appendMutationCorrelation(
+  body: string | undefined,
+  token: string | null,
+): string | undefined {
+  if (!token) return body;
+  const marker = `<!-- gh-gantt:mutation-correlation:v1 ${token} -->`;
+  return body ? `${body}\n\n${marker}` : marker;
 }
 
 /**
@@ -116,6 +134,59 @@ export function replaceTaskIdReferences(tasks: Task[], oldId: string, newId: str
   }
 }
 
+/** draft taskをGitHub Issue identityへ置換し、参照・id_map・snapshotを一括更新する。 */
+export function reifyDraftTask(
+  tasksFile: TasksFile,
+  syncState: SyncState,
+  input: {
+    draftTaskId: string;
+    repository: string;
+    issueNumber: number;
+    issueId: string;
+    projectItemId: string;
+    syncedAt: string;
+  },
+): string {
+  const newId = buildTaskId(input.repository, input.issueNumber);
+  const draft = tasksFile.tasks.find((task) => task.id === input.draftTaskId);
+  const existing = tasksFile.tasks.find((task) => task.id === newId);
+  if (!draft) {
+    const mapping = syncState.id_map[newId];
+    if (
+      existing &&
+      mapping?.issue_number === input.issueNumber &&
+      mapping.issue_node_id === input.issueId &&
+      mapping.project_item_id === input.projectItemId
+    ) {
+      return newId;
+    }
+    throw new Error(`draft taskが見つかりません: ${input.draftTaskId}`);
+  }
+  if (existing && existing !== draft) {
+    throw new Error(`reify先taskが既に存在します: ${newId}`);
+  }
+  draft.id = newId;
+  draft.github_issue = input.issueNumber;
+  draft.github_repo = input.repository;
+  replaceTaskIdReferences(tasksFile.tasks, input.draftTaskId, newId);
+  syncState.id_map[newId] = {
+    issue_number: input.issueNumber,
+    issue_node_id: input.issueId,
+    project_item_id: input.projectItemId,
+  };
+  delete syncState.id_map[input.draftTaskId];
+  const snapshots = { ...syncState.snapshots };
+  delete snapshots[input.draftTaskId];
+  snapshots[newId] = {
+    hash: hashTask(draft),
+    synced_at: input.syncedAt,
+    syncFields: extractSyncFields(draft),
+    remoteHash: hashTask(draft),
+  };
+  syncState.snapshots = snapshots;
+  return newId;
+}
+
 export async function executePush(
   gql: typeof graphql,
   config: Config,
@@ -125,16 +196,38 @@ export async function executePush(
     force?: boolean;
     saveProgress?: (tasksFile: TasksFile, syncState: SyncState) => Promise<void>;
     targetTaskIds?: readonly string[];
+    /** apply開始前にproposal storeへ保存済みのstep予約。 */
+    reservations?: readonly PushStepReservation[];
+    /** 各リモート応答の直後に永続receiptを書き込むcallback。 */
+    onStepOutcome?: (outcome: PushStepOutcome) => Promise<void>;
   },
-): Promise<{ result: PushResult; tasksFile: TasksFile; syncState: SyncState }> {
+): Promise<{
+  result: PushResult;
+  tasksFile: TasksFile;
+  syncState: SyncState;
+  stepOutcomes: PushStepOutcome[];
+}> {
   const allDiffs = computeLocalDiff(tasksFile.tasks, syncState);
   const targetTaskIds = opts?.targetTaskIds === undefined ? undefined : new Set(opts.targetTaskIds);
   const diffs =
     targetTaskIds === undefined ? allDiffs : allDiffs.filter((diff) => targetTaskIds.has(diff.id));
   const result: PushResult = { created: 0, updated: 0, skipped: 0 };
+  const stepOutcomes: PushStepOutcome[] = [];
+  const reservationFor = (
+    operation: MutationPrimitiveOperation,
+    targetTaskId: string,
+  ): PushStepReservation | undefined =>
+    opts?.reservations?.find(
+      (reservation) =>
+        reservation.operation === operation && reservation.targetTaskId === targetTaskId,
+    );
+  const reportStepOutcome = async (outcome: PushStepOutcome): Promise<void> => {
+    stepOutcomes.push(outcome);
+    await opts?.onStepOutcome?.(outcome);
+  };
 
   if (diffs.length === 0) {
-    return { result, tasksFile, syncState };
+    return { result, tasksFile, syncState, stepOutcomes };
   }
 
   // Check if remote has changed since last pull (like git push rejecting non-fast-forward)
@@ -167,7 +260,12 @@ export async function executePush(
         console.error("リモートが更新されています。先に pull してください");
         for (const id of staleTaskIds) console.error("  " + id);
         console.error("--force で強制 push できます");
-        return { result: { created: 0, updated: 0, skipped: 0 }, tasksFile, syncState };
+        return {
+          result: { created: 0, updated: 0, skipped: 0 },
+          tasksFile,
+          syncState,
+          stepOutcomes,
+        };
       }
     }
   }
@@ -213,6 +311,7 @@ export async function executePush(
   interface RelationFailure {
     parentFailed: boolean;
     blockedByFailed: boolean;
+    orderFailed: boolean;
   }
   interface IssueTypeFailure {
     previousSyncFields: SyncFields | undefined;
@@ -235,7 +334,16 @@ export async function executePush(
   // Pre-relation baseline: remote state before relation mutations were attempted
   const preRelationBaseline = new Map<
     string,
-    Pick<import("@gh-gantt/shared").SyncFields, "parent" | "blocked_by">
+    Pick<import("@gh-gantt/shared").SyncFields, "parent" | "blocked_by" | "sub_tasks">
+  >();
+  const pendingCreateOutcomes = new Map<
+    string,
+    {
+      reservation: PushStepReservation;
+      issueId: string;
+      issueNumber: number;
+      projectItemId: string;
+    }
   >();
 
   // Filter out synthetic milestone tasks (read-only, managed by pull)
@@ -320,29 +428,71 @@ export async function executePush(
 
       const task = diff.task;
       const oldId = task.id;
+      const remoteProjection = createMutationRemoteProjection(task, config);
 
-      // Resolve IDs for labels, milestone, assignees
-      const labelIds = task.labels
+      // label・milestone・assigneeのnode IDを解決する。
+      const labelIds = (remoteProjection.labels as string[])
         .map((name) => metadata.labelMap.get(name))
         .filter((id): id is string => id != null);
-      const milestoneId = task.milestone ? metadata.milestoneMap.get(task.milestone) : undefined;
-      const assigneeIds = task.assignees
+      const projectedMilestone = remoteProjection.milestone as string | null;
+      const milestoneId = projectedMilestone
+        ? metadata.milestoneMap.get(projectedMilestone)
+        : undefined;
+      const assigneeIds = (remoteProjection.assignees as string[])
         .map((login) => userIdMap.get(login))
         .filter((id): id is string => id != null);
       const issueTypeId = await resolveGithubIssueTypeId(task.type);
 
-      // Create GitHub issue
-      const { issueId, issueNumber } = await createIssue(gql, repositoryId, {
-        title: task.title,
-        body: serializeTaskBodyForGithub(task),
-        labelIds,
-        milestoneId,
-        assigneeIds,
-        issueTypeId: issueTypeId ?? undefined,
-      });
+      // GitHub Issueを作成し、応答時点でProject追加より先にcommittedを永続化する。
+      const createReservation = reservationFor("create", oldId);
+      let createdIssue: { issueId: string; issueNumber: number };
+      try {
+        createdIssue = await createIssue(gql, repositoryId, {
+          title: String(remoteProjection.title),
+          body: appendMutationCorrelation(
+            remoteProjection.body === null ? undefined : String(remoteProjection.body),
+            createReservation?.correlationToken ?? null,
+          ),
+          labelIds,
+          milestoneId,
+          assigneeIds,
+          issueTypeId: issueTypeId ?? undefined,
+          clientMutationId: createReservation?.correlationToken ?? undefined,
+        });
+      } catch (error) {
+        if (createReservation) {
+          await reportStepOutcome({
+            stepId: createReservation.stepId,
+            operation: createReservation.operation,
+            targetTaskId: createReservation.targetTaskId,
+            state: "unknown",
+            diagnostic: `createIssue応答を確認できません: ${formatError(error)}`,
+          });
+        }
+        throw error;
+      }
+      const { issueId, issueNumber } = createdIssue;
+      if (createReservation) {
+        await reportStepOutcome({
+          stepId: createReservation.stepId,
+          operation: createReservation.operation,
+          targetTaskId: createReservation.targetTaskId,
+          state: "unknown",
+          diagnostic: "remote Issueは作成済みですがProject/relation finalizeは未確認です",
+          remoteIdentifiers: { issueId, issueNumber },
+        });
+      }
 
       // Add to project
       const projectItemId = await addProjectItem(gql, syncState.project_node_id, issueId);
+      if (createReservation) {
+        pendingCreateOutcomes.set(oldId, {
+          reservation: createReservation,
+          issueId,
+          issueNumber,
+          projectItemId,
+        });
+      }
 
       // Update project fields
       const draftFieldUpdates: Promise<unknown>[] = [];
@@ -418,9 +568,6 @@ export async function executePush(
 
       // Update task ID from draft to real
       const newId = buildTaskId(`${owner}/${repo}`, issueNumber);
-      task.id = newId;
-      task.github_issue = issueNumber;
-      task.github_repo = `${owner}/${repo}`;
 
       // 未解決の Status を送信しないまま snapshot をローカル値で確定すると
       // 次回 push が差分を検出できず再試行不能になるため、snapshot 側は
@@ -439,15 +586,14 @@ export async function executePush(
         });
       }
 
-      // Update references in all tasks
-      replaceTaskIdReferences(tasksFile.tasks, oldId, newId);
-
-      // Add id_map entry
-      syncState.id_map[newId] = {
-        issue_number: issueNumber,
-        issue_node_id: issueId,
-        project_item_id: projectItemId,
-      };
+      reifyDraftTask(tasksFile, syncState, {
+        draftTaskId: oldId,
+        repository: `${owner}/${repo}`,
+        issueNumber,
+        issueId,
+        projectItemId,
+        syncedAt: new Date().toISOString(),
+      });
 
       replacedDraftIds.add(oldId);
       pushedTaskIds.add(newId);
@@ -456,15 +602,6 @@ export async function executePush(
 
       // Save progress: remove old draft snapshot, add new snapshot
       if (opts?.saveProgress) {
-        const newSnapshots = { ...syncState.snapshots };
-        delete newSnapshots[oldId];
-        newSnapshots[newId] = {
-          hash: hashTask(task),
-          synced_at: new Date().toISOString(),
-          syncFields: extractSyncFields(task),
-          remoteHash: hashTask(task),
-        };
-        syncState = { ...syncState, snapshots: newSnapshots };
         await opts.saveProgress(tasksFile, syncState);
       }
     }
@@ -483,7 +620,7 @@ export async function executePush(
     const blockerMutations: Promise<{ taskId: string; ok: boolean }>[] = [];
 
     for (const id of createdTaskIds) {
-      preRelationBaseline.set(id, { parent: null, blocked_by: [] });
+      preRelationBaseline.set(id, { parent: null, blocked_by: [], sub_tasks: [] });
       const task = taskMap.get(id);
       if (task?.parent) {
         const childEntry = syncState.id_map[task.id];
@@ -505,6 +642,7 @@ export async function executePush(
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
             blockedByFailed: false,
+            orderFailed: false,
           };
           existing.parentFailed = true;
           failedRelations.set(task.id, existing);
@@ -535,6 +673,7 @@ export async function executePush(
               const existing = failedRelations.get(task.id) ?? {
                 parentFailed: false,
                 blockedByFailed: false,
+                orderFailed: false,
               };
               existing.blockedByFailed = true;
               failedRelations.set(task.id, existing);
@@ -547,6 +686,7 @@ export async function executePush(
           const existing = failedRelations.get(task.id) ?? {
             parentFailed: false,
             blockedByFailed: false,
+            orderFailed: false,
           };
           existing.blockedByFailed = true;
           failedRelations.set(task.id, existing);
@@ -577,6 +717,7 @@ export async function executePush(
           const existing = failedRelations.get(r.taskId) ?? {
             parentFailed: false,
             blockedByFailed: false,
+            orderFailed: false,
           };
           existing.parentFailed = true;
           failedRelations.set(r.taskId, existing);
@@ -591,11 +732,41 @@ export async function executePush(
           const existing = failedRelations.get(r.taskId) ?? {
             parentFailed: false,
             blockedByFailed: false,
+            orderFailed: false,
           };
           existing.blockedByFailed = true;
           failedRelations.set(r.taskId, existing);
         }
       }
+    }
+
+    for (const createdTaskId of createdTaskIds) {
+      const pending = [...pendingCreateOutcomes.entries()].find(
+        ([draftId]) =>
+          syncState.id_map[createdTaskId]?.issue_number ===
+          pendingCreateOutcomes.get(draftId)?.issueNumber,
+      )?.[1];
+      if (!pending) continue;
+      const relationFailure = failedRelations.get(createdTaskId);
+      const relationUnknown = Boolean(
+        relationFailure?.parentFailed ||
+        relationFailure?.blockedByFailed ||
+        relationFailure?.orderFailed,
+      );
+      await reportStepOutcome({
+        stepId: pending.reservation.stepId,
+        operation: pending.reservation.operation,
+        targetTaskId: pending.reservation.targetTaskId,
+        state: relationUnknown ? "unknown" : "committed",
+        diagnostic: relationUnknown
+          ? "Project membership後のrelation postconditionを確認できません"
+          : null,
+        remoteIdentifiers: {
+          issueId: pending.issueId,
+          issueNumber: pending.issueNumber,
+          projectItemId: pending.projectItemId,
+        },
+      });
     }
   } else if (draftDiffs.length > 0) {
     result.skipped += draftDiffs.length;
@@ -654,7 +825,16 @@ export async function executePush(
             body: serializeTaskBodyForGithub(task),
             ...metadataUpdate.fields,
           }),
-          setIssueState(gql, idEntry.issue_node_id, task.state),
+          setIssueState(
+            gql,
+            idEntry.issue_node_id,
+            task.state,
+            task.state === "closed" && task.state_reason === "NOT_PLANNED"
+              ? "NOT_PLANNED"
+              : task.state === "closed"
+                ? "COMPLETED"
+                : undefined,
+          ),
         ];
 
         if (usesGithubIssueTypes && snapshot?.syncFields?.type !== task.type) {
@@ -753,6 +933,7 @@ export async function executePush(
         preRelationBaseline.set(task.id, {
           parent: snapshot?.syncFields?.parent ?? null,
           blocked_by: snapshot?.syncFields?.blocked_by ?? [],
+          sub_tasks: snapshot?.syncFields?.sub_tasks ?? [],
         });
 
         let parentFailed = false;
@@ -854,9 +1035,64 @@ export async function executePush(
           if (results.some((r) => !r.ok)) blockedByFailed = true;
         }
 
-        if (parentFailed || blockedByFailed) {
-          failedRelations.set(task.id, { parentFailed, blockedByFailed });
+        let orderFailed = false;
+        const oldSubTasks = snapshot?.syncFields?.sub_tasks ?? [];
+        const newSubTasks = task.sub_tasks ?? [];
+        if (JSON.stringify(oldSubTasks) !== JSON.stringify(newSubTasks)) {
+          // membership更新では各childのparent差分を先に処理済み。確定後の完全順序を適用する。
+          for (let index = newSubTasks.length - 2; index >= 0; index -= 1) {
+            const childId = newSubTasks[index]!;
+            const beforeId = newSubTasks[index + 1]!;
+            const childEntry = syncState.id_map[childId];
+            const beforeEntry = syncState.id_map[beforeId];
+            if (!childEntry?.issue_node_id || !beforeEntry?.issue_node_id) {
+              orderFailed = true;
+              console.warn(
+                `  ⚠ issue_node_id が不足しているため sub-issue priority を再試行します (${task.id})`,
+              );
+              break;
+            }
+            try {
+              await reprioritizeSubIssue(gql, {
+                parentIssueNodeId: idEntry.issue_node_id,
+                subIssueNodeId: childEntry.issue_node_id,
+                beforeNodeId: beforeEntry.issue_node_id,
+              });
+            } catch (err) {
+              orderFailed = true;
+              console.warn(
+                `  ⚠ sub-issue priority の更新に失敗 (${task.id}: ${childId}): ${formatError(err)}`,
+              );
+              break;
+            }
+          }
         }
+
+        if (parentFailed || blockedByFailed || orderFailed) {
+          failedRelations.set(task.id, { parentFailed, blockedByFailed, orderFailed });
+        }
+      }
+
+      for (const reservation of opts?.reservations?.filter(
+        (item) => item.targetTaskId === task.id && item.operation !== "create",
+      ) ?? []) {
+        const relationFailure = failedRelations.get(task.id);
+        const failed =
+          (reservation.operation === "link" &&
+            Boolean(relationFailure?.parentFailed || relationFailure?.blockedByFailed)) ||
+          (reservation.operation === "reprioritize" && Boolean(relationFailure?.orderFailed));
+        await reportStepOutcome({
+          stepId: reservation.stepId,
+          operation: reservation.operation,
+          targetTaskId: reservation.targetTaskId,
+          state: failed ? "unknown" : "committed",
+          diagnostic: failed ? "relation mutationのremote postconditionを確認できません" : null,
+          remoteIdentifiers: {
+            issueId: idEntry.issue_node_id,
+            issueNumber: idEntry.issue_number,
+            projectItemId: idEntry.project_item_id,
+          },
+        });
       }
 
       pushedTaskIds.add(task.id);
@@ -981,6 +1217,9 @@ export async function executePush(
           if (relationFailure.blockedByFailed) {
             syncFields = { ...syncFields, blocked_by: baseline.blocked_by };
           }
+          if (relationFailure.orderFailed) {
+            syncFields = { ...syncFields, sub_tasks: baseline.sub_tasks };
+          }
         }
       }
 
@@ -1008,7 +1247,7 @@ export async function executePush(
     snapshots: newSnapshots,
   };
 
-  return { result, tasksFile, syncState };
+  return { result, tasksFile, syncState, stepOutcomes };
 }
 
 function resolveTypeOptionId(

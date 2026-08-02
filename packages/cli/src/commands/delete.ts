@@ -5,6 +5,7 @@ import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
 import { createGraphQLClient } from "../github/client.js";
 import { executePull } from "../sync/pull-executor.js";
+import { WorkGraphCommandEngine } from "../work-graph/command-engine.js";
 
 export interface TaskDeletionRepair {
   parentCleared: string[];
@@ -45,6 +46,7 @@ export interface TaskDeletionInput {
   now?: string;
   deleteGithubIssue: (input: DeleteGithubIssueInput) => Promise<void>;
   forcePull: (input: ForcePullInput) => Promise<{ tasksFile: TasksFile; syncState: SyncState }>;
+  commandEngine?: WorkGraphCommandEngine;
 }
 
 export type TaskDeletionResult =
@@ -198,6 +200,12 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
 
   const plan = planTaskDeletion(input.tasksFile, input.syncState, input.taskId);
   if (!plan.ok) return plan;
+  const commandPlan = input.commandEngine?.executeCommand({
+    type: "hard_delete_plan",
+    deletedTaskId: plan.taskId,
+    tasks: input.tasksFile.tasks,
+  });
+  if (commandPlan && !commandPlan.ok) return { ok: false, error: commandPlan.error };
 
   try {
     await input.deleteGithubIssue({
@@ -211,6 +219,7 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
   }
 
   const cleaned = applyTaskDeletion(input.tasksFile, input.syncState, plan, input.now);
+  if (commandPlan?.ok) cleaned.tasksFile.tasks = commandPlan.tasks;
 
   let pulled: { tasksFile: TasksFile; syncState: SyncState };
   try {
@@ -279,6 +288,7 @@ export function createDeleteCommand(): Command {
             syncState,
             taskId,
             yes: opts.yes === true,
+            commandEngine: new WorkGraphCommandEngine(config),
             deleteGithubIssue: deleteGithubIssueWithGraphQL,
             forcePull: async ({ tasksFile: cleanedTasksFile, syncState: cleanedSyncState }) => {
               const gql = await createGraphQLClient();
@@ -296,6 +306,17 @@ export function createDeleteCommand(): Command {
             } else {
               console.error(result.error);
             }
+            process.exitCode = 1;
+            return;
+          }
+
+          const reconciliation = new WorkGraphCommandEngine(config).executeCommand({
+            type: "hard_delete_reconciliation",
+            deletedTaskId: result.taskId,
+            tasks: result.tasksFile.tasks,
+          });
+          if (!reconciliation.ok) {
+            console.error(reconciliation.error);
             process.exitCode = 1;
             return;
           }
