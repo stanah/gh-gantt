@@ -60,7 +60,7 @@ pre-push:
   jobs:
     - name: test
       # test:json は test + JSON レポーター出力。req:trace の入力となる。
-      run: vp run test:json < /dev/null
+      run: pnpm test:json < /dev/null
     - name: build
       run: vp run build < /dev/null
     - name: req-trace

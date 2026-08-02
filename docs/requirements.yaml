@@ -1224,6 +1224,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-233-relation-node-id.test.ts
+              - tests/regressions/issue-331-pre-push-test-runner.test.ts
           - id: NFR-STABILITY-002-AC3
             description: |
               ローカルで null 化された日付フィールド (start_date / end_date) が
