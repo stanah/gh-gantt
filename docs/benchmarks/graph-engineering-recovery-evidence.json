@@ -2,119 +2,71 @@
   "schemaVersion": "1",
   "recordedAt": "2026-08-03T00:48:00.000Z",
   "baseRevision": "09ba15a046f721b98b728ea39a8b81d9053e6f70",
-  "configSummary": "run_graph=dev-role-fixed@1;dispatch.max_concurrency=2",
-  "configFingerprint": "sha256:e320a6075d970eee839bb6d95ce79736ec055a2e8114fcfae9b53c2192266c7b",
   "observations": [
     {
       "scenario": "runner_failure",
-      "faultInjection": "planner attemptをterminal failureにする",
-      "commands": [
-        "gh-gantt run event <run-id> --file <failed-event.json> --json",
-        "gh-gantt run show <run-id> --json",
-        "gh-gantt run decide <run-id> --decision override --json"
-      ],
-      "expectedPostconditions": [
-        "state=waiting_human",
-        "wait_reason=attempt_failed",
-        "failed_attempt_terminal=true",
-        "override_creates_new_planner_node=true"
-      ],
-      "observedPostconditions": [
-        "state=waiting_human",
-        "wait_reason=attempt_failed",
-        "failed_attempt_terminal=true",
-        "override_creates_new_planner_node=true"
-      ],
       "recoveryTimeMs": { "status": "known", "value": 726 },
       "status": "passed",
-      "digest": "sha256:34227ecd8dce8037a58454d85ee2550f0dbdc865c326b51c46cddb68b1b2c28a"
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
     },
     {
       "scenario": "process_restart",
-      "faultInjection": "event適用ごとにCLI processを終了する",
-      "commands": [
-        "gh-gantt run event <run-id> --file <event.json> --json",
-        "gh-gantt run show <run-id> --json"
-      ],
-      "expectedPostconditions": [
-        "state_reobserved=true",
-        "wait_reason_reobserved=true",
-        "attempt_lineage_reobserved=true"
-      ],
-      "observedPostconditions": [
-        "state_reobserved=true",
-        "wait_reason_reobserved=true",
-        "attempt_lineage_reobserved=true"
-      ],
       "recoveryTimeMs": { "status": "known", "value": 197 },
       "status": "passed",
-      "digest": "sha256:83f04d6792faed0fbc057e3af19e0509429631a9773559ee87addd1ad9ff1ca4"
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
     },
     {
       "scenario": "stale_lease",
-      "faultInjection": "5秒leaseを期限切れにする",
-      "commands": [
-        "gh-gantt run reclaim --claim <claim-id> --reason expired --json",
-        "gh-gantt run heartbeat --claim <claim-id> --fencing-token <token> --json"
-      ],
-      "expectedPostconditions": [
-        "reclaim_accepted=true",
-        "old_owner_heartbeat=stale_claim",
-        "rejected_state_unchanged=true"
-      ],
-      "observedPostconditions": [
-        "reclaim_accepted=true",
-        "old_owner_heartbeat=stale_claim",
-        "rejected_state_unchanged=true"
-      ],
       "recoveryTimeMs": { "status": "known", "value": 13060 },
       "status": "passed",
-      "digest": "sha256:66456e9979bb1c207e1eeded31e1a118bdc86d9ed487158aa824dcdd7b4097c9"
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
     },
     {
       "scenario": "github_api_transient",
-      "faultInjection": "pre-check transport seamを1回failureにする",
-      "commands": [
-        "pnpm --filter @gh-gantt/cli exec vp test run src/__tests__/pull-precheck.test.ts -t <fallback-case>",
-        "gh-gantt pull"
-      ],
-      "expectedPostconditions": [
-        "full_fetch_fallback=true",
-        "authenticated_pull_exit=0",
-        "remote_change_count=0"
-      ],
-      "observedPostconditions": [
-        "full_fetch_fallback=true",
-        "authenticated_pull_exit=0",
-        "remote_change_count=0"
-      ],
       "recoveryTimeMs": { "status": "known", "value": 3 },
       "status": "passed",
-      "digest": "sha256:667261283f1644f3f8ef1ab224c8d24a99f010af61ab448cd9be7bd1e18d2fc7"
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
     },
     {
       "scenario": "sync_conflict",
-      "faultInjection": "Issue #331 statusをlocal/remoteで競合させる",
-      "commands": [
-        "gh-gantt pull",
-        "gh-gantt conflicts",
-        "gh-gantt resolve <conflict-id> --theirs",
-        "gh-gantt push --yes --force",
-        "gh-gantt conflicts"
-      ],
-      "expectedPostconditions": [
-        "remote_done_preserved=true",
-        "idempotent_push=true",
-        "remaining_conflicts=0"
-      ],
-      "observedPostconditions": [
-        "remote_done_preserved=true",
-        "idempotent_push=true",
-        "remaining_conflicts=0"
-      ],
       "recoveryTimeMs": { "status": "unknown", "reason": "not_collected" },
       "status": "passed",
-      "digest": "sha256:56d518dfd47e1b6755125f5c2cb4a041ab19a8f12f70f80c8ef726d60be9ca52"
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
     }
   ]
 }

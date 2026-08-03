@@ -2,23 +2,15 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { GraphRecoveryEvidencePackSchema } from "../../packages/smoke/src/graph-benchmark.js";
 
 const ROOT = resolve(import.meta.dirname, "../..");
+const RootPackageSchema = z.object({ scripts: z.record(z.string()) });
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(ROOT, path), "utf8");
-}
-
-function canonicalJson(value: unknown): string {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const record = value as Record<string, unknown>;
-  return `{${Object.keys(record)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonicalJson(record[key])}`)
-    .join(",")}}`;
 }
 
 describe("[NFR-STABILITY-016-AC4] Graph Engineering benchmark CLI", () => {
@@ -47,42 +39,61 @@ describe("[NFR-STABILITY-016-AC5] Graph Engineering の実環境 recovery smoke"
     ];
     expect(evidence.schemaVersion).toBe("1");
     expect(evidence.baseRevision).toMatch(/^[0-9a-f]{40}$/);
-    expect(evidence.configFingerprint).toBe(
-      `sha256:${createHash("sha256").update(evidence.configSummary).digest("hex")}`,
-    );
     expect(evidence.observations.map((entry) => entry.scenario).sort()).toEqual(
       [...scenarios].sort(),
     );
+    const benchmarkDigest = `sha256:${createHash("sha256").update(benchmark).digest("hex")}`;
+    const benchmarkByteLength = Buffer.byteLength(benchmark);
 
     for (const scenario of scenarios) {
       expect(reference).toContain(`\`${scenario}\``);
       expect(benchmark).toContain(`\`${scenario}\``);
       const observation = evidence.observations.find((entry) => entry.scenario === scenario)!;
-      const { digest, ...payload } = observation;
       expect(observation.status).toBe("passed");
-      expect(observation.commands.length).toBeGreaterThan(0);
-      expect(observation.expectedPostconditions.length).toBeGreaterThan(0);
-      expect(observation.observedPostconditions).toEqual(observation.expectedPostconditions);
-      expect(digest).toBe(
-        `sha256:${createHash("sha256").update(canonicalJson(payload)).digest("hex")}`,
-      );
+      expect(observation.evidence).toEqual([
+        {
+          kind: "recovery",
+          uri: "docs/benchmarks/graph-engineering-2026-08-03.md",
+          sha256: benchmarkDigest,
+          byteLength: benchmarkByteLength,
+        },
+      ]);
     }
     expect(evidenceText).not.toMatch(/(?:\/Users\/|\/private\/tmp\/|file:\/\/)/);
     expect(evidenceText).not.toMatch(/(?:run|claim)-[0-9a-f]{8}-[0-9a-f-]{27,}/);
     expect(
       GraphRecoveryEvidencePackSchema.safeParse({ ...evidence, rawRunnerLog: "非公開" }).success,
     ).toBe(false);
-    for (const configSummary of [
+    const firstObservation = evidence.observations[0]!;
+    expect(
+      GraphRecoveryEvidencePackSchema.safeParse({
+        ...evidence,
+        observations: [
+          { ...firstObservation, commands: ["gh-gantt run show <run-id> --json"] },
+          ...evidence.observations.slice(1),
+        ],
+      }).success,
+    ).toBe(false);
+    for (const uri of [
       "/etc/passwd",
-      "command /home/user/evidence.json",
+      "/home/user/evidence.json",
       "~/private/evidence.json",
       "C:\\temp\\evidence.json",
       "\\\\server\\share\\evidence.json",
       "file:///tmp/evidence.json",
     ]) {
       expect(
-        GraphRecoveryEvidencePackSchema.safeParse({ ...evidence, configSummary }).success,
-        configSummary,
+        GraphRecoveryEvidencePackSchema.safeParse({
+          ...evidence,
+          observations: [
+            {
+              ...firstObservation,
+              evidence: [{ ...firstObservation.evidence[0]!, uri }],
+            },
+            ...evidence.observations.slice(1),
+          ],
+        }).success,
+        uri,
       ).toBe(false);
     }
     expect(reference).toContain("実 rate-limit や GitHub 障害を発生させない");
@@ -101,9 +112,7 @@ describe("[NFR-STABILITY-016-AC5] Graph Engineering の実環境 recovery smoke"
 
 describe("[NFR-STABILITY-016-AC6] Graph Engineering の導入・停止・復旧導線", () => {
   it("root script、README、workflow、Project Mapを同じ運用referenceへ結ぶ", async () => {
-    const rootPackage = JSON.parse(await readRepoFile("package.json")) as {
-      scripts: Record<string, string>;
-    };
+    const rootPackage = RootPackageSchema.parse(JSON.parse(await readRepoFile("package.json")));
     const [readme, workflow, projectMap, smokeReadme] = await Promise.all([
       readRepoFile("README.md"),
       readRepoFile("skills/gh-gantt-workflow/SKILL.md"),

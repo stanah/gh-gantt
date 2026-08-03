@@ -217,29 +217,16 @@ const RecoverySmokeSchema = z
     }
   });
 
-const PublicEvidenceTextSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(500)
-  .refine(
-    (value) =>
-      !/(?:file:\/\/|(?:^|[\s="'(])(?:\/(?!\/)|~[\\/]|[A-Za-z]:[\\/]|\\\\)|(?:run|claim)-[0-9a-f]{8}-[0-9a-f-]{27,})/i.test(
-        value,
-      ),
-    { message: "公開evidenceへ絶対pathまたは内部opaque IDを含められません" },
-  );
+const RecoveryEvidenceReferenceSchema = EvidenceReferenceSchema.extend({
+  kind: z.literal("recovery"),
+});
 
 const RecoveryEvidenceObservationSchema = z
   .object({
     scenario: z.enum(RECOVERY_SMOKE_SCENARIOS),
-    faultInjection: PublicEvidenceTextSchema,
-    commands: z.array(PublicEvidenceTextSchema).min(1).max(10),
-    expectedPostconditions: z.array(PublicEvidenceTextSchema).min(1).max(20),
-    observedPostconditions: z.array(PublicEvidenceTextSchema).min(1).max(20),
     recoveryTimeMs: NumberMetricSchema,
     status: z.enum(["passed", "failed"]),
-    digest: SHA256_SCHEMA,
+    evidence: z.array(RecoveryEvidenceReferenceSchema).min(1).max(20),
   })
   .strict();
 
@@ -248,8 +235,6 @@ export const GraphRecoveryEvidencePackSchema = z
     schemaVersion: z.literal("1"),
     recordedAt: z.string().datetime(),
     baseRevision: REVISION_SCHEMA,
-    configSummary: PublicEvidenceTextSchema,
-    configFingerprint: SHA256_SCHEMA,
     observations: z
       .array(RecoveryEvidenceObservationSchema)
       .length(RECOVERY_SMOKE_SCENARIOS.length),

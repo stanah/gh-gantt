@@ -47,7 +47,9 @@ verified success、wall-clock、input/output token、cost、Run node、agent inv
 human intervention / wait、recovery time、coordination failureを記録する。各 metric は
 `known(value)` または `unknown(reason)` の排他的 union とし、known 0 を unknown へ丸めない。
 
-公開 evidence は repository 相対 path または HTTPS URL、SHA-256、byte length、種別だけを持つ。
+公開 evidence reference は repository 相対 path または HTTPS URL、SHA-256、byte length、種別だけを持つ。
+公開 recovery observation は scenario、status、recovery time と reference のみを許可し、command、fault injection、
+postcondition本文は非公開の実行記録へ分離する。
 raw prompt、conversation、provider response、token、秘密鍵、絶対 path、hostname、内部 run/session ID は残さない。
 1 trial の reference は最大20件、1 reference metadata は最大64 KiB とし、report は evidence URI 自体も再出力しない。
 
@@ -55,7 +57,7 @@ raw prompt、conversation、provider response、token、秘密鍵、絶対 path�
 
 Graph arm を task-shape 固有の候補にできるのは、次をすべて満たす場合だけである。
 
-1. 5 scenario に最低1 pairずつあり、先行順の差が1以内である。
+1. 5 scenario に最低1 pairずつあり、suite順で先行strategyが交互である。
 2. 5 recovery smoke が evidence 付きで pass し、recovery time が known である。
 3. verified success が全 trial で known かつ Graph arm に failure がない。
 4. `ready_frontier` の Graph arm が同じ pair の single-loop より20%以上短い。

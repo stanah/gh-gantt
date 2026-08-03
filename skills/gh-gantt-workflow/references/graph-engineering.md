@@ -126,3 +126,7 @@ duration、outcome、failure class、repository相対path / HTTPS URLである�
 raw prompt、conversation、provider response、API token、private key、header、cookie、hostname、ユーザーの絶対 path、
 provider session / run ID、raw API responseは残さない。秘密をredactしても本文全体は保存せず、bounded summaryと
 SHA-256へ変換する。判断に迷う値は公開せず`unknown(reason)`にする。
+
+公開 recovery pack の observation は scenario、status、recovery time と evidence reference だけを持つ。
+reference の allowlist は kind、repository相対path / HTTPS URI、SHA-256、byte length とし、command、
+fault injection、postcondition本文は非公開の実行記録へ分離する。

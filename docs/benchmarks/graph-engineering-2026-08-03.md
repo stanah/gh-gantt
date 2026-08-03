@@ -3,8 +3,9 @@
 Issue #332 の導入前 pilot。公開 repository を変更しない一時 workspace と、
 base revision `09ba15a046f721b98b728ea39a8b81d9053e6f70` から build した CLI を使った。
 raw log、認証情報、絶対 path、内部 Run / claim / session ID は保存していない。
-各観測の入力条件、command template、期待・観測 postcondition、digest は
-[versioned recovery evidence](graph-engineering-recovery-evidence.json) に固定する。
+各観測の詳細な入力条件、command、期待・観測 postcondition は非公開の一時実行記録にのみ保持し、
+versioned な [recovery evidence pack](graph-engineering-recovery-evidence.json) は、この公開要約への
+kind / URI / SHA-256 / byte length と outcome / recovery time だけを固定する。
 
 ## 結論
 
@@ -44,7 +45,7 @@ GitHub API smoke は実 rate-limit、GitHub 障害、大量 requestを発生さ�
 `resource_metrics_unknown`、`operational_metrics_unknown`、`recovery_time_unknown` を含む。
 これは benchmark harness の失敗ではなく、Graph を自動昇格させないための fail-closed な結果である。
 
-## 再現コマンド
+## 公開 runbook
 
 ```bash
 pnpm build
@@ -57,6 +58,7 @@ node packages/cli/dist/index.js run heartbeat --help
 gh-gantt conflicts
 ```
 
-Run Graph / claim の具体的な command file と opaque ID は一時 workspace にのみ置く。
+この節は再実行用の一般化した操作例であり、実行 evidence そのものではない。
+Run Graph / claim の具体的な command file と opaque ID は非公開の一時 workspace にのみ置く。
 再実行時も [Graph Engineering 運用 reference](../../skills/gh-gantt-workflow/references/graph-engineering.md) の
 public-safe evidence 規律に従い、結果は bounded summaryへ変換する。

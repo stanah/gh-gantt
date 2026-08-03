@@ -142,7 +142,10 @@ pnpm benchmark:graph -- --input benchmark-record.json --require-qualified
 
 入力JSONは公開artifactではない。strict schemaは未定義のraw fieldと危険なevidence URIを拒否するが、
 suite / task shape / pair IDは非公開入力として扱う。reportはこれらを再出力せずpair ordinalだけを返す。
-公開evidenceはrepository相対pathまたはHTTPS URL、SHA-256、byte length、種別だけを記録する。
+benchmark入力と公開 recovery pack の `evidence` envelope は、`kind`、repository相対pathまたは
+HTTPS `uri`、`sha256`、`byteLength` だけを記録する。recovery observation の外側には
+`scenario`、`status`、`recoveryTimeMs` だけを許可し、command、fault injection、postcondition本文は
+非公開の実行記録へ分離する。
 いずれかのmetricを取得できない場合は0ではなく`unknown(reason)`を使い、Graph候補へ昇格しない。
 
 benchmarkはagent、provider SDK、任意shell command、GitHub mutationを実行しない。実環境faultは専用smoke環境で
