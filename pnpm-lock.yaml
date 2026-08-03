@@ -112,6 +112,9 @@ importers:
       '@gh-gantt/cli':
         specifier: workspace:*
         version: link:../cli
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

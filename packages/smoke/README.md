@@ -119,8 +119,43 @@ Actions タブから手動で起動する。
 3. `.github/workflows/smoke.yml` の `on:` に `pull_request` / `push` / `schedule` を追加
 4. `smoke-personal` / `smoke-org` の `if:` 条件を自動トリガー対応に戻す
 
+## Graph Engineering benchmark
+
+Graph Engineering は既定ではない。同一受入基準の`single_loop`と`graph_orchestration`を比較し、
+5 scenario / 5 recovery smoke、verified success、resource metricが揃ったtask shapeだけを候補にする。
+詳細な導入・停止・復旧手順は
+[graph-engineering.md](../../skills/gh-gantt-workflow/references/graph-engineering.md)を参照する。
+
+```bash
+# reportを標準出力へ表示
+pnpm benchmark:graph -- --input benchmark-record.json
+
+# sanitized reportを保存
+pnpm benchmark:graph -- --input benchmark-record.json --output benchmark-report.json
+
+# graph_candidate以外をexit 1にする明示gate
+pnpm benchmark:graph -- --input benchmark-record.json --require-qualified
+```
+
+通常の分析は`single_loop`でも成功する。`--require-qualified`は、全gateを満たす
+`graph_candidate`をCIや外部runnerが明示的に要求するときだけ使う。
+
+入力JSONは公開artifactではない。strict schemaは未定義のraw fieldと危険なevidence URIを拒否するが、
+suite / task shape / pair IDは非公開入力として扱う。reportはこれらを再出力せずpair ordinalだけを返す。
+benchmark入力と公開 recovery pack の `evidence` envelope は、`kind`、repository相対pathまたは
+HTTPS `uri`、`sha256`、`byteLength` だけを記録する。recovery observation の外側には
+`scenario`、`status`、`recoveryTimeMs` だけを許可し、command、fault injection、postcondition本文は
+非公開の実行記録へ分離する。
+いずれかのmetricを取得できない場合は0ではなく`unknown(reason)`を使い、Graph候補へ昇格しない。
+
+benchmarkはagent、provider SDK、任意shell command、GitHub mutationを実行しない。実環境faultは専用smoke環境で
+安全に注入し、外部runnerがbounded observationを作る。自動GitHub Actions triggerはPAT security reviewが
+完了するまで従来どおり無効である。
+
 ## 関連
 
 - [ADR-008: 実環境スモークテストによる Org/個人環境差異の検証](../../docs/adr/ADR-008-real-environment-smoke-testing.md)
 - NFR-STABILITY-003: Org 環境と個人環境の両方で主要 CLI コマンドが動作する
 - NFR-STABILITY-004: スモークテストの継続実行による回帰検知
+- [ADR-026: Graph Engineering の採用を実測と recovery evidence で gate する](../../docs/adr/ADR-026-measured-graph-engineering-adoption.md)
+- [Issue #332 pre-adoption benchmark](../../docs/benchmarks/graph-engineering-2026-08-03.md)

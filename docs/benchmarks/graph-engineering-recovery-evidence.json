@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "1",
+  "recordedAt": "2026-08-03T00:48:00.000Z",
+  "baseRevision": "09ba15a046f721b98b728ea39a8b81d9053e6f70",
+  "observations": [
+    {
+      "scenario": "runner_failure",
+      "recoveryTimeMs": { "status": "known", "value": 726 },
+      "status": "passed",
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
+    },
+    {
+      "scenario": "process_restart",
+      "recoveryTimeMs": { "status": "known", "value": 197 },
+      "status": "passed",
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
+    },
+    {
+      "scenario": "stale_lease",
+      "recoveryTimeMs": { "status": "known", "value": 13060 },
+      "status": "passed",
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
+    },
+    {
+      "scenario": "github_api_transient",
+      "recoveryTimeMs": { "status": "known", "value": 3 },
+      "status": "passed",
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
+    },
+    {
+      "scenario": "sync_conflict",
+      "recoveryTimeMs": { "status": "unknown", "reason": "not_collected" },
+      "status": "passed",
+      "evidence": [
+        {
+          "kind": "recovery",
+          "uri": "docs/benchmarks/graph-engineering-2026-08-03.md",
+          "sha256": "sha256:f0ec38c56273cfaa93fc10cda8d58199aa6f3a0e7d020d3a344e66617793eb85",
+          "byteLength": 5753
+        }
+      ]
+    }
+  ]
+}

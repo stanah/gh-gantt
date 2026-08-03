@@ -1692,3 +1692,59 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+      - id: NFR-STABILITY-016
+        summary: Graph Engineering の実測比較と安全な運用縮退
+        acceptance_criteria:
+          - id: NFR-STABILITY-016-AC1
+            description: |
+              benchmark metric は known(value) と unknown(reason) の排他的 union を使い、
+              verified success、wall-clock、token、cost、node/agent/tool call、retry、
+              human intervention、recovery time、coordination failureで既知の0と欠測を区別する
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/graph-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC2
+            description: |
+              同じ acceptance criteria、repository revision、verifier、environment を持つ
+              single-loop と graph orchestration の pairだけを比較し、固定Run Graph、ready frontier、
+              verify failure recovery、human gate、承認付きmutationの5 scenarioを識別する
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/graph-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC3
+            description: |
+              scenario、recovery、verified success、resource、coordination evidenceが不足または
+              不合格ならgraphを昇格せず、single-loop、concurrency 1、automatic retry 0、
+              remote side effectのhuman gate、bounded outputへfail-closedに縮退する
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/graph-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC4
+            description: |
+              workspace rootからstrict inputのbenchmark CLIを実行でき、sanitized reportを出力し、
+              明示されたqualification gateではgraph candidate以外を失敗させる
+            status: covered
+            tests:
+              - packages/smoke/src/__tests__/graph-benchmark.test.ts
+              - tests/workflow/graph-engineering-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC5
+            description: |
+              runner failure、process restart、stale lease、controlled GitHub API transient failure、
+              sync conflictを別々のpostconditionとpublic-safe evidenceで実環境検証する
+            status: covered
+            tests:
+              - tests/workflow/graph-engineering-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC6
+            description: |
+              README、workflow reference、Project Map、smoke runbookがGraph Engineeringの導入、
+              計測、停止、復旧、contract ceilingとの境界を同じ運用正本へ結ぶ
+            status: covered
+            tests:
+              - tests/workflow/graph-engineering-benchmark.test.ts
+          - id: NFR-STABILITY-016-AC7
+            description: |
+              外部一次資料の事実とgh-gantt固有の推論を分離し、Anthropicのresearch結果、
+              Symphonyのmemory-only state、GitHub API利用規律をcoding品質の外部標準として一般化しない
+            status: covered
+            tests:
+              - tests/workflow/graph-engineering-benchmark.test.ts
