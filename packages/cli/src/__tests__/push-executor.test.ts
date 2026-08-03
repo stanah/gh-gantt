@@ -3139,4 +3139,132 @@ describe("executePush", () => {
       expect(newSyncState.last_synced_at).toBe("2026-01-01T00:00:00Z");
     });
   });
+
+  describe("[NFR-STABILITY-014-AC8] proposal stepのGitHub副作用結果を構造化して返す", () => {
+    function makeDraftGql(
+      createHandler: (vars: Record<string, unknown>) => unknown | Promise<unknown>,
+    ) {
+      return vi.fn().mockImplementation(async (query: string, vars?: Record<string, unknown>) => {
+        if (query.includes("createIssue")) return createHandler(vars ?? {});
+        if (query.includes("addProjectV2ItemById")) {
+          return { addProjectV2ItemById: { item: { id: "ITEM_99" } } };
+        }
+        if (query.includes("labels") || query.includes("milestones")) {
+          return { repository: { id: "REPO_1", labels: { nodes: [] }, milestones: { nodes: [] } } };
+        }
+        if (query.includes("repository(")) return { repository: { id: "REPO_1" } };
+        if (query.includes("issue(number:")) {
+          return makeBatchIssueResponse(extractBatchIssueNumbers(query));
+        }
+        return {};
+      });
+    }
+
+    it("createIssue応答直後はunknownを保存しProject追加後だけcommittedにする", async () => {
+      const tasksFile: TasksFile = {
+        tasks: [makeTask("o/r#draft-proposal-1", { title: "公開可能なテストIssue" })],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: {},
+        snapshots: {},
+      };
+      const outcomes: unknown[] = [];
+      let createVars: Record<string, unknown> | undefined;
+      const gql = makeDraftGql((vars) => {
+        createVars = vars;
+        return { createIssue: { issue: { id: "ISSUE_99", number: 99 } } };
+      });
+
+      await expect(
+        executePush(gql as any, makeConfig(), tasksFile, syncState, {
+          reservations: [
+            {
+              stepId: "step-create-1",
+              operation: "create",
+              targetTaskId: "o/r#draft-proposal-1",
+              correlationToken: "proposal-1-step-create-1",
+              expectedPostcondition: { title: "公開可能なテストIssue" },
+            },
+          ],
+          onStepOutcome: async (outcome) => {
+            outcomes.push(outcome);
+          },
+        }),
+      ).resolves.toBeDefined();
+
+      expect(outcomes).toEqual([
+        expect.objectContaining({
+          stepId: "step-create-1",
+          state: "unknown",
+          remoteIdentifiers: { issueId: "ISSUE_99", issueNumber: 99 },
+        }),
+        expect.objectContaining({
+          stepId: "step-create-1",
+          state: "committed",
+          remoteIdentifiers: {
+            issueId: "ISSUE_99",
+            issueNumber: 99,
+            projectItemId: "ITEM_99",
+          },
+        }),
+      ]);
+      expect(createVars?.clientMutationId).toBe("proposal-1-step-create-1");
+      expect(createVars?.body).toContain(
+        "<!-- gh-gantt:mutation-correlation:v1 proposal-1-step-create-1 -->",
+      );
+      expect(
+        gql.mock.calls.some((call) => (call[0] as string).includes("addProjectV2ItemById")),
+      ).toBe(true);
+    });
+
+    it("createIssueの通信例外はunknownとし同じ実行内で再送しない", async () => {
+      const tasksFile: TasksFile = {
+        tasks: [makeTask("o/r#draft-proposal-2", { title: "通信曖昧性テスト" })],
+        cache: { comments: {}, reactions: {} },
+      };
+      const syncState: SyncState = {
+        last_synced_at: "",
+        project_node_id: "PVT_1",
+        id_map: {},
+        field_ids: {},
+        snapshots: {},
+      };
+      const outcomes: unknown[] = [];
+      let createCalls = 0;
+      const gql = makeDraftGql(() => {
+        createCalls += 1;
+        throw new Error("connection reset after request");
+      });
+
+      await expect(
+        executePush(gql as any, makeConfig(), tasksFile, syncState, {
+          reservations: [
+            {
+              stepId: "step-create-2",
+              operation: "create",
+              targetTaskId: "o/r#draft-proposal-2",
+              correlationToken: "proposal-2-step-create-2",
+              expectedPostcondition: { title: "通信曖昧性テスト" },
+            },
+          ],
+          onStepOutcome: async (outcome) => {
+            outcomes.push(outcome);
+          },
+        }),
+      ).rejects.toThrow("connection reset after request");
+
+      expect(createCalls).toBe(1);
+      expect(outcomes).toEqual([
+        expect.objectContaining({
+          stepId: "step-create-2",
+          state: "unknown",
+          diagnostic: expect.stringContaining("createIssue応答を確認できません"),
+        }),
+      ]);
+    });
+  });
 });

@@ -171,19 +171,116 @@ export const ISSUE_COMMENTS_QUERY = `
 `;
 
 export const ISSUE_RELATIONSHIPS_QUERY = `
-  query($owner: String!, $repo: String!, $number: Int!) {
+  query($owner: String!, $repo: String!, $number: Int!, $subIssuesCursor: String, $blockedByCursor: String) {
     repository(owner: $owner, name: $repo) {
       issue(number: $number) {
-        subIssues(first: 50) {
+        subIssues(first: 50, after: $subIssuesCursor) {
+          pageInfo { hasNextPage endCursor }
           nodes {
             number
             repository { nameWithOwner }
           }
         }
-        blockedBy(first: 50) {
+        blockedBy(first: 50, after: $blockedByCursor) {
+          pageInfo { hasNextPage endCursor }
           nodes {
             number
             repository { nameWithOwner }
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** create応答がunknownの場合にcorrelation markerで照合するライブquery。 */
+export const MUTATION_CORRELATION_ISSUES_QUERY = `
+  query($owner: String!, $repo: String!, $cursor: String) {
+    repository(owner: $owner, name: $repo) {
+      issues(first: 100, after: $cursor, orderBy: { field: CREATED_AT, direction: DESC }, states: [OPEN, CLOSED]) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          id
+          number
+          body
+          createdAt
+          repository { nameWithOwner }
+          projectItems(first: 100) { nodes { id project { id } } }
+        }
+      }
+    }
+  }
+`;
+
+/** relation/state stepのリモート事後条件を照合するライブquery。 */
+export const MUTATION_POSTCONDITION_QUERY = `
+  query($owner: String!, $repo: String!, $number: Int!, $assigneesCursor: String, $labelsCursor: String) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $number) {
+        id
+        number
+        title
+        body
+        state
+        stateReason
+        issueType { name }
+        assignees(first: 100, after: $assigneesCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes { login }
+        }
+        labels(first: 100, after: $labelsCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes { name }
+        }
+        milestone { title }
+        parent { number repository { nameWithOwner } }
+      }
+    }
+  }
+`;
+
+/** Issueが属するProject itemをcursor終端まで探索するquery。 */
+export const MUTATION_ISSUE_PROJECT_ITEMS_QUERY = `
+  query($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+    repository(owner: $owner, name: $repo) {
+      issue(number: $number) {
+        projectItems(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes { id project { id } }
+        }
+      }
+    }
+  }
+`;
+
+/** Project itemのfield valuesをcursor終端まで取得するquery。 */
+export const MUTATION_PROJECT_ITEM_FIELDS_QUERY = `
+  query($itemId: ID!, $cursor: String) {
+    node(id: $itemId) {
+      ... on ProjectV2Item {
+        fieldValues(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            ... on ProjectV2ItemFieldSingleSelectValue {
+              field { ... on ProjectV2SingleSelectField { name } }
+              name
+            }
+            ... on ProjectV2ItemFieldTextValue {
+              field { ... on ProjectV2Field { name } }
+              text
+            }
+            ... on ProjectV2ItemFieldDateValue {
+              field { ... on ProjectV2Field { name } }
+              date
+            }
+            ... on ProjectV2ItemFieldNumberValue {
+              field { ... on ProjectV2Field { name } }
+              number
+            }
+            ... on ProjectV2ItemFieldIterationValue {
+              field { ... on ProjectV2IterationField { name } }
+              title
+            }
           }
         }
       }

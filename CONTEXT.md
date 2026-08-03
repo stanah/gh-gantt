@@ -50,3 +50,18 @@ _Avoid_: Artifact, assertion
 **Human Gate**:
 human authority の decision evidence、または契約で許可された理由付き override まで Run Graph を停止する checkpoint。
 _Avoid_: Warning, optional approval
+
+**Mutation Proposal**:
+origin Run/checkpointとcurrent Work Graph snapshotへ固定した、承認付きWork Graph変更のfrozen plan。
+default-deny policy、trusted human decision、ordered primitive step、remote reconciliation、Run Graph auditを持つ。
+Graph ContractやOrg Graphのpatchではない。
+_Avoid_: Direct task edit, Graph Contract patch
+
+**Complete Coverage Proof**:
+全linked worktreeのcanonical workspace、typed nonterminal Run、repository-shared claim revisionを列挙し、
+scan開始・完了時刻とfingerprintで欠落がないことを示すapply前証明。
+_Avoid_: Bounded display, best-effort scan
+
+**Ordered sub_tasks**:
+同一parent内のGitHub sub-issue priority順。dependencyやProjects表示行順ではない。
+_Avoid_: Child set, UI row position

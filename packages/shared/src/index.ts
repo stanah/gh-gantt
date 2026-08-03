@@ -16,5 +16,6 @@ export * from "./loop-state.js";
 export * from "./loop-analysis.js";
 export * from "./loop-metrics.js";
 export * from "./run-graph.js";
+export * from "./work-graph-mutation.js";
 export * from "./adr-schema.js";
 export * from "./export-renderer.js";

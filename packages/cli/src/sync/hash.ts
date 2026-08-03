@@ -20,7 +20,8 @@ export function extractSyncFields(task: Task): SyncFields {
       Object.entries(task.custom_fields).sort(([a], [b]) => a.localeCompare(b)),
     ),
     parent: task.parent,
-    sub_tasks: [...task.sub_tasks].sort(),
+    // GitHub sub-issue priority orderは正準な同期値。sortするとreorderを消失させる。
+    sub_tasks: [...task.sub_tasks],
     start_date: task.start_date,
     end_date: task.end_date,
     date: task.date,

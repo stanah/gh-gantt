@@ -2,6 +2,7 @@ import { z } from "zod";
 import { LoopConfigSchema } from "./loop-state.js";
 import { NormalizedRepositorySchema } from "./repository.js";
 import { RunGraphConfigSchema } from "./run-graph.js";
+import { MutationApprovalConfigSchema, MutationPolicyConfigSchema } from "./work-graph-mutation.js";
 import type {
   AcceptanceCriterion,
   CalendarHoliday,
@@ -232,6 +233,8 @@ export const ConfigSchema: z.ZodType<Config, z.ZodTypeDef, unknown> = z
     dispatch: DispatchConfigSchema.optional(),
     loop: LoopConfigSchema.optional(),
     run_graph: RunGraphConfigSchema.optional(),
+    mutation_policy: MutationPolicyConfigSchema,
+    mutation_approval: MutationApprovalConfigSchema,
     require_review_for_types: z.array(z.string().trim().min(1)).default([]),
     require_close_evidence: z.boolean().default(false),
     max_task_size_hours: z.number().positive().optional(),

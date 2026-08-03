@@ -4,21 +4,16 @@ import { hashTask } from "../../sync/hash.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import type { Task } from "@gh-gantt/shared";
 import { executeWriteThroughPush } from "./write-through-push.js";
+import {
+  projectDependencyChange,
+  projectParentChange,
+  WorkGraphCommandEngine,
+  type DirectWorkGraphCommand,
+} from "../../work-graph/command-engine.js";
 
 export function addDependency(task: Task, blockerTaskId: string): { task: Task; error?: string } {
-  if (blockerTaskId === task.id) {
-    return { task, error: "A task cannot be blocked by itself." };
-  }
-  if (task.blocked_by.some((d) => d.task === blockerTaskId)) {
-    return { task };
-  }
-  return {
-    task: {
-      ...task,
-      blocked_by: [...task.blocked_by, { task: blockerTaskId, type: "finish-to-start", lag: 0 }],
-      updated_at: new Date().toISOString(),
-    },
-  };
+  const projected = projectDependencyChange(task, { kind: "add_dependency", blockerTaskId });
+  return projected.ok ? { task: projected.task } : { task, error: projected.error };
 }
 
 export function removeDependency(
@@ -26,21 +21,12 @@ export function removeDependency(
   blockerTaskId: string,
   rawInput?: string,
 ): { task: Task; error?: string } {
-  // 過去のバグ (#302 以前の create) で保存された非正規形の参照 ("293" 等) も
-  // 削除できるよう、正規形に加えて入力の生値 (# 付き入力は # を除いた形も) と
-  // 一致判定する
-  const removalKeys = new Set([blockerTaskId]);
-  if (rawInput !== undefined) {
-    removalKeys.add(rawInput);
-    if (rawInput.startsWith("#")) removalKeys.add(rawInput.slice(1));
-  }
-  return {
-    task: {
-      ...task,
-      blocked_by: task.blocked_by.filter((d) => !removalKeys.has(d.task)),
-      updated_at: new Date().toISOString(),
-    },
-  };
+  const projected = projectDependencyChange(task, {
+    kind: "remove_dependency",
+    blockerTaskId,
+    rawInput,
+  });
+  return projected.ok ? { task: projected.task } : { task, error: projected.error };
 }
 
 export function setParent(
@@ -48,47 +34,16 @@ export function setParent(
   taskId: string,
   newParentId: string,
 ): { tasks?: Task[]; error?: string } {
-  if (taskId === newParentId) {
-    return { error: "A task cannot be its own parent." };
-  }
-  if (!tasks.some((t) => t.id === newParentId)) {
-    return { error: `Parent task not found: ${newParentId}` };
-  }
-  return {
-    tasks: tasks.map((t) => {
-      if (t.id === taskId) {
-        return { ...t, parent: newParentId, updated_at: new Date().toISOString() };
-      }
-      // Remove from old parent's sub_tasks
-      if (t.sub_tasks.includes(taskId) && t.id !== newParentId) {
-        return { ...t, sub_tasks: t.sub_tasks.filter((s) => s !== taskId) };
-      }
-      // Add to new parent's sub_tasks
-      if (t.id === newParentId && !t.sub_tasks.includes(taskId)) {
-        return { ...t, sub_tasks: [...t.sub_tasks, taskId] };
-      }
-      return t;
-    }),
-  };
+  const projected = projectParentChange(tasks, taskId, {
+    kind: "set_parent",
+    parentTaskId: newParentId,
+  });
+  return projected.ok ? { tasks: projected.tasks } : { error: projected.error };
 }
 
 export function removeParent(tasks: Task[], taskId: string): Task[] {
-  const task = tasks.find((t) => t.id === taskId);
-  const oldParentId = task?.parent;
-
-  return tasks.map((t) => {
-    if (t.id === taskId) {
-      return { ...t, parent: null, updated_at: new Date().toISOString() };
-    }
-    if (oldParentId && t.id === oldParentId) {
-      return {
-        ...t,
-        sub_tasks: t.sub_tasks.filter((s) => s !== taskId),
-        updated_at: new Date().toISOString(),
-      };
-    }
-    return t;
-  });
+  const projected = projectParentChange(tasks, taskId, { kind: "remove_parent" });
+  return projected.ok ? projected.tasks : tasks;
 }
 
 export function createTaskLinkCommand(): Command {
@@ -115,6 +70,7 @@ export function createTaskLinkCommand(): Command {
               tasksFile.tasks.map((task) => [task.id, hashTask(task)]),
             );
             const messages: string[] = [];
+            const operations: Extract<DirectWorkGraphCommand, { type: "link" }>["operations"] = [];
 
             const resolvedId = resolveTaskId(id, config);
             const taskIndex = tasksFile.tasks.findIndex((t) => t.id === resolvedId);
@@ -127,43 +83,43 @@ export function createTaskLinkCommand(): Command {
 
             if (opts.blockedBy) {
               const blockerId = resolveTaskId(opts.blockedBy, config);
-              const depResult = addDependency(tasksFile.tasks[taskIndex], blockerId);
-              if (depResult.error) {
-                console.error(depResult.error);
-                process.exitCode = 1;
-                return;
-              }
-              tasksFile.tasks[taskIndex] = depResult.task;
+              operations.push({ kind: "add_dependency", blockerTaskId: blockerId });
               messages.push(`Added dependency: ${resolvedId} blocked by ${blockerId}`);
             }
 
             if (opts.unblock) {
               const blockerId = resolveTaskId(opts.unblock, config);
-              const unblockResult = removeDependency(
-                tasksFile.tasks[taskIndex],
-                blockerId,
-                opts.unblock,
-              );
-              tasksFile.tasks[taskIndex] = unblockResult.task;
+              operations.push({
+                kind: "remove_dependency",
+                blockerTaskId: blockerId,
+                rawInput: opts.unblock,
+              });
               messages.push(`Removed dependency: ${resolvedId} no longer blocked by ${blockerId}`);
             }
 
             if (opts.setParent) {
               const parentId = resolveTaskId(opts.setParent, config);
-              const parentResult = setParent(tasksFile.tasks, resolvedId, parentId);
-              if (parentResult.error) {
-                console.error(parentResult.error);
-                process.exitCode = 1;
-                return;
-              }
-              tasksFile.tasks = parentResult.tasks!;
+              operations.push({ kind: "set_parent", parentTaskId: parentId });
               messages.push(`Set parent: ${resolvedId} → ${parentId}`);
             }
 
             if (opts.removeParent) {
-              tasksFile.tasks = removeParent(tasksFile.tasks, resolvedId);
+              operations.push({ kind: "remove_parent" });
               messages.push(`Removed parent from: ${resolvedId}`);
             }
+
+            const graphValidation = new WorkGraphCommandEngine(config).executeCommand({
+              type: "link",
+              tasks: tasksFile.tasks,
+              taskId: resolvedId,
+              operations,
+            });
+            if (!graphValidation.ok) {
+              console.error(graphValidation.error);
+              process.exitCode = 1;
+              return;
+            }
+            tasksFile.tasks = graphValidation.tasks;
 
             await tasksStore.write(tasksFile);
             await storage.flush();

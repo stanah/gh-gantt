@@ -5,6 +5,7 @@ import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
 import { createGraphQLClient } from "../github/client.js";
 import { executePull } from "../sync/pull-executor.js";
+import { WorkGraphCommandEngine } from "../work-graph/command-engine.js";
 
 export interface TaskDeletionRepair {
   parentCleared: string[];
@@ -45,6 +46,7 @@ export interface TaskDeletionInput {
   now?: string;
   deleteGithubIssue: (input: DeleteGithubIssueInput) => Promise<void>;
   forcePull: (input: ForcePullInput) => Promise<{ tasksFile: TasksFile; syncState: SyncState }>;
+  commandEngine?: Pick<WorkGraphCommandEngine, "executeCommand">;
 }
 
 export type TaskDeletionResult =
@@ -198,6 +200,12 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
 
   const plan = planTaskDeletion(input.tasksFile, input.syncState, input.taskId);
   if (!plan.ok) return plan;
+  const commandPlan = input.commandEngine?.executeCommand({
+    type: "hard_delete_plan",
+    deletedTaskId: plan.taskId,
+    tasks: input.tasksFile.tasks,
+  });
+  if (commandPlan && !commandPlan.ok) return { ok: false, error: commandPlan.error };
 
   try {
     await input.deleteGithubIssue({
@@ -211,6 +219,22 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
   }
 
   const cleaned = applyTaskDeletion(input.tasksFile, input.syncState, plan, input.now);
+  if (commandPlan?.ok) {
+    const repairedTaskIds = new Set([
+      ...plan.repair.parentCleared,
+      ...plan.repair.subTaskRemoved,
+      ...plan.repair.blockedByRemoved,
+    ]);
+    const repairTimestamps = new Map(
+      cleaned.tasksFile.tasks
+        .filter((task) => repairedTaskIds.has(task.id))
+        .map((task) => [task.id, task.updated_at] as const),
+    );
+    cleaned.tasksFile.tasks = commandPlan.tasks.map((task) => {
+      const repairedAt = repairTimestamps.get(task.id);
+      return repairedAt === undefined ? task : { ...task, updated_at: repairedAt };
+    });
+  }
 
   let pulled: { tasksFile: TasksFile; syncState: SyncState };
   try {
@@ -234,6 +258,17 @@ export async function executeTaskDeletion(input: TaskDeletionInput): Promise<Tas
       ok: false,
       error: `削除後の再同期で対象 task への参照が残っています: ${danglingReferences.join(", ")}`,
     };
+  }
+  const reconciliation = input.commandEngine?.executeCommand({
+    type: "hard_delete_reconciliation",
+    deletedTaskId: plan.taskId,
+    tasks: pulled.tasksFile.tasks,
+  });
+  if (reconciliation && !reconciliation.ok) {
+    return { ok: false, error: reconciliation.error };
+  }
+  if (reconciliation?.ok) {
+    pulled.tasksFile = { ...pulled.tasksFile, tasks: reconciliation.tasks };
   }
 
   return {
@@ -279,6 +314,7 @@ export function createDeleteCommand(): Command {
             syncState,
             taskId,
             yes: opts.yes === true,
+            commandEngine: new WorkGraphCommandEngine(config),
             deleteGithubIssue: deleteGithubIssueWithGraphQL,
             forcePull: async ({ tasksFile: cleanedTasksFile, syncState: cleanedSyncState }) => {
               const gql = await createGraphQLClient();

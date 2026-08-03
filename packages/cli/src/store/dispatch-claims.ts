@@ -1,12 +1,9 @@
-import { execFile } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { link, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { hostname } from "node:os";
-import { dirname, isAbsolute, join, resolve } from "node:path";
-import { promisify } from "node:util";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import {
-  ConfigSchema,
   canonicalJsonStringify,
   DispatchClaimAcquireInputSchema,
   DispatchClaimEventAuthorizationInputSchema,
@@ -15,7 +12,6 @@ import {
   DispatchClaimReclaimInputSchema,
   DispatchClaimReleaseInputSchema,
   DispatchClaimSchema,
-  GANTT_DIR,
   type DispatchClaim,
   type DispatchClaimAcquireInput,
   type DispatchClaimEventAuthorizationInput,
@@ -27,10 +23,8 @@ import {
   type DispatchConfig,
   type RunGraphDispatchAuthorizationBinding,
 } from "@gh-gantt/shared";
-import { gitCommandEnvironment } from "../util/git-errors.js";
+import { resolveRepositoryCoordinationLayout } from "./repository-coordination-layout.js";
 
-const execFileAsync = promisify(execFile);
-const REGISTRY_VERSION = "v1";
 const DEFAULT_WAIT_TIMEOUT_MS = 5_000;
 const MAX_RECOVERY_GENERATIONS = 64;
 
@@ -52,6 +46,33 @@ interface StoredReceipt {
   payloadFingerprint: string;
   receipt: DispatchClaimReceipt;
 }
+
+export interface MutationReservationProof {
+  proposalId: string;
+  ownerNonce: string;
+  fencingToken: number;
+  affectedTaskIds: string[];
+  expiresAt: string;
+  /** in_flight はexpiryを越えてもdispatchを遮断し、reconcile完了まで残る。 */
+  sideEffectState?: "idle" | "in_flight";
+}
+
+export interface MutationReservationInput {
+  proposalId: string;
+  ownerNonce: string;
+  expectedEntityVersion: number;
+  affectedTaskIds: string[];
+  leaseDurationSeconds: number;
+}
+
+export type MutationReservationResult =
+  | { accepted: true; entityVersion: number; reservation: MutationReservationProof }
+  | {
+      accepted: false;
+      entityVersion: number;
+      code: "stale_entity_version" | "dispatch_claim_conflict" | "mutation_reservation_conflict";
+      message: string;
+    };
 
 interface StoredPendingAuthorization {
   status: "pending";
@@ -85,6 +106,7 @@ interface DispatchClaimRegistry {
   authorizations: StoredAuthorization[];
   receipts: StoredReceipt[];
   history: DispatchClaimHistoryEvent[];
+  mutationReservations: MutationReservationProof[];
 }
 
 export interface DispatchClaimSnapshot {
@@ -94,6 +116,7 @@ export interface DispatchClaimSnapshot {
   claims: DispatchClaim[];
   pendingAuthorizations: Array<{ eventId: string; claimId: string }>;
   history: DispatchClaimHistoryEvent[];
+  mutationReservations?: MutationReservationProof[];
 }
 
 export type DispatchClaimAcquireResult =
@@ -107,23 +130,23 @@ export interface DispatchClaimStoreDependencies {
   processIdentity: { pid: number; hostname: string };
   isProcessAlive: (pid: number) => boolean;
   readCurrentSnapshotFingerprint?: () => Promise<string>;
-  /** test only: dead owner 観測後の deterministic interleaving point。 */
+  /** テスト専用: dead owner観測後の決定的なinterleaving point。 */
   afterDeadOwnerObserved?: (ownerNonce: string) => Promise<void>;
-  /** test only: recovery claim candidate 完全書込後・atomic publish 前の crash を模擬する。 */
+  /** テスト専用: recovery claim candidate完全書込後・atomic publish前のcrashを模擬する。 */
   afterRecoveryClaimCandidateWritten?: (
     expectedOwnerNonce: string,
     claimantNonce: string,
   ) => Promise<void>;
-  /** test only: recovery winner の最終検証後・LOCK retire 前の停止を模擬する。 */
+  /** テスト専用: recovery winnerの最終検証後・LOCK retire前の停止を模擬する。 */
   afterRecoveryClaimValidated?: (
     expectedOwnerNonce: string,
     claimantNonce: string,
   ) => Promise<void>;
-  /** test only: registry atomic publish 直前の crash を模擬する。 */
+  /** テスト専用: registryのatomic publish直前のcrashを模擬する。 */
   beforeRegistryPublish?: () => Promise<void>;
-  /** test only: pending authorization 永続化直後の crash を模擬する。 */
+  /** テスト専用: pending authorization永続化直後のcrashを模擬する。 */
   afterAuthorizationPendingPublish?: () => Promise<void>;
-  /** test only: Run Graph append 後、authorization receipt publish 前の crash を模擬する。 */
+  /** テスト専用: Run Graph追記後、authorization receipt公開前のcrashを模擬する。 */
   beforeAuthorizationFinalizePublish?: () => Promise<void>;
 }
 
@@ -164,6 +187,27 @@ const StoredReceiptSchema: z.ZodType<StoredReceipt> = z
   })
   .strict();
 
+const MutationReservationProofSchema: z.ZodType<MutationReservationProof> = z
+  .object({
+    proposalId: z.string().min(1),
+    ownerNonce: z.string().uuid(),
+    fencingToken: z.number().int().positive(),
+    affectedTaskIds: z.array(z.string().min(1)).min(1),
+    expiresAt: z.string().datetime({ offset: true }),
+    sideEffectState: z.enum(["idle", "in_flight"]).default("idle"),
+  })
+  .strict();
+
+const MutationReservationInputSchema: z.ZodType<MutationReservationInput> = z
+  .object({
+    proposalId: z.string().min(1),
+    ownerNonce: z.string().uuid(),
+    expectedEntityVersion: z.number().int().nonnegative(),
+    affectedTaskIds: z.array(z.string().min(1)).min(1),
+    leaseDurationSeconds: z.number().int().positive(),
+  })
+  .strict();
+
 const AuthorizationBaseSchema = z.object({
   eventId: z.string().min(1),
   payloadFingerprint: z.string().regex(/^[0-9a-f]{64}$/),
@@ -200,6 +244,7 @@ const RegistrySchema: z.ZodType<DispatchClaimRegistry, z.ZodTypeDef, unknown> = 
     authorizations: z.array(StoredAuthorizationSchema).default([]),
     receipts: z.array(StoredReceiptSchema),
     history: z.array(HistoryEventSchema),
+    mutationReservations: z.array(MutationReservationProofSchema).default([]),
   })
   .strict()
   .superRefine((registry, context) => {
@@ -236,6 +281,16 @@ const RegistrySchema: z.ZodType<DispatchClaimRegistry, z.ZodTypeDef, unknown> = 
         code: z.ZodIssueCode.custom,
         path: ["authorizations"],
         message: "authorization eventId は一意である必要があります",
+      });
+    }
+    if (
+      new Set(registry.mutationReservations.map((reservation) => reservation.proposalId)).size !==
+      registry.mutationReservations.length
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["mutationReservations"],
+        message: "proposal mutation reservation は一意である必要があります",
       });
     }
   });
@@ -316,35 +371,16 @@ async function writeJsonAtomic(path: string, value: unknown): Promise<void> {
   }
 }
 
-async function runGit(projectRoot: string, args: string[]): Promise<string> {
-  const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
-    encoding: "utf8",
-    timeout: 10_000,
-    env: gitCommandEnvironment(),
-  });
-  return result.stdout.trim();
-}
-
 async function resolveLayout(projectRoot: string): Promise<RegistryLayout> {
-  const absoluteRoot = resolve(projectRoot);
-  const rawCommonDir = await runGit(absoluteRoot, ["rev-parse", "--git-common-dir"]);
-  const commonDir = await realpath(
-    isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
-  );
-  const config = ConfigSchema.parse(
-    JSON.parse(await readFile(join(absoluteRoot, GANTT_DIR, "gantt.config.json"), "utf8")),
-  );
-  const github = config.project.github;
-  const projectIdentity = `${github.owner.trim().toLowerCase()}/${github.repo.trim().toLowerCase()}#${github.project_number}`;
-  const projectKey = fingerprint(projectIdentity).slice(0, 32);
-  const root = join(commonDir, "gh-gantt", "coordination", REGISTRY_VERSION, projectKey);
+  const coordination = await resolveRepositoryCoordinationLayout(projectRoot);
+  const root = coordination.claimRoot;
   return {
     root,
     registryPath: join(root, "registry.json"),
     lockPath: join(root, "LOCK"),
-    projectIdentity,
-    dispatch: config.dispatch,
-    configuredStates: new Set(Object.keys(config.statuses.values)),
+    projectIdentity: coordination.projectIdentity,
+    dispatch: coordination.config.dispatch,
+    configuredStates: new Set(Object.keys(coordination.config.statuses.values)),
   };
 }
 
@@ -595,6 +631,7 @@ function emptyRegistry(layout: RegistryLayout): DispatchClaimRegistry {
     authorizations: [],
     receipts: [],
     history: [],
+    mutationReservations: [],
   };
 }
 
@@ -769,21 +806,43 @@ export class DispatchClaimStore {
       const rejection = (
         code: Extract<DispatchClaimReceipt, { accepted: false }>["code"],
         message: string,
+        durableRegistry = registry,
       ) =>
-        this.reject(layout, registry, payloadFingerprint, {
+        this.reject(layout, durableRegistry, payloadFingerprint, {
           accepted: false,
           operation: "claim",
           eventId: command.eventId,
-          entityVersion: registry.entityVersion,
+          entityVersion: durableRegistry.entityVersion,
           stateUnchanged: true,
           code,
           message,
         }) as Promise<DispatchClaimReceipt & { accepted: false }>;
-      if (command.expectedEntityVersion !== registry.entityVersion)
+      if (command.expectedEntityVersion !== registry.entityVersion) {
+        // lock待機中にmutation reservationが勝った場合だけ、低位CAS競合をドメイン競合へ戻す。
+        // expected世代以前から存在するreservationや無関係なversion進行は真正なstaleのままにする。
+        const durableRegistry = await this.readRegistry(layout);
+        const now = Date.parse(this.dependencies.now());
+        if (
+          durableRegistry.mutationReservations.some(
+            (reservation) =>
+              reservation.fencingToken > command.expectedEntityVersion &&
+              (reservation.sideEffectState === "in_flight" ||
+                Date.parse(reservation.expiresAt) > now) &&
+              reservation.affectedTaskIds.includes(command.taskId),
+          )
+        ) {
+          return rejection(
+            "task_already_claimed",
+            "task は Work Graph mutation reservation により予約されています",
+            durableRegistry,
+          );
+        }
         return rejection(
           "stale_entity_version",
           "expected entityVersion が current と一致しません",
+          durableRegistry,
         );
+      }
       const readSnapshot =
         readCurrentSnapshotFingerprint ?? this.dependencies.readCurrentSnapshotFingerprint;
       if (!readSnapshot || (await readSnapshot()) !== command.snapshotFingerprint)
@@ -795,6 +854,18 @@ export class DispatchClaimStore {
         return rejection("task_already_claimed", "task は既に claim されています");
       if (registry.claims.some((claim) => claim.workspaceId === command.workspaceId))
         return rejection("workspace_already_claimed", "workspace は既に claim されています");
+      if (
+        registry.mutationReservations.some(
+          (reservation) =>
+            (reservation.sideEffectState === "in_flight" ||
+              Date.parse(reservation.expiresAt) > Date.parse(this.dependencies.now())) &&
+            reservation.affectedTaskIds.includes(command.taskId),
+        )
+      )
+        return rejection(
+          "task_already_claimed",
+          "task は Work Graph mutation reservation により予約されています",
+        );
       if (!layout.dispatch)
         return rejection(
           "dispatch_not_configured",
@@ -1235,6 +1306,261 @@ export class DispatchClaimStore {
     return (await resolveLayout(this.projectRoot)).dispatch !== undefined;
   }
 
+  /** dispatch claimと同じregistry世代上でmutation対象を予約する。 */
+  async reserveMutation(input: MutationReservationInput): Promise<MutationReservationResult> {
+    const command = MutationReservationInputSchema.parse(input);
+    return this.transact(async (layout, registry) => {
+      const affected = new Set(command.affectedTaskIds);
+      const affectedTaskIds = [...affected].sort();
+      const now = this.dependencies.now();
+      const current = registry.mutationReservations.find(
+        (reservation) => reservation.proposalId === command.proposalId,
+      );
+      if (
+        current &&
+        current.ownerNonce === command.ownerNonce &&
+        canonicalJsonEquals(current.affectedTaskIds, affectedTaskIds) &&
+        (current.sideEffectState === "in_flight" || Date.parse(current.expiresAt) > Date.parse(now))
+      ) {
+        return {
+          accepted: true as const,
+          entityVersion: registry.entityVersion,
+          reservation: current,
+        };
+      }
+      if (command.expectedEntityVersion !== registry.entityVersion) {
+        // lock待機中にdispatch claimが勝った場合だけ、共有registryを再読込してドメイン競合へ戻す。
+        // claimがexpected世代以前から既知なら、別更新による真正なstaleを覆い隠さない。
+        const durableRegistry = await this.readRegistry(layout);
+        if (
+          durableRegistry.claims.some(
+            (claim) =>
+              claim.entityVersion > command.expectedEntityVersion && affected.has(claim.taskId),
+          )
+        ) {
+          return {
+            accepted: false as const,
+            entityVersion: durableRegistry.entityVersion,
+            code: "dispatch_claim_conflict" as const,
+            message: "mutation 対象 task に有効な dispatch claim があります",
+          };
+        }
+        return {
+          accepted: false as const,
+          entityVersion: durableRegistry.entityVersion,
+          code: "stale_entity_version" as const,
+          message: "expected entityVersion が current と一致しません",
+        };
+      }
+      if (registry.claims.some((claim) => affected.has(claim.taskId))) {
+        return {
+          accepted: false as const,
+          entityVersion: registry.entityVersion,
+          code: "dispatch_claim_conflict" as const,
+          message: "mutation 対象 task に有効な dispatch claim があります",
+        };
+      }
+      if (current && command.expectedEntityVersion === registry.entityVersion) {
+        if (!canonicalJsonEquals(current.affectedTaskIds, affectedTaskIds)) {
+          return {
+            accepted: false as const,
+            entityVersion: registry.entityVersion,
+            code: "mutation_reservation_conflict" as const,
+            message: "既存 mutation reservation と対象 task が一致しません",
+          };
+        }
+        // 別ownerはlease失効後だけtakeoverできる。in_flightは状態を維持して
+        // reconcile-onlyへ継承し、旧ownerのremote結果publishをfenceする。
+        if (
+          current.ownerNonce !== command.ownerNonce &&
+          Date.parse(current.expiresAt) > Date.parse(now)
+        ) {
+          return {
+            accepted: false as const,
+            entityVersion: registry.entityVersion,
+            code: "mutation_reservation_conflict" as const,
+            message: "有効期限内の mutation reservation は別ownerへ移譲できません",
+          };
+        }
+        const entityVersion = registry.entityVersion + 1;
+        const reservation = MutationReservationProofSchema.parse({
+          ...current,
+          ownerNonce: command.ownerNonce,
+          fencingToken: entityVersion,
+          affectedTaskIds: current.affectedTaskIds,
+          expiresAt: new Date(Date.parse(now) + command.leaseDurationSeconds * 1000).toISOString(),
+          sideEffectState: current.sideEffectState,
+        });
+        registry.entityVersion = entityVersion;
+        registry.mutationReservations = registry.mutationReservations.filter(
+          (candidate) => candidate.proposalId !== command.proposalId,
+        );
+        registry.mutationReservations.push(reservation);
+        await this.publishRegistry(layout, registry);
+        return { accepted: true as const, entityVersion, reservation };
+      }
+      if (
+        registry.mutationReservations.some(
+          (reservation) =>
+            (reservation.sideEffectState === "in_flight" ||
+              Date.parse(reservation.expiresAt) > Date.parse(now)) &&
+            reservation.affectedTaskIds.some((taskId) => affected.has(taskId)),
+        )
+      ) {
+        return {
+          accepted: false as const,
+          entityVersion: registry.entityVersion,
+          code: "mutation_reservation_conflict" as const,
+          message: "mutation 対象 task は別 proposal に予約されています",
+        };
+      }
+      const entityVersion = registry.entityVersion + 1;
+      const reservation = MutationReservationProofSchema.parse({
+        proposalId: command.proposalId,
+        ownerNonce: command.ownerNonce,
+        fencingToken: entityVersion,
+        affectedTaskIds,
+        expiresAt: new Date(Date.parse(now) + command.leaseDurationSeconds * 1000).toISOString(),
+        sideEffectState: "idle",
+      });
+      registry.entityVersion = entityVersion;
+      registry.mutationReservations = registry.mutationReservations.filter(
+        (candidate) => candidate.proposalId !== command.proposalId,
+      );
+      registry.mutationReservations.push(reservation);
+      await this.publishRegistry(layout, registry);
+      return { accepted: true as const, entityVersion, reservation };
+    });
+  }
+
+  /** Work Graph lease保持中に短時間だけmutation reservationのfencing proofを照合する。 */
+  async assertMutationReservation(
+    proof: MutationReservationProof,
+  ): Promise<MutationReservationProof> {
+    const expected = MutationReservationProofSchema.parse(proof);
+    return this.transact(async (_layout, registry) => {
+      const current = registry.mutationReservations.find(
+        (reservation) => reservation.proposalId === expected.proposalId,
+      );
+      if (
+        !current ||
+        !canonicalJsonEquals(current, expected) ||
+        (current.sideEffectState !== "in_flight" &&
+          Date.parse(current.expiresAt) <= Date.parse(this.dependencies.now()))
+      ) {
+        throw new Error("stale_mutation_reservation");
+      }
+      return current;
+    });
+  }
+
+  /** reservationを照合し、operation完了までdispatch coordination lockを保持する。 */
+  async withMutationReservation<T>(
+    proof: MutationReservationProof,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    const expected = MutationReservationProofSchema.parse(proof);
+    return this.transact(async (_layout, registry) => {
+      const current = registry.mutationReservations.find(
+        (reservation) => reservation.proposalId === expected.proposalId,
+      );
+      if (
+        !current ||
+        !canonicalJsonEquals(current, expected) ||
+        (current.sideEffectState !== "in_flight" &&
+          Date.parse(current.expiresAt) <= Date.parse(this.dependencies.now()))
+      ) {
+        throw new Error("stale_mutation_reservation");
+      }
+      return operation();
+    });
+  }
+
+  /** リモートI/O開始前にexpiry非依存の永続的な排他へ昇格する。 */
+  async beginMutationSideEffect(
+    proof: MutationReservationProof,
+    leaseDurationSeconds = 60,
+  ): Promise<MutationReservationProof> {
+    const expected = MutationReservationProofSchema.parse(proof);
+    return this.transact(async (layout, registry) => {
+      const index = registry.mutationReservations.findIndex(
+        (reservation) => reservation.proposalId === expected.proposalId,
+      );
+      const current = registry.mutationReservations[index];
+      if (
+        !current ||
+        !canonicalJsonEquals(current, expected) ||
+        Date.parse(current.expiresAt) <= Date.parse(this.dependencies.now())
+      ) {
+        throw new Error("stale_mutation_reservation");
+      }
+      const entityVersion = registry.entityVersion + 1;
+      const next = MutationReservationProofSchema.parse({
+        ...current,
+        fencingToken: entityVersion,
+        expiresAt: new Date(
+          Date.parse(this.dependencies.now()) + leaseDurationSeconds * 1000,
+        ).toISOString(),
+        sideEffectState: "in_flight",
+      });
+      registry.entityVersion = entityVersion;
+      registry.mutationReservations[index] = next;
+      await this.publishRegistry(layout, registry);
+      return next;
+    });
+  }
+
+  /** リモート結果をproposal journalへ確定後、通常leaseへ戻す。 */
+  async completeMutationSideEffect(
+    proof: MutationReservationProof,
+    leaseDurationSeconds = 60,
+  ): Promise<MutationReservationProof> {
+    const expected = MutationReservationProofSchema.parse(proof);
+    return this.transact(async (layout, registry) => {
+      const index = registry.mutationReservations.findIndex(
+        (reservation) => reservation.proposalId === expected.proposalId,
+      );
+      const current = registry.mutationReservations[index];
+      if (
+        !current ||
+        !canonicalJsonEquals(current, expected) ||
+        current.sideEffectState !== "in_flight"
+      ) {
+        throw new Error("stale_mutation_reservation");
+      }
+      const entityVersion = registry.entityVersion + 1;
+      const next = MutationReservationProofSchema.parse({
+        ...current,
+        fencingToken: entityVersion,
+        expiresAt: new Date(
+          Date.parse(this.dependencies.now()) + leaseDurationSeconds * 1000,
+        ).toISOString(),
+        sideEffectState: "idle",
+      });
+      registry.entityVersion = entityVersion;
+      registry.mutationReservations[index] = next;
+      await this.publishRegistry(layout, registry);
+      return next;
+    });
+  }
+
+  async releaseMutationReservation(proof: MutationReservationProof): Promise<boolean> {
+    const expected = MutationReservationProofSchema.parse(proof);
+    return this.transact(async (layout, registry) => {
+      const index = registry.mutationReservations.findIndex(
+        (reservation) => reservation.proposalId === expected.proposalId,
+      );
+      if (index < 0 || !canonicalJsonEquals(registry.mutationReservations[index], expected)) {
+        return false;
+      }
+      if (registry.mutationReservations[index]?.sideEffectState === "in_flight") return false;
+      registry.mutationReservations.splice(index, 1);
+      registry.entityVersion += 1;
+      await this.publishRegistry(layout, registry);
+      return true;
+    });
+  }
+
   /** stored authorization receipt の claim が現在も継続可能かを registry 上で照合する。 */
   async isReceiptClaimCurrent(
     receipt: Extract<DispatchClaimReceipt, { accepted: true; operation: "authorize_event" }>,
@@ -1302,6 +1628,7 @@ export class DispatchClaimStore {
             claimId: authorization.claim.claimId,
           })),
         history: registry.history,
+        mutationReservations: registry.mutationReservations,
       };
     } finally {
       await release();

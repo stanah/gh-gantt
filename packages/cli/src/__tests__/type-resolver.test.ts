@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveTaskType } from "../sync/type-resolver.js";
+import { resolveTaskType, resolveTaskTypeBinding } from "../sync/type-resolver.js";
 import type { TaskType } from "@gh-gantt/shared";
 
 const taskTypes: Record<string, TaskType> = {
@@ -109,5 +109,42 @@ describe("[FR-HIER-004-AC1] ラベルや Issue Type からタスクタイプを�
   it("falls back to custom field when issueType is null", () => {
     const result = resolveTaskType([], { Type: "Bug" }, taskTypes, "Type", null);
     expect(result).toBe("bug");
+  });
+
+  it("live照合はIssue Type・field・labelのbindingを優先順で使いunmappedをdefault denyする", () => {
+    const bindings: Record<string, TaskType> = {
+      issueBound: {
+        label: "表示名A",
+        display: "bar",
+        color: "#111",
+        github_label: "label-a",
+        github_field_value: "Field A",
+        github_issue_type: "Issue A",
+      },
+      fieldBound: {
+        label: "表示名B",
+        display: "bar",
+        color: "#222",
+        github_label: "label-b",
+        github_field_value: "Field B",
+        github_issue_type: "Issue B",
+      },
+      labelBound: {
+        label: "表示名C",
+        display: "bar",
+        color: "#333",
+        github_label: "label-c",
+        github_field_value: "Field C",
+        github_issue_type: "Issue C",
+      },
+    };
+    expect(
+      resolveTaskTypeBinding(["label-c"], { Type: "Field B" }, bindings, "Type", "Issue A"),
+    ).toBe("issueBound");
+    expect(resolveTaskTypeBinding(["label-c"], { Type: "Field B" }, bindings, "Type", null)).toBe(
+      "fieldBound",
+    );
+    expect(resolveTaskTypeBinding(["label-c"], {}, bindings, "Type", null)).toBe("labelBound");
+    expect(resolveTaskTypeBinding([], {}, bindings, "Type", "Unmapped")).toBeNull();
   });
 });

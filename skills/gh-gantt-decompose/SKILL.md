@@ -30,6 +30,11 @@ Evidence: `gh-gantt list` の出力、および重複なしの判断根拠を提
 11. **要件の追加判断** — プロジェクトが Living Documentation 体系を採用している場合（`.gantt-sync/workflow.md` に Living Documentation セクションがある）、振る舞い要件 (FR/NFR) を追加すべきタスクか判断する。**OPTIONAL:** 追加すべきなら `gh-gantt-living-documentation` を invoke して要件ファイルに AC を追加する
 12. **同期** — `gh-gantt-sync`（push）を invoke して GitHub に反映する
 
+実行中のRunが観測から既存Work Graphの再構成を必要とした場合は、新しいIssueを無承認で作成せず、
+`.gantt-sync/workflow.md`のApproval-gated Work Graph mutationをdiscoverする。origin Runをmutation checkpointへ停止し、
+`gh-gantt mutation execute --input <json>`でsplit/add/merge/reorder/cancel/dependency proposalを作る。
+policy不一致とcancelはhuman approvalへ止め、`unknown` side effectを自動再送しない。
+
 ## Red Flags
 
 | やりがちなこと                                           | 問題                                            |

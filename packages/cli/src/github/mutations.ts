@@ -1,12 +1,13 @@
 import type { graphql } from "@octokit/graphql";
 
 const CREATE_ISSUE_MUTATION = `
-  mutation($repositoryId: ID!, $title: String!, $body: String, $labelIds: [ID!], $milestoneId: ID, $assigneeIds: [ID!], $issueTypeId: ID) {
-    createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds, milestoneId: $milestoneId, assigneeIds: $assigneeIds, issueTypeId: $issueTypeId }) {
+  mutation($repositoryId: ID!, $title: String!, $body: String, $labelIds: [ID!], $milestoneId: ID, $assigneeIds: [ID!], $issueTypeId: ID, $clientMutationId: String) {
+    createIssue(input: { repositoryId: $repositoryId, title: $title, body: $body, labelIds: $labelIds, milestoneId: $milestoneId, assigneeIds: $assigneeIds, issueTypeId: $issueTypeId, clientMutationId: $clientMutationId }) {
       issue {
         id
         number
       }
+      clientMutationId
     }
   }
 `;
@@ -38,8 +39,8 @@ const UPDATE_ISSUE_ISSUE_TYPE_MUTATION = `
 `;
 
 const CLOSE_ISSUE_MUTATION = `
-  mutation($issueId: ID!) {
-    closeIssue(input: { issueId: $issueId }) {
+  mutation($issueId: ID!, $stateReason: IssueClosedStateReason) {
+    closeIssue(input: { issueId: $issueId, stateReason: $stateReason }) {
       issue { id }
     }
   }
@@ -117,9 +118,10 @@ export async function setIssueState(
   gql: typeof graphql,
   issueNodeId: string,
   state: "open" | "closed",
+  stateReason?: "COMPLETED" | "NOT_PLANNED",
 ): Promise<void> {
   if (state === "closed") {
-    await gql(CLOSE_ISSUE_MUTATION, { issueId: issueNodeId });
+    await gql(CLOSE_ISSUE_MUTATION, { issueId: issueNodeId, stateReason });
   } else {
     await gql(REOPEN_ISSUE_MUTATION, { issueId: issueNodeId });
   }
@@ -132,6 +134,8 @@ export interface CreateIssueOptions {
   milestoneId?: string;
   assigneeIds?: string[];
   issueTypeId?: string;
+  /** mutation proposalの予約とGitHub応答を照合する非秘密の相関ID。 */
+  clientMutationId?: string;
 }
 
 export async function createIssue(
@@ -147,6 +151,7 @@ export async function createIssue(
     milestoneId: options.milestoneId ?? undefined,
     assigneeIds: options.assigneeIds?.length ? options.assigneeIds : undefined,
     issueTypeId: options.issueTypeId ?? undefined,
+    clientMutationId: options.clientMutationId ?? undefined,
   });
   return {
     issueId: result.createIssue.issue.id,
@@ -203,6 +208,38 @@ export async function removeSubIssue(
   await gql(REMOVE_SUB_ISSUE_MUTATION, {
     issueId: parentIssueNodeId,
     subIssueId: childIssueNodeId,
+  });
+}
+
+const REPRIORITIZE_SUB_ISSUE_MUTATION = `
+  mutation($issueId: ID!, $subIssueId: ID!, $beforeId: ID, $afterId: ID) {
+    reprioritizeSubIssue(
+      input: { issueId: $issueId, subIssueId: $subIssueId, beforeId: $beforeId, afterId: $afterId }
+    ) {
+      issue { id }
+      clientMutationId
+    }
+  }
+`;
+
+/** 同一parent内のsub-issue priorityだけを公式mutationで変更する。 */
+export async function reprioritizeSubIssue(
+  gql: typeof graphql,
+  input: {
+    parentIssueNodeId: string;
+    subIssueNodeId: string;
+    beforeNodeId?: string;
+    afterNodeId?: string;
+  },
+): Promise<void> {
+  if ((input.beforeNodeId === undefined) === (input.afterNodeId === undefined)) {
+    throw new Error("beforeNodeId と afterNodeId はどちらか一方だけ必要です");
+  }
+  await gql(REPRIORITIZE_SUB_ISSUE_MUTATION, {
+    issueId: input.parentIssueNodeId,
+    subIssueId: input.subIssueNodeId,
+    beforeId: input.beforeNodeId,
+    afterId: input.afterNodeId,
   });
 }
 

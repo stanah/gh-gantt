@@ -11,6 +11,9 @@ import {
   DispatchClaimStore,
   createDispatchClaimStoreDependencies,
 } from "../store/dispatch-claims.js";
+import { MutationProposalStore } from "../store/mutation-proposals.js";
+import { resolveRepositoryCoordinationLayout } from "../store/repository-coordination-layout.js";
+import { isNotGitRepositoryError } from "../util/git-errors.js";
 
 const execFileAsync = promisify(execFile);
 const CONFIG = `${JSON.stringify(
@@ -38,6 +41,13 @@ const CONFIG = `${JSON.stringify(
 async function repository(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-"));
   await execFileAsync("git", ["init", root], { env: gitFixtureEnvironment() });
+  await mkdir(join(root, ".gantt-sync"), { recursive: true });
+  await writeFile(join(root, ".gantt-sync", "gantt.config.json"), CONFIG);
+  return root;
+}
+
+async function standaloneProject(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-standalone-"));
   await mkdir(join(root, ".gantt-sync"), { recursive: true });
   await writeFile(join(root, ".gantt-sync", "gantt.config.json"), CONFIG);
   return root;
@@ -107,6 +117,25 @@ function store(root: string, now: () => string, ids: string[] = ["claim-1", "cla
   );
 }
 
+function publishBarrier() {
+  let notifyEntered!: () => void;
+  let releasePublish!: () => void;
+  const entered = new Promise<void>((resolveEntered) => {
+    notifyEntered = resolveEntered;
+  });
+  const released = new Promise<void>((resolveReleased) => {
+    releasePublish = resolveReleased;
+  });
+  return {
+    entered,
+    release: releasePublish,
+    beforeRegistryPublish: async () => {
+      notifyEntered();
+      await released;
+    },
+  };
+}
+
 function acquire(eventId = "event-claim-1") {
   return {
     schemaVersion: "1" as const,
@@ -138,6 +167,49 @@ function reverseObjectKeyOrder(value: unknown): unknown {
 }
 
 describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () => {
+  it("Git管理外ではproject rootを単一workspaceのcoordination layoutとして使う", async () => {
+    const root = await standaloneProject();
+    const layout = await resolveRepositoryCoordinationLayout(root);
+    const canonicalRoot = await realpath(root);
+
+    expect(layout.projectRoot).toBe(canonicalRoot);
+    expect(layout.commonDir).toBe(canonicalRoot);
+    expect(layout.linkedWorktrees).toEqual([canonicalRoot]);
+    expect(layout.linkedProjectRoots).toEqual([canonicalRoot]);
+    expect(layout.claimRoot).toContain(join(canonicalRoot, "gh-gantt", "coordination", "v1"));
+  });
+
+  it("configのないGit管理外rootではstandalone caller向けnon-Git signalを維持する", async () => {
+    const root = await mkdtemp(join(tmpdir(), "gh-gantt-dispatch-no-config-"));
+    let observed: unknown;
+
+    try {
+      await resolveRepositoryCoordinationLayout(root);
+    } catch (error) {
+      observed = error;
+    }
+
+    expect(isNotGitRepositoryError(observed)).toBe(true);
+  });
+
+  it("repository判定後のmixed Git異常をnon-Git fallbackで隠さない", async () => {
+    const root = await standaloneProject();
+    const canonicalRoot = await realpath(root);
+    const repositoryDisappeared = Object.assign(new Error("repository disappeared"), {
+      stderr: "fatal: not a git repository",
+    });
+
+    await expect(
+      resolveRepositoryCoordinationLayout(root, {
+        runGit: async (_projectRoot, args) => {
+          if (args.includes("--show-toplevel")) return canonicalRoot;
+          if (args.includes("--git-common-dir")) throw repositoryDisappeared;
+          throw new Error("worktree probe permission denied");
+        },
+      }),
+    ).rejects.toBe(repositoryDisappeared);
+  });
+
   it("coordination namespace は v1 を使用し、旧 1 namespace へ fallback しない", async () => {
     const root = await repository();
     const claims = store(root, () => "2026-08-02T00:00:00.000Z");
@@ -148,6 +220,30 @@ describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () =>
     const legacyRegistry = join(dirname(await coordinationLockPath(root, "1")), "registry.json");
     await expect(readFile(currentRegistry, "utf8")).resolves.toContain('"schemaVersion": "1"');
     await expect(readFile(legacyRegistry, "utf8")).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("既存claim rootを移動せずproposal root/LOCKを別namespaceへ分離する", async () => {
+    const root = await repository();
+    const claims = store(root, () => "2026-08-02T00:00:00.000Z");
+    const claimed = await claims.claim(acquire());
+    expect(claimed).toMatchObject({ accepted: true, entityVersion: 1 });
+    const layout = await resolveRepositoryCoordinationLayout(root);
+    const existingRegistryPath = join(layout.claimRoot, "registry.json");
+    const before = await readFile(existingRegistryPath, "utf8");
+
+    expect(layout.claimRoot).toBe(dirname(await coordinationLockPath(root, "v1")));
+    expect(layout.mutationProposalRoot).not.toBe(layout.claimRoot);
+    expect(layout.mutationProposalRoot).toContain(join("coordination", "mutation-proposals", "v1"));
+    await new MutationProposalStore(root).mutate(() => undefined);
+
+    await expect(readFile(existingRegistryPath, "utf8")).resolves.toBe(before);
+    await expect(claims.snapshot()).resolves.toMatchObject({
+      entityVersion: 1,
+      claims: [expect.objectContaining({ taskId: "fixture/repository#1" })],
+    });
+    await expect(
+      readFile(join(layout.mutationProposalRoot, "registry.json"), "utf8"),
+    ).resolves.toContain('"projectIdentity": "fixture/repository#1"');
   });
 
   it("claim を CAS し、同じ eventId は同じ receipt に収束する", async () => {
@@ -205,6 +301,225 @@ describe("[NFR-STABILITY-014-AC9] repository coordination claim registry", () =>
       entityVersion: 0,
     });
     await expect(claims.snapshot()).resolves.toMatchObject({ entityVersion: 0, claims: [] });
+  });
+
+  it("mutation reservation と同じtaskへの旧Work Graph claimは両勝者順序を反復してdomain conflictへ収束する", async () => {
+    for (let iteration = 0; iteration < 4; iteration++) {
+      for (const winner of ["reservation", "claim"] as const) {
+        const root = await repository();
+        const now = () => "2026-08-02T00:00:00.000Z";
+        const barrier = publishBarrier();
+        const mutationStore = new DispatchClaimStore(
+          root,
+          createDispatchClaimStoreDependencies({
+            now,
+            beforeRegistryPublish:
+              winner === "reservation" ? barrier.beforeRegistryPublish : undefined,
+          }),
+        );
+        const dispatchStore = new DispatchClaimStore(
+          root,
+          createDispatchClaimStoreDependencies({
+            now,
+            nextId: () => `claim-${winner}-${iteration}`,
+            readCurrentSnapshotFingerprint: async () => "d".repeat(64),
+            beforeRegistryPublish: winner === "claim" ? barrier.beforeRegistryPublish : undefined,
+          }),
+        );
+        const reserve = () =>
+          mutationStore.reserveMutation({
+            proposalId: `proposal-${winner}-${iteration}`,
+            ownerNonce: "11111111-1111-4111-8111-111111111111",
+            expectedEntityVersion: 0,
+            affectedTaskIds: ["fixture/repository#1"],
+            leaseDurationSeconds: 60,
+          });
+        const claimTask = () => dispatchStore.claim(acquire(`claim-${winner}-${iteration}`));
+
+        const winning = winner === "reservation" ? reserve() : claimTask();
+        await barrier.entered;
+        const losing = winner === "reservation" ? claimTask() : reserve();
+        barrier.release();
+        const [winningResult, losingResult] = await Promise.all([winning, losing]);
+        const snapshot = await mutationStore.snapshot();
+
+        expect(winningResult).toMatchObject({ accepted: true, entityVersion: 1 });
+        expect(losingResult).toMatchObject(
+          winner === "reservation"
+            ? { accepted: false, code: "task_already_claimed", stateUnchanged: true }
+            : { accepted: false, code: "dispatch_claim_conflict", entityVersion: 1 },
+        );
+        expect(snapshot).toMatchObject(
+          winner === "reservation"
+            ? {
+                entityVersion: 1,
+                claims: [],
+                mutationReservations: [
+                  expect.objectContaining({ affectedTaskIds: ["fixture/repository#1"] }),
+                ],
+              }
+            : {
+                entityVersion: 1,
+                claims: [expect.objectContaining({ taskId: "fixture/repository#1" })],
+                mutationReservations: [],
+              },
+        );
+      }
+    }
+  });
+
+  it("既知世代のexclusionと無関係なversion進行はgenuine staleのまま保持する", async () => {
+    const now = () => "2026-08-02T00:00:00.000Z";
+    const claimRoot = await repository();
+    const claims = store(claimRoot, now);
+    await claims.claim(acquire("known-conflicting-claim"));
+    await claims.claim({
+      ...acquire("unrelated-claim"),
+      expectedEntityVersion: 1,
+      taskId: "fixture/repository#2",
+      workspaceId: "workspace:2",
+      runId: "run:2",
+    });
+    await expect(
+      claims.reserveMutation({
+        proposalId: "genuine-stale-reservation",
+        ownerNonce: "11111111-1111-4111-8111-111111111111",
+        expectedEntityVersion: 1,
+        affectedTaskIds: ["fixture/repository#1"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({ accepted: false, code: "stale_entity_version" });
+
+    const reservationRoot = await repository();
+    const reservations = store(reservationRoot, now);
+    await reservations.reserveMutation({
+      proposalId: "known-conflicting-reservation",
+      ownerNonce: "11111111-1111-4111-8111-111111111111",
+      expectedEntityVersion: 0,
+      affectedTaskIds: ["fixture/repository#1"],
+      leaseDurationSeconds: 60,
+    });
+    await reservations.reserveMutation({
+      proposalId: "unrelated-reservation",
+      ownerNonce: "22222222-2222-4222-8222-222222222222",
+      expectedEntityVersion: 1,
+      affectedTaskIds: ["fixture/repository#2"],
+      leaseDurationSeconds: 60,
+    });
+    await expect(
+      reservations.claim({ ...acquire("genuine-stale-claim"), expectedEntityVersion: 1 }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "stale_entity_version",
+      stateUnchanged: true,
+    });
+  });
+
+  it("60秒超remote I/O中はdurable exclusionがdispatchを拒否し新ownerへreconcile-only継承する", async () => {
+    const root = await repository();
+    let currentTime = "2026-08-02T00:00:00.000Z";
+    const claims = store(root, () => currentTime);
+    const reserved = await claims.reserveMutation({
+      proposalId: "proposal-long-remote",
+      ownerNonce: "11111111-1111-4111-8111-111111111111",
+      expectedEntityVersion: 0,
+      affectedTaskIds: ["fixture/repository#1"],
+      leaseDurationSeconds: 60,
+    });
+    if (!reserved.accepted) throw new Error("reservation fixture failed");
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: "22222222-2222-4222-8222-222222222222",
+        expectedEntityVersion: 1,
+        affectedTaskIds: ["fixture/repository#1"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 1,
+      code: "mutation_reservation_conflict",
+    });
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: reserved.reservation.ownerNonce,
+        expectedEntityVersion: 1,
+        affectedTaskIds: ["fixture/repository#2"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 1,
+      code: "mutation_reservation_conflict",
+    });
+    const inFlight = await claims.beginMutationSideEffect(reserved.reservation);
+
+    await expect(
+      claims.reserveMutation({
+        proposalId: "proposal-long-remote",
+        ownerNonce: "22222222-2222-4222-8222-222222222222",
+        expectedEntityVersion: 2,
+        affectedTaskIds: ["fixture/repository#1"],
+        leaseDurationSeconds: 60,
+      }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      entityVersion: 2,
+      code: "mutation_reservation_conflict",
+    });
+    currentTime = "2026-08-02T00:01:01.000Z";
+
+    await expect(
+      claims.claim({ ...acquire("dispatch-during-long-remote"), expectedEntityVersion: 2 }),
+    ).resolves.toMatchObject({
+      accepted: false,
+      code: "task_already_claimed",
+      stateUnchanged: true,
+    });
+    await expect(claims.assertMutationReservation(inFlight)).resolves.toEqual(inFlight);
+
+    const takeover = await claims.reserveMutation({
+      proposalId: "proposal-long-remote",
+      ownerNonce: "22222222-2222-4222-8222-222222222222",
+      expectedEntityVersion: 2,
+      affectedTaskIds: ["fixture/repository#1"],
+      leaseDurationSeconds: 60,
+    });
+    expect(takeover).toMatchObject({
+      accepted: true,
+      entityVersion: 3,
+      reservation: { sideEffectState: "in_flight", fencingToken: 3 },
+    });
+    await expect(claims.assertMutationReservation(inFlight)).rejects.toThrow(
+      "stale_mutation_reservation",
+    );
+    if (!takeover.accepted) throw new Error("takeover fixture failed");
+    const completed = await claims.completeMutationSideEffect(takeover.reservation);
+    await expect(claims.releaseMutationReservation(completed)).resolves.toBe(true);
+  });
+
+  it("mutationReservationsを持たない旧registryを既定値で読み込む", async () => {
+    const root = await repository();
+    const layout = await resolveRepositoryCoordinationLayout(root);
+    await mkdir(layout.claimRoot, { recursive: true });
+    await writeFile(
+      join(layout.claimRoot, "registry.json"),
+      `${JSON.stringify({
+        schemaVersion: "1",
+        projectIdentity: "fixture/repository#1",
+        entityVersion: 0,
+        claims: [],
+        authorizations: [],
+        receipts: [],
+        history: [],
+      })}\n`,
+    );
+
+    await expect(new DispatchClaimStore(root).snapshot()).resolves.toMatchObject({
+      entityVersion: 0,
+      mutationReservations: [],
+    });
   });
 
   it("同一 task と workspace の二重 claim は同じ generation 内で拒否する", async () => {

@@ -83,6 +83,18 @@ describe("[FR-SYNC-005-AC1] タスクの内容からハッシュを算出し変�
     expect(hashTask(task1)).toBe(hashTask(task2));
   });
 
+  it("[NFR-STABILITY-014-AC8] sub_tasks priority order の差分を検出する", () => {
+    const task1 = { ...baseTask, sub_tasks: ["owner/repo#2", "owner/repo#3"] };
+    const task2 = { ...baseTask, sub_tasks: ["owner/repo#3", "owner/repo#2"] };
+    expect(hashTask(task1)).not.toBe(hashTask(task2));
+  });
+
+  it("assignees と labels の順序は引き続き集合として扱う", () => {
+    const task1 = { ...baseTask, assignees: ["alice", "bob"], labels: ["task", "safe"] };
+    const task2 = { ...baseTask, assignees: ["bob", "alice"], labels: ["safe", "task"] };
+    expect(hashTask(task1)).toBe(hashTask(task2));
+  });
+
   it("produces different hash when custom_fields values differ", () => {
     const task1 = { ...baseTask, custom_fields: { Status: "Todo" } };
     const task2 = { ...baseTask, custom_fields: { Status: "Done" } };

@@ -35,7 +35,7 @@ function makeConfig(autoPush = true): Config {
       task: { label: "Task", display: "bar", color: "#000000", github_label: null },
       feature: { label: "Feature", display: "bar", color: "#111111", github_label: null },
     },
-    type_hierarchy: { task: [], feature: [] },
+    type_hierarchy: { task: ["task"], feature: [] },
     statuses: { field_name: "Status", values: {} },
     gantt: {
       default_view: "week",

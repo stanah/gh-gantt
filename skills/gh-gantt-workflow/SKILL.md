@@ -134,6 +134,27 @@ gh-gantt が提供するのは schema-validated な dispatch plan と event cont
 agent/provider/shell runner を内蔵しないほか、workspace を作成しない。外部 runner が isolated workspace の
 作成、process の起動、成果物の生成を担当し、gh-gantt は GitHub task status を暗黙更新しない。
 
+## Approval-gated Work Graph mutation
+
+外部runnerが実行中にWork Graphのsplit/add/merge/reorder/cancel/dependency変更を必要とした場合、
+**REQUIRED:** `.gantt-sync/workflow.md`でproject固有contractをdiscoverする。runnerはIssueを直接変更せず、origin Runを
+claim released、paused/waiting_human、active Attemptなしのcheckpointへ停止する。
+
+1. `gh-gantt mutation execute --input '<propose JSON>'`でcurrent Work Graph由来のfrozen proposalを作る。
+2. policy approvalが成立しなければ、receiptのsingle machine blockを人間がorigin Issueへ投稿する。CLIは投稿しない。
+3. commentRefだけを含むdecide JSONを同じexecute入口へ渡す。caller supplied actor/approval本文は渡さない。
+4. apply JSONを渡し、complete linked-worktree coverage、claim/Run/source/policy bindingを再検証する。
+5. `partially_applied`または`unknown`なら同じremote side effectを自動再送せず、live postcondition evidence付きの
+   explicit reconcile JSONを渡す。
+6. apply後は`work_graph_invalidated`のhuman gateを維持し、same Graph Contract bindingとverified human decisionを持つ
+   successor Planだけを受理する。Graph Contract/Org Graph変更はnew Runを要求する。
+
+状態確認は`gh-gantt mutation show <proposal-id> [--full] [--limit <n>] [--offset <n>]`を使う。
+`--full` の `approvalRequests` から decision・compensation・各 Run の replan に対応する
+proposal/revision/fingerprint/expiry binding済みcanonical machine blockを取得し、対象Issue commentへ貼る。
+default viewはbounded summaryであり、coverage列挙の省略には使わない。cancelは常にhuman-only、
+ordered `sub_tasks` reorderはGitHub sub-issue priorityだけを変更する。
+
 ## 自律ループモード
 
 人間との対話なしで複数タスクを連続処理する場合（Claude Code の /loop 等）は、
