@@ -185,3 +185,16 @@ URL は `view=project-map&task=...&run=...&node=...` を使い、run 変更時�
 - accepted event timestamp から導出できる duration は既知値とする。現行 runner contract が保持しない
   token / cost / latency は `0` へ丸めず `unknown` とする。
 - Run Graph が存在しない project では空状態を表示し、従来の5パネルと task 編集を維持する。
+
+## 12. Graph Engineering の運用
+
+Project Map の Planned vs Actual は bounded な観測 view であり、Graph Engineering の採用判定や
+benchmark report の正本ではない。Run Graph が見えること自体を single-loop に対する改善証拠としない。
+
+- 導入前: 同一受入基準の `single_loop` / `graph_orchestration` pairを
+  [Graph Engineering運用reference](../skills/gh-gantt-workflow/references/graph-engineering.md)に従って測る。
+- 運用中: wait reason、deviation、claim auditを確認し、raw runner logから状態を推測しない。
+- 停止: unknown side effect、sync conflict、human gate、retry budget超過を検出したら新規dispatchを止める。
+- 復旧: Work Graphをpullし、Run Graphのcheckpoint / claim lineageを再観測してからreclaim / resumeする。
+
+benchmarkが`single_loop`を返したtask shapeではProject MapにRun Graphが存在しても並列dispatchへ昇格しない。

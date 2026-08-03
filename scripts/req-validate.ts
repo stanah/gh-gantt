@@ -41,6 +41,7 @@ async function collectTestReqIds(): Promise<Set<string>> {
     "packages/cli/src/__tests__",
     "packages/shared/src/__tests__",
     "packages/ui/src/__tests__",
+    "packages/smoke/src/__tests__",
     "tests",
   ];
 

@@ -98,6 +98,7 @@ A pnpm workspaces monorepo with 3 packages:
 ## ドキュメント
 
 - [Project Map / Task Landscape（プロジェクトマップ）](docs/project-map.md) — 構造探索・依存探索・次アクション判断のための第 2 ビュー仕様
+- [Graph Engineering の計測・導入・停止・復旧](skills/gh-gantt-workflow/references/graph-engineering.md) — single-loopとの実測比較、recovery smoke、採用・縮退条件
 
 ## Development
 
