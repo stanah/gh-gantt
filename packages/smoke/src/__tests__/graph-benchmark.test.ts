@@ -106,7 +106,7 @@ function completeSuite(options: { resourceKnown?: boolean } = {}) {
       evidence: [
         {
           kind: "recovery" as const,
-          uri: `https://github.com/stanah/gh-gantt/issues/332#${scenario}`,
+          uri: "docs/benchmarks/graph-engineering-recovery-evidence.json",
           sha256: HASH_C,
           byteLength: 96,
         },
@@ -149,7 +149,7 @@ describe("[NFR-STABILITY-016-AC1] Graph Engineering benchmark の strict metric 
     expect(GraphBenchmarkSuiteSchema.safeParse(invalid).success).toBe(false);
   });
 
-  it("絶対path、credential付きURL、query付きURLをpublic evidenceとして拒否する", () => {
+  it("絶対path、credential、query、fragmentをpublic evidenceとして拒否する", () => {
     const input = completeSuite();
     const first = input.trials[0]!;
     for (const uri of [
@@ -159,6 +159,9 @@ describe("[NFR-STABILITY-016-AC1] Graph Engineering benchmark の strict metric 
       "\\\\server\\share\\raw.json",
       "https://token@example.com/evidence.json",
       "https://example.com/evidence.json?signature=secret",
+      "https://example.com/evidence.json#internal-id",
+      "evidence/result.json?signature=secret",
+      "evidence/result.json#internal-id",
       "https://localhost/evidence.json",
     ]) {
       const result = GraphBenchmarkSuiteSchema.safeParse({
@@ -215,6 +218,53 @@ describe("[NFR-STABILITY-016-AC2] 同一条件の paired trial 比較", () => {
     expect(report.coverage.completePairCount).toBe(5);
     expect(report.coverage.firstStrategyCounts).toEqual({ singleLoop: 3, graphOrchestration: 2 });
     expect(report.comparisons).toHaveLength(5);
+  });
+
+  it("先行strategyの件数が均衡していてもsuite順が非交互なら昇格しない", () => {
+    const input = completeSuite();
+    input.trials = GRAPH_BENCHMARK_SCENARIOS.flatMap((scenario, index) => {
+      const pair = input.trials.filter((entry) => entry.scenario === scenario);
+      const firstStrategy = index < 3 ? "single_loop" : "graph_orchestration";
+      return pair.map((entry) => ({
+        ...entry,
+        sequence: entry.strategy === firstStrategy ? (1 as const) : (2 as const),
+      }));
+    });
+
+    const report = analyzeGraphBenchmark(input);
+
+    expect(report.coverage.firstStrategyCounts).toEqual({ singleLoop: 3, graphOrchestration: 2 });
+    expect(report.qualification.mode).toBe("single_loop");
+    expect(report.qualification.reasons).toContain("trial_order_unbalanced");
+  });
+
+  it("派生比率でunknown reasonを保持し0除算をunknownとして扱う", () => {
+    const input = completeSuite();
+    const graphIndex = input.trials.findIndex(
+      (entry) => entry.pairId === "pair-1" && entry.strategy === "graph_orchestration",
+    );
+    const singleIndex = input.trials.findIndex(
+      (entry) => entry.pairId === "pair-1" && entry.strategy === "single_loop",
+    );
+    const graph = input.trials[graphIndex]!;
+    const single = input.trials[singleIndex]!;
+    input.trials[graphIndex] = {
+      ...graph,
+      metrics: {
+        ...graph.metrics,
+        inputTokens: unknown("redacted"),
+        costUsd: known(0),
+      },
+    };
+    input.trials[singleIndex] = {
+      ...single,
+      metrics: { ...single.metrics, costUsd: known(0) },
+    };
+
+    const comparison = analyzeGraphBenchmark(input).comparisons[0]!;
+
+    expect(comparison.totalTokenRatio).toEqual({ status: "unknown", reason: "redacted" });
+    expect(comparison.costRatio).toEqual({ status: "unknown", reason: "not_applicable" });
   });
 });
 

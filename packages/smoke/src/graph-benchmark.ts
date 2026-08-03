@@ -128,6 +128,7 @@ function isPublicEvidenceUri(value: string): boolean {
         url.username === "" &&
         url.password === "" &&
         url.search === "" &&
+        url.hash === "" &&
         !localHostname
       );
     } catch {
@@ -136,6 +137,7 @@ function isPublicEvidenceUri(value: string): boolean {
   }
   if (/^[A-Za-z][A-Za-z0-9+.-]*:\/\//.test(value)) return false;
   if (/^(?:[\\/]|~|[A-Za-z]:[\\/])/.test(value)) return false;
+  if (/[?#]/.test(value)) return false;
   const segments = value.split(/[\\/]/);
   return value.length > 0 && !segments.includes("..");
 }
@@ -386,22 +388,18 @@ export interface GraphBenchmarkReport {
 }
 
 function knownRatio(numerator: NumericMetric, denominator: NumericMetric): NumericMetric {
-  if (numerator.status === "unknown" || denominator.status === "unknown") {
-    return { status: "unknown", reason: "not_collected" };
-  }
+  if (numerator.status === "unknown") return numerator;
+  if (denominator.status === "unknown") return denominator;
   if (denominator.value === 0) {
-    return numerator.value === 0
-      ? { status: "known", value: 1 }
-      : { status: "unknown", reason: "not_applicable" };
+    return { status: "unknown", reason: "not_applicable" };
   }
   return { status: "known", value: numerator.value / denominator.value };
 }
 
 function totalTokens(trial: Trial): NumericMetric {
   const { inputTokens, outputTokens } = trial.metrics;
-  if (inputTokens.status === "unknown" || outputTokens.status === "unknown") {
-    return { status: "unknown", reason: "not_collected" };
-  }
+  if (inputTokens.status === "unknown") return inputTokens;
+  if (outputTokens.status === "unknown") return outputTokens;
   return { status: "known", value: inputTokens.value + outputTokens.value };
 }
 
@@ -442,9 +440,7 @@ export function analyzeGraphBenchmark(input: unknown): GraphBenchmarkReport {
     pair.push(trial);
     pairs.set(trial.pairId, pair);
   }
-  const comparisons = [...pairs.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
-    .map(([, pair], index) => comparePair(pair, index + 1));
+  const comparisons = [...pairs.values()].map((pair, index) => comparePair(pair, index + 1));
 
   const scenarioSet = new Set(suite.trials.map((trial) => trial.scenario));
   const recoverySet = new Set(suite.recoverySmoke.map((entry) => entry.scenario));
@@ -464,7 +460,13 @@ export function analyzeGraphBenchmark(input: unknown): GraphBenchmarkReport {
   if (comparisons.length < GRAPH_BENCHMARK_SCENARIOS.length) {
     pushReason(reasons, "paired_trial_count_insufficient");
   }
-  if (Math.abs(firstStrategyCounts.singleLoop - firstStrategyCounts.graphOrchestration) > 1) {
+  const trialOrderAlternates = comparisons.every(
+    (entry, index) => index === 0 || entry.firstStrategy !== comparisons[index - 1]!.firstStrategy,
+  );
+  if (
+    Math.abs(firstStrategyCounts.singleLoop - firstStrategyCounts.graphOrchestration) > 1 ||
+    !trialOrderAlternates
+  ) {
     pushReason(reasons, "trial_order_unbalanced");
   }
 
