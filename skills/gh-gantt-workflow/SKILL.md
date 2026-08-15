@@ -155,6 +155,16 @@ proposal/revision/fingerprint/expiry binding済みcanonical machine blockを取�
 default viewはbounded summaryであり、coverage列挙の省略には使わない。cancelは常にhuman-only、
 ordered `sub_tasks` reorderはGitHub sub-issue priorityだけを変更する。
 
+## Graph Engineering の採用判断
+
+Graph Engineering は既定ではない。独立 ready frontier、独立 verifier、権限分離、長時間 recovery の
+いずれかが必要で、同一受入基準の paired trial が追加 overhead を正当化する場合だけ opt-in する。
+計測、導入、停止、復旧、public-safe evidence は
+[references/graph-engineering.md](references/graph-engineering.md) に従う。
+
+metric または recovery evidence が不足する場合は single-loop へ縮退する。benchmark の runner 初期値と
+Graph Contract / repository Config の contract ceiling を混同せず、human gate を性能結果から解除しない。
+
 ## 自律ループモード
 
 人間との対話なしで複数タスクを連続処理する場合（Claude Code の /loop 等）は、
@@ -198,3 +208,4 @@ ordered `sub_tasks` reorderはGitHub sub-issue priorityだけを変更する。
 ## リファレンス
 
 - コマンド詳細: [references/commands.md](references/commands.md)
+- Graph Engineering: [references/graph-engineering.md](references/graph-engineering.md)

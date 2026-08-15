@@ -8,11 +8,13 @@
     "typecheck": "tsc --noEmit",
     "smoke:personal": "tsx src/run.ts --env personal",
     "smoke:org": "tsx src/run.ts --env org",
+    "benchmark:graph": "tsx src/graph-benchmark-run.ts",
     "test": "vp test run",
     "test:json": "vp test run --reporter=default --reporter=json --outputFile=../../test-results-smoke.json"
   },
   "dependencies": {
-    "@gh-gantt/cli": "workspace:*"
+    "@gh-gantt/cli": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
