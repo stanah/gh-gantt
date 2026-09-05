@@ -38,5 +38,5 @@ title と body は `gh pr edit <number> --title <title> --body-file <body-file>`
 
 ## レビューと merge
 
-レビューサイクルは層ごとに `pr-review-cycle-wait.sh --pr <number>` で回す。
+レビューサイクルは層ごとに `skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --pr <number>` で回す。
 merge は下の層から行う。merge の判断はこの skill の範囲外で、レビューサイクルが担う。

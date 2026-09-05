@@ -14,7 +14,7 @@ UI の変更前と変更後、操作の列で見せたい再現手順に使う�
 
 `<body-file>` の置きたい位置に `![説明](./after.png)` と書き、同じパスを `--attach` に渡す。
 gh が body 内のパスをアップロード後の URL に置き換える。body に書かなかった添付は末尾に追記される。
-`#` の後ろは alt text になる。
+alt text は `--attach` の引数側で `<path>#<alt text>` と書く。body 側のパスには `#` を付けない。
 
 ```bash
 gh pr create --base <base> --head <branch> --title <title> --body-file <body-file> \
