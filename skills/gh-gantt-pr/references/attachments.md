@@ -26,4 +26,4 @@ gh pr create --base <base> --head <branch> --title <title> --body-file <body-fil
 - 3 枚まで。枚数が増えるほど読む負荷は上がる
 - 添付前に token やメールアドレスの写り込みを目で確認する。betterleaks（ADR-011）は画像を検査しない
 - PR 作成後に足すときは `gh pr edit <number> --attach <file>` を使う
-- gh が 2.99.0 未満なら添付せず文字で書く。「添付予定」とは書かない
+- gh が 2.99.0 未満か GitHub Enterprise Server なら添付せず文字で書く。「添付予定」とは書かない
