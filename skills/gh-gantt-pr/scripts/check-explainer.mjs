@@ -4,12 +4,24 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
+// srcset は「URL 記述子, URL 記述子」の列。data: URI 自身がカンマを含むので空白で区切り、記述子（1x、2.5x、640w）を除いた残りを URL とみなす
+const SRCSET = /<(?:img|source)\b[^>]*\bsrcset\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/gi;
+function hasExternalSrcset(html) {
+  return [...html.matchAll(SRCSET)].some(([, a, b, c]) =>
+    (a ?? b ?? c)
+      .split(/\s+/)
+      .filter((token) => token && !/^\d*\.?\d+[wxh],?$/.test(token))
+      .some((url) => !/^data:/i.test(url)),
+  );
+}
+
 // artifact の直接表示は単一ファイルしか配信しない。別ファイルへの参照は data: URI 以外すべて違反
 const RULES = [
   [
-    /<(?:script|link|img|iframe|video|audio|source|object|embed|track)\b[^>]*\b(?:src|href|srcset|poster|data)\s*=\s*["']?(?!data:)[^"'\s>]/i,
-    "src、href、srcset、poster、data に data: URI 以外の参照がある",
+    /<(?:script|link|img|iframe|video|audio|source|object|embed|track)\b[^>]*\b(?:src|href|poster|data)\s*=\s*["']?(?!data:)[^"'\s>]/i,
+    "src、href、poster、data に data: URI 以外の参照がある",
   ],
+  [hasExternalSrcset, "srcset に data: URI 以外の候補がある"],
   [/@import\b/i, "@import は別ファイルの読み込み"],
   [/url\(\s*["']?(?!data:|#)[^)"'\s]/i, "url() に data: URI と #fragment 以外の参照がある"],
 ];
@@ -17,7 +29,9 @@ const RULES = [
 /** 違反の一覧を返す。空なら契約を満たす */
 export function checkExplainer(html) {
   const problems = /<!doctype\s+html|<html\b/i.test(html) ? [] : ["HTML 文書ではない"];
-  for (const [regex, message] of RULES) if (regex.test(html)) problems.push(message);
+  for (const [rule, message] of RULES) {
+    if (typeof rule === "function" ? rule(html) : rule.test(html)) problems.push(message);
+  }
   return problems;
 }
 

@@ -16,7 +16,7 @@ async function readRepoFile(path: string): Promise<string> {
 
 async function runChecker(args: string[]): Promise<{ code: number; stderr: string }> {
   try {
-    await execFileAsync(process.execPath, [checker, ...args]);
+    await execFileAsync(process.execPath, [checker, ...args], { encoding: "utf8" });
     return { code: 0, stderr: "" };
   } catch (error) {
     const failure = error as { code?: number; stderr?: string };
@@ -156,14 +156,26 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は単一 HTML を一時 branch �
       '<script src="https://cdn.example.com/x.js"></script>',
       '<img src="./x.png">',
       '<link rel="stylesheet" href="/a.css">',
-      '<img srcset="a.png 1x, b.png 2x">',
       '<video poster="p.jpg"></video>',
       '<object data="d.pdf"></object>',
     ]) {
       expect(checkExplainer(html(bad)), bad).toEqual([
-        "src、href、srcset、poster、data に data: URI 以外の参照がある",
+        "src、href、poster、data に data: URI 以外の参照がある",
       ]);
     }
+    // srcset は先頭だけでなく全候補を見る。data: URI 内のカンマで誤って区切らない
+    for (const bad of [
+      '<img srcset="a.png 1x, b.png 2x">',
+      '<img srcset="data:image/png;base64,AA 1x, ./x.png 2x">',
+      "<source srcset='data:image/png;base64,AA 640w, x.png 1280w'>",
+    ]) {
+      expect(checkExplainer(html(bad)), bad).toEqual(["srcset に data: URI 以外の候補がある"]);
+    }
+    expect(
+      checkExplainer(
+        html('<img srcset="data:image/png;base64,AA 1x, data:image/png;base64,BB 2x">'),
+      ),
+    ).toEqual([]);
     expect(checkExplainer(html('<style>@import "./x.css";</style>'))).toEqual([
       "@import は別ファイルの読み込み",
     ]);
