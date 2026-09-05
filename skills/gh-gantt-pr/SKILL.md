@@ -1,6 +1,6 @@
 ---
 name: gh-gantt-pr
-description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
+description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。任意拡張として画像添付、スタック PR、説明資料を扱う。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
 ---
 
 # gh-gantt PR 作成ワークフロー
@@ -63,6 +63,13 @@ Closes #<issue-number>
 
 `Test Plan` には未実行のものを成功扱いで書いてはならない。未実行なら理由付きで `未実行: <理由>` と明記する。
 
+読みやすさの型:
+
+- 先頭に、前提なしで読める 1 文を置く
+- Summary は 5 行以内、各 1 行。太字を使わず、コードスパンは 1 行に 1 つまで
+- 経緯や設計は書かず、ADR や Issue へのリンクにする
+- 図は Mermaid で 6 ノード以内。HTML の本文を PR に貼らない
+
 ## 手順
 
 1. `gh-gantt show <issue-number> --json` で Issue 番号、タイプ、タイトルを確認する。
@@ -71,6 +78,16 @@ Closes #<issue-number>
 4. 変更を commit し、remote に push する。
 5. PR body を `Summary`、`Closes #<issue-number>` または `Fixes #<issue-number>`、`Test Plan` の順で作る。
 6. PR body を一時ファイルに保存し、`gh pr create --base <base> --head <branch> --title <title> --body-file <body-file>` を実行する。
+7. 下の表に当たる場合だけ、対応する reference に従う。当たらなければ何も足さない。
+
+## 任意の拡張
+
+レビュアーが差分を読む前に全体を掴めるようにする手段。設計判断は ADR-027 にある。
+
+| 場面                                               | reference                                              |
+| -------------------------------------------------- | ------------------------------------------------------ |
+| UI の変更前後を見せたい                            | [references/attachments.md](references/attachments.md) |
+| 変更が観点ごとに分けられ、各層が単独で CI を通せる | [references/stacked-pr.md](references/stacked-pr.md)   |
 
 ## 扱わないこと
 
@@ -78,3 +95,4 @@ Closes #<issue-number>
 - pre-commit / pre-push フックの設定または実行
 - レビュー監視、レビューコメント対応、未解決 thread の resolve
 - 言語、パッケージマネージャ、テストランナーの選択
+- スタック PR の merge 判断
