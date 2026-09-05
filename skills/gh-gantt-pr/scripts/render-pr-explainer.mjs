@@ -85,10 +85,12 @@ async function main() {
   try {
     browser = await chromium.launch(executablePath ? { executablePath } : {});
   } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
     fail(
-      `Chromium を起動できません。\`npx playwright install chromium\` を実行するか、PLAYWRIGHT_CHROMIUM_EXECUTABLE を設定してください: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
+      [
+        `Chromium を起動できません: ${detail}`,
+        "対処: `npx playwright install chromium` を実行するか、PLAYWRIGHT_CHROMIUM_EXECUTABLE に実行ファイルのパスを設定してください",
+      ].join("\n"),
     );
   }
 
