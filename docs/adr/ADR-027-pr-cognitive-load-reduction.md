@@ -108,10 +108,19 @@ brainstorming 由来の spec / plan は tracked にしない。同じ理由で�
 輸送路を GitHub の中で閉じられ、branch も増えない案。しかし PR のテキストに HTML が残るため、
 エージェントが PR を読むたびにコンテキストウィンドウを圧迫する。折り畳んでも同じである。却下する。
 
+### GitHub Pages に PR ごとの path で配置する
+
+本リポジトリは公開リポジトリであり、説明資料が Pages で公開されること自体は新たな露出ではない。
+Pages は閲覧にログインを要求せず、失効もなく、URL が安定する点で artifact を上回る。
+一方で HTML を `gh-pages` branch という git 管理下の場所へ commit することになり、PR の close 時に資料を消す運用も要る。
+2026-09-05 の検討で、ログイン必須と 90 日失効を許容して artifact 方式を維持すると決めた。
+公開リポジトリで閲覧条件を緩めたい project は、同じ輸送路（dispatch / 一時 branch）のまま公開先を Pages に差し替えられる。
+
 ### branch 以外の隠し ref、Gist、外部ホスティングを輸送路にする
 
 隠し ref（`refs/pr-explainer/<n>`）は branch 一覧を汚さないが、Claude Code on the web の git 経路では
-`refs/heads/` 以外への push が拒否されることを確認した。Gist は資料が別の場所に残り、URL を知れば誰でも読める。
+`refs/heads/` 以外への push が拒否されることを確認した。Gist は資料が別の場所に残る（公開リポジトリでは
+「URL を知れば誰でも読める」ことは問題にならないが、資料の所在が PR から離れる）。
 Cloudflare Pages / Netlify / Vercel 等の外部ホスティングは URL が安定し失効もないが、外部アカウントとトークンを
 エージェント環境に置き、資料が GitHub の外へ出る。いずれも既定にせず、`refs/heads/` への push と `workflow_dispatch`
 だけで成立する経路を選ぶ。
