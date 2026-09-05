@@ -22,8 +22,15 @@ PR の説明品質が揺れる。
 - Stacked pull requests が 2026-07-30 に public preview になり、`gh extension install github/gh-stack` で
   1 Issue を複数の小さな PR に分割・連結し、下層から順に merge できるようになった
 - `actions/upload-artifact@v7` の `archive: false` で、単一 HTML を zip なしで upload し、
-  artifact URL からブラウザで直接表示できるようになった（単一ファイル限定、ログイン必須、最長 90 日保持）
+  artifact URL からブラウザで直接表示できるようになった（単一ファイル限定、ログイン必須、最長 90 日保持）。
+  2026-09-05 に本リポジトリで検証し、直接表示でインライン JavaScript が実行されることを確認した
 - show-me / eli5 のような図解 skill が、単一 HTML や Mermaid で「最小の view」を選ぶ手法として普及した
+
+説明資料には二つの制約がある。
+クリックや段階表示を伴うインタラクティブな HTML でなければ図解の価値が出ないこと、
+そして PR body やコメントに HTML の本文を置くと、エージェントが `gh pr view` やレビューサイクルで
+PR を読むたびにコンテキストウィンドウを圧迫することである。
+したがって HTML は PR のテキストの外に置き、PR にはリンクだけを残す必要がある。
 
 同時に、既存の責務境界を崩さないことが要件である。ADR-013 は PR review 操作を製品 CLI に追加しない、
 ADR-014 は品質ゲートを `gh-gantt-dev-role` に置き `gh-gantt-pr` は PR 作成だけを担う、
@@ -37,7 +44,7 @@ gh-gantt 製品 CLI には PR 作成・添付・スタック操作のコマン�
 
 ### 1. 添付（`references/attachments.md`）
 
-- gh 2.99.0 以上で `--attach` を使い、UI の before / after と図解 PNG を PR body に埋め込む
+- gh 2.99.0 以上で `--attach` を使い、UI の before / after の画像や動画を PR body に埋め込む
 - 画像・動画限定、3 枚以内、alt text で「見てほしい点」を書く、秘密情報の写り込みを目視確認する
   （betterleaks は画像を検査しない。ADR-011）
 - gh が古い場合は添付を諦めてテキストで書き、後から `gh pr edit --attach` で追加する。
@@ -57,15 +64,18 @@ gh-gantt 製品 CLI には PR 作成・添付・スタック操作のコマン�
 ### 3. 説明資料（`references/pr-explainer.md`）
 
 - 形式は軽い順に選ぶ: 1 行要約 → Mermaid（PR body に直接） → ファイルツリー / diff 形 → 単一 HTML。
-  HTML は Mermaid で表せないときだけ作る
+  HTML はクリックや段階表示が必要なときだけ作る
 - HTML は **git 管理外**（Dev-Role Config の `scratchpadDir/<issue>/pr-explainer/`、
   なければ `.gantt-sync/pr-explainer/<issue>/`）に生成し、commit しない
-- 既定の配布経路（経路 A）は `skills/gh-gantt-pr/scripts/render-pr-explainer.mjs` で PNG 化して `--attach` する。
-  script は実行 project の `playwright` / `@playwright/test` を解決し、`PLAYWRIGHT_CHROMIUM_EXECUTABLE` で
-  browser を差し替えられる
-- CI artifact の直接表示（経路 B）は project opt-in とし、**リポジトリ内容から決定論的に生成できる資料**に限定する。
-  agent が手元で書いた HTML を git 管理外のまま CI run へ渡す経路がない（`workflow_dispatch` input は 64KB 上限）ため、
-  経路 B を agent 作成資料の既定にしない。workflow 構成例は reference に置き、skill としては配布しない
+- HTML は Actions artifact（`archive: false`、保持 90 日）として公開し、PR には sticky comment で
+  **リンク 1 行だけ**を残す。HTML の本文は PR body にもコメントにも書かない
+- artifact は workflow run の中からしか upload できないため、skill は `templates/pr-explainer.yml` を配布し、
+  project が `.github/workflows/pr-explainer.yml` として配置する。エージェントは `workflow_dispatch` で起動する
+- 輸送路は二つとし、`skills/gh-gantt-pr/scripts/pr-explainer-publish.mjs` が HTML の単一ファイル契約を検証したうえで選ぶ。
+  既定は `gh workflow run -F html=@<file>` で本文を input として渡す dispatch（input 総量 65,535 文字の内側で
+  HTML は 60,000 文字まで）。超える場合は HTML だけの孤立コミットを一時 branch `pr-explainer/<n>-<時刻>` に push し、
+  `source_branch` input で渡す。workflow は公開後にその branch を削除する
+- workflow がない project では HTML を作らず、Mermaid とテキストに留める
 
 ### 責務境界
 
@@ -87,12 +97,29 @@ Living Documentation（ADR-012）の方針では決定は ADR / Issue / PR body 
 brainstorming 由来の spec / plan は tracked にしない。同じ理由で却下する。
 クリック操作を伴う資料が必要な例外は、project が ADR を伴って個別に判断する。
 
-### CI artifact を説明資料の既定経路にする
+### 説明資料の HTML を PNG に変換して `--attach` する
 
-zip なしで HTML を直接開ける点は魅力だが、単一ファイル限定・ログイン必須・90 日保持・run 単位 URL・
-run 内生成必須という制約が重い。agent が手元で書いた図を渡せないため既定にはせず、
-決定論的に生成できる資料の project opt-in に限定する。既存の #301（CI で派生成果物を生成する）と
-統合して検討する。
+`gh pr create --attach` が画像だけを受け付けるため、HTML を Playwright で撮影して添付する案。
+クリックや段階表示が失われ、HTML で作る意味そのものが消える。却下する。
+操作を伴わない静的な図は、最初から Mermaid か画像として作ればよい。
+
+### HTML の本文を PR コメントに埋め込み、workflow が取り出して artifact 化する
+
+輸送路を GitHub の中で閉じられ、branch も増えない案。しかし PR のテキストに HTML が残るため、
+エージェントが PR を読むたびにコンテキストウィンドウを圧迫する。折り畳んでも同じである。却下する。
+
+### branch 以外の隠し ref、Gist、外部ホスティングを輸送路にする
+
+隠し ref（`refs/pr-explainer/<n>`）は branch 一覧を汚さないが、Claude Code on the web の git 経路では
+`refs/heads/` 以外への push が拒否されることを確認した。Gist は資料が別の場所に残り、URL を知れば誰でも読める。
+Cloudflare Pages / Netlify / Vercel 等の外部ホスティングは URL が安定し失効もないが、外部アカウントとトークンを
+エージェント環境に置き、資料が GitHub の外へ出る。いずれも既定にせず、`refs/heads/` への push と `workflow_dispatch`
+だけで成立する経路を選ぶ。
+
+### CI が差分から決定論的に説明資料を生成する
+
+agent の手元の HTML を運ばずに済むが、agent が伝えたい観点を CI が推測することになる。
+変更ファイルツリーや差分統計のような機械生成資料は、既存の #301（CI で派生成果物を生成する）で別に扱う。
 
 ### 添付やスタックを常時必須にする
 
@@ -102,12 +129,17 @@ run 内生成必須という制約が重い。agent が手元で書いた図を�
 ## Consequences
 
 - `gh-gantt-pr` の SKILL.md は最小フローを維持したまま、任意拡張 3 件への導線と判断表を持つ
-- `skills/gh-gantt-pr/scripts/render-pr-explainer.mjs` が skill 付属 script として追加される。
-  実行には project 側に `playwright` または `@playwright/test` と Chromium が必要
+- `skills/gh-gantt-pr/templates/pr-explainer.yml`（workflow）と `scripts/pr-explainer-publish.mjs`（検証と起動）が
+  skill 付属として追加される。本リポジトリは同じ workflow を `.github/workflows/pr-explainer.yml` に配置し、
+  テストで両者の一致を検証する。workflow は既定 branch に merge されて初めて起動できる
+- workflow は `pull-requests: write` で PR コメントを書き、一時 branch の削除だけを `contents: write` の別 job に隔離する。
+  `workflow_dispatch` を起動できるのは write 権限を持つユーザーに限られる
+- artifact の閲覧にはリポジトリの read 権限とログインが必要で、最長 90 日で失効する。
+  原本はエージェントの手元に残るため、同じコマンドで再公開できる
 - スタック PR を使う場合、branch 名規則が `/<k>-<layer-slug>` 付きに変わり、Issue link の配置が層で異なる。
   ADR-019 のゲートは最上層の PR を linked PR として見る
-- 経路 B（CI artifact）の workflow 実装は本 ADR の範囲外であり、必要になった project が #301 と合わせて判断する
-- gh 2.99.0 未満、GHES、stacked PR 未有効のリポジトリでは各拡張は fallback に従い、最小フローだけで完了できる
+- gh 2.99.0 未満、GHES、stacked PR 未有効、workflow 未配置のリポジトリでは各拡張は fallback に従い、
+  最小フローだけで完了できる
 - 3 手段の使用頻度と効果は実運用で観測し、必要なら追補で手順を補正する。
-  想定するフォローアップ: 経路 B の workflow 実装（#301 と統合）、`gh stack submit` の実挙動に基づく手順の補正、
+  想定するフォローアップ: 説明資料 workflow の初回実運用（merge 後）、`gh stack submit` の実挙動に基づく手順の補正、
   PR body テンプレートへの Stack セクションの組み込み

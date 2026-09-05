@@ -1390,17 +1390,20 @@ areas:
               gh-gantt-pr skill は PR 認知負荷軽減の任意拡張として、画像・動画の添付
               （gh 2.99.0 以上の --attach、画像・動画限定）、スタック PR（gh stack、
               層ごとの branch 名、最上層だけ Closes / Fixes）、図解 / HTML 説明資料
-              （Mermaid 優先、HTML は git 管理外に生成し PNG 化して添付、CI artifact は
-              archive: false の制約付き opt-in）を reference と fallback 付きで定義し、
+              （Mermaid 優先、インタラクティブ HTML は git 管理外に生成し Actions artifact
+              （archive: false）として公開、PR にはリンク 1 行だけを残し HTML 本文を
+              PR body / コメントに書かない）を reference と fallback 付きで定義し、
               既定の最小フローと責務境界（ADR-027）を変えない
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts
           - id: NFR-STABILITY-008-AC6
             description: |
-              skills/gh-gantt-pr/scripts/render-pr-explainer.mjs は単一 HTML を
-              PNG にレンダリングし、引数不正・入力不在は non-zero と日本語エラーで
-              失敗し、Chromium は PLAYWRIGHT_CHROMIUM_EXECUTABLE で差し替えられる
+              説明資料の公開は skills/gh-gantt-pr/scripts/pr-explainer-publish.mjs が
+              単一 HTML 契約（HTML 文書、外部参照なし）を検証し、60,000 文字以内なら
+              workflow_dispatch の html input、超えれば一時 branch pr-explainer/ を
+              輸送路として選ぶ。workflow テンプレートと .github/workflows/pr-explainer.yml
+              は一致し、archive: false、sticky comment、一時 branch 削除の分離権限を持つ
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts

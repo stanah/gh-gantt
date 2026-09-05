@@ -1,0 +1,164 @@
+name: PR Explainer
+
+# gh-gantt-pr スキルの説明資料（インタラクティブな単一 HTML）を、git 管理に含めず、
+# PR 本文やコメントに HTML を置かずに、PR からリンク 1 つで開けるようにする。
+#
+# エージェントは `skills/gh-gantt-pr/scripts/pr-explainer-publish.mjs` で HTML を検証し、
+# 次のどちらかで workflow_dispatch を起動する（skills/gh-gantt-pr/references/pr-explainer.md）。
+#   - html input で本文を直接渡す（既定。input 総量 65,535 文字の制約内）
+#   - 一時 branch `pr-explainer/<PR 番号>-<時刻>` に HTML だけを push し、source_branch で指す（64KB 超の fallback）
+# workflow は HTML を zip なしの Actions artifact として公開し、PR に sticky comment でリンクを 1 行だけ書く。
+# source_branch を使った場合は公開後に一時 branch を削除する。
+#
+# 制約:
+#   - artifact URL はリポジトリに read 権限を持つログイン済みユーザーだけが開ける
+#   - artifact は retention-days（最長 90 日）で失効する。原本はエージェントの手元（gitignore 済み）に残す
+#   - artifact は run 概要の Artifacts 欄に並ばないため、PR コメントのリンクが唯一の導線になる
+#   - workflow_dispatch を起動できるのはリポジトリへ write 権限を持つユーザーだけである
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "リンクを書き込む PR 番号"
+        required: true
+        type: string
+      title:
+        description: "資料のタイトル（PR コメントの見出し）"
+        required: false
+        type: string
+        default: "PR 説明資料"
+      html:
+        description: "単一 HTML の本文。source_branch と排他。input 総量 65,535 文字以内"
+        required: false
+        type: string
+      source_branch:
+        description: "HTML を置いた一時 branch（pr-explainer/ 配下、ルートに explainer.html）。html と排他。公開後に削除する"
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: write
+    outputs:
+      artifact-url: ${{ steps.upload.outputs.artifact-url }}
+    steps:
+      - name: 入力を検証する
+        env:
+          PR: ${{ inputs.pr }}
+          HTML: ${{ inputs.html }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          if ! [[ "$PR" =~ ^[0-9]+$ ]]; then
+            echo "::error::pr は整数で指定してください: $PR"; exit 1
+          fi
+          if [ -n "$HTML" ] && [ -n "$SOURCE_BRANCH" ]; then
+            echo "::error::html と source_branch は同時に指定できません"; exit 1
+          fi
+          if [ -z "$HTML" ] && [ -z "$SOURCE_BRANCH" ]; then
+            echo "::error::html または source_branch のどちらかを指定してください"; exit 1
+          fi
+          if [ -n "$SOURCE_BRANCH" ] && ! [[ "$SOURCE_BRANCH" =~ ^pr-explainer/[A-Za-z0-9._-]+$ ]]; then
+            echo "::error::source_branch は pr-explainer/ 配下の branch 名で指定してください: $SOURCE_BRANCH"; exit 1
+          fi
+
+      - name: 一時 branch から HTML を取り出す
+        if: inputs.source_branch != ''
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ inputs.source_branch }}
+          path: source
+
+      - name: HTML をファイルに書き出す
+        env:
+          HTML: ${{ inputs.html }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          if [ -n "$SOURCE_BRANCH" ]; then
+            cp source/explainer.html explainer.html
+          else
+            printf '%s' "$HTML" > explainer.html
+          fi
+          node - <<'EOF'
+          // 単一ファイル契約の最小検証。外部参照は artifact の直接表示で描画されない
+          const fs = require("node:fs");
+          const html = fs.readFileSync("explainer.html", "utf8");
+          const problems = [];
+          if (!/<!doctype\s+html|<html\b/i.test(html)) problems.push("HTML 文書ではありません");
+          if (/<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?:https?:)?\/\//i.test(html)) {
+            problems.push("script / link / img / iframe / video / audio / source が外部 URL を参照しています");
+          }
+          if (/@import\s+(?:url\()?["']?(?:https?:)?\/\//i.test(html) || /url\(\s*["']?(?:https?:)?\/\//i.test(html)) {
+            problems.push("CSS が外部 URL を参照しています");
+          }
+          if (problems.length > 0) {
+            for (const p of problems) console.error(`::error::${p}`);
+            process.exit(1);
+          }
+          console.log(`explainer.html: ${html.length} 文字`);
+          EOF
+
+      - name: zip なしの artifact として公開する
+        id: upload
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          path: explainer.html
+          archive: false
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: PR にリンクを書き込む（sticky comment）
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pr }}
+          TITLE: ${{ inputs.title }}
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          marker='<!-- pr-explainer -->'
+          expires=$(date -u -d '+90 days' +%Y-%m-%d)
+          {
+            echo "$marker"
+            echo "### 📎 ${TITLE}"
+            echo ""
+            echo "🔗 **[インタラクティブ HTML を開く](${ARTIFACT_URL})**"
+            echo ""
+            echo "- 閲覧にはこのリポジトリの read 権限と GitHub へのログインが必要です"
+            echo "- ${expires} 頃に失効します（[workflow run](${RUN_URL})）。失効後は作成者の手元の原本から再公開してください"
+          } > comment.md
+          # 100 件を超えるコメントでも marker を取り逃さないよう全ページを走査する
+          existing=$(gh api --paginate "/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments?per_page=100" \
+            --jq '[.[] | select(.body | startswith("'"$marker"'"))] | .[-1].id // empty' | tail -n 1)
+          if [ -n "$existing" ]; then
+            gh api --method PATCH "/repos/${GITHUB_REPOSITORY}/issues/comments/${existing}" -F body=@comment.md > /dev/null
+            echo "コメント ${existing} を更新しました"
+          else
+            gh api --method POST "/repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -F body=@comment.md > /dev/null
+            echo "コメントを作成しました"
+          fi
+          echo "artifact: ${ARTIFACT_URL}" >> "$GITHUB_STEP_SUMMARY"
+
+  cleanup:
+    # source_branch 経由のときだけ、一時 branch を削除する。contents: write はこの job に限定する
+    if: inputs.source_branch != ''
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: write
+    steps:
+      - name: 一時 branch を削除する
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_BRANCH: ${{ inputs.source_branch }}
+        run: |
+          gh api --method DELETE "/repos/${GITHUB_REPOSITORY}/git/refs/heads/${SOURCE_BRANCH}"
+          echo "一時 branch ${SOURCE_BRANCH} を削除しました"

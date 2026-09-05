@@ -82,15 +82,18 @@ Closes #<issue-number>
 
 | 使う場面                                                             | 拡張                 | reference                                                |
 | -------------------------------------------------------------------- | -------------------- | -------------------------------------------------------- |
-| UI の before / after、図解 PNG を PR body に埋め込みたい             | 画像・動画の添付     | [references/attachments.md](references/attachments.md)   |
+| UI の before / after を PR body に埋め込みたい                       | 画像・動画の添付     | [references/attachments.md](references/attachments.md)   |
 | 1 Issue の変更がレビュー観点ごとに分けられ、各層が単独で CI を通せる | スタック PR          | [references/stacked-pr.md](references/stacked-pr.md)     |
 | 複数モジュール横断、責務境界や状態遷移の変更、新しい概念の導入       | 図解 / HTML 説明資料 | [references/pr-explainer.md](references/pr-explainer.md) |
 
 共通ルール:
 
-- 添付は画像・動画のみ（gh 2.99.0 以上）。HTML 説明資料は `scripts/render-pr-explainer.mjs` で PNG 化してから添付する
-- 説明資料の HTML / PNG は git 管理外（`scratchpadDir/<issue-number>/pr-explainer/` または `.gantt-sync/pr-explainer/<issue-number>/`）に置き、commit しない
-- 図解は Mermaid で表せるなら PR body に直接書き、HTML は Mermaid で表せないときだけ作る
+- 添付は画像・動画のみ（gh 2.99.0 以上）。HTML は添付できない
+- 図解は Mermaid で表せるなら PR body に直接書き、HTML はクリックや段階表示が必要なときだけ作る
+- 説明資料の HTML は git 管理外（`scratchpadDir/<issue-number>/pr-explainer/` または `.gantt-sync/pr-explainer/<issue-number>/`）に置き、commit しない
+- HTML は project の pr-explainer workflow で Actions artifact（`archive: false`）として公開し、PR にはリンク 1 行のコメントだけを残す。公開は `scripts/pr-explainer-publish.mjs` で行う
+- HTML の本文を PR body やコメントに貼らない。エージェントが PR を読むときにコンテキストを圧迫する
+- workflow（`.github/workflows/pr-explainer.yml`）がない project では HTML を作らず、Mermaid とテキストに留める
 - スタック PR では Issue link を最上層だけ `Closes` / `Fixes` とし、他の層は `Part of #<issue-number>` と書く
 - 前提（gh のバージョン、`gh stack` 拡張、GitHub のプラン）を満たさない場合は各 reference の fallback に従い、最小フローだけで完了してよい
 
@@ -101,4 +104,4 @@ Closes #<issue-number>
 - レビュー監視、レビューコメント対応、未解決 thread の resolve
 - 言語、パッケージマネージャ、テストランナーの選択
 - スタック PR の merge 判断と順序管理（レビューサイクルの責務）
-- CI artifact による説明資料の配布 workflow の実装（project 側の opt-in。構成例は reference に置く）
+- 説明資料を公開する workflow の運用（`templates/pr-explainer.yml` を配布するが、配置と権限設定は project 側の判断）
