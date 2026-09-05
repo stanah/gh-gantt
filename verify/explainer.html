@@ -1,93 +1,149 @@
 <!doctype html>
 <html lang="ja">
-<head>
-<meta charset="utf-8">
-<title>archive: false 検証</title>
-<style>
-  body { font-family: system-ui, sans-serif; margin: 32px; max-width: 900px; line-height: 1.6; }
-  h1 { font-size: 22px; }
-  .status { padding: 12px 16px; border-radius: 8px; font-weight: bold; }
-  .ng { background: #fde8e8; color: #8a1c1c; }
-  .ok { background: #e6f6ea; color: #14532d; }
-  button { font-size: 16px; padding: 8px 16px; margin: 8px 8px 8px 0; cursor: pointer; }
-  .pane { display: none; border: 1px solid #cbd5e1; border-radius: 8px; padding: 12px 16px; margin-top: 8px; }
-  .pane.on { display: block; }
-  table { border-collapse: collapse; margin-top: 8px; }
-  td, th { border: 1px solid #cbd5e1; padding: 4px 10px; text-align: left; font-family: ui-monospace, monospace; font-size: 13px; }
-</style>
-</head>
-<body>
-<h1>Actions artifact（archive: false）で JavaScript が動くかの検証</h1>
+  <head>
+    <meta charset="utf-8" />
+    <title>archive: false 検証</title>
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        margin: 32px;
+        max-width: 900px;
+        line-height: 1.6;
+      }
+      h1 {
+        font-size: 22px;
+      }
+      .status {
+        padding: 12px 16px;
+        border-radius: 8px;
+        font-weight: bold;
+      }
+      .ng {
+        background: #fde8e8;
+        color: #8a1c1c;
+      }
+      .ok {
+        background: #e6f6ea;
+        color: #14532d;
+      }
+      button {
+        font-size: 16px;
+        padding: 8px 16px;
+        margin: 8px 8px 8px 0;
+        cursor: pointer;
+      }
+      .pane {
+        display: none;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        padding: 12px 16px;
+        margin-top: 8px;
+      }
+      .pane.on {
+        display: block;
+      }
+      table {
+        border-collapse: collapse;
+        margin-top: 8px;
+      }
+      td,
+      th {
+        border: 1px solid #cbd5e1;
+        padding: 4px 10px;
+        text-align: left;
+        font-family: ui-monospace, monospace;
+        font-size: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Actions artifact（archive: false）で JavaScript が動くかの検証</h1>
 
-<p id="js-status" class="status ng">JavaScript: 実行されていません（この表示のままなら JS は動いていません）</p>
+    <p id="js-status" class="status ng">
+      JavaScript: 実行されていません（この表示のままなら JS は動いていません）
+    </p>
 
-<h2>クリック操作</h2>
-<div>
-  <button data-pane="a">A: 添付</button>
-  <button data-pane="b">B: スタック PR</button>
-  <button data-pane="c">C: 説明資料</button>
-  <span>クリック回数: <strong id="count">0</strong></span>
-</div>
-<section id="a" class="pane on">A のパネル。ボタンで切り替わればイベントハンドラが動いています。</section>
-<section id="b" class="pane">B のパネル。</section>
-<section id="c" class="pane">C のパネル。</section>
+    <h2>クリック操作</h2>
+    <div>
+      <button data-pane="a">A: 添付</button>
+      <button data-pane="b">B: スタック PR</button>
+      <button data-pane="c">C: 説明資料</button>
+      <span>クリック回数: <strong id="count">0</strong></span>
+    </div>
+    <section id="a" class="pane on">
+      A のパネル。ボタンで切り替わればイベントハンドラが動いています。
+    </section>
+    <section id="b" class="pane">B のパネル。</section>
+    <section id="c" class="pane">C のパネル。</section>
 
-<h2>配信環境</h2>
-<table id="env"><tbody></tbody></table>
+    <h2>配信環境</h2>
+    <table id="env">
+      <tbody></tbody>
+    </table>
 
-<h2>応答ヘッダ（同一 URL への HEAD 要求）</h2>
-<table id="headers"><tbody><tr><td>取得中…</td></tr></tbody></table>
+    <h2>応答ヘッダ（同一 URL への HEAD 要求）</h2>
+    <table id="headers">
+      <tbody>
+        <tr>
+          <td>取得中…</td>
+        </tr>
+      </tbody>
+    </table>
 
-<script>
-  (function () {
-    var status = document.getElementById("js-status");
-    status.textContent = "JavaScript: 実行されています";
-    status.className = "status ok";
+    <script>
+      (function () {
+        var status = document.getElementById("js-status");
+        status.textContent = "JavaScript: 実行されています";
+        status.className = "status ok";
 
-    var count = 0;
-    document.querySelectorAll("button").forEach(function (b) {
-      b.addEventListener("click", function () {
-        count += 1;
-        document.getElementById("count").textContent = String(count);
-        document.querySelectorAll(".pane").forEach(function (p) {
-          p.classList.toggle("on", p.id === b.dataset.pane);
+        var count = 0;
+        document.querySelectorAll("button").forEach(function (b) {
+          b.addEventListener("click", function () {
+            count += 1;
+            document.getElementById("count").textContent = String(count);
+            document.querySelectorAll(".pane").forEach(function (p) {
+              p.classList.toggle("on", p.id === b.dataset.pane);
+            });
+          });
         });
-      });
-    });
 
-    var rows = [
-      ["location.href", location.href],
-      ["location.origin", location.origin],
-      ["window.top === window", String(window.top === window)],
-      ["document.referrer", document.referrer || "(なし)"],
-      ["navigator.userAgent", navigator.userAgent]
-    ];
-    var env = document.querySelector("#env tbody");
-    rows.forEach(function (r) {
-      var tr = document.createElement("tr");
-      tr.innerHTML = "<th></th><td></td>";
-      tr.children[0].textContent = r[0];
-      tr.children[1].textContent = r[1];
-      env.appendChild(tr);
-    });
+        var rows = [
+          ["location.href", location.href],
+          ["location.origin", location.origin],
+          ["window.top === window", String(window.top === window)],
+          ["document.referrer", document.referrer || "(なし)"],
+          ["navigator.userAgent", navigator.userAgent],
+        ];
+        var env = document.querySelector("#env tbody");
+        rows.forEach(function (r) {
+          var tr = document.createElement("tr");
+          tr.innerHTML = "<th></th><td></td>";
+          tr.children[0].textContent = r[0];
+          tr.children[1].textContent = r[1];
+          env.appendChild(tr);
+        });
 
-    var headers = document.querySelector("#headers tbody");
-    fetch(location.href, { method: "HEAD" }).then(function (res) {
-      headers.innerHTML = "";
-      var any = false;
-      res.headers.forEach(function (v, k) {
-        any = true;
-        var tr = document.createElement("tr");
-        tr.innerHTML = "<th></th><td></td>";
-        tr.children[0].textContent = k;
-        tr.children[1].textContent = v;
-        headers.appendChild(tr);
-      });
-      if (!any) headers.innerHTML = "<tr><td>ヘッダを読めませんでした（CORS で隠されている可能性）</td></tr>";
-    }).catch(function (e) {
-      headers.innerHTML = "<tr><td>HEAD 要求に失敗: " + String(e) + "</td></tr>";
-    });
-  })();
-</script>
-</body>
+        var headers = document.querySelector("#headers tbody");
+        fetch(location.href, { method: "HEAD" })
+          .then(function (res) {
+            headers.innerHTML = "";
+            var any = false;
+            res.headers.forEach(function (v, k) {
+              any = true;
+              var tr = document.createElement("tr");
+              tr.innerHTML = "<th></th><td></td>";
+              tr.children[0].textContent = k;
+              tr.children[1].textContent = v;
+              headers.appendChild(tr);
+            });
+            if (!any)
+              headers.innerHTML =
+                "<tr><td>ヘッダを読めませんでした（CORS で隠されている可能性）</td></tr>";
+          })
+          .catch(function (e) {
+            headers.innerHTML = "<tr><td>HEAD 要求に失敗: " + String(e) + "</td></tr>";
+          });
+      })();
+    </script>
+  </body>
 </html>
