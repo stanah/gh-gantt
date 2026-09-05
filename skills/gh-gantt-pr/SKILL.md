@@ -84,10 +84,11 @@ Closes #<issue-number>
 
 レビュアーが差分を読む前に全体を掴めるようにする手段。設計判断は ADR-027 にある。
 
-| 場面                                               | reference                                              |
-| -------------------------------------------------- | ------------------------------------------------------ |
-| UI の変更前後を見せたい                            | [references/attachments.md](references/attachments.md) |
-| 変更が観点ごとに分けられ、各層が単独で CI を通せる | [references/stacked-pr.md](references/stacked-pr.md)   |
+| 場面                                               | reference                                                |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| UI の変更前後を見せたい                            | [references/attachments.md](references/attachments.md)   |
+| 変更が観点ごとに分けられ、各層が単独で CI を通せる | [references/stacked-pr.md](references/stacked-pr.md)     |
+| 操作を伴う構造図で全体像を渡したい                 | [references/pr-explainer.md](references/pr-explainer.md) |
 
 ## 扱わないこと
 

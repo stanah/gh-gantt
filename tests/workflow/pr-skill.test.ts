@@ -1,11 +1,27 @@
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+import { checkExplainer } from "../../skills/gh-gantt-pr/scripts/check-explainer.mjs";
 
 const repoRoot = resolve(import.meta.dirname, "../..");
+const checker = resolve(repoRoot, "skills/gh-gantt-pr/scripts/check-explainer.mjs");
+const execFileAsync = promisify(execFile);
 
 async function readRepoFile(path: string): Promise<string> {
   return readFile(resolve(repoRoot, path), "utf-8");
+}
+
+async function runChecker(args: string[]): Promise<{ code: number; stderr: string }> {
+  try {
+    await execFileAsync(process.execPath, [checker, ...args]);
+    return { code: 0, stderr: "" };
+  } catch (error) {
+    const failure = error as { code?: number; stderr?: string };
+    return { code: failure.code ?? 1, stderr: failure.stderr ?? "" };
+  }
 }
 
 function extractMarkdownSection(content: string, heading: string): string {
@@ -127,5 +143,95 @@ describe("[NFR-STABILITY-008-AC5] gh-gantt-pr skill は PR body の型と任意�
     expect(adr).toContain("HTML を PNG に変換して `--attach` する");
     expect(adr).toContain("HTML を PR コメントに埋め込み");
     expect(adr).toContain("GitHub Pages に PR ごとの path で配置する");
+  });
+});
+
+describe("[NFR-STABILITY-008-AC6] 説明資料は単一 HTML を一時 branch の workflow で artifact として公開する", () => {
+  const html = (body: string) => `<!doctype html><html>${body}</html>`;
+
+  it("契約検証: HTML 文書でない場合と、data: URI 以外の別ファイル参照を検出する", () => {
+    expect(checkExplainer(html("<script>1</script><style>body{}</style>"))).toEqual([]);
+    expect(checkExplainer("hello")).toEqual(["HTML 文書ではない"]);
+    for (const bad of [
+      '<script src="https://cdn.example.com/x.js"></script>',
+      '<img src="./x.png">',
+      '<link rel="stylesheet" href="/a.css">',
+      '<img srcset="a.png 1x, b.png 2x">',
+      '<video poster="p.jpg"></video>',
+      '<object data="d.pdf"></object>',
+    ]) {
+      expect(checkExplainer(html(bad)), bad).toEqual([
+        "src、href、srcset、poster、data に data: URI 以外の参照がある",
+      ]);
+    }
+    expect(checkExplainer(html('<style>@import "./x.css";</style>'))).toEqual([
+      "@import は別ファイルの読み込み",
+    ]);
+    expect(checkExplainer(html("<style>body{background:url(./x.png)}</style>"))).toEqual([
+      "url() に data: URI と #fragment 以外の参照がある",
+    ]);
+    // 許可: data: URI、#fragment、通常のリンク
+    expect(
+      checkExplainer(
+        html(
+          '<img src="data:image/png;base64,AA"><style>.a{fill:url(#g)}.b{background:url(data:image/svg+xml,x)}</style><a href="https://github.com/">x</a>',
+        ),
+      ),
+    ).toEqual([]);
+  });
+
+  it("契約検証の CLI は違反で 1、引数なしで 2 を返す", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "gh-gantt-explainer-"));
+    try {
+      const ok = join(dir, "ok.html");
+      const bad = join(dir, "bad.html");
+      await writeFile(ok, html("<p>ok</p>"), "utf-8");
+      await writeFile(bad, html('<img src="./x.png">'), "utf-8");
+      expect(await runChecker([ok])).toMatchObject({ code: 0 });
+      expect(await runChecker([bad])).toMatchObject({
+        code: 1,
+        stderr: expect.stringContaining("違反"),
+      });
+      expect(await runChecker([])).toMatchObject({
+        code: 2,
+        stderr: expect.stringContaining("使い方"),
+      });
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("workflow テンプレートは配置済みの workflow と一致し、push 起動、契約検証、zip なし artifact、sticky comment、branch 削除を持つ", async () => {
+    const template = await readRepoFile("skills/gh-gantt-pr/templates/pr-explainer.yml");
+    const installed = await readRepoFile(".github/workflows/pr-explainer.yml");
+
+    expect(installed).toBe(template);
+    expect(template).toContain('branches: ["pr-explainer/**"]');
+    expect(template).not.toContain("workflow_dispatch");
+    expect(template).toContain(
+      "node skills/gh-gantt-pr/scripts/check-explainer.mjs explainer.html",
+    );
+    expect(template).toMatch(/actions\/upload-artifact@[0-9a-f]{40} # v7/);
+    expect(template).toContain("archive: false");
+    expect(template).toContain("retention-days: 90");
+    expect(template).toContain("<!-- pr-explainer -->");
+    expect(template).toContain("--paginate");
+    expect(template).toContain("git/refs/heads/$GITHUB_REF_NAME");
+  });
+
+  it("説明資料 reference は git 管理外の出力、PR に HTML を書かない規則、一時 branch の手順、制約を定める", async () => {
+    const reference = await readRepoFile("skills/gh-gantt-pr/references/pr-explainer.md");
+    const skill = await readRepoFile("skills/gh-gantt-pr/SKILL.md");
+
+    expect(skill).toContain("references/pr-explainer.md");
+    expect(reference).toContain("git 管理外に置く");
+    expect(reference).toContain(".gantt-sync/pr-explainer/<issue-number>/");
+    expect(reference).toContain("HTML の本文を PR body やコメントに貼らない");
+    expect(reference).toContain("check-explainer.mjs");
+    expect(reference).toContain('-b "pr-explainer/<number>-');
+    expect(reference).toContain("--no-verify");
+    expect(reference).toContain("read 権限と GitHub へのログイン");
+    expect(reference).toContain("90 日で失効");
+    expect(reference).toContain("Mermaid とテキストに留める");
   });
 });

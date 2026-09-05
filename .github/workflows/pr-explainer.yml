@@ -1,0 +1,59 @@
+name: PR Explainer
+
+# 説明資料（インタラクティブな単一 HTML）を Actions artifact として公開し、PR にリンク 1 行のコメントを書く。
+# 起動は、HTML を explainer.html として置いた一時 branch `pr-explainer/<PR 番号>-<時刻>` の push。
+# workflow は push された branch 自身の定義で動くので、既定 branch に merge される前の PR でも使える。
+# 公開後に一時 branch を削除する。手順は skills/gh-gantt-pr/references/pr-explainer.md。
+
+on:
+  push:
+    branches: ["pr-explainer/**"]
+
+permissions:
+  contents: write # 一時 branch の削除に使う。pr-explainer/** へ push できるのは write 権限者だけ
+  pull-requests: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: 単一ファイル契約を検証する
+        run: node skills/gh-gantt-pr/scripts/check-explainer.mjs explainer.html
+
+      - name: zip なしの artifact として公開する
+        id: upload
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          path: explainer.html
+          archive: false
+          retention-days: 90
+
+      - name: PR にリンクを書き、一時 branch を削除する
+        env:
+          GH_TOKEN: ${{ github.token }}
+          URL: ${{ steps.upload.outputs.artifact-url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          pr="${GITHUB_REF_NAME#pr-explainer/}"
+          pr="${pr%%-*}"
+          [[ "$pr" =~ ^[0-9]+$ ]] || { echo "::error::branch 名から PR 番号を読めません: $GITHUB_REF_NAME"; exit 1; }
+          marker='<!-- pr-explainer -->'
+          expires=$(date -u -d '+90 days' +%Y-%m-%d)
+          {
+            echo "$marker"
+            echo "### 📎 $(git log -1 --format=%s)"
+            echo
+            echo "[インタラクティブ HTML を開く]($URL)（要ログイン。$expires 頃に失効。[run]($RUN_URL)）"
+          } > comment.md
+          # 同じ PR への 2 回目以降は既存コメントを更新する。100 件超でも見落とさないよう全ページを見る
+          existing=$(gh api --paginate "/repos/$GITHUB_REPOSITORY/issues/$pr/comments?per_page=100" \
+            --jq ".[] | select(.body | startswith(\"$marker\")) | .id" | tail -n 1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "/repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@comment.md > /dev/null
+          else
+            gh api -X POST "/repos/$GITHUB_REPOSITORY/issues/$pr/comments" -F body=@comment.md > /dev/null
+          fi
+          gh api -X DELETE "/repos/$GITHUB_REPOSITORY/git/refs/heads/$GITHUB_REF_NAME"
