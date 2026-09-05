@@ -1,6 +1,6 @@
 ---
 name: gh-gantt-pr
-description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。任意拡張として画像添付、スタック PR、説明資料を扱う。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
+description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。任意拡張として画像添付とスタック PRを扱う。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
 ---
 
 # gh-gantt PR 作成ワークフロー
