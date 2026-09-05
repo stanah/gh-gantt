@@ -92,7 +92,7 @@ Evidence: コマンド出力をそのまま提示する。
 10. **★`before_push`** — workflow.md の該当セクションを実行
 11. `git push`
 12. **★`before_pr`** — workflow.md の該当セクションを実行
-13. `gh pr create` — PR 作成のみを標準化する場合は `gh-gantt-pr` を使い、PR の description に `Closes #<number>` または `Fixes #<number>` を記載する。画像添付とスタック PRが要る場合も同スキルの任意拡張に従う
+13. `gh pr create` — PR 作成のみを標準化する場合は `gh-gantt-pr` を使い、PR の description に `Closes #<number>` または `Fixes #<number>` を記載する。画像添付とスタック PR が要る場合も同スキルの任意拡張に従う
 14. **★`after_pr_create`** — [PR レビューサイクル](references/pr-review-cycle.md) を開始する。`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` で CI と非同期レビューコメントの安定を待つ。PR 作成は完了ではなく、レビュー監視の開始である
 15. **★`on_review_received`**（レビュー指摘を受けた場合）— [PR レビューサイクル](references/pr-review-cycle.md) に従い、指摘を精査。妥当な指摘は同じ PR に追加コミットする（Issue 化は不要）。対応後は push し、`skills/gh-gantt-workflow/scripts/pr-review-cycle-wait.sh --current-branch` を再実行する。対応結果は GitHub GraphQL の pending review に集約し、対応済み thread を一括 resolve する
 16. 完了報告前 hard gate — 現在タスクの PR を `--pr <number>` または `--current-branch` で確認し、

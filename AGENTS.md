@@ -46,7 +46,7 @@ gh-gantt CLI はグローバルにインストール済み。`gh-gantt` コマ�
 - **`gh-gantt-progress`** — 進捗評価・タスク衛生管理
 - **`gh-gantt-dependencies`** — 依存関係の設定・検証
 - **`gh-gantt-conflict-resolution`** — pull 後のコンフリクト解決手順
-- **`gh-gantt-pr`** — Issue から branch 名と PR description を標準化して `gh pr create` を実行する手順。任意拡張として画像添付とスタック PRを扱う（ADR-027）
+- **`gh-gantt-pr`** — Issue から branch 名と PR description を標準化して `gh pr create` を実行する手順。任意拡張として画像添付とスタック PR を扱う（ADR-027）
 - **`gh-gantt-dev-role`** — 開発フローを orchestrator / planner / implementer / executor / reviewer に分離し、PR 前の独立検証とレビューを標準化する
 - **`gh-gantt-living-documentation`** — Living Documentation 体系を採用したプロジェクトで要件 YAML / ADR / テストタグを管理する（Discovery フェーズでプロジェクト固有のパスを特定）
 
