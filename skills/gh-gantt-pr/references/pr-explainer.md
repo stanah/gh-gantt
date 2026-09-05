@@ -118,7 +118,8 @@ jobs:
             const marker = "<!-- pr-explainer -->";
             const url = "${{ steps.upload.outputs.artifact-url }}";
             const body = `${marker}\n📎 PR 説明資料（run 単位、要ログイン）: ${url}`;
-            const { data: comments } = await github.rest.issues.listComments({
+            // 100 件を超える PR でも marker を取り逃さないよう全ページを走査する
+            const comments = await github.paginate(github.rest.issues.listComments, {
               ...context.repo, issue_number: context.issue.number, per_page: 100,
             });
             const existing = comments.find((c) => c.body?.startsWith(marker));

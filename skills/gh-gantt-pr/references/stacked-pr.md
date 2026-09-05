@@ -71,19 +71,19 @@ Part of #<issue-number>
 
 ## 手順（`gh stack` あり）
 
-1. `gh stack init` でスタックを開始し、`gh stack add <branch>` で layer 1 の branch を作る
+1. `<base>` を checkout し、`<base>` を trunk として `gh stack init` を実行する（trunk の指定方法は `gh stack init --help` で確認する）。続けて `gh stack add <branch>` で layer 1 の branch を作る。SKILL.md の入力 `<base>`（未指定なら `main`）を使い、`main` を決め打ちしない
 2. layer 1 の変更を commit する。次の layer は `gh stack add <branch>` で上に積む
 3. 各 layer の PR body を `<body-file>` として用意する（layer ごとに別ファイル）
 4. `gh stack submit` で全 layer の PR を作成し、GitHub 上で stack として連結する
 5. `gh pr edit <number> --title <title> --body-file <body-file>` で各 PR の title / body を本スキルの形式に揃える
-6. `gh stack view` で base branch の連鎖と PR 番号を確認し、Issue link が最上層だけ `Closes` になっていることを確認する
+6. `gh stack view` で layer 1 の base が `<base>` であること、base branch の連鎖、PR 番号を確認し、Issue link が最上層だけ `Closes` になっていることを確認する
 7. 下層にレビュー修正を入れたら、修正は **その layer** に commit し、`gh stack sync` で上層を rebase して push する
 
 ## 手順（`gh stack` なしの fallback）
 
-1. layer 1 を `main` から、layer k を layer k-1 から branch する
+1. layer 1 を `<base>`（SKILL.md の入力。未指定なら `main`）から、layer k を layer k-1 から branch する
 2. 各 layer を `gh pr create --base <lower-branch> --head <upper-branch> --title <title> --body-file <body-file>` で作成する
-   （layer 1 の base は `main`）
+   （layer 1 の `<lower-branch>` は `<base>`）
 3. `## Stack` に前提 PR の番号を手書きする（stack map の UI はない）
 4. 下層が merge されたら、上層の base を `gh pr edit <number> --base <new-base>` で付け替える。
    下層 branch の削除時に GitHub が自動で付け替えることもあるが、必ず確認する
