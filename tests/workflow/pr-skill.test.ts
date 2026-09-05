@@ -158,6 +158,8 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は単一 HTML を一時 branch �
       '<link rel="stylesheet" href="/a.css">',
       '<video poster="p.jpg"></video>',
       '<object data="d.pdf"></object>',
+      '<svg><image href="./x.png"/></svg>',
+      '<svg><use xlink:href="./x.svg#icon"/></svg>',
     ]) {
       expect(checkExplainer(html(bad)), bad).toEqual([
         "src、href、poster、data に data: URI 以外の参照がある",
@@ -186,7 +188,7 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は単一 HTML を一時 branch �
     expect(
       checkExplainer(
         html(
-          '<img src="data:image/png;base64,AA"><style>.a{fill:url(#g)}.b{background:url(data:image/svg+xml,x)}</style><a href="https://github.com/">x</a>',
+          '<img src="data:image/png;base64,AA"><svg><use href="#icon"/></svg><style>.a{fill:url(#g)}.b{background:url(data:image/svg+xml,x)}</style><a href="https://github.com/">x</a>',
         ),
       ),
     ).toEqual([]);

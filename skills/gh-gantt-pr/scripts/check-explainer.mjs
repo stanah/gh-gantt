@@ -16,9 +16,10 @@ function hasExternalSrcset(html) {
 }
 
 // artifact の直接表示は単一ファイルしか配信しない。別ファイルへの参照は data: URI 以外すべて違反
+// SVG の image と use も見る。href は xlink:href にも一致し、#fragment は同一文書内なので許す
 const RULES = [
   [
-    /<(?:script|link|img|iframe|video|audio|source|object|embed|track)\b[^>]*\b(?:src|href|poster|data)\s*=\s*["']?(?!data:)[^"'\s>]/i,
+    /<(?:script|link|img|iframe|video|audio|source|object|embed|track|image|use)\b[^>]*\b(?:src|href|poster|data)\s*=\s*["']?(?!data:|#)[^"'\s>]/i,
     "src、href、poster、data に data: URI 以外の参照がある",
   ],
   [hasExternalSrcset, "srcset に data: URI 以外の候補がある"],

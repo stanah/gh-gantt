@@ -11,7 +11,8 @@
 ## HTML の契約
 
 - 単一ファイル。CSS と JS はインライン、画像は data: URI で埋め込む
-- `src`、`href`、`srcset`、`poster`、`data` に data: URI 以外を書かない。`@import` を使わない。`url()` は data: URI と `#fragment` だけ
+- 別ファイルを参照しない。`src`、`srcset`、`poster`、`data`、`<link>` と SVG の `href` は data: URI だけ。`<a>` のリンクは書いてよい
+- `@import` を使わない。`url()` は data: URI と `#fragment` だけ
 - 日本語で書き、実際のファイル名やコマンドを使う
 - git 管理外に置く。Dev-Role Config があれば `<scratchpadDir>/<issue-number>/pr-explainer/`、なければ `.gantt-sync/pr-explainer/<issue-number>/`
 
