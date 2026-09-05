@@ -1,11 +1,13 @@
 ---
 name: gh-gantt-pr
-description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
+description: Issue から branch 名と Pull Request description を標準化し、gh pr create で PR を作成する。任意拡張として画像添付（--attach）、スタック PR（gh stack）、図解 / HTML 説明資料でレビュアーの認知負荷を下げる。ビルド、テスト、lint、typecheck、hook、レビュー監視は扱わない。
 ---
 
 # gh-gantt PR 作成ワークフロー
 
 Issue から branch を切り、Pull Request を作成するまでの接続だけを標準化する。品質ゲート、レビュー対応、言語やパッケージマネージャ固有の手順はプロジェクト側の workflow / CI / hook に委譲する。
+
+PR の認知負荷軽減（添付・スタック PR・説明資料）は [任意の拡張](#任意の拡張認知負荷軽減) として提供し、既定の最小フローは変えない。
 
 ## 入力
 
@@ -71,6 +73,26 @@ Closes #<issue-number>
 4. 変更を commit し、remote に push する。
 5. PR body を `Summary`、`Closes #<issue-number>` または `Fixes #<issue-number>`、`Test Plan` の順で作る。
 6. PR body を一時ファイルに保存し、`gh pr create --base <base> --head <branch> --title <title> --body-file <body-file>` を実行する。
+7. 任意: 下の判断表に該当する場合だけ、対応する拡張の reference に従う。該当しなければ何も追加しない。
+
+## 任意の拡張（認知負荷軽減）
+
+レビュアーが差分を読む前に「何が・なぜ・どう変わったか」を掴めるようにする 3 手段。
+いずれも「使う場面」のゲートを持つ任意手順であり、常時適用を要求しない。設計判断は ADR-027 を正本とする。
+
+| 使う場面                                                             | 拡張                 | reference                                                |
+| -------------------------------------------------------------------- | -------------------- | -------------------------------------------------------- |
+| UI の before / after、図解 PNG を PR body に埋め込みたい             | 画像・動画の添付     | [references/attachments.md](references/attachments.md)   |
+| 1 Issue の変更がレビュー観点ごとに分けられ、各層が単独で CI を通せる | スタック PR          | [references/stacked-pr.md](references/stacked-pr.md)     |
+| 複数モジュール横断、責務境界や状態遷移の変更、新しい概念の導入       | 図解 / HTML 説明資料 | [references/pr-explainer.md](references/pr-explainer.md) |
+
+共通ルール:
+
+- 添付は画像・動画のみ（gh 2.99.0 以上）。HTML 説明資料は `scripts/render-pr-explainer.mjs` で PNG 化してから添付する
+- 説明資料の HTML / PNG は git 管理外（`scratchpadDir/<issue-number>/pr-explainer/` または `.gantt-sync/pr-explainer/<issue-number>/`）に置き、commit しない
+- 図解は Mermaid で表せるなら PR body に直接書き、HTML は Mermaid で表せないときだけ作る
+- スタック PR では Issue link を最上層だけ `Closes` / `Fixes` とし、他の層は `Part of #<issue-number>` と書く
+- 前提（gh のバージョン、`gh stack` 拡張、GitHub のプラン）を満たさない場合は各 reference の fallback に従い、最小フローだけで完了してよい
 
 ## 扱わないこと
 
@@ -78,3 +100,5 @@ Closes #<issue-number>
 - pre-commit / pre-push フックの設定または実行
 - レビュー監視、レビューコメント対応、未解決 thread の resolve
 - 言語、パッケージマネージャ、テストランナーの選択
+- スタック PR の merge 判断と順序管理（レビューサイクルの責務）
+- CI artifact による説明資料の配布 workflow の実装（project 側の opt-in。構成例は reference に置く）
