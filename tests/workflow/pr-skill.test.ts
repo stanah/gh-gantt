@@ -261,7 +261,7 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は検証済みの単一 HTML を 
   });
 
   const TAG_PROBLEM =
-    "別ファイルを参照しています: script / link / img / iframe / video / audio / source が data: URI 以外を参照";
+    "別ファイルを参照しています: script / link / img / iframe / video / audio / source / object / embed / track の src / href / srcset / poster / data が data: URI 以外を参照";
   const IMPORT_PROBLEM = "別ファイルを参照しています: CSS の @import（別ファイルの読み込み）";
   const URL_PROBLEM =
     "別ファイルを参照しています: CSS の url() が data: URI と #fragment 以外を参照";
@@ -282,6 +282,26 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は検証済みの単一 HTML を 
     expect(
       validateHtml("<!doctype html><html><style>body{background:url(//a/b.png)}</style></html>"),
     ).toEqual([URL_PROBLEM]);
+  });
+
+  it("単一ファイル契約: srcset / poster / data や object / embed / track 経由の別ファイル参照も検出する", () => {
+    expect(
+      validateHtml('<!doctype html><html><img srcset="./x-1x.png 1x, ./x-2x.png 2x"></html>'),
+    ).toEqual([TAG_PROBLEM]);
+    expect(
+      validateHtml(
+        '<!doctype html><html><video poster="poster.jpg"><source src="data:video/mp4;base64,AAAA"></video></html>',
+      ),
+    ).toEqual([TAG_PROBLEM]);
+    expect(validateHtml('<!doctype html><html><object data="./doc.pdf"></object></html>')).toEqual([
+      TAG_PROBLEM,
+    ]);
+    expect(validateHtml('<!doctype html><html><embed src="/media/x.svg"></html>')).toEqual([
+      TAG_PROBLEM,
+    ]);
+    expect(
+      validateHtml('<!doctype html><html><video><track src="captions.vtt"></video></html>'),
+    ).toEqual([TAG_PROBLEM]);
   });
 
   it("単一ファイル契約: 相対パス・絶対パスの別ファイル参照も検出する", () => {

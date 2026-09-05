@@ -28,9 +28,11 @@ const USAGE =
 // 通常のリンク (<a href>) は資料から外部へ飛ぶだけなので許可する
 const EXTERNAL_PATTERNS = [
   {
-    label: "script / link / img / iframe / video / audio / source が data: URI 以外を参照",
+    // src / href だけでなく、srcset（候補画像）、poster（video）、data（object）も別ファイルを指す属性
+    label:
+      "script / link / img / iframe / video / audio / source / object / embed / track の src / href / srcset / poster / data が data: URI 以外を参照",
     regex:
-      /<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?!data:)[^"'\s>]/i,
+      /<(?:script|link|img|iframe|video|audio|source|object|embed|track)\b[^>]*\b(?:src|href|srcset|poster|data)\s*=\s*["']?(?!data:)[^"'\s>]/i,
   },
   { label: "CSS の @import（別ファイルの読み込み）", regex: /@import\b/i },
   {

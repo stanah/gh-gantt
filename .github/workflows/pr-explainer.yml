@@ -95,8 +95,9 @@ jobs:
           const html = fs.readFileSync("explainer.html", "utf8");
           const problems = [];
           if (!/<!doctype\s+html|<html\b/i.test(html)) problems.push("HTML 文書ではありません");
-          if (/<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?!data:)[^"'\s>]/i.test(html)) {
-            problems.push("script / link / img / iframe / video / audio / source が data: URI 以外（外部 URL や相対パス）を参照しています");
+          // src / href だけでなく、srcset（候補画像）、poster（video）、data（object）も別ファイルを指す属性
+          if (/<(?:script|link|img|iframe|video|audio|source|object|embed|track)\b[^>]*\b(?:src|href|srcset|poster|data)\s*=\s*["']?(?!data:)[^"'\s>]/i.test(html)) {
+            problems.push("script / link / img / iframe / video / audio / source / object / embed / track の src / href / srcset / poster / data が data: URI 以外（外部 URL や相対パス）を参照しています");
           }
           if (/@import\b/i.test(html)) {
             problems.push("CSS の @import は別ファイルの読み込みなので使えません");
