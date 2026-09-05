@@ -1,0 +1,49 @@
+name: Verify artifact HTML
+
+# 検証専用（PR #345 の説明資料配布方式の検討）。
+# actions/upload-artifact@v7 の archive: false で公開した単一 HTML を、ブラウザで開いたときに
+# インライン JavaScript が実行されるかを確認する。検証後にこの workflow と branch は削除する。
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-artifact-html.yml"
+      - "verify/explainer.html"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: 検証用 HTML を確認する
+        run: wc -c verify/explainer.html
+
+      - name: zip なしの artifact として公開する
+        id: upload
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7
+        with:
+          path: verify/explainer.html
+          archive: false
+          retention-days: 3
+          if-no-files-found: error
+
+      - name: artifact URL を出力する
+        env:
+          ARTIFACT_URL: ${{ steps.upload.outputs.artifact-url }}
+          ARTIFACT_ID: ${{ steps.upload.outputs.artifact-id }}
+        run: |
+          echo "artifact-url=${ARTIFACT_URL}"
+          echo "artifact-id=${ARTIFACT_ID}"
+          {
+            echo "### archive: false 検証"
+            echo ""
+            echo "- artifact URL: ${ARTIFACT_URL}"
+            echo "- artifact ID: ${ARTIFACT_ID}"
+            echo ""
+            echo "ブラウザで開き、緑の「JavaScript: 実行されています」表示とボタン操作を確認する。"
+          } >> "$GITHUB_STEP_SUMMARY"
