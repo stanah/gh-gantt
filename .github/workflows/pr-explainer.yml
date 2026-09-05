@@ -88,16 +88,21 @@ jobs:
             printf '%s' "$HTML" > explainer.html
           fi
           node - <<'EOF'
-          // 単一ファイル契約の最小検証。外部参照は artifact の直接表示で描画されない
+          // 単一ファイル契約の検証。artifact の直接表示は単一ファイルしか配信しないため、
+          // 外部 URL・相対パス・絶対パスの別ファイル参照をすべて弾き、data: URI だけを許可する。
+          // helper を経由せず直接 dispatch された場合もここで止める（scripts/pr-explainer-publish.mjs と同じ規則）
           const fs = require("node:fs");
           const html = fs.readFileSync("explainer.html", "utf8");
           const problems = [];
           if (!/<!doctype\s+html|<html\b/i.test(html)) problems.push("HTML 文書ではありません");
-          if (/<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?:https?:)?\/\//i.test(html)) {
-            problems.push("script / link / img / iframe / video / audio / source が外部 URL を参照しています");
+          if (/<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?!data:)[^"'\s>]/i.test(html)) {
+            problems.push("script / link / img / iframe / video / audio / source が data: URI 以外（外部 URL や相対パス）を参照しています");
           }
-          if (/@import\s+(?:url\()?["']?(?:https?:)?\/\//i.test(html) || /url\(\s*["']?(?:https?:)?\/\//i.test(html)) {
-            problems.push("CSS が外部 URL を参照しています");
+          if (/@import\b/i.test(html)) {
+            problems.push("CSS の @import は別ファイルの読み込みなので使えません");
+          }
+          if (/url\(\s*["']?(?!data:|#)[^)"'\s]/i.test(html)) {
+            problems.push("CSS の url() が data: URI と #fragment 以外を参照しています");
           }
           if (problems.length > 0) {
             for (const p of problems) console.error(`::error::${p}`);

@@ -23,15 +23,20 @@ export const DEFAULT_WORKFLOW = "pr-explainer.yml";
 const USAGE =
   "使い方: node skills/gh-gantt-pr/scripts/pr-explainer-publish.mjs <input.html> --pr <number> [--title <title>] [--workflow <file>] [--mode auto|dispatch|branch] [--run]";
 
-// 外部リソース参照の検出パターン。通常のリンク (<a href>) は許可する
+// 別ファイル参照の検出パターン。artifact の直接表示は単一ファイルしか配信しないため、
+// 外部 URL だけでなく相対パスや絶対パスも契約違反とし、data: URI だけを許可する。
+// 通常のリンク (<a href>) は資料から外部へ飛ぶだけなので許可する
 const EXTERNAL_PATTERNS = [
   {
-    label: "script / link / img / iframe / video / audio / source の外部 URL",
+    label: "script / link / img / iframe / video / audio / source が data: URI 以外を参照",
     regex:
-      /<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?:https?:)?\/\//i,
+      /<(?:script|link|img|iframe|video|audio|source)\b[^>]*\b(?:src|href)\s*=\s*["']?(?!data:)[^"'\s>]/i,
   },
-  { label: "CSS の @import", regex: /@import\s+(?:url\()?["']?(?:https?:)?\/\//i },
-  { label: "CSS の url(http...)", regex: /url\(\s*["']?(?:https?:)?\/\//i },
+  { label: "CSS の @import（別ファイルの読み込み）", regex: /@import\b/i },
+  {
+    label: "CSS の url() が data: URI と #fragment 以外を参照",
+    regex: /url\(\s*["']?(?!data:|#)[^)"'\s]/i,
+  },
 ];
 
 function fail(message) {
@@ -94,7 +99,7 @@ export function validateHtml(html) {
   }
   for (const { label, regex } of EXTERNAL_PATTERNS) {
     if (regex.test(html)) {
-      problems.push(`外部リソースを参照しています: ${label}`);
+      problems.push(`別ファイルを参照しています: ${label}`);
     }
   }
   return problems;

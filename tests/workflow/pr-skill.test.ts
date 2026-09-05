@@ -260,7 +260,13 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は検証済みの単一 HTML を 
     await rm(workDir, { recursive: true, force: true });
   });
 
-  it("単一ファイル契約: HTML 文書でない、外部参照がある場合を検出する", () => {
+  const TAG_PROBLEM =
+    "別ファイルを参照しています: script / link / img / iframe / video / audio / source が data: URI 以外を参照";
+  const IMPORT_PROBLEM = "別ファイルを参照しています: CSS の @import（別ファイルの読み込み）";
+  const URL_PROBLEM =
+    "別ファイルを参照しています: CSS の url() が data: URI と #fragment 以外を参照";
+
+  it("単一ファイル契約: HTML 文書でない場合と、外部 URL の参照を検出する", () => {
     expect(validateHtml(SAMPLE_HTML)).toEqual([]);
     expect(validateHtml("hello")).toEqual([
       "HTML 文書ではありません（<!doctype html> または <html> が必要）",
@@ -269,19 +275,56 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は検証済みの単一 HTML を 
       validateHtml(
         '<!doctype html><html><script src="https://cdn.example.com/x.js"></script></html>',
       ),
-    ).toEqual([
-      "外部リソースを参照しています: script / link / img / iframe / video / audio / source の外部 URL",
-    ]);
+    ).toEqual([TAG_PROBLEM]);
     expect(
       validateHtml('<!doctype html><html><style>@import "https://a/b.css";</style></html>'),
-    ).toEqual(["外部リソースを参照しています: CSS の @import"]);
+    ).toEqual([IMPORT_PROBLEM]);
     expect(
       validateHtml("<!doctype html><html><style>body{background:url(//a/b.png)}</style></html>"),
-    ).toEqual(["外部リソースを参照しています: CSS の url(http...)"]);
-    // 通常のリンクは許可する
+    ).toEqual([URL_PROBLEM]);
+  });
+
+  it("単一ファイル契約: 相対パス・絶対パスの別ファイル参照も検出する", () => {
+    expect(validateHtml('<!doctype html><html><img src="./x.png"></html>')).toEqual([TAG_PROBLEM]);
+    expect(validateHtml('<!doctype html><html><img src="images/x.png"></html>')).toEqual([
+      TAG_PROBLEM,
+    ]);
+    expect(
+      validateHtml('<!doctype html><html><link rel="stylesheet" href="/assets/x.css"></html>'),
+    ).toEqual([TAG_PROBLEM]);
+    expect(validateHtml("<!doctype html><html><script src=x.js></script></html>")).toEqual([
+      TAG_PROBLEM,
+    ]);
+    expect(validateHtml('<!doctype html><html><style>@import "./x.css";</style></html>')).toEqual([
+      IMPORT_PROBLEM,
+    ]);
+    expect(
+      validateHtml("<!doctype html><html><style>body{background:url(./x.png)}</style></html>"),
+    ).toEqual([URL_PROBLEM]);
+    expect(
+      validateHtml("<!doctype html><html><style>body{background:url('x.png')}</style></html>"),
+    ).toEqual([URL_PROBLEM]);
+  });
+
+  it("単一ファイル契約: data: URI、#fragment、通常のリンク、インラインの script / style は許可する", () => {
     expect(
       validateHtml(
-        '<!doctype html><html><a href="https://github.com/stanah/gh-gantt">repo</a></html>',
+        '<!doctype html><html><img src="data:image/png;base64,iVBORw0KGgo="><link rel="icon" href="data:,"></html>',
+      ),
+    ).toEqual([]);
+    expect(
+      validateHtml(
+        "<!doctype html><html><style>.a{background:url(data:image/svg+xml,%3Csvg/%3E)}.b{fill:url(#grad)}</style></html>",
+      ),
+    ).toEqual([]);
+    expect(
+      validateHtml(
+        '<!doctype html><html><a href="https://github.com/stanah/gh-gantt">repo</a><a href="./other">x</a></html>',
+      ),
+    ).toEqual([]);
+    expect(
+      validateHtml(
+        "<!doctype html><html><script>const a = 1;</script><style>body{}</style></html>",
       ),
     ).toEqual([]);
   });
@@ -378,7 +421,7 @@ describe("[NFR-STABILITY-008-AC6] 説明資料は検証済みの単一 HTML を 
     const result = await runPublishScript([input, "--pr", "1"]);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain("説明資料の契約に違反しています");
-    expect(result.stderr).toContain("外部リソース");
+    expect(result.stderr).toContain("別ファイルを参照しています");
   });
 
   it("workflow テンプレートと .github/workflows/pr-explainer.yml は一致し、公開手順の契約を満たす", async () => {
