@@ -1385,6 +1385,16 @@ areas:
             status: covered
             tests:
               - tests/workflow/pr-skill.test.ts
+          - id: NFR-STABILITY-008-AC5
+            description: |
+              gh-gantt-pr skill は PR body の読みやすさの型（先頭 1 文、Summary 5 行以内、
+              太字なし、経緯は ADR へのリンク）を定め、任意拡張として画像添付
+              （gh 2.99.0 以上、画像と動画のみ、3 枚まで）とスタック PR（各層が単独で
+              CI green、層ごとの branch 名、最上層だけ Closes）を reference で定義し、
+              設計判断を ADR-027 に記録している
+            status: covered
+            tests:
+              - tests/workflow/pr-skill.test.ts
       - id: NFR-STABILITY-009
         summary: doctor によるプロジェクトレベル stale 検出
         acceptance_criteria:
