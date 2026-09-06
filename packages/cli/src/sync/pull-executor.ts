@@ -245,7 +245,7 @@ export async function executePull(
   const staleIssueIds = new Set<string>();
   for (const item of issueItems) {
     const id = buildTaskId(item.repository, item.number);
-    if (opts.force || isRelationshipStale(id, remoteTasks.get(id), syncState.snapshots[id])) {
+    if (opts.force || isRelationshipStale(remoteTasks.get(id), syncState.snapshots[id])) {
       staleIssueIds.add(id);
     }
   }
@@ -473,7 +473,6 @@ export async function executePull(
  * 同じ仮定で snapshot から辺を再構成できる。
  */
 function isRelationshipStale(
-  id: string,
   remoteTask: Task | undefined,
   snapshot: SyncState["snapshots"][string] | undefined,
 ): boolean {
