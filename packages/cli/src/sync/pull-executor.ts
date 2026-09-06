@@ -1,7 +1,11 @@
 import type { graphql } from "@octokit/graphql";
 import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
 import { fetchProject, fetchRepositoryMetadata, checkRemoteChanges } from "../github/projects.js";
-import { fetchAllIssueRelationshipLinks } from "../github/sub-issues.js";
+import {
+  fetchAllIssueRelationshipLinks,
+  type BlockedByLink,
+  type SubIssueLink,
+} from "../github/sub-issues.js";
 import {
   applySubIssueLinks,
   applyBlockedByLinks,
@@ -231,14 +235,32 @@ export async function executePull(
     }
   }
 
-  // Fetch and apply sub-issue + blocked_by links
+  // 関係リンク (sub-issue / blockedBy) は Issue ごとに 1 クエリかかるため、取得対象を
+  // updated_at が sync-state と一致しない Issue に絞る (#350)。quick-skip と同じ仮定
+  // (updated_at が一致する Issue は関係も変わっていない) に基づき、一致した Issue の辺は
+  // snapshot の syncFields から再構成する。--force と snapshot 不在時は全件取得する。
   const issueItems = projectData.items
     .filter((i) => i.content)
     .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
-  const { subIssueLinks, blockedByLinks } = await fetchAllIssueRelationshipLinks(gql, issueItems);
+  const staleIssueIds = new Set<string>();
+  for (const item of issueItems) {
+    const id = buildTaskId(item.repository, item.number);
+    if (opts.force || isRelationshipStale(id, remoteTasks.get(id), syncState.snapshots[id])) {
+      staleIssueIds.add(id);
+    }
+  }
+  const fetched = await fetchAllIssueRelationshipLinks(
+    gql,
+    issueItems.filter((item) => staleIssueIds.has(buildTaskId(item.repository, item.number))),
+  );
+  const cached = buildRelationshipLinksFromSnapshots(
+    remoteTasks,
+    syncState.snapshots,
+    staleIssueIds,
+  );
   const remoteTaskArray = Array.from(remoteTasks.values());
-  applySubIssueLinks(remoteTaskArray, subIssueLinks);
-  applyBlockedByLinks(remoteTaskArray, blockedByLinks);
+  applySubIssueLinks(remoteTaskArray, [...cached.subIssueLinks, ...fetched.subIssueLinks]);
+  applyBlockedByLinks(remoteTaskArray, [...cached.blockedByLinks, ...fetched.blockedByLinks]);
   for (const t of remoteTaskArray) remoteTasks.set(t.id, t);
 
   const localTaskMap = new Map(tasksFile.tasks.map((t) => [t.id, t]));
@@ -441,4 +463,83 @@ export async function executePull(
     tasksFile: newTasksFile,
     syncState: newSyncState,
   };
+}
+
+/**
+ * 関係リンクを GitHub から取り直す必要があるか。
+ *
+ * snapshot が無い (新規に現れた Issue)、updated_at が記録されていない、syncFields が無い、
+ * または updated_at が snapshot と一致しない場合は再取得する。それ以外は quick-skip と
+ * 同じ仮定で snapshot から辺を再構成できる。
+ */
+function isRelationshipStale(
+  id: string,
+  remoteTask: Task | undefined,
+  snapshot: SyncState["snapshots"][string] | undefined,
+): boolean {
+  if (!remoteTask || !snapshot?.updated_at || !snapshot.syncFields) return true;
+  return remoteTask.updated_at !== snapshot.updated_at;
+}
+
+/**
+ * updated_at が変わっていない Issue の親子 / blockedBy の辺を snapshot の syncFields から再構成する。
+ *
+ * 両端のどちらかが stale (再取得対象) の辺は捨て、取得結果に置き換える。片側の Issue だけが
+ * 変わった場合でも古い辺が残らないようにするため。sub_tasks の順序は親側の syncFields を正準とし、
+ * 子側の parent から復元する辺はその後に追加する。
+ */
+function buildRelationshipLinksFromSnapshots(
+  remoteTasks: Map<string, Task>,
+  snapshots: SyncState["snapshots"],
+  staleIssueIds: Set<string>,
+): { subIssueLinks: SubIssueLink[]; blockedByLinks: BlockedByLink[] } {
+  const subIssueLinks: SubIssueLink[] = [];
+  const parentDerivedLinks: SubIssueLink[] = [];
+  const blockedByLinks: BlockedByLink[] = [];
+  const endpoint = (id: string): { number: number; repository: string } | null => {
+    const task = remoteTasks.get(id);
+    if (!task || task.github_issue == null || staleIssueIds.has(id)) return null;
+    return { number: task.github_issue, repository: task.github_repo };
+  };
+
+  for (const [id, task] of remoteTasks) {
+    if (task.github_issue == null || staleIssueIds.has(id)) continue;
+    const fields = snapshots[id]?.syncFields;
+    if (!fields) continue;
+    const self = { number: task.github_issue, repository: task.github_repo };
+
+    for (const childId of fields.sub_tasks) {
+      const child = endpoint(childId);
+      if (!child) continue;
+      subIssueLinks.push({
+        parentNumber: self.number,
+        parentRepo: self.repository,
+        childNumber: child.number,
+        childRepo: child.repository,
+      });
+    }
+    if (fields.parent) {
+      const parent = endpoint(fields.parent);
+      if (parent) {
+        parentDerivedLinks.push({
+          parentNumber: parent.number,
+          parentRepo: parent.repository,
+          childNumber: self.number,
+          childRepo: self.repository,
+        });
+      }
+    }
+    for (const dep of fields.blocked_by) {
+      const blocker = endpoint(dep.task);
+      if (!blocker) continue;
+      blockedByLinks.push({
+        blockedNumber: self.number,
+        blockedRepo: self.repository,
+        blockingNumber: blocker.number,
+        blockingRepo: blocker.repository,
+      });
+    }
+  }
+
+  return { subIssueLinks: [...subIssueLinks, ...parentDerivedLinks], blockedByLinks };
 }

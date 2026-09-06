@@ -171,9 +171,13 @@ export const ISSUE_COMMENTS_QUERY = `
 `;
 
 export const ISSUE_RELATIONSHIPS_QUERY = `
-  query($owner: String!, $repo: String!, $number: Int!, $subIssuesCursor: String, $blockedByCursor: String) {
+  query($owner: String!, $repo: String!, $number: Int!, $subIssuesCursor: String, $blockedByCursor: String, $blockingCursor: String) {
     repository(owner: $owner, name: $repo) {
       issue(number: $number) {
+        parent {
+          number
+          repository { nameWithOwner }
+        }
         subIssues(first: 50, after: $subIssuesCursor) {
           pageInfo { hasNextPage endCursor }
           nodes {
@@ -182,6 +186,13 @@ export const ISSUE_RELATIONSHIPS_QUERY = `
           }
         }
         blockedBy(first: 50, after: $blockedByCursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            number
+            repository { nameWithOwner }
+          }
+        }
+        blocking(first: 50, after: $blockingCursor) {
           pageInfo { hasNextPage endCursor }
           nodes {
             number

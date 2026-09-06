@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Task } from "@gh-gantt/shared";
 import { applySubIssueLinks } from "../github/issues.js";
-import { fetchIssueRelationships } from "../github/sub-issues.js";
+import { fetchAllIssueRelationshipLinks, fetchIssueRelationships } from "../github/sub-issues.js";
 
 const task = (id: string): Task => ({
   id,
@@ -142,6 +142,80 @@ describe("[NFR-STABILITY-014-AC8] sub-issue優先順の往復同期", () => {
     await expect(fetchIssueRelationships(gql as never, "example", "public", 100)).resolves.toEqual({
       subIssues: [],
       blockedBy: [],
+      blocking: [],
+      parent: null,
     });
+  });
+});
+
+describe("[NFR-SYNC-002-AC3] 関係リンク取得は parent と blocking も返す [Issue #350]", () => {
+  const page = (numbers: number[]) => ({
+    pageInfo: { hasNextPage: false, endCursor: null },
+    nodes: numbers.map((number) => ({ number, repository: { nameWithOwner: "example/public" } })),
+  });
+
+  it("parent と blocking を取得結果に含める", async () => {
+    const gql = vi.fn(async () => ({
+      repository: {
+        issue: {
+          parent: { number: 1, repository: { nameWithOwner: "example/public" } },
+          subIssues: page([]),
+          blockedBy: page([4]),
+          blocking: page([5, 6]),
+        },
+      },
+    }));
+
+    const relationships = await fetchIssueRelationships(gql as never, "example", "public", 3);
+
+    expect(relationships.parent).toEqual({ number: 1, repository: "example/public" });
+    expect(relationships.blockedBy.map((item) => item.number)).toEqual([4]);
+    expect(relationships.blocking.map((item) => item.number)).toEqual([5, 6]);
+  });
+
+  it("parent と blocking を含まない応答は空として扱う", async () => {
+    const gql = vi.fn(async () => ({
+      repository: { issue: { subIssues: page([2]), blockedBy: page([]) } },
+    }));
+
+    const relationships = await fetchIssueRelationships(gql as never, "example", "public", 1);
+
+    expect(relationships.parent).toBeNull();
+    expect(relationships.blocking).toEqual([]);
+    expect(relationships.subIssues.map((item) => item.number)).toEqual([2]);
+  });
+
+  it("fetchAllIssueRelationshipLinks は blocking を blocked 側の辺に、parent を親子の辺に変換する", async () => {
+    const gql = vi.fn(async () => ({
+      repository: {
+        issue: {
+          parent: { number: 1, repository: { nameWithOwner: "example/public" } },
+          subIssues: page([]),
+          blockedBy: page([]),
+          blocking: page([5]),
+        },
+      },
+    }));
+
+    const links = await fetchAllIssueRelationshipLinks(gql as never, [
+      { number: 3, repository: "example/public" },
+    ]);
+
+    expect(links.subIssueLinks).toEqual([
+      {
+        parentNumber: 1,
+        parentRepo: "example/public",
+        childNumber: 3,
+        childRepo: "example/public",
+      },
+    ]);
+    expect(links.blockedByLinks).toEqual([
+      {
+        blockedNumber: 5,
+        blockedRepo: "example/public",
+        blockingNumber: 3,
+        blockingRepo: "example/public",
+      },
+    ]);
   });
 });

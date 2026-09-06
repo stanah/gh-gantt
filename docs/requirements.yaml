@@ -155,6 +155,17 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/diff.test.ts
+          - id: NFR-SYNC-002-AC2
+            description: pull の関係リンク (sub-issue / blockedBy) 取得は updated_at が sync-state と一致しない Issue と snapshot のない Issue だけに発行され、--force と初回同期では全 Issue を対象にする
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/pull-incremental-relationships.test.ts
+          - id: NFR-SYNC-002-AC3
+            description: updated_at が一致した Issue の parent / sub_tasks / blocked_by は snapshot の syncFields から再構成され、変わった Issue に接する既存の辺は取得結果で置き換えられる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/pull-incremental-relationships.test.ts
+              - packages/cli/src/__tests__/sub-issue-order.test.ts
   - id: HIER
     name: Task Hierarchy
     description: タスクの親子関係と依存関係の管理
