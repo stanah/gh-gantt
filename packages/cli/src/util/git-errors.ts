@@ -1,3 +1,5 @@
+import { withResolvedGitPath } from "./git-executable.js";
+
 const GIT_REPOSITORY_SELECTION_VARIABLES = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_CONFIG",
@@ -23,7 +25,7 @@ export function gitCommandEnvironment(source: NodeJS.ProcessEnv = process.env): 
   const environment = { ...source };
   for (const name of GIT_REPOSITORY_SELECTION_VARIABLES) delete environment[name];
   environment.LC_ALL = "C";
-  return environment;
+  return withResolvedGitPath(environment);
 }
 
 /** `LC_ALL=C` で実行した Git subprocess の non-repository 診断を判定する。 */
