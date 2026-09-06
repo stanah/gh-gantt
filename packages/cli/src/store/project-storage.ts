@@ -18,6 +18,11 @@ import { LoopStateStore } from "./loop-state.js";
 import { SyncStateStore } from "./state.js";
 import { TasksStore } from "./tasks.js";
 import { gitCommandEnvironment, isNotGitRepositoryError } from "../util/git-errors.js";
+import {
+  hasGitMarkerInAncestors,
+  notGitRepositoryError,
+  resolveGitExecutable,
+} from "../util/git-executable.js";
 
 const execFileAsync = promisify(execFile);
 const LAYOUT_VERSION = "v1";
@@ -213,7 +218,9 @@ function parseWorktreeList(output: string): string[] {
 
 async function runGit(projectRoot: string, args: string[]): Promise<string> {
   try {
-    const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
+    // Git 管理外の root は git を起動せずに判定する (#353)
+    if (!hasGitMarkerInAncestors(projectRoot)) throw notGitRepositoryError(projectRoot);
+    const result = await execFileAsync(resolveGitExecutable(), ["-C", projectRoot, ...args], {
       encoding: "utf8",
       timeout: 10_000,
       maxBuffer: 4 * 1024 * 1024,

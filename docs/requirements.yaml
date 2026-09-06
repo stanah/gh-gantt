@@ -1713,6 +1713,27 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+          - id: NFR-STABILITY-015-AC10
+            description: |
+              Git subprocess は PATH から一度解決した絶対パスで起動し、起動時間が PATH の長さに
+              依存しない。PATH 上に git が無い場合は名前で起動する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/git-executable.test.ts
+          - id: NFR-STABILITY-015-AC11
+            description: |
+              repository の toplevel と common-dir は process 内で root ごとに一度だけ git で解決し、
+              以降は cache を使う。worktree 一覧は毎回取得し、失敗した解決は cache に残さない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/repository-coordination-probe-cache.test.ts
+          - id: NFR-STABILITY-015-AC12
+            description: |
+              祖先ディレクトリに .git が無い root は git を起動せずに Git 管理外と判定し、
+              従来と同じ non-repository 診断として扱う
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/git-executable.test.ts
       - id: NFR-STABILITY-016
         summary: Graph Engineering の実測比較と安全な運用縮退
         acceptance_criteria:

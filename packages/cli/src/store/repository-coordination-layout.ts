@@ -6,6 +6,11 @@ import { promisify } from "node:util";
 import { ConfigSchema, GANTT_DIR } from "@gh-gantt/shared";
 import type { Config } from "@gh-gantt/shared";
 import { gitCommandEnvironment, isNotGitRepositoryError } from "../util/git-errors.js";
+import {
+  hasGitMarkerInAncestors,
+  notGitRepositoryError,
+  resolveGitExecutable,
+} from "../util/git-executable.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,13 +37,45 @@ function fingerprint(value: string): string {
 }
 
 async function runGit(projectRoot: string, args: string[]): Promise<string> {
-  const result = await execFileAsync("git", ["-C", projectRoot, ...args], {
+  // Git 管理外の root は git を起動せずに判定する (#353)
+  if (!hasGitMarkerInAncestors(projectRoot)) throw notGitRepositoryError(projectRoot);
+  const result = await execFileAsync(resolveGitExecutable(), ["-C", projectRoot, ...args], {
     encoding: "utf8",
     timeout: 10_000,
     maxBuffer: 4 * 1024 * 1024,
     env: gitCommandEnvironment(),
   });
   return result.stdout.trim();
+}
+
+type GitRunner = (projectRoot: string, args: string[]) => Promise<string>;
+
+/**
+ * root ごとに不変な rev-parse の結果を runner 単位で cache する (#353)。
+ *
+ * toplevel と common-dir は process の生存中に変わらないため一度だけ git を起動する。
+ * worktree 一覧は `git worktree add` で変わるので cache しない。失敗した呼び出しは
+ * cache に残さず、次回の呼び出しで再度 git に問い合わせる。
+ */
+const revParseCache = new WeakMap<GitRunner, Map<string, Promise<string>>>();
+
+function cachedRevParse(
+  executeGit: GitRunner,
+  absoluteRoot: string,
+  option: string,
+): Promise<string> {
+  let perRunner = revParseCache.get(executeGit);
+  if (!perRunner) {
+    perRunner = new Map();
+    revParseCache.set(executeGit, perRunner);
+  }
+  const key = `${absoluteRoot}\0${option}`;
+  const cached = perRunner.get(key);
+  if (cached) return cached;
+  const pending = executeGit(absoluteRoot, ["rev-parse", option]);
+  perRunner.set(key, pending);
+  pending.catch(() => perRunner.delete(key));
+  return pending;
 }
 
 function parseWorktrees(output: string): string[] {
@@ -62,7 +99,7 @@ export async function resolveRepositoryCoordinationLayout(
   let nonGitError: unknown = null;
   try {
     // repository境界を先に確定し、後続probeの異常をnon-Git fallbackで隠さない。
-    topLevel = await executeGit(absoluteRoot, ["rev-parse", "--show-toplevel"]);
+    topLevel = await cachedRevParse(executeGit, absoluteRoot, "--show-toplevel");
   } catch (error) {
     if (!isNotGitRepositoryError(error)) throw error;
     nonGitError = error;
@@ -70,7 +107,7 @@ export async function resolveRepositoryCoordinationLayout(
   }
   if (!nonGitError) {
     [rawCommonDir, worktreeOutput] = await Promise.all([
-      executeGit(absoluteRoot, ["rev-parse", "--git-common-dir"]),
+      cachedRevParse(executeGit, absoluteRoot, "--git-common-dir"),
       executeGit(absoluteRoot, ["worktree", "list", "--porcelain", "-z"]),
     ]);
   }
