@@ -35,7 +35,7 @@ export function resolveGitExecutable(env: NodeJS.ProcessEnv = process.env): stri
  *
  * repository 選択の環境変数を除いた git は祖先の `.git` (directory または worktree の file) だけで
  * repository を探索するため、祖先のどこにも無ければ必ず "not a git repository" になる (#353)。
- * directory 自体が存在しない場合は git の診断に任せるため false を返す。
+ * directory 自体が存在しない場合は git の診断に任せるため true を返し、git を起動させる。
  */
 export function hasGitMarkerInAncestors(directory: string): boolean {
   let current = resolve(directory);
