@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -78,6 +79,59 @@ function cachedRevParse(
   return pending;
 }
 
+/**
+ * worktree 一覧を common-dir 配下の `worktrees` の状態を署名にして cache する (#355)。
+ *
+ * `git worktree add` / `remove` / `prune` は `worktrees` ディレクトリの更新時刻を、
+ * `git worktree move` は該当エントリの `gitdir` の更新時刻を変えるため、両方を署名に含める。
+ * 署名が一致する間は git を起動せず前回の出力を返す。失敗した取得は cache に残さない。
+ */
+const worktreeListCache = new WeakMap<
+  GitRunner,
+  Map<string, { signature: string; output: Promise<string> }>
+>();
+
+function worktreeSignature(commonDir: string): string {
+  const worktreesDir = join(commonDir, "worktrees");
+  let signature: string;
+  try {
+    signature = `dir:${statSync(worktreesDir).mtimeMs}`;
+  } catch {
+    return "absent";
+  }
+  for (const entry of readdirSync(worktreesDir).sort()) {
+    let gitdirMtime = "missing";
+    try {
+      gitdirMtime = String(statSync(join(worktreesDir, entry, "gitdir")).mtimeMs);
+    } catch {
+      // gitdir の無いエントリ (作成途中や破損) は "missing" として署名に含める
+    }
+    signature += `;${entry}:${gitdirMtime}`;
+  }
+  return signature;
+}
+
+function cachedWorktreeList(
+  executeGit: GitRunner,
+  absoluteRoot: string,
+  commonDir: string,
+): Promise<string> {
+  let perRunner = worktreeListCache.get(executeGit);
+  if (!perRunner) {
+    perRunner = new Map();
+    worktreeListCache.set(executeGit, perRunner);
+  }
+  const signature = worktreeSignature(commonDir);
+  const cached = perRunner.get(absoluteRoot);
+  if (cached && cached.signature === signature) return cached.output;
+  const output = executeGit(absoluteRoot, ["worktree", "list", "--porcelain", "-z"]);
+  perRunner.set(absoluteRoot, { signature, output });
+  output.catch(() => {
+    if (perRunner.get(absoluteRoot)?.output === output) perRunner.delete(absoluteRoot);
+  });
+  return output;
+}
+
 function parseWorktrees(output: string): string[] {
   return output
     .split("\0")
@@ -106,10 +160,12 @@ export async function resolveRepositoryCoordinationLayout(
     // Git管理外ではcaller指定rootを単一workspaceとして扱い、従来のstandalone動作を保つ。
   }
   if (!nonGitError) {
-    [rawCommonDir, worktreeOutput] = await Promise.all([
-      cachedRevParse(executeGit, absoluteRoot, "--git-common-dir"),
-      executeGit(absoluteRoot, ["worktree", "list", "--porcelain", "-z"]),
-    ]);
+    rawCommonDir = await cachedRevParse(executeGit, absoluteRoot, "--git-common-dir");
+    worktreeOutput = await cachedWorktreeList(
+      executeGit,
+      absoluteRoot,
+      isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
+    );
   }
   let rawConfig: string;
   try {
