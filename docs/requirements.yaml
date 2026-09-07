@@ -142,11 +142,13 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/comments.test.ts
+              - packages/cli/src/__tests__/pull-comments-incremental.test.ts
           - id: FR-SYNC-008-AC2
             description: updated_at が変わらない取得済み Issue には GitHub API を呼ばない
             status: covered
             tests:
               - packages/cli/src/__tests__/comments.test.ts
+              - packages/cli/src/__tests__/pull-comments-incremental.test.ts
           - id: FR-SYNC-008-AC3
             description: --force-comments では updated_at にかかわらず全 Issue のコメントを再取得する
             status: covered
@@ -157,6 +159,7 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/comments.test.ts
+              - packages/shared/src/__tests__/schema.test.ts
       - id: NFR-SYNC-001
         summary: push 中の障害耐性
         acceptance_criteria:
