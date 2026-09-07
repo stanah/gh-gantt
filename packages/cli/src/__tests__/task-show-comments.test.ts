@@ -4,6 +4,7 @@ import {
   buildShowJson,
   createTaskShowCommand,
   formatTask,
+  hasIssueComments,
   resolveTaskComments,
 } from "../commands/task/show.js";
 
@@ -171,6 +172,23 @@ describe("[FR-CLI-019-AC3] コメント未取得の Issue では show は未取�
 
     expect(output).toMatch(/^Comments:\s+not fetched/m);
     expect(output).toContain("gh-gantt pull --with-comments");
+  });
+
+  it("GitHub Issue を持たない draft task と milestone には未取得の案内を出さない", async () => {
+    storage.tasks = [makeTask({ id: "owner/repo#draft-1", github_issue: null })];
+    storage.commentsFile = notFetched;
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await createTaskShowCommand().parseAsync(["owner/repo#draft-1"], { from: "user" });
+    expect(String(log.mock.calls.at(-1)?.[0])).not.toContain("not fetched");
+
+    await createTaskShowCommand().parseAsync(["owner/repo#draft-1", "--json"], { from: "user" });
+    expect(JSON.parse(String(log.mock.calls.at(-1)?.[0]))).not.toHaveProperty("comments");
+
+    expect(hasIssueComments(makeTask({ id: "milestone:owner/repo#1", github_issue: 1 }))).toBe(
+      false,
+    );
+    expect(hasIssueComments(makeTask())).toBe(true);
   });
 
   it("--json では comments と comments_fetched_at を null にする", () => {

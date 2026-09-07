@@ -20,6 +20,11 @@ export interface TaskComments {
 
 const NOT_FETCHED_MESSAGE = "not fetched. Run `gh-gantt pull --with-comments` to fetch";
 
+/** GitHub Issue 由来の task だけがコメントの表示対象になる。 */
+export function hasIssueComments(task: Task): boolean {
+  return !isMilestoneSyntheticTask(task.id) && task.github_issue !== null;
+}
+
 /** commentsStore の内容から task のコメントを作成日時の昇順で取り出す。 */
 export function resolveTaskComments(task: Task, commentsFile: CommentsFile): TaskComments {
   const fetchedAt = commentsFile.fetched_at[task.id];
@@ -151,10 +156,10 @@ export function createTaskShowCommand(): Command {
               return;
             }
 
-            // milestone の synthetic task は Issue ではないためコメントを持たない
-            const taskComments = isMilestoneSyntheticTask(task.id)
-              ? undefined
-              : resolveTaskComments(task, await commentsStore.read());
+            // milestone の synthetic task と未 push の draft は GitHub Issue ではないためコメントを持たない
+            const taskComments = hasIssueComments(task)
+              ? resolveTaskComments(task, await commentsStore.read())
+              : undefined;
 
             if (opts.json) {
               console.log(
