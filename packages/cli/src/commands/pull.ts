@@ -1,8 +1,8 @@
 import { Command } from "commander";
-import type { CommentsFile } from "@gh-gantt/shared";
+import type { CommentsFile, SyncState } from "@gh-gantt/shared";
 import { createGraphQLClient } from "../github/client.js";
 import { isDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
-import { fetchAllComments } from "../github/comments.js";
+import { fetchAllComments, type FetchCommentsItem } from "../github/comments.js";
 import { withProjectStorage, type ProjectStorageSession } from "../store/project-storage.js";
 import { executePull } from "../sync/pull-executor.js";
 import { formatValue } from "../util/format.js";
@@ -132,7 +132,7 @@ export const pullCommand = new Command("pull")
             console.log(`Pull summary: +0 ~0 !0 -0`);
             console.log("Pull complete.");
           }
-          await fetchAndSaveComments(gql, tasksFile.tasks, storage, opts);
+          await fetchAndSaveComments(gql, tasksFile.tasks, newSyncState, storage, opts);
           return;
         }
 
@@ -141,7 +141,7 @@ export const pullCommand = new Command("pull")
             await tasksStore.write(newTasksFile);
             await stateStore.write(newSyncState);
             await storage.flush();
-            await fetchAndSaveComments(gql, newTasksFile.tasks, storage, opts);
+            await fetchAndSaveComments(gql, newTasksFile.tasks, newSyncState, storage, opts);
           }
 
           // JSON 出力（dry-run 含む）。永続化が必要な場合はcommit成功後だけ出力する。
@@ -225,14 +225,41 @@ export const pullCommand = new Command("pull")
 
         console.log("Pull complete.");
 
-        await fetchAndSaveComments(gql, newTasksFile.tasks, storage, opts);
+        await fetchAndSaveComments(gql, newTasksFile.tasks, newSyncState, storage, opts);
       },
     );
   });
 
+/**
+ * コメント取得対象の Issue 一覧を組み立てる。
+ *
+ * 増分判定に使う updated_at は task ではなく sync-state の snapshot から取る。
+ * pull はハッシュ一致 (内容変更なし) の task を local のまま残し、snapshot.updated_at
+ * だけを remote に追従させる (#169)。コメントの追加・編集・削除は hashTask の対象外なので、
+ * task.updated_at を使うと「コメントだけ変わった Issue」を永続的に skip してしまう。
+ */
+export function buildCommentItems(
+  tasks: import("@gh-gantt/shared").Task[],
+  syncState: Pick<SyncState, "snapshots">,
+): FetchCommentsItem[] {
+  return tasks
+    .filter((t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id))
+    .map((t) => {
+      const [owner, repo] = t.github_repo.split("/");
+      return {
+        taskId: t.id,
+        owner,
+        repo,
+        issueNumber: t.github_issue!,
+        updatedAt: syncState.snapshots[t.id]?.updated_at ?? t.updated_at,
+      };
+    });
+}
+
 async function fetchAndSaveComments(
   gql: Awaited<ReturnType<typeof createGraphQLClient>>,
   tasks: import("@gh-gantt/shared").Task[],
+  syncState: Pick<SyncState, "snapshots">,
   storage: Pick<ProjectStorageSession, "commentsStore" | "flush">,
   opts: { withComments?: boolean; forceComments?: boolean },
 ): Promise<void> {
@@ -242,20 +269,7 @@ async function fetchAndSaveComments(
     const { commentsStore } = storage;
     const commentsFile = await commentsStore.read();
 
-    const commentItems = tasks
-      .filter(
-        (t) => t.github_issue !== null && !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
-      )
-      .map((t) => {
-        const [owner, repo] = t.github_repo.split("/");
-        return {
-          taskId: t.id,
-          owner,
-          repo,
-          issueNumber: t.github_issue!,
-          updatedAt: t.updated_at,
-        };
-      });
+    const commentItems = buildCommentItems(tasks, syncState);
 
     const updatedComments = await fetchAllComments(
       gql,
@@ -269,7 +283,12 @@ async function fetchAndSaveComments(
 
     // 削除済みtaskのコメントを除去する
     const taskIds = new Set(tasks.map((t) => t.id));
-    for (const key of Object.keys(updatedComments.fetched_at)) {
+    const cachedKeys = new Set([
+      ...Object.keys(updatedComments.fetched_at),
+      ...Object.keys(updatedComments.issue_updated_at),
+      ...Object.keys(updatedComments.comments),
+    ]);
+    for (const key of cachedKeys) {
       if (!taskIds.has(key)) {
         delete updatedComments.fetched_at[key];
         delete updatedComments.issue_updated_at[key];
