@@ -102,9 +102,9 @@ if (globalThis.window !== undefined) {
     return m ? Number(m[1]) : undefined;
   };
   const defineFallbackSize = (name: "offsetWidth" | "offsetHeight", fallback: number) => {
-    const descriptor = Object.getOwnPropertyDescriptor(proto, name);
-    const current = descriptor?.get?.call(document.createElement("div"));
-    if (descriptor && current !== 0) return;
+    const getter = Object.getOwnPropertyDescriptor(proto, name)?.get;
+    // getter が定義済みで 0 以外を返す環境はそのまま使う。未定義または 0 を返す場合だけ上書きする
+    if (getter && getter.call(document.createElement("div")) !== 0) return;
     Object.defineProperty(proto, name, {
       configurable: true,
       get(this: HTMLElement) {
