@@ -95,17 +95,20 @@ const worktreeListCache = new WeakMap<
 function worktreeSignature(commonDir: string): string {
   const worktreesDir = join(commonDir, "worktrees");
   let signature: string;
+  // 読めない (権限や一時的な I/O エラー) ときは一致しない署名を返し、cache を使わない
+  const unreadable = () => `unreadable:${process.hrtime.bigint()}`;
   try {
     signature = `dir:${statSync(worktreesDir).mtimeMs}`;
-  } catch {
-    return "absent";
+  } catch (error) {
+    // linked worktree が無い repository では worktrees 自体が存在しない
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    return unreadable();
   }
   let entries: string[];
   try {
     entries = readdirSync(worktreesDir).sort();
   } catch {
-    // 列挙できない (権限や一時的な I/O エラー) ときは一致しない署名を返し、cache を使わない
-    return `unreadable:${process.hrtime.bigint()}`;
+    return unreadable();
   }
   for (const entry of entries) {
     let gitdirMtime = "missing";

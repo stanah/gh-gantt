@@ -139,6 +139,18 @@ describe("[NFR-STABILITY-015-AC13] worktree 一覧の cache [Issue #355]", () =>
     expect(calls("list")).toBe(2);
   });
 
+  it("worktrees の stat が ENOENT 以外で失敗した場合も cache を使わず毎回取得する", async () => {
+    const root = await projectRoot();
+    // .git をファイルにすると .git/worktrees の stat は ENOTDIR になる
+    await writeFile(join(root, ".git"), "gitdir: /elsewhere\n");
+    const { runner, calls } = countingRunner(root);
+
+    await resolveRepositoryCoordinationLayout(root, { runGit: runner });
+    await resolveRepositoryCoordinationLayout(root, { runGit: runner });
+
+    expect(calls("list")).toBe(2);
+  });
+
   it("失敗した worktree list は cache に残さない", async () => {
     const root = await projectRoot();
     await mkdir(join(root, ".git"));
