@@ -188,6 +188,11 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/validation.test.ts
+          - id: FR-HIER-001-AC4
+            description: 既存データに type_hierarchy 違反があっても、その親子に触れない create / update / link / proposal は拒否しない。新たに違反を生む変更は親と子の ID を含むメッセージで拒否する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-351-hierarchy-validation-scope.test.ts
       - id: FR-HIER-002
         summary: 階層的な進捗集約
         acceptance_criteria:
@@ -1425,6 +1430,11 @@ areas:
               gh-gantt doctor が in-progress タスクの stale、linked PR 未紐付け、
               closed blocker、孤立状態を検出し、閾値を gantt.config.json で
               設定できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/doctor.test.ts
+          - id: NFR-STABILITY-009-AC2
+            description: gh-gantt doctor が type_hierarchy に反する既存の親子関係を WARN として列挙する
             status: covered
             tests:
               - packages/cli/src/__tests__/doctor.test.ts

@@ -682,7 +682,7 @@ export class WorkGraphCommandEngine {
       targetTaskId = command.deletedTaskId;
       primitiveOperation = "delete";
     }
-    const validation = this.validateGraph(tasks);
+    const validation = this.validateGraph(tasks, { hierarchyBaseline: before });
     if (!validation.ok) return validation;
     const beforeTask = before.find((task) => task.id === targetTaskId) ?? null;
     const afterTask = validation.tasks.find((task) => task.id === targetTaskId) ?? null;
@@ -697,13 +697,27 @@ export class WorkGraphCommandEngine {
     };
   }
 
-  /** create/update/link/proposalが共有するWork Graph全体の整合性検証。 */
+  /**
+   * create/update/link/proposalが共有するWork Graph全体の整合性検証。
+   *
+   * type_hierarchy の検査は今回の変更で生じた親子だけを対象にする (#351)。
+   * `hierarchyBaseline` に変更前の graph を渡すと、そこに同じ型の組で存在していた親子は
+   * 既存データとして検査を免除し、過去に作られた違反が無関係な変更まで拒否しないようにする。
+   */
   validateGraph(
     tasks: Task[],
-    options: { enforceHierarchy?: boolean } = {},
+    options: { enforceHierarchy?: boolean; hierarchyBaseline?: Task[] } = {},
   ): WorkGraphCommandResult<{ tasks: Task[] }> {
     const ids = new Set<string>();
     const byId = new Map(tasks.map((task) => [task.id, task]));
+    const baselinePairs = new Set<string>();
+    if (options.hierarchyBaseline) {
+      const baselineById = new Map(options.hierarchyBaseline.map((task) => [task.id, task]));
+      for (const child of options.hierarchyBaseline) {
+        const parent = child.parent ? baselineById.get(child.parent) : undefined;
+        if (parent) baselinePairs.add(hierarchyPairKey(parent, child));
+      }
+    }
     const configuredRepository =
       `${this.config.project.github.owner}/${this.config.project.github.repo}`.toLowerCase();
     for (const task of tasks) {
@@ -744,12 +758,13 @@ export class WorkGraphCommandEngine {
         if (
           options.enforceHierarchy !== false &&
           Object.keys(this.config.type_hierarchy).length > 0 &&
+          !baselinePairs.has(hierarchyPairKey(parent, task)) &&
           !(this.config.type_hierarchy[parent.type] ?? []).includes(task.type)
         ) {
           return {
             ok: false,
             code: "invalid_hierarchy",
-            error: `${parent.type} は ${task.type} を子にできません`,
+            error: `${parent.type} は ${task.type} を子にできません (親 ${parent.id}、子 ${task.id})`,
           };
         }
         if (!parent.sub_tasks.includes(task.id)) {
@@ -926,7 +941,8 @@ export class WorkGraphCommandEngine {
     intent: WorkGraphMutationIntent,
     options: { scopeRootTaskId?: string } = {},
   ): WorkGraphCommandResult<WorkGraphMutationPlan> {
-    const currentValidation = this.validateGraph(currentTasks);
+    // 変更前の graph に残る既存の階層違反は今回の変更の責任ではないため検査しない (#351)
+    const currentValidation = this.validateGraph(currentTasks, { enforceHierarchy: false });
     if (!currentValidation.ok) return currentValidation;
     const before = currentTasks.map(cloneTask);
     const tasks = currentTasks.map(cloneTask);
@@ -1220,7 +1236,7 @@ export class WorkGraphCommandEngine {
     if (detectCycles(tasks).length > 0) {
       return { ok: false, code: "dependency_cycle", error: "dependency cycle が発生します" };
     }
-    const finalValidation = this.validateGraph(tasks);
+    const finalValidation = this.validateGraph(tasks, { hierarchyBaseline: before });
     if (!finalValidation.ok) return finalValidation;
     for (const ancestorId of ancestorClosure(tasks, targets)) targets.add(ancestorId);
     if (options.scopeRootTaskId) targets.add(options.scopeRootTaskId);
@@ -1244,4 +1260,9 @@ export class WorkGraphCommandEngine {
             : "low",
     };
   }
+}
+
+/** 親子の組と両者の型を 1 つの key にする。型が変われば別の組として再検査する。 */
+function hierarchyPairKey(parent: Task, child: Task): string {
+  return `${parent.id}\0${child.id}\0${parent.type}\0${child.type}`;
 }
