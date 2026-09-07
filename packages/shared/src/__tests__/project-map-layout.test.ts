@@ -6,6 +6,7 @@ import {
   applyProjectMapLayoutPreset,
   defaultProjectMapLayoutSettings,
   moveProjectMapPanel,
+  packProjectMapPanels,
   parseProjectMapLayoutSettings,
   projectMapPanelColumnSpan,
   setProjectMapPanelSize,
@@ -24,6 +25,46 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
     const next = setProjectMapPanelVisible(defaultProjectMapLayoutSettings(), "board", false);
     expect(visibleProjectMapPanels(next).map((p) => p.id)).not.toContain("board");
     expect(visibleProjectMapPanels(next)).toHaveLength(5);
+  });
+
+  it("packProjectMapPanels は既定構成を 3 行（3 / 2+1 / 3）に詰め、空セルを残さない", () => {
+    const packed = packProjectMapPanels(defaultProjectMapLayoutSettings(), 3);
+    expect(packed.map((p) => `${p.id}:${p.span}`)).toEqual([
+      "tree:1",
+      "board:1",
+      "dependency:1",
+      "next:2",
+      "timeline:1",
+      "run:3",
+    ]);
+  });
+
+  it("パネルを隠すと各行末尾のパネルが残り列まで広がり、行ごとの span 合計が列数になる", () => {
+    const hidden = setProjectMapPanelVisible(defaultProjectMapLayoutSettings(), "board", false);
+    const packed = packProjectMapPanels(hidden, 3);
+    // tree(1) + dependency(1) の後に next(2) は収まらないので dependency が 2 に広がる
+    expect(packed.map((p) => `${p.id}:${p.span}`)).toEqual([
+      "tree:1",
+      "dependency:2",
+      "next:2",
+      "timeline:1",
+      "run:3",
+    ]);
+    // 最終行の末尾も列数まで広がる
+    const tail = setProjectMapPanelVisible(hidden, "run", false);
+    const packedTail = packProjectMapPanels(tail, 3);
+    expect(packedTail.at(-1)).toEqual({ id: "timeline", span: 1 });
+    const onlyTree = packProjectMapPanels(
+      { version: 1, panels: [{ id: "tree", visible: true, size: "standard" }] },
+      3,
+    );
+    expect(onlyTree).toEqual([{ id: "tree", span: 3 }]);
+  });
+
+  it("1 カラムでは全パネルが span 1 になり、サイズ指定は列数で頭打ちになる", () => {
+    const packed = packProjectMapPanels(defaultProjectMapLayoutSettings(), 1);
+    expect(packed.every((p) => p.span === 1)).toBe(true);
+    expect(packed).toHaveLength(6);
   });
 });
 

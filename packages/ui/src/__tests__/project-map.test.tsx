@@ -259,6 +259,23 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
     fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
     expect(container.querySelector('[aria-label="Project Board"]')).not.toBeNull();
   });
+
+  it("隠したパネルの領域は同じ行の末尾パネルに再配分され、空セルが残らない", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
+    const spans = Array.from(container.querySelectorAll("[data-panel]")).map(
+      (el) => `${(el as HTMLElement).dataset.panel}:${(el as HTMLElement).style.gridColumn}`,
+    );
+    // tree(1)+dependency(1) の後に next(2) が入らないため dependency が行末まで広がる
+    expect(spans).toEqual([
+      "tree:span 1",
+      "dependency:span 2",
+      "next:span 2",
+      "timeline:span 1",
+      "run:span 3",
+    ]);
+  });
 });
 
 describe("[FR-VIS-027-AC2] パネルの並び順を上下移動で変更できる", () => {

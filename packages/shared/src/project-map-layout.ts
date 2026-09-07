@@ -58,6 +58,11 @@ export interface ProjectMapLayoutSettings {
   panels: ProjectMapPanelSetting[];
 }
 
+/**
+ * 設定全体の厳密スキーマ。書き込み値と正規化後の値の最終保証に使う。
+ * 復元時は未知のパネル id を寛容に除外したいので、parseProjectMapLayoutSettings が
+ * 要素単位で ProjectMapPanelSettingSchema を適用し、正規化後にこのスキーマを通す。
+ */
 export const ProjectMapLayoutSettingsSchema: z.ZodType<ProjectMapLayoutSettings> = z.object({
   version: z.literal(PROJECT_MAP_LAYOUT_VERSION),
   panels: z.array(ProjectMapPanelSettingSchema),
@@ -185,7 +190,7 @@ export function parseProjectMapLayoutSettings(value: unknown): ProjectMapLayoutS
   for (const fallback of defaultProjectMapLayoutSettings().panels) {
     if (!seen.has(fallback.id)) panels.push(fallback);
   }
-  return { version: PROJECT_MAP_LAYOUT_VERSION, panels };
+  return ProjectMapLayoutSettingsSchema.parse({ version: PROJECT_MAP_LAYOUT_VERSION, panels });
 }
 
 /** 表示対象のパネルを表示順で返す。 */
@@ -205,6 +210,43 @@ export function projectMapPanelColumnSpan(size: ProjectMapPanelSize): number {
     default:
       return 1;
   }
+}
+
+/** grid に配置する 1 パネル分の結果。`span` は列数で頭打ちにした後、行パッキングで拡張済み。 */
+export interface PackedProjectMapPanel {
+  id: ProjectMapPanelId;
+  span: number;
+}
+
+/**
+ * 可視パネルを表示順のまま `columns` 列の行に詰め、各行末尾のパネルを残り列まで広げる。
+ * 次のパネルが行に収まらない場合はその行を閉じるため、空セルは残らず、
+ * 非表示にしたパネルの領域は同じ行の末尾パネルへ再配分される。
+ * CSS の `grid-auto-flow: dense` と異なり、後続パネルが前の穴へ繰り上がって表示順が崩れることはない。
+ */
+export function packProjectMapPanels(
+  settings: ProjectMapLayoutSettings,
+  columns: number,
+): PackedProjectMapPanel[] {
+  const cols = Math.max(1, Math.floor(columns));
+  const packed: PackedProjectMapPanel[] = [];
+  let remaining = cols;
+  for (const panel of visibleProjectMapPanels(settings)) {
+    const span = Math.min(projectMapPanelColumnSpan(panel.size), cols);
+    if (span > remaining) {
+      // 行を閉じる: 直前のパネルを行末まで広げる
+      const last = packed[packed.length - 1];
+      if (last) last.span += remaining;
+      remaining = cols;
+    }
+    packed.push({ id: panel.id, span });
+    remaining -= span;
+    if (remaining === 0) remaining = cols;
+  }
+  // 最終行の末尾も列数まで広げる
+  const last = packed[packed.length - 1];
+  if (last && remaining !== cols) last.span += remaining;
+  return packed;
 }
 
 export function setProjectMapPanelVisible(

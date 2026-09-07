@@ -42,27 +42,37 @@ function writeSettings(settings: ProjectMapLayoutSettings): void {
 export function useProjectMapLayout() {
   const [settings, setSettings] = useState<ProjectMapLayoutSettings>(readSettings);
 
-  const replace = useCallback((next: ProjectMapLayoutSettings) => {
-    setSettings(next);
-    writeSettings(next);
-  }, []);
+  // 直前の state から次状態を導く関数型更新にし、同一イベント内の連続操作でも取りこぼさない。
+  // 書き込みは純粋関数の結果に対して行うため、StrictMode の二重呼び出しでも同じ値を保存するだけで済む。
+  const update = useCallback(
+    (updater: (prev: ProjectMapLayoutSettings) => ProjectMapLayoutSettings) => {
+      setSettings((prev) => {
+        const next = updater(prev);
+        writeSettings(next);
+        return next;
+      });
+    },
+    [],
+  );
+
+  const replace = useCallback((next: ProjectMapLayoutSettings) => update(() => next), [update]);
 
   const setPanelVisible = useCallback(
     (id: ProjectMapPanelId, visible: boolean) =>
-      replace(setProjectMapPanelVisible(settings, id, visible)),
-    [replace, settings],
+      update((prev) => setProjectMapPanelVisible(prev, id, visible)),
+    [update],
   );
 
   const setPanelSize = useCallback(
     (id: ProjectMapPanelId, size: ProjectMapPanelSize) =>
-      replace(setProjectMapPanelSize(settings, id, size)),
-    [replace, settings],
+      update((prev) => setProjectMapPanelSize(prev, id, size)),
+    [update],
   );
 
   const movePanel = useCallback(
     (id: ProjectMapPanelId, direction: "up" | "down") =>
-      replace(moveProjectMapPanel(settings, id, direction)),
-    [replace, settings],
+      update((prev) => moveProjectMapPanel(prev, id, direction)),
+    [update],
   );
 
   const applyPreset = useCallback(

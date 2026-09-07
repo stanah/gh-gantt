@@ -2,8 +2,7 @@ import React, { useEffect, useState } from "react";
 import {
   PROJECT_MAP_GRID_COLUMNS,
   defaultProjectMapLayoutSettings,
-  projectMapPanelColumnSpan,
-  visibleProjectMapPanels,
+  packProjectMapPanels,
   type ProjectMapLayoutSettings,
   type ProjectMapPanelId,
 } from "@gh-gantt/shared";
@@ -54,16 +53,23 @@ function useNarrowViewport(): boolean {
     const mq = window.matchMedia(PROJECT_MAP_NARROW_QUERY);
     const handler = (e: { matches: boolean }) => setNarrow(e.matches);
     setNarrow(mq.matches);
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
+    // Safari 14 未満は addEventListener 未実装のため addListener にフォールバックする
+    if (typeof mq.addEventListener === "function") {
+      mq.addEventListener("change", handler);
+      return () => mq.removeEventListener("change", handler);
+    }
+    mq.addListener(handler);
+    return () => mq.removeListener(handler);
   }, [canMatch]);
   return narrow;
 }
 
 /**
  * Project Map の 6 パネルを設定に従って配置するレイアウト。
- * 3 カラムの auto-flow grid に可視パネルを表示順で並べ、サイズを column span
- * （標準=1 / 広い=2 / 全幅=3）で表現する。既定構成では上段に System Tree /
+ * 3 カラムの grid に可視パネルを表示順で行パッキングし、サイズを column span
+ * （標準=1 / 広い=2 / 全幅=3）で表現する。行に収まらないパネルは次行へ送り、
+ * 各行末尾のパネルを残り列まで広げるので、非表示パネルの領域は残りに再配分される。
+ * 既定構成では上段に System Tree /
  * Project Board / Dependency Map、中段に Next Actions / Compact Gantt、下段に Run Graph が並ぶ。
  * 画面幅が狭い場合 (max-width 980px) は 1 カラムに折り返す。
  */
@@ -86,7 +92,7 @@ export function ProjectMapLayout({
     timeline,
     run: runGraph,
   };
-  const panels = visibleProjectMapPanels(settings ?? defaultProjectMapLayoutSettings());
+  const panels = packProjectMapPanels(settings ?? defaultProjectMapLayoutSettings(), columns);
 
   return (
     <div
@@ -98,25 +104,23 @@ export function ProjectMapLayout({
         padding: 8,
         height: "100%",
         boxSizing: "border-box",
-        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        // 旧固定レイアウトと同程度の最小列幅を残し、狭幅では 1 カラムに折り返す
+        gridTemplateColumns: `repeat(${columns}, minmax(220px, 1fr))`,
         gridAutoRows: "minmax(240px, 1fr)",
         gridAutoFlow: "row",
         overflow: "auto",
       }}
     >
-      {panels.map((panel) => {
-        const span = Math.min(projectMapPanelColumnSpan(panel.size), columns);
-        return (
-          <section
-            key={panel.id}
-            data-panel={panel.id}
-            style={{ ...panelStyle, gridColumn: `span ${span}` }}
-            aria-label={PANEL_ARIA_LABELS[panel.id]}
-          >
-            {content[panel.id]}
-          </section>
-        );
-      })}
+      {panels.map((panel) => (
+        <section
+          key={panel.id}
+          data-panel={panel.id}
+          style={{ ...panelStyle, gridColumn: `span ${panel.span}` }}
+          aria-label={PANEL_ARIA_LABELS[panel.id]}
+        >
+          {content[panel.id]}
+        </section>
+      ))}
     </div>
   );
 }
