@@ -335,6 +335,52 @@ describe("[NFR-STABILITY-001] doctor コマンド", () => {
   });
 
   describe("[NFR-STABILITY-009-AC1] [Issue #140] project-level stale 検出", () => {
+    it("[NFR-STABILITY-009-AC2] type_hierarchy に反する既存の親子関係を WARN として列挙する [Issue #351]", async () => {
+      const config = makeConfig();
+      config.task_types.epic = {
+        label: "Epic",
+        display: "summary",
+        color: "#000",
+        github_label: "epic",
+      };
+      config.type_hierarchy = { epic: ["task"], task: [] };
+      const tasks = [
+        makeTask("o/r#183", { state: "closed", sub_tasks: ["o/r#43"] }),
+        makeTask("o/r#43", { type: "epic", state: "closed", parent: "o/r#183" }),
+        makeTask("o/r#1", { type: "epic", sub_tasks: ["o/r#2"] }),
+        makeTask("o/r#2", { parent: "o/r#1" }),
+      ];
+      testDir = await setupProjectDir({ config, tasksFile: makeTasksFile(tasks) });
+
+      const result = await runDoctorJson(testDir);
+      const check = result.checks.find((c) => c.name === "project-hierarchy-violations");
+
+      expect(check?.status).toBe("WARN");
+      expect(check?.details).toHaveLength(1);
+      expect(check?.details?.[0]).toContain("o/r#183 (task) は o/r#43 (epic) を子にできません");
+    });
+
+    it("type_hierarchy に反する親子関係がなければ PASS を返す", async () => {
+      const config = makeConfig();
+      config.task_types.epic = {
+        label: "Epic",
+        display: "summary",
+        color: "#000",
+        github_label: "epic",
+      };
+      config.type_hierarchy = { epic: ["task"], task: [] };
+      const tasks = [
+        makeTask("o/r#1", { type: "epic", sub_tasks: ["o/r#2"] }),
+        makeTask("o/r#2", { parent: "o/r#1" }),
+      ];
+      testDir = await setupProjectDir({ config, tasksFile: makeTasksFile(tasks) });
+
+      const result = await runDoctorJson(testDir);
+      const check = result.checks.find((c) => c.name === "project-hierarchy-violations");
+
+      expect(check?.status).toBe("PASS");
+    });
+
     it("in-progress の stale / PR 未紐付け / closed blocker / 孤立を WARN として返す", async () => {
       const config = makeConfig();
       config.statuses.values["In Progress"] = {

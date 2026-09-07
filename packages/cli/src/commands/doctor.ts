@@ -267,6 +267,33 @@ function checkDanglingReferences(tasks: Task[]): CheckResult {
   };
 }
 
+/** type_hierarchy で許可されない既存の親子関係を列挙する [Issue #351] */
+function checkHierarchyViolations(tasks: Task[], config: Config): CheckResult {
+  const name = "project-hierarchy-violations";
+  if (Object.keys(config.type_hierarchy).length === 0) {
+    return { name, status: "PASS", message: "type_hierarchy は未設定です" };
+  }
+  const byId = new Map(tasks.map((task) => [task.id, task]));
+  const details: string[] = [];
+  for (const child of tasks) {
+    const parent = child.parent ? byId.get(child.parent) : undefined;
+    if (!parent) continue;
+    if ((config.type_hierarchy[parent.type] ?? []).includes(child.type)) continue;
+    details.push(
+      `${parent.id} (${parent.type}) は ${child.id} (${child.type}) を子にできません。'gh-gantt link ${child.id} --set-parent <id>' で付け替えるか、type を修正してください`,
+    );
+  }
+  if (details.length === 0) {
+    return { name, status: "PASS", message: "type_hierarchy に反する親子関係はありません" };
+  }
+  return {
+    name,
+    status: "WARN",
+    message: `${details.length} 件の親子関係が type_hierarchy に反しています。これらに触れない変更は拒否されません`,
+    details,
+  };
+}
+
 /** タスク間の依存関係の循環検出（shared の detectCycles を使用） */
 function checkCycles(tasks: Task[]): CheckResult {
   const cycles = detectCycles(tasks);
@@ -568,6 +595,11 @@ async function runDoctor(
   // 6.5. 宙ぶらりん参照検出 [Issue #302] (tasksFile のみで判定可能)
   if (tasksFile) {
     checks.push(checkDanglingReferences(tasksFile.tasks));
+  }
+
+  // 6.6. 既存の階層違反 [Issue #351] (config の type_hierarchy が必要)
+  if (tasksFile && config) {
+    checks.push(checkHierarchyViolations(tasksFile.tasks, config));
   }
 
   // 7. プロジェクトレベルの stale 検出
