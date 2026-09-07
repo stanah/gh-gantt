@@ -35,7 +35,7 @@ UI 上の各パネル見出しは英語表記（括弧内）で表示される�
 | ---------------------------------- | -------------------------------------------------------------------------- |
 | システムツリー (System Tree)       | 全体構造を階層表示し、選択した Epic / Feature / Task を他パネルへ伝播する  |
 | プロジェクトボード (Project Board) | 選択サブツリーのタスクを実行状態の列で表示する (`Ready Now` 列が要)        |
-| 依存関係マップ (Dependency Map)    | 選択サブツリーの上流 / 下流依存・クリティカルパスをグラフ表示する          |
+| 依存関係マップ (Dependency Map)    | 選択サブツリーの上流 / 下流依存・クリティカルパスを階層グラフで表示する    |
 | 次のアクション (Next Actions)      | 次に着手すべきタスクをスコア順で理由付きに推薦する                         |
 | コンパクトガント (Compact Gantt)   | 選択サブツリーのスケジュールをミニタイムラインで読み取り専用表示する       |
 | 実行グラフ (Planned vs Actual)     | Graph Contract の計画と durable Run Graph の実績・差分・待機理由を表示する |
@@ -140,7 +140,18 @@ score =
 
 ## 9. 循環依存の扱い
 
-`blocked_by` に循環がある場合、`calculateCriticalPath()` は timing を計算できない。Project Map は ViewModel の `warnings` に循環を記録し、Dependency Map で警告表示する。循環があっても他パネルはクラッシュしない。
+`blocked_by` に循環がある場合、`calculateCriticalPath()` は timing を計算できない。Project Map は ViewModel の `warnings` に循環を記録し、Dependency Map で警告表示する。循環があっても他パネルはクラッシュしない。dagre は循環を含むグラフでも座標を返すため、Dependency Map 自体の描画も止まらない。
+
+## 9.1. Dependency Map の描画
+
+Dependency Map は shared の `buildDependencySubgraph` が返す nodes / edges を入力に、レイアウトを dagre、描画を React Flow で行う（ADR-028）。
+
+- **階層配置**: `rankdir: TB` でブロッカーを上、ブロックされる側を下に置く。同じ段のノードは dagre が交差を減らす順に並べ、エッジは dagre の経路点をそのまま描く。
+- **強調**: 未解決の依存（ブロッカーが未完了）は danger トークンの破線、クリティカルパス上のエッジは `gantt.colors.critical_path` の太線で描く。ノードの左バーと枠線は readiness 列の色に従う。
+- **選択連携**: ノードのクリック、または Enter / Space で既存の詳細パネルに選択が伝わる。選択中のノードは `aria-pressed="true"` と selected トークンの枠で示す。
+- **閲覧**: ドラッグでパン、ホイール / ピンチとパネル右下のコントロールでズームできる。初期表示はグラフ全体が読める倍率（0.5 倍以上）で収まるなら全体を、収まらなければ選択タスクを中心に 0.8 倍で表示する。
+- **テーマ**: React Flow の `--xy-*` 変数を既存の `--color-*` トークンに束ね、ライト / ダーク両テーマに追従する。
+- **対象外**: ノードのドラッグや接続による依存関係の編集は行わない。
 
 ## 10. Graph Contractとの関係
 
