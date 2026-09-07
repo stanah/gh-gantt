@@ -1,4 +1,12 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import {
+  PROJECT_MAP_GRID_COLUMNS,
+  defaultProjectMapLayoutSettings,
+  projectMapPanelColumnSpan,
+  visibleProjectMapPanels,
+  type ProjectMapLayoutSettings,
+  type ProjectMapPanelId,
+} from "@gh-gantt/shared";
 
 interface ProjectMapLayoutProps {
   tree: React.ReactNode;
@@ -7,6 +15,8 @@ interface ProjectMapLayoutProps {
   nextActions: React.ReactNode;
   timeline: React.ReactNode;
   runGraph: React.ReactNode;
+  /** パネル構成。省略時は既定構成（6 パネル・固定順）。 */
+  settings?: ProjectMapLayoutSettings;
 }
 
 const panelStyle: React.CSSProperties = {
@@ -20,10 +30,41 @@ const panelStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
+/** パネル section の aria-label。既存テスト・スキルが参照する名前を維持する。 */
+const PANEL_ARIA_LABELS: Record<ProjectMapPanelId, string> = {
+  tree: "System Tree",
+  board: "Project Board",
+  dependency: "Dependency Map",
+  next: "Next Actions",
+  timeline: "Compact Timeline",
+  run: "Run Graph",
+};
+
+/** この幅以下では 1 カラムに折り返す。 */
+export const PROJECT_MAP_NARROW_QUERY = "(max-width: 980px)";
+
+/** 画面幅が狭い（1 カラム表示にすべき）かどうかを matchMedia で監視する。 */
+function useNarrowViewport(): boolean {
+  const canMatch = typeof window !== "undefined" && typeof window.matchMedia === "function";
+  const [narrow, setNarrow] = useState<boolean>(() =>
+    canMatch ? window.matchMedia(PROJECT_MAP_NARROW_QUERY).matches : false,
+  );
+  useEffect(() => {
+    if (!canMatch) return;
+    const mq = window.matchMedia(PROJECT_MAP_NARROW_QUERY);
+    const handler = (e: { matches: boolean }) => setNarrow(e.matches);
+    setNarrow(mq.matches);
+    mq.addEventListener("change", handler);
+    return () => mq.removeEventListener("change", handler);
+  }, [canMatch]);
+  return narrow;
+}
+
 /**
- * Project Map の 6 パネルを 3 段グリッドで配置するレイアウト。
- * 上段に System Tree / Project Board / Dependency Map、中段に Next Actions / Compact Gantt、
- * 下段に Planned vs Actual Run Graph を配置する。
+ * Project Map の 6 パネルを設定に従って配置するレイアウト。
+ * 3 カラムの auto-flow grid に可視パネルを表示順で並べ、サイズを column span
+ * （標準=1 / 広い=2 / 全幅=3）で表現する。既定構成では上段に System Tree /
+ * Project Board / Dependency Map、中段に Next Actions / Compact Gantt、下段に Run Graph が並ぶ。
  * 画面幅が狭い場合 (max-width 980px) は 1 カラムに折り返す。
  */
 export function ProjectMapLayout({
@@ -33,44 +74,49 @@ export function ProjectMapLayout({
   nextActions,
   timeline,
   runGraph,
+  settings,
 }: ProjectMapLayoutProps) {
+  const narrow = useNarrowViewport();
+  const columns = narrow ? 1 : PROJECT_MAP_GRID_COLUMNS;
+  const content: Record<ProjectMapPanelId, React.ReactNode> = {
+    tree,
+    board,
+    dependency,
+    next: nextActions,
+    timeline,
+    run: runGraph,
+  };
+  const panels = visibleProjectMapPanels(settings ?? defaultProjectMapLayoutSettings());
+
   return (
     <div
       data-testid="project-map-layout"
+      data-columns={String(columns)}
       style={{
         display: "grid",
         gap: 8,
         padding: 8,
         height: "100%",
         boxSizing: "border-box",
-        gridTemplateColumns: "minmax(220px, 1fr) minmax(280px, 1.6fr) minmax(240px, 1fr)",
-        gridTemplateRows: "minmax(280px, 1.4fr) minmax(220px, 1fr) minmax(260px, 1.1fr)",
-        gridTemplateAreas: `
-          "tree board dependency"
-          "next next timeline"
-          "run run run"
-        `,
+        gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))`,
+        gridAutoRows: "minmax(240px, 1fr)",
+        gridAutoFlow: "row",
         overflow: "auto",
       }}
     >
-      <section style={{ ...panelStyle, gridArea: "tree" }} aria-label="System Tree">
-        {tree}
-      </section>
-      <section style={{ ...panelStyle, gridArea: "board" }} aria-label="Project Board">
-        {board}
-      </section>
-      <section style={{ ...panelStyle, gridArea: "dependency" }} aria-label="Dependency Map">
-        {dependency}
-      </section>
-      <section style={{ ...panelStyle, gridArea: "next" }} aria-label="Next Actions">
-        {nextActions}
-      </section>
-      <section style={{ ...panelStyle, gridArea: "timeline" }} aria-label="Compact Timeline">
-        {timeline}
-      </section>
-      <section style={{ ...panelStyle, gridArea: "run" }} aria-label="Run Graph">
-        {runGraph}
-      </section>
+      {panels.map((panel) => {
+        const span = Math.min(projectMapPanelColumnSpan(panel.size), columns);
+        return (
+          <section
+            key={panel.id}
+            data-panel={panel.id}
+            style={{ ...panelStyle, gridColumn: `span ${span}` }}
+            aria-label={PANEL_ARIA_LABELS[panel.id]}
+          >
+            {content[panel.id]}
+          </section>
+        );
+      })}
     </div>
   );
 }

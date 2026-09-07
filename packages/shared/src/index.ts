@@ -19,3 +19,4 @@ export * from "./run-graph.js";
 export * from "./work-graph-mutation.js";
 export * from "./adr-schema.js";
 export * from "./export-renderer.js";
+export * from "./project-map-layout.js";

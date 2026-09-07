@@ -1071,6 +1071,49 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/project-map-run-graph.test.tsx
+      - id: FR-VIS-027
+        summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
+        acceptance_criteria:
+          - id: FR-VIS-027-AC1
+            description: 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map-layout.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC2
+            description: パネルの並び順を上下移動で変更できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map-layout.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC3
+            description: パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map-layout.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC4
+            description: パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map-layout.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC5
+            description: 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map-layout.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC6
+            description: パネル構成の変更が選択連携・フィルタ・Group by・Run Graph の動作に影響しない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-027-AC7
+            description: 画面幅が狭いときはパネルが 1 カラムに折り返される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

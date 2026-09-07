@@ -9,7 +9,9 @@ import {
 } from "@gh-gantt/shared";
 import type { Config } from "../../types/index.js";
 import { useSyncStatus } from "../../hooks/useSyncStatus.js";
+import { useProjectMapLayout } from "../../hooks/useProjectMapLayout.js";
 import { ProjectMapLayout } from "./ProjectMapLayout.js";
+import { ProjectMapLayoutSettings } from "./ProjectMapLayoutSettings.js";
 import { SystemTreePanel } from "./SystemTreePanel.js";
 import { ProjectBoardPanel } from "./ProjectBoardPanel.js";
 import { DependencyMapPanel } from "./DependencyMapPanel.js";
@@ -37,6 +39,7 @@ interface ProjectMapPageProps {
  * Project Map ビューのページ。ツールバー（検索・readiness フィルタ・同期状態）と
  * 6 パネルを配置し、ViewModel を各パネルへ配る。フィルタは Tree / Board / Next Actions /
  * Timeline に一貫適用される（Dependency Map は選択タスク中心のため選択スコープを優先）。
+ * パネル構成（表示 / 並び順 / サイズ）は useProjectMapLayout で localStorage に保存・復元する。
  */
 export function ProjectMapPage({
   viewModel,
@@ -53,6 +56,8 @@ export function ProjectMapPage({
   const [filter, setFilter] = useState<ProjectMapFilterState>({ search: "", readiness: null });
   const [groupDimension, setGroupDimension] = useState<GroupDimension>("hierarchy");
   const { status: syncStatus } = useSyncStatus(syncRefreshKey);
+  const layout = useProjectMapLayout();
+  const [layoutSettingsOpen, setLayoutSettingsOpen] = useState(false);
 
   // ViewModel の hierarchy ノードから全タスクを取り出す。
   const allTasks = useMemo(() => {
@@ -122,9 +127,22 @@ export function ProjectMapPage({
         syncStatus={syncStatus}
         matchedCount={matchedIds.size}
         totalCount={allTasks.length}
+        layoutSettingsOpen={layoutSettingsOpen}
+        onToggleLayoutSettings={() => setLayoutSettingsOpen((open) => !open)}
       />
+      {layoutSettingsOpen && (
+        <ProjectMapLayoutSettings
+          settings={layout.settings}
+          onSetPanelVisible={layout.setPanelVisible}
+          onSetPanelSize={layout.setPanelSize}
+          onMovePanel={layout.movePanel}
+          onApplyPreset={layout.applyPreset}
+          onReset={layout.resetToDefault}
+        />
+      )}
       <div style={{ flex: 1, minHeight: 0 }}>
         <ProjectMapLayout
+          settings={layout.settings}
           tree={
             <SystemTreePanel
               hierarchy={filteredHierarchy}
