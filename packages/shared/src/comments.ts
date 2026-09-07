@@ -12,8 +12,8 @@ export interface Comment {
  * Issue コメントのキャッシュファイル (comments.json)。
  *
  * - `fetched_at`: task ID ごとのローカル取得時刻
- * - `issue_updated_at`: 取得時点で観測した Issue の updated_at。
- *   次回 pull で tasks の updated_at と一致すれば GitHub API を呼ばずにスキップする
+ * - `issue_updated_at`: 取得時点で観測した Issue の updated_at (sync-state の snapshot 由来)。
+ *   次回 pull で snapshot の updated_at と一致すれば GitHub API を呼ばずにスキップする
  * - version "1" には `issue_updated_at` がなく、読み込み時に空として補完する
  */
 export interface CommentsFile {

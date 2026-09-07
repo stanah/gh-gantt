@@ -216,6 +216,10 @@ async function pullAndBuildItems(remoteUpdatedAt: string) {
     makeSyncState(localTask),
     { force: true },
   );
+  // 前提: ハッシュ一致経路を通り、task.updated_at は remote に追従せず local 値のまま残る (#169)。
+  // この前提が崩れると AC1 テストの回帰検出力が失われるため明示的に assert する
+  expect(newTasksFile.tasks[0].updated_at).toBe(OLD_UPDATED_AT);
+  expect(newSyncState.snapshots[TASK_ID]?.updated_at).toBe(remoteUpdatedAt);
   return buildCommentItems(newTasksFile.tasks, newSyncState);
 }
 

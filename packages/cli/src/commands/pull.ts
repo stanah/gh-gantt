@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import type { CommentsFile, SyncState } from "@gh-gantt/shared";
+import type { CommentsFile, SyncState, Task } from "@gh-gantt/shared";
 import { createGraphQLClient } from "../github/client.js";
 import { isDraftTask, isMilestoneSyntheticTask } from "../github/issues.js";
 import { fetchAllComments, type FetchCommentsItem } from "../github/comments.js";
@@ -239,7 +239,7 @@ export const pullCommand = new Command("pull")
  * task.updated_at を使うと「コメントだけ変わった Issue」を永続的に skip してしまう。
  */
 export function buildCommentItems(
-  tasks: import("@gh-gantt/shared").Task[],
+  tasks: Task[],
   syncState: Pick<SyncState, "snapshots">,
 ): FetchCommentsItem[] {
   return tasks
@@ -258,7 +258,7 @@ export function buildCommentItems(
 
 async function fetchAndSaveComments(
   gql: Awaited<ReturnType<typeof createGraphQLClient>>,
-  tasks: import("@gh-gantt/shared").Task[],
+  tasks: Task[],
   syncState: Pick<SyncState, "snapshots">,
   storage: Pick<ProjectStorageSession, "commentsStore" | "flush">,
   opts: { withComments?: boolean; forceComments?: boolean },

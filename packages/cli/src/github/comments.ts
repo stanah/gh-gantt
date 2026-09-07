@@ -51,7 +51,11 @@ export interface FetchCommentsItem {
   owner: string;
   repo: string;
   issueNumber: number;
-  /** tasks が保持する Issue の updated_at。増分判定に使う。未指定なら取得済みはスキップする */
+  /**
+   * 増分判定に使う Issue の updated_at。通常は sync-state の snapshot が保持する remote 値で、
+   * snapshot にない場合だけ task.updated_at (ローカル変更時はローカル時刻) にフォールバックする。
+   * 未指定なら取得済み Issue はスキップする
+   */
   updatedAt?: string;
 }
 
