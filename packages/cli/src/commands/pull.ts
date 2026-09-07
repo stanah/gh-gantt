@@ -248,7 +248,13 @@ async function fetchAndSaveComments(
       )
       .map((t) => {
         const [owner, repo] = t.github_repo.split("/");
-        return { taskId: t.id, owner, repo, issueNumber: t.github_issue! };
+        return {
+          taskId: t.id,
+          owner,
+          repo,
+          issueNumber: t.github_issue!,
+          updatedAt: t.updated_at,
+        };
       });
 
     const updatedComments = await fetchAllComments(
@@ -266,6 +272,7 @@ async function fetchAndSaveComments(
     for (const key of Object.keys(updatedComments.fetched_at)) {
       if (!taskIds.has(key)) {
         delete updatedComments.fetched_at[key];
+        delete updatedComments.issue_updated_at[key];
         delete updatedComments.comments[key];
       }
     }

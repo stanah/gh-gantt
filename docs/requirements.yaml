@@ -134,6 +134,29 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/mapper.test.ts
+      - id: FR-SYNC-008
+        summary: Issue コメントの増分取得
+        acceptance_criteria:
+          - id: FR-SYNC-008-AC1
+            description: 取得済み Issue でも updated_at が前回取得時と異なればコメントを再取得し、追加・編集・削除が反映される
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/comments.test.ts
+          - id: FR-SYNC-008-AC2
+            description: updated_at が変わらない取得済み Issue には GitHub API を呼ばない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/comments.test.ts
+          - id: FR-SYNC-008-AC3
+            description: --force-comments では updated_at にかかわらず全 Issue のコメントを再取得する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/comments.test.ts
+          - id: FR-SYNC-008-AC4
+            description: version 1 の comments.json を読み込み、fetched_at より新しい updated_at を持つ Issue だけコメントを再取得する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/comments.test.ts
       - id: NFR-SYNC-001
         summary: push 中の障害耐性
         acceptance_criteria:

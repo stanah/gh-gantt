@@ -76,6 +76,12 @@ const SYNC_STATE_V2 = `${JSON.stringify(
 )}\n`;
 
 const COMMENTS_V1 = `${JSON.stringify({ version: "1", fetched_at: {}, comments: {} }, null, 2)}\n`;
+// legacy version 1 は store 経由で読むと version 2 (issue_updated_at 付き) に正規化される (#364)
+const COMMENTS_V1_NORMALIZED = `${JSON.stringify(
+  { version: "2", fetched_at: {}, issue_updated_at: {}, comments: {} },
+  null,
+  2,
+)}\n`;
 
 const CONFIG_V1 = `${JSON.stringify(
   {
@@ -280,7 +286,7 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     ).resolves.toBe(undefined);
     await expect(readSlot(linked, "tasks")).resolves.toBe(TASKS_V1);
     await expect(readSlot(linked, "sync-state")).resolves.toBe(SYNC_STATE_V1);
-    await expect(readSlot(linked, "comments")).resolves.toBe(COMMENTS_V1);
+    await expect(readSlot(linked, "comments")).resolves.toBe(COMMENTS_V1_NORMALIZED);
     await expect(access(join(repository, ".gantt-sync", "tasks.json"))).rejects.toMatchObject({
       code: "ENOENT",
     });
@@ -536,9 +542,7 @@ describe("[NFR-STABILITY-015] [Issue #299] worktree 間共有 cache と workspac
     });
 
     await expect(readSlot(repository, "tasks")).resolves.toBe(TASKS_V1);
-    await expect(readSlot(repository, "comments")).resolves.toBe(
-      `${JSON.stringify({ version: "1", fetched_at: {}, comments: {} }, null, 2)}\n`,
-    );
+    await expect(readSlot(repository, "comments")).resolves.toBe(COMMENTS_V1_NORMALIZED);
   });
 
   it("[FR-STORE-004-AC3] migration後にlegacy fingerprintが変わった場合は共有cacheを上書きせず拒否する", async () => {

@@ -46,16 +46,48 @@ export interface FetchAllCommentsOptions {
   force?: boolean;
 }
 
+export interface FetchCommentsItem {
+  taskId: string;
+  owner: string;
+  repo: string;
+  issueNumber: number;
+  /** tasks が保持する Issue の updated_at。増分判定に使う。未指定なら取得済みはスキップする */
+  updatedAt?: string;
+}
+
+/**
+ * 取得済み Issue を再取得すべきか判定する。
+ *
+ * - 未取得なら取得する
+ * - updated_at が不明なら従来どおり取得済みをスキップする
+ * - 前回観測した issue_updated_at があればそれと等値比較する
+ * - version 1 由来で issue_updated_at がなければ fetched_at との時刻比較にフォールバックする
+ */
+export function shouldRefetchComments(item: FetchCommentsItem, data: CommentsFile): boolean {
+  const fetchedAt = data.fetched_at[item.taskId];
+  if (!fetchedAt) return true;
+  if (!item.updatedAt) return false;
+
+  const observed = data.issue_updated_at[item.taskId];
+  if (observed !== undefined) return observed !== item.updatedAt;
+
+  const updatedMs = Date.parse(item.updatedAt);
+  const fetchedMs = Date.parse(fetchedAt);
+  if (Number.isNaN(updatedMs) || Number.isNaN(fetchedMs)) return true;
+  return updatedMs > fetchedMs;
+}
+
 export async function fetchAllComments(
   gql: typeof graphql,
-  items: Array<{ taskId: string; owner: string; repo: string; issueNumber: number }>,
+  items: FetchCommentsItem[],
   existing: CommentsFile,
   saveProgress: (data: CommentsFile) => Promise<void>,
   options?: FetchAllCommentsOptions,
 ): Promise<CommentsFile> {
   const data: CommentsFile = {
-    version: "1",
+    version: "2",
     fetched_at: { ...existing.fetched_at },
+    issue_updated_at: { ...existing.issue_updated_at },
     comments: { ...existing.comments },
   };
 
@@ -65,7 +97,7 @@ export async function fetchAllComments(
   let rateLimited = false;
 
   const toFetch = items.filter((item) => {
-    if (!options?.force && data.fetched_at[item.taskId]) {
+    if (!options?.force && !shouldRefetchComments(item, data)) {
       skipped++;
       return false;
     }
@@ -101,6 +133,11 @@ export async function fetchAllComments(
       } else if (comments) {
         data.comments[item.taskId] = comments;
         data.fetched_at[item.taskId] = new Date().toISOString();
+        if (item.updatedAt) {
+          data.issue_updated_at[item.taskId] = item.updatedAt;
+        } else {
+          delete data.issue_updated_at[item.taskId];
+        }
         fetched++;
       }
     }
