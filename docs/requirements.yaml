@@ -1734,7 +1734,7 @@ areas:
           - id: NFR-STABILITY-015-AC11
             description: |
               repository の toplevel と common-dir は process 内で root ごとに一度だけ git で解決し、
-              以降は cache を使う。worktree 一覧は毎回取得し、失敗した解決は cache に残さない
+              以降は cache を使う。失敗した解決は cache に残さない
             status: covered
             tests:
               - packages/cli/src/__tests__/repository-coordination-probe-cache.test.ts

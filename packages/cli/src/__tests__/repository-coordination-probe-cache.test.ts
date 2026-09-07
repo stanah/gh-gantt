@@ -126,6 +126,19 @@ describe("[NFR-STABILITY-015-AC13] worktree 一覧の cache [Issue #355]", () =>
     expect(calls("list")).toBe(4);
   });
 
+  it("worktrees を列挙できない場合は cache を使わず毎回取得する", async () => {
+    const root = await projectRoot();
+    await mkdir(join(root, ".git"));
+    // worktrees をディレクトリではなくファイルにして readdir を失敗させる
+    await writeFile(join(root, ".git", "worktrees"), "");
+    const { runner, calls } = countingRunner(root);
+
+    await resolveRepositoryCoordinationLayout(root, { runGit: runner });
+    await resolveRepositoryCoordinationLayout(root, { runGit: runner });
+
+    expect(calls("list")).toBe(2);
+  });
+
   it("失敗した worktree list は cache に残さない", async () => {
     const root = await projectRoot();
     await mkdir(join(root, ".git"));

@@ -55,7 +55,7 @@ type GitRunner = (projectRoot: string, args: string[]) => Promise<string>;
  * root ごとに不変な rev-parse の結果を runner 単位で cache する (#353)。
  *
  * toplevel と common-dir は process の生存中に変わらないため一度だけ git を起動する。
- * worktree 一覧は `git worktree add` で変わるので cache しない。失敗した呼び出しは
+ * worktree 一覧は変化し得るので別途 `worktrees` の署名で cache する。失敗した呼び出しは
  * cache に残さず、次回の呼び出しで再度 git に問い合わせる。
  */
 const revParseCache = new WeakMap<GitRunner, Map<string, Promise<string>>>();
@@ -85,6 +85,7 @@ function cachedRevParse(
  * `git worktree add` / `remove` / `prune` は `worktrees` ディレクトリの更新時刻を、
  * `git worktree move` は該当エントリの `gitdir` の更新時刻を変えるため、両方を署名に含める。
  * 署名が一致する間は git を起動せず前回の出力を返す。失敗した取得は cache に残さない。
+ * 署名の計算は best effort で、`worktrees` を列挙できない場合は毎回 git を起動する。
  */
 const worktreeListCache = new WeakMap<
   GitRunner,
@@ -99,7 +100,14 @@ function worktreeSignature(commonDir: string): string {
   } catch {
     return "absent";
   }
-  for (const entry of readdirSync(worktreesDir).sort()) {
+  let entries: string[];
+  try {
+    entries = readdirSync(worktreesDir).sort();
+  } catch {
+    // 列挙できない (権限や一時的な I/O エラー) ときは一致しない署名を返し、cache を使わない
+    return `unreadable:${process.hrtime.bigint()}`;
+  }
+  for (const entry of entries) {
     let gitdirMtime = "missing";
     try {
       gitdirMtime = String(statSync(join(worktreesDir, entry, "gitdir")).mtimeMs);
