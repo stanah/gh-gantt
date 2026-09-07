@@ -168,6 +168,9 @@ export function ProjectMapLayoutSettings({
       <button type="button" onClick={onReset} style={{ ...controlStyle, cursor: "pointer" }}>
         既定に戻す
       </button>
+      <span style={{ color: "var(--color-text-muted)" }}>
+        行末のパネルは残り列まで自動で広がります
+      </span>
     </div>
   );
 }

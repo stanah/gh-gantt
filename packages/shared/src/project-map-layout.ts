@@ -228,7 +228,8 @@ export function packProjectMapPanels(
   settings: ProjectMapLayoutSettings,
   columns: number,
 ): PackedProjectMapPanel[] {
-  const cols = Math.max(1, Math.floor(columns));
+  // columns は正の整数を想定する。NaN や 1 未満は 1 カラムとして扱う。
+  const cols = Number.isFinite(columns) ? Math.max(1, Math.floor(columns)) : 1;
   const packed: PackedProjectMapPanel[] = [];
   let remaining = cols;
   for (const panel of visibleProjectMapPanels(settings)) {

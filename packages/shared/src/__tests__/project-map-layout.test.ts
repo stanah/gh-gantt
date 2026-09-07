@@ -50,10 +50,11 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
       "timeline:1",
       "run:3",
     ]);
-    // 最終行の末尾も列数まで広がる
+    // 最終行が丁度埋まる場合は広げない
     const tail = setProjectMapPanelVisible(hidden, "run", false);
     const packedTail = packProjectMapPanels(tail, 3);
     expect(packedTail.at(-1)).toEqual({ id: "timeline", span: 1 });
+    // 最終行の末尾も列数まで広がる
     const onlyTree = packProjectMapPanels(
       { version: 1, panels: [{ id: "tree", visible: true, size: "standard" }] },
       3,
@@ -65,6 +66,9 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
     const packed = packProjectMapPanels(defaultProjectMapLayoutSettings(), 1);
     expect(packed.every((p) => p.span === 1)).toBe(true);
     expect(packed).toHaveLength(6);
+    // NaN や 0 以下の列数は 1 カラムとして扱う
+    expect(packProjectMapPanels(defaultProjectMapLayoutSettings(), Number.NaN)).toEqual(packed);
+    expect(packProjectMapPanels(defaultProjectMapLayoutSettings(), 0)).toEqual(packed);
   });
 });
 
