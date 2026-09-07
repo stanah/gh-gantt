@@ -18,7 +18,7 @@ export interface TaskComments {
   comments: Comment[] | null;
 }
 
-const NOT_FETCHED_HINT = "run `gh-gantt pull --with-comments` to fetch";
+const NOT_FETCHED_MESSAGE = "not fetched. Run `gh-gantt pull --with-comments` to fetch";
 
 /** commentsStore の内容から task のコメントを作成日時の昇順で取り出す。 */
 export function resolveTaskComments(task: Task, commentsFile: CommentsFile): TaskComments {
@@ -46,7 +46,7 @@ export function buildShowJson(
 
 function formatComments(taskComments: TaskComments): string[] {
   if (taskComments.comments === null) {
-    return [`Comments:   not fetched (${NOT_FETCHED_HINT})`];
+    return [`Comments:   ${NOT_FETCHED_MESSAGE}`];
   }
   const lines = [
     "",

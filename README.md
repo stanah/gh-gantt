@@ -46,7 +46,7 @@ gh-gantt init --owner <owner> --repo <repo> --project <project_number>
 
 ```bash
 gh-gantt pull                     # Pull latest data from GitHub
-gh-gantt pull --with-comments     # Also fetch issue comments (incremental)
+gh-gantt pull --with-comments     # Also fetch issue comments (skips issues already fetched)
 gh-gantt pull --force-comments    # Re-fetch all issue comments
 gh-gantt push                     # Push local changes to GitHub
 gh-gantt status                   # Show sync status
@@ -65,9 +65,11 @@ gh-gantt create                       # Create a new draft task locally
 ```
 
 Issue comments are shown by `gh-gantt show` once they have been fetched with
-`gh-gantt pull --with-comments`. Until then, `show` prints `Comments: not fetched`
-(and `comments: null` in `--json`). Comments are read from the shared Project Storage,
-so a single `pull --with-comments` makes them available to every worktree.
+`gh-gantt pull --with-comments`. Until then, `show` reports that comments are not
+fetched and how to fetch them (`comments: null` in `--json`). `--with-comments` skips
+issues that already have cached comments; use `--force-comments` to re-fetch them.
+Comments are read from the shared Project Storage, so a single `pull --with-comments`
+makes them available to every worktree.
 `gh-gantt context` intentionally omits comments to keep its summary bounded;
 read them per issue with `show`.
 

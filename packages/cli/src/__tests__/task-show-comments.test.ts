@@ -169,7 +169,7 @@ describe("[FR-CLI-019-AC3] コメント未取得の Issue では show は未取�
 
     const output = formatTask(task, resolveTaskComments(task, notFetched));
 
-    expect(output).toContain("Comments:   not fetched");
+    expect(output).toMatch(/^Comments:\s+not fetched/m);
     expect(output).toContain("gh-gantt pull --with-comments");
   });
 
