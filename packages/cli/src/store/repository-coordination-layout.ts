@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
+import { readdirSync, statSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -54,7 +55,7 @@ type GitRunner = (projectRoot: string, args: string[]) => Promise<string>;
  * root ごとに不変な rev-parse の結果を runner 単位で cache する (#353)。
  *
  * toplevel と common-dir は process の生存中に変わらないため一度だけ git を起動する。
- * worktree 一覧は `git worktree add` で変わるので cache しない。失敗した呼び出しは
+ * worktree 一覧は変化し得るので別途 `worktrees` の署名で cache する。失敗した呼び出しは
  * cache に残さず、次回の呼び出しで再度 git に問い合わせる。
  */
 const revParseCache = new WeakMap<GitRunner, Map<string, Promise<string>>>();
@@ -76,6 +77,70 @@ function cachedRevParse(
   perRunner.set(key, pending);
   pending.catch(() => perRunner.delete(key));
   return pending;
+}
+
+/**
+ * worktree 一覧を common-dir 配下の `worktrees` の状態を署名にして cache する (#355)。
+ *
+ * `git worktree add` / `remove` / `prune` は `worktrees` ディレクトリの更新時刻を、
+ * `git worktree move` は該当エントリの `gitdir` の更新時刻を変えるため、両方を署名に含める。
+ * 署名が一致する間は git を起動せず前回の出力を返す。失敗した取得は cache に残さない。
+ * 署名の計算は best effort で、`worktrees` を列挙できない場合は毎回 git を起動する。
+ */
+const worktreeListCache = new WeakMap<
+  GitRunner,
+  Map<string, { signature: string; output: Promise<string> }>
+>();
+
+function worktreeSignature(commonDir: string): string {
+  const worktreesDir = join(commonDir, "worktrees");
+  let signature: string;
+  // 読めない (権限や一時的な I/O エラー) ときは一致しない署名を返し、cache を使わない
+  const unreadable = () => `unreadable:${process.hrtime.bigint()}`;
+  try {
+    signature = `dir:${statSync(worktreesDir).mtimeMs}`;
+  } catch (error) {
+    // linked worktree が無い repository では worktrees 自体が存在しない
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return "absent";
+    return unreadable();
+  }
+  let entries: string[];
+  try {
+    entries = readdirSync(worktreesDir).sort();
+  } catch {
+    return unreadable();
+  }
+  for (const entry of entries) {
+    let gitdirMtime = "missing";
+    try {
+      gitdirMtime = String(statSync(join(worktreesDir, entry, "gitdir")).mtimeMs);
+    } catch {
+      // gitdir の無いエントリ (作成途中や破損) は "missing" として署名に含める
+    }
+    signature += `;${entry}:${gitdirMtime}`;
+  }
+  return signature;
+}
+
+function cachedWorktreeList(
+  executeGit: GitRunner,
+  absoluteRoot: string,
+  commonDir: string,
+): Promise<string> {
+  let perRunner = worktreeListCache.get(executeGit);
+  if (!perRunner) {
+    perRunner = new Map();
+    worktreeListCache.set(executeGit, perRunner);
+  }
+  const signature = worktreeSignature(commonDir);
+  const cached = perRunner.get(absoluteRoot);
+  if (cached && cached.signature === signature) return cached.output;
+  const output = executeGit(absoluteRoot, ["worktree", "list", "--porcelain", "-z"]);
+  perRunner.set(absoluteRoot, { signature, output });
+  output.catch(() => {
+    if (perRunner.get(absoluteRoot)?.output === output) perRunner.delete(absoluteRoot);
+  });
+  return output;
 }
 
 function parseWorktrees(output: string): string[] {
@@ -106,10 +171,12 @@ export async function resolveRepositoryCoordinationLayout(
     // Git管理外ではcaller指定rootを単一workspaceとして扱い、従来のstandalone動作を保つ。
   }
   if (!nonGitError) {
-    [rawCommonDir, worktreeOutput] = await Promise.all([
-      cachedRevParse(executeGit, absoluteRoot, "--git-common-dir"),
-      executeGit(absoluteRoot, ["worktree", "list", "--porcelain", "-z"]),
-    ]);
+    rawCommonDir = await cachedRevParse(executeGit, absoluteRoot, "--git-common-dir");
+    worktreeOutput = await cachedWorktreeList(
+      executeGit,
+      absoluteRoot,
+      isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
+    );
   }
   let rawConfig: string;
   try {

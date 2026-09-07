@@ -1744,7 +1744,7 @@ areas:
           - id: NFR-STABILITY-015-AC11
             description: |
               repository の toplevel と common-dir は process 内で root ごとに一度だけ git で解決し、
-              以降は cache を使う。worktree 一覧は毎回取得し、失敗した解決は cache に残さない
+              以降は cache を使う。失敗した解決は cache に残さない
             status: covered
             tests:
               - packages/cli/src/__tests__/repository-coordination-probe-cache.test.ts
@@ -1755,6 +1755,14 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/git-executable.test.ts
+          - id: NFR-STABILITY-015-AC13
+            description: |
+              worktree 一覧は common-dir 配下の worktrees ディレクトリと各エントリの gitdir の
+              更新時刻を署名として cache し、署名が変わらなければ git を起動しない。
+              worktree の追加、削除、移動、prune の後は再取得し、失敗した取得は cache に残さない
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/repository-coordination-probe-cache.test.ts
       - id: NFR-STABILITY-016
         summary: Graph Engineering の実測比較と安全な運用縮退
         acceptance_criteria:
