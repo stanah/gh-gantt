@@ -50,7 +50,7 @@ gh-gantt pull [--dry-run] [--with-comments] [--force-comments]
 **オプション:**
 
 - `--dry-run` — 変更をプレビューのみ（適用しない）
-- `--with-comments` — Issue コメントも差分取得
+- `--with-comments` — Issue コメントも差分取得（取得結果は `show` で表示できる）
 - `--force-comments` — Issue コメントを全件再取得
 
 **出力:** `Pull summary: +N ~N !N -N`（追加、更新、コンフリクト、削除）
@@ -190,6 +190,12 @@ gh-gantt list [options]
 ```bash
 gh-gantt show <id> [--json]
 ```
+
+**コメント:** `pull --with-comments` で取得済みの Issue コメントを、投稿者・日時・本文つきで作成日時の昇順に末尾へ表示する。
+未取得の場合は `Comments: not fetched` と取得方法を案内する。
+`--json` では task のフィールドに加えて `comments`（未取得なら `null`）と `comments_fetched_at` を含む。
+レビュー指摘や議論の経緯を読むときは、まず `gh-gantt pull --with-comments` を実行してから `show` する。
+`context` にはコメントを含めない（要約を bounded に保つため）。
 
 ---
 

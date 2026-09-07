@@ -7,9 +7,65 @@ import {
   parseAcceptanceCriteriaBody,
   parseTaskRolesBody,
 } from "@gh-gantt/shared";
-import type { Task } from "@gh-gantt/shared";
+import type { Comment, CommentsFile, Task } from "@gh-gantt/shared";
 
-function formatTask(task: Task): string {
+/**
+ * show が表示対象 task について解決したコメント情報。
+ * `fetched_at` が null のときは `pull --with-comments` 未実行でコメント未取得を表す。
+ */
+export interface TaskComments {
+  fetched_at: string | null;
+  comments: Comment[] | null;
+}
+
+const NOT_FETCHED_HINT = "run `gh-gantt pull --with-comments` to fetch";
+
+/** commentsStore の内容から task のコメントを作成日時の昇順で取り出す。 */
+export function resolveTaskComments(task: Task, commentsFile: CommentsFile): TaskComments {
+  const fetchedAt = commentsFile.fetched_at[task.id];
+  if (!fetchedAt) {
+    return { fetched_at: null, comments: null };
+  }
+  const comments = [...(commentsFile.comments[task.id] ?? [])].sort((a, b) =>
+    a.created_at.localeCompare(b.created_at),
+  );
+  return { fetched_at: fetchedAt, comments };
+}
+
+/** --json 出力: task のフィールドを維持したまま comments / comments_fetched_at を追加する。 */
+export function buildShowJson(
+  task: Task,
+  taskComments: TaskComments,
+): Task & { comments: Comment[] | null; comments_fetched_at: string | null } {
+  return {
+    ...task,
+    comments: taskComments.comments,
+    comments_fetched_at: taskComments.fetched_at,
+  };
+}
+
+function formatComments(taskComments: TaskComments): string[] {
+  if (taskComments.comments === null) {
+    return [`Comments:   not fetched (${NOT_FETCHED_HINT})`];
+  }
+  const lines = [
+    "",
+    `--- Comments (${taskComments.comments.length}) ---`,
+    `(fetched at ${taskComments.fetched_at})`,
+  ];
+  taskComments.comments.forEach((comment, index) => {
+    const edited =
+      comment.updated_at !== comment.created_at ? ` (edited ${comment.updated_at})` : "";
+    lines.push(
+      "",
+      `[${index + 1}] ${comment.author}  ${comment.created_at}${edited}`,
+      comment.body,
+    );
+  });
+  return lines;
+}
+
+export function formatTask(task: Task, taskComments?: TaskComments): string {
   if (isMilestoneSyntheticTask(task.id)) {
     return formatMilestone(task);
   }
@@ -51,6 +107,9 @@ function formatTask(task: Task): string {
   if (parsedBody.body) {
     lines.push("", "--- Body ---", parsedBody.body);
   }
+  if (taskComments) {
+    lines.push(...formatComments(taskComments));
+  }
   return lines.join("\n");
 }
 
@@ -79,7 +138,7 @@ export function createTaskShowCommand(): Command {
         await withProjectStorage(
           projectRoot,
           { mode: "read", scope: "shared-cache" },
-          async ({ configStore, tasksStore }) => {
+          async ({ configStore, tasksStore, commentsStore }) => {
             const config = await configStore.read();
             const tasksFile = await tasksStore.read();
 
@@ -92,10 +151,17 @@ export function createTaskShowCommand(): Command {
               return;
             }
 
+            // milestone の synthetic task は Issue ではないためコメントを持たない
+            const taskComments = isMilestoneSyntheticTask(task.id)
+              ? undefined
+              : resolveTaskComments(task, await commentsStore.read());
+
             if (opts.json) {
-              console.log(JSON.stringify(task, null, 2));
+              console.log(
+                JSON.stringify(taskComments ? buildShowJson(task, taskComments) : task, null, 2),
+              );
             } else {
-              console.log(formatTask(task));
+              console.log(formatTask(task, taskComments));
             }
           },
         );
