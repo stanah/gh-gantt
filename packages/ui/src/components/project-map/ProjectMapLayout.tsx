@@ -29,13 +29,13 @@ const panelStyle: React.CSSProperties = {
   minWidth: 0,
 };
 
-/** パネル section の aria-label。既存テスト・スキルが参照する名前を維持する。 */
+/** パネル section の aria-label。各パネルの PanelHeader の見出しと一致させる。 */
 const PANEL_ARIA_LABELS: Record<ProjectMapPanelId, string> = {
   tree: "System Tree",
   board: "Project Board",
   dependency: "Dependency Map",
   next: "Next Actions",
-  timeline: "Compact Timeline",
+  timeline: "Compact Gantt",
   run: "Run Graph",
 };
 
@@ -53,13 +53,17 @@ function useNarrowViewport(): boolean {
     const mq = window.matchMedia(PROJECT_MAP_NARROW_QUERY);
     const handler = (e: { matches: boolean }) => setNarrow(e.matches);
     setNarrow(mq.matches);
-    // Safari 14 未満は addEventListener 未実装のため addListener にフォールバックする
+    // Safari 14 未満は addEventListener 未実装のため addListener にフォールバックする。
+    // どちらも無い polyfill 環境では初期判定だけ行い、リサイズ追従はしない
     if (typeof mq.addEventListener === "function") {
       mq.addEventListener("change", handler);
       return () => mq.removeEventListener("change", handler);
     }
-    mq.addListener(handler);
-    return () => mq.removeListener(handler);
+    if (typeof mq.addListener === "function") {
+      mq.addListener(handler);
+      return () => mq.removeListener(handler);
+    }
+    return undefined;
   }, [canMatch]);
   return narrow;
 }
