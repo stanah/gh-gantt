@@ -17,6 +17,10 @@ interface ProjectMapToolbarProps {
   syncStatus: SyncStatus | null;
   matchedCount: number;
   totalCount: number;
+  /** パネル構成の設定 UI が開いているか。 */
+  layoutSettingsOpen?: boolean;
+  /** パネル設定ボタンの押下ハンドラ。未指定ならボタンを表示しない。 */
+  onToggleLayoutSettings?: () => void;
 }
 
 const READINESS_OPTIONS: BoardColumnId[] = [
@@ -36,6 +40,7 @@ function formatSyncedAt(value: string): string {
 /**
  * Project Map のツールバー。タイトル検索・readiness クイックフィルタを提供し、
  * 同期状態（last_synced_at / local_changes / total_tasks）を表示する。
+ * パネル構成の設定 UI を開閉する「パネル設定」ボタンの入口も担う。
  * フィルタは Tree / Board / Next Actions / Timeline に一貫適用される。
  */
 export function ProjectMapToolbar({
@@ -47,6 +52,8 @@ export function ProjectMapToolbar({
   syncStatus,
   matchedCount,
   totalCount,
+  layoutSettingsOpen = false,
+  onToggleLayoutSettings,
 }: ProjectMapToolbarProps) {
   const setReadiness = (column: BoardColumnId | null) => onChange({ ...filter, readiness: column });
 
@@ -123,6 +130,27 @@ export function ProjectMapToolbar({
         {matchedCount}/{totalCount} 件
       </span>
       <div style={{ flex: 1 }} />
+      {onToggleLayoutSettings && (
+        <button
+          type="button"
+          aria-label="パネル設定"
+          aria-expanded={layoutSettingsOpen}
+          onClick={onToggleLayoutSettings}
+          style={{
+            padding: "2px 8px",
+            border: `1px solid ${layoutSettingsOpen ? "var(--color-accent, #4285f4)" : "var(--color-border)"}`,
+            borderRadius: 4,
+            fontSize: 11,
+            minHeight: 24,
+            cursor: "pointer",
+            background: layoutSettingsOpen ? "rgba(66, 133, 244, 0.12)" : "var(--color-bg)",
+            color: "var(--color-text-secondary)",
+            whiteSpace: "nowrap",
+          }}
+        >
+          パネル設定
+        </button>
+      )}
       {syncStatus && (
         <span
           style={{ color: "var(--color-text-muted)", whiteSpace: "nowrap" }}

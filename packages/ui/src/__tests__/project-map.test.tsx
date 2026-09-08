@@ -203,3 +203,243 @@ describe("[FR-VIS-025] Project Map の Group by 軸セレクタ (GRP-02)", () =>
     expect(board.textContent).toContain("UI Shell");
   });
 });
+
+// ---------------------------------------------------------------------------
+// パネル構成のカスタマイズ (#362)
+// ---------------------------------------------------------------------------
+
+const LAYOUT_STORAGE_KEY = "gh-gantt:project-map-layout";
+
+function panelIds(container: HTMLElement): string[] {
+  return Array.from(container.querySelectorAll("[data-panel]")).map(
+    (el) => (el as HTMLElement).dataset.panel ?? "",
+  );
+}
+
+function openLayoutSettings(container: HTMLElement): HTMLElement {
+  fireEvent.click(container.querySelector('button[aria-label="パネル設定"]') as HTMLElement);
+  return container.querySelector('[data-testid="project-map-layout-settings"]') as HTMLElement;
+}
+
+function stubMatchMedia(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    })),
+  );
+}
+
+afterEach(() => {
+  localStorage.clear();
+  vi.unstubAllGlobals();
+});
+
+describe("[FR-VIS-028-AC1] 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される", () => {
+  it("設定 UI は既定で閉じており、パネル設定ボタンで開閉する", () => {
+    const { container } = renderPage(null);
+    expect(container.querySelector('[data-testid="project-map-layout-settings"]')).toBeNull();
+    const settings = openLayoutSettings(container);
+    expect(settings).not.toBeNull();
+    fireEvent.click(container.querySelector('button[aria-label="パネル設定"]') as HTMLElement);
+    expect(container.querySelector('[data-testid="project-map-layout-settings"]')).toBeNull();
+  });
+
+  it("Project Board の表示チェックを外すとパネルが描画されなくなる", () => {
+    const { container } = renderPage(null);
+    expect(panelIds(container)).toHaveLength(6);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
+    expect(container.querySelector('[aria-label="Project Board"]')).toBeNull();
+    expect(panelIds(container)).toEqual(["tree", "dependency", "next", "timeline", "run"]);
+    // 再度チェックすると戻る
+    fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
+    expect(container.querySelector('[aria-label="Project Board"]')).not.toBeNull();
+  });
+
+  it("隠したパネルの領域は同じ行の末尾パネルに再配分され、空セルが残らない", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
+    const spans = Array.from(container.querySelectorAll("[data-panel]")).map(
+      (el) => `${(el as HTMLElement).dataset.panel}:${(el as HTMLElement).style.gridColumn}`,
+    );
+    // tree(1)+dependency(1) の後に next(2) が入らないため dependency が行末まで広がる
+    expect(spans).toEqual([
+      "tree:span 1",
+      "dependency:span 2",
+      "next:span 2",
+      "timeline:span 1",
+      "run:span 3",
+    ]);
+  });
+});
+
+describe("[FR-VIS-028-AC2] パネルの並び順を上下移動で変更できる", () => {
+  it("上へ / 下へ ボタンで描画順が入れ替わる", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を上へ"));
+    expect(panelIds(container).slice(0, 2)).toEqual(["board", "tree"]);
+    fireEvent.click(within(settings).getByLabelText("Project Board を下へ"));
+    expect(panelIds(container).slice(0, 2)).toEqual(["tree", "board"]);
+  });
+
+  it("先頭パネルの上へ / 末尾パネルの下へ は無効化される", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    expect(
+      (within(settings).getByLabelText("System Tree を上へ") as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (within(settings).getByLabelText("Planned vs Actual を下へ") as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+});
+
+describe("[FR-VIS-028-AC3] パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる", () => {
+  it("サイズ選択が grid の column span に反映される", () => {
+    const { container } = renderPage(null);
+    const tree = container.querySelector('[data-panel="tree"]') as HTMLElement;
+    expect(tree.style.gridColumn).toBe("span 1");
+    const settings = openLayoutSettings(container);
+    fireEvent.change(within(settings).getByLabelText("System Tree のサイズ"), {
+      target: { value: "full" },
+    });
+    expect(tree.style.gridColumn).toBe("span 3");
+    fireEvent.change(within(settings).getByLabelText("System Tree のサイズ"), {
+      target: { value: "wide" },
+    });
+    expect(tree.style.gridColumn).toBe("span 2");
+  });
+});
+
+describe("[FR-VIS-028-AC4] パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする", () => {
+  it("保存済み設定で Run Graph を隠していれば初期描画から隠れる", () => {
+    localStorage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        panels: [
+          { id: "run", visible: false, size: "full" },
+          { id: "tree", visible: true, size: "standard" },
+        ],
+      }),
+    );
+    const { container } = renderPage(null);
+    expect(container.querySelector('[aria-label="Run Graph"]')).toBeNull();
+    expect(panelIds(container)).toEqual(["tree", "board", "dependency", "next", "timeline"]);
+  });
+
+  it("設定変更は localStorage に書き込まれる", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Next Actions を表示"));
+    const stored = JSON.parse(localStorage.getItem(LAYOUT_STORAGE_KEY) ?? "null");
+    expect(stored.version).toBe(1);
+    expect(stored.panels.find((p: { id: string }) => p.id === "next").visible).toBe(false);
+  });
+
+  it("壊れた JSON や不正な構造は既定構成にフォールバックする", () => {
+    localStorage.setItem(LAYOUT_STORAGE_KEY, "{not json");
+    const first = renderPage(null);
+    expect(panelIds(first.container)).toHaveLength(6);
+    cleanup();
+
+    localStorage.setItem(
+      LAYOUT_STORAGE_KEY,
+      JSON.stringify({ version: 1, panels: [{ id: "tree", visible: "yes", size: "huge" }] }),
+    );
+    const second = renderPage(null);
+    expect(panelIds(second.container)).toHaveLength(6);
+  });
+});
+
+describe("[FR-VIS-028-AC5] 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる", () => {
+  it("プリセット選択で構成が切り替わり、既定に戻すで 6 パネルに戻る", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    const preset = within(settings).getByLabelText("レイアウトプリセット") as HTMLSelectElement;
+    expect(Array.from(preset.options).map((o) => o.value)).toEqual(
+      expect.arrayContaining(["standard", "dependency", "board"]),
+    );
+
+    fireEvent.change(preset, { target: { value: "dependency" } });
+    expect(container.querySelector('[aria-label="Project Board"]')).toBeNull();
+    expect(
+      (container.querySelector('[data-panel="dependency"]') as HTMLElement).style.gridColumn,
+    ).toBe("span 2");
+    expect(preset.value).toBe("dependency");
+
+    fireEvent.change(preset, { target: { value: "board" } });
+    expect(container.querySelector('[aria-label="Dependency Map"]')).toBeNull();
+    expect(container.querySelector('[aria-label="Project Board"]')).not.toBeNull();
+
+    fireEvent.click(within(settings).getByText("既定に戻す"));
+    expect(panelIds(container)).toEqual(["tree", "board", "dependency", "next", "timeline", "run"]);
+    expect(preset.value).toBe("standard");
+  });
+
+  it("手動で変更するとプリセット選択はカスタムになる", () => {
+    const { container } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を上へ"));
+    const preset = within(settings).getByLabelText("レイアウトプリセット") as HTMLSelectElement;
+    expect(preset.value).toBe("custom");
+  });
+});
+
+describe("[FR-VIS-028-AC6] パネル構成の変更が選択連携・フィルタ・Group by・Run Graph の動作に影響しない", () => {
+  it("Board を隠して並び替えた後も Tree の選択・検索・Group by が機能する", () => {
+    const { container, onSelectTask } = renderPage(null);
+    const settings = openLayoutSettings(container);
+    fireEvent.click(within(settings).getByLabelText("Project Board を表示"));
+    fireEvent.click(within(settings).getByLabelText("Next Actions を上へ"));
+
+    // 選択連携
+    fireEvent.click(container.querySelector('[data-task-id="t2"]') as HTMLElement);
+    expect(onSelectTask).toHaveBeenCalledWith("t2");
+
+    // フィルタ
+    const search = container.querySelector(
+      'input[aria-label="Project Map 検索"]',
+    ) as HTMLInputElement;
+    fireEvent.change(search, { target: { value: "ViewModel" } });
+    const next = container.querySelector('[aria-label="Next Actions"]') as HTMLElement;
+    expect(next.textContent).not.toContain("UI Shell");
+    expect(container.textContent).toContain("1/3 件");
+
+    // Group by
+    fireEvent.change(container.querySelector('select[aria-label="Group by 軸"]') as HTMLElement, {
+      target: { value: "type" },
+    });
+    const tree = container.querySelector('[aria-label="System Tree"]') as HTMLElement;
+    expect(tree.textContent).toContain("グループ表示");
+
+    // Run Graph パネルはそのまま残っている
+    expect(container.querySelector('[aria-label="Run Graph"]')).not.toBeNull();
+  });
+});
+
+describe("[FR-VIS-028-AC7] 画面幅が狭いときはパネルが 1 カラムに折り返される", () => {
+  it("max-width 980px にマッチすると 1 カラムになり全パネルが span 1 になる", () => {
+    stubMatchMedia(true);
+    const { container } = renderPage(null);
+    const layout = container.querySelector('[data-testid="project-map-layout"]') as HTMLElement;
+    expect(layout.dataset.columns).toBe("1");
+    const run = container.querySelector('[data-panel="run"]') as HTMLElement;
+    expect(run.style.gridColumn).toBe("span 1");
+  });
+
+  it("広い画面では 3 カラムで、全幅パネルは span 3 になる", () => {
+    stubMatchMedia(false);
+    const { container } = renderPage(null);
+    const layout = container.querySelector('[data-testid="project-map-layout"]') as HTMLElement;
+    expect(layout.dataset.columns).toBe("3");
+    const run = container.querySelector('[data-panel="run"]') as HTMLElement;
+    expect(run.style.gridColumn).toBe("span 3");
+  });
+});
