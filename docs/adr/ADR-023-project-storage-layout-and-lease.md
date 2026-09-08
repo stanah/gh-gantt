@@ -112,6 +112,15 @@ Git が登録している全 worktree を列挙し、各 `<worktree>/.gantt-sync
 legacy file は自動削除も dual-write もしない。移行元を残しても、manifest と fingerprint により
 新しい CLI が変化を無視して進むことはない。
 
+移行済み legacy file の削除は operator の明示操作 `gh-gantt storage cleanup` に限る（#378）。
+削除対象は manifest の `legacyFingerprints` と一致し、かつ `CURRENT` generation が存在する worktree の
+`tasks.json`、`sync-state.json`、`comments.json` だけとし、分岐、未記録、片側欠損、破損、別 Project の
+file は理由を表示して残す。`--dry-run` は削除せず計画だけを返す。削除した worktree、fingerprint、file は
+manifest の `legacyCleanups` に追記し、`legacyFingerprints` は消さない。これにより旧 CLI が同じ path へ
+再び書いた場合も、記録済み fingerprint との相違として fail-closed になる。
+cleanup は repository lease 内で実行するが、分岐した候補を個別に判定するため lease 取得後の
+自動 migration は行わない。`gh-gantt storage status` は legacy file が残る worktree とその状態を表示する。
+
 候補が分岐した場合、通常の shared slot access は `LEGACY_CACHE_DIVERGED` で停止する。operator は候補を確認し、
 `gh-gantt storage migrate --from <worktree>` で正本にする legacy pair を明示する。`--json` は同じ操作の結果を
 machine-readable に返す。指定元に候補がなければ `LEGACY_SOURCE_NOT_FOUND` で停止し、自動選択や後勝ち更新を

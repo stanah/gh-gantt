@@ -94,4 +94,4 @@ ADR-023 の「Run Graph の扱い」を維持し、`git` モードでも worktre
 - `git` モードでは config が commit されないため、エフェメラル環境では `init --storage git` で GitHub Project から再生成するか、config を別経路で持ち込む必要がある。手順は AGENTS.md に記載する。
 - 直接 `ConfigStore(projectRoot)` を生成していた command（sprint、doctor、resolve、delete、API server、init）は `withProjectStorage` へ移行した。新しい caller も同じ入口を使う。
 - regression は、`git` モードでの config 共有と journal 分離、`.gantt-sync/` 非作成、両モード config の fail-closed、後方互換の `repository` 解決、non-git の制約、`storage migrate --to` の往復と manifest 記録を実 Git linked worktree で検証する。
-- 移行済み legacy file の掃除は #378 で扱う。
+- 移行済み legacy file の掃除は `storage cleanup`（#378）で行い、判定規則は ADR-023 の all-worktree legacy migration 節に追記した。

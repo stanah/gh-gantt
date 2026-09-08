@@ -84,6 +84,10 @@ node packages/cli/dist/index.js loop status
   `gh-gantt storage status` が示す `Config:` のパスへ置いてから `pull` する。
   既存の `.gantt-sync/` 配置からの切り替えは `gh-gantt storage migrate --to git`（逆方向は `--to repository`）。
   両モードに config があると fail-closed で停止するので、正本でない方を削除する
+- 旧バージョンが `<worktree>/.gantt-sync/` に残した `tasks.json` / `sync-state.json` / `comments.json` は
+  Work Graph Cache へ移行済みでも自動では消えない。`gh-gantt storage status` で残存を確認し、
+  `gh-gantt storage cleanup --dry-run` で対象を見てから `gh-gantt storage cleanup` で削除する。
+  migration manifest の fingerprint と一致する file だけが削除され、一致しない file は理由付きで残る（ADR-023）
 - `tasks.json` と `sync-state.json` は、GitHub に反映済みのデータであれば `pull` で再構築できるキャッシュ。
   一方、未 push の draft、date フィールド、その他のローカル専用データは失われ得るため、
   #298 と関連する永続化ギャップが解消されるまでは、破棄前に `push` または必要な退避を行う
