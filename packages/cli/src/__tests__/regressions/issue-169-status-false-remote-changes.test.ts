@@ -101,6 +101,8 @@ function makeProjectItem(issueNumber: number, updatedAt = "2026-04-01T00:00:00Z"
       issueType: null,
       repository: "stanah/gh-gantt",
       linkedPullRequests: [],
+      // 関係シグネチャ (#377)。関係無しの Issue として固定する
+      relationships: { parent: null, sub_issues_total: 0, blocked_by_total: 0, blocking_total: 0 },
     },
   };
 }

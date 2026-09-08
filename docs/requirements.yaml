@@ -182,10 +182,11 @@ areas:
             tests:
               - packages/cli/src/__tests__/diff.test.ts
           - id: NFR-SYNC-002-AC2
-            description: pull の関係リンク (sub-issue / blockedBy) 取得は updated_at が sync-state と一致しない Issue と snapshot のない Issue だけに発行され、--force と初回同期では全 Issue を対象にする
+            description: pull の関係リンク (sub-issue / blockedBy) 取得は updated_at または関係シグネチャ (parent / sub-issue 件数 / blockedBy 件数 / blocking 件数) が sync-state と一致しない Issue と snapshot のない Issue だけに発行され、--force と初回同期では全 Issue を対象にする
             status: covered
             tests:
               - packages/cli/src/__tests__/pull-incremental-relationships.test.ts
+              - packages/cli/src/__tests__/regressions/issue-377-pull-relationship-stale.test.ts
           - id: NFR-SYNC-002-AC3
             description: updated_at が一致した Issue の parent / sub_tasks / blocked_by は snapshot の syncFields から再構成され、変わった Issue に接する既存の辺は取得結果で置き換えられる
             status: covered
@@ -1344,6 +1345,17 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-318-pull-quickskip-stale-push.test.ts
+          - id: NFR-STABILITY-001-AC7
+            description: |
+              GitHub 上で sub-issue / blockedBy だけを変更した場合 (Issue の updatedAt は
+              更新されない) でも、pull が --force なしで親子・blocked_by の変更を取り込む。
+              ProjectV2 items の一括取得に同梱した関係シグネチャを snapshot に保存し、
+              pre-check・quick-skip・関係リンクの stale 判定を updated_at に依存せず行う。
+              シグネチャの無い旧形式 snapshot は stale 扱い (安全側) で再取得する
+              (regression #377)
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-377-pull-relationship-stale.test.ts
       - id: NFR-STABILITY-002
         summary: silent failure の禁止
         acceptance_criteria:

@@ -15,6 +15,7 @@ import type {
   Statuses,
   SyncFields,
   SyncState,
+  RelationshipSignature,
   Task,
   TasksFile,
 } from "./types.js";
@@ -309,6 +310,13 @@ export const SyncFieldsSchema: z.ZodType<SyncFields> = z.object({
   blocked_by: z.array(DependencySchema),
 });
 
+export const RelationshipSignatureSchema: z.ZodType<RelationshipSignature> = z.object({
+  parent: z.string().nullable(),
+  sub_issues_total: z.number().int().nonnegative(),
+  blocked_by_total: z.number().int().nonnegative(),
+  blocking_total: z.number().int().nonnegative(),
+});
+
 export const SyncStateSchema: z.ZodType<SyncState> = z.object({
   last_synced_at: z.string(),
   project_node_id: z.string(),
@@ -327,6 +335,7 @@ export const SyncStateSchema: z.ZodType<SyncState> = z.object({
       updated_at: z.string().optional(),
       syncFields: SyncFieldsSchema.optional(),
       remoteHash: z.string().optional(),
+      relationships: RelationshipSignatureSchema.optional(),
     }),
   ),
   option_ids: z.record(z.record(z.string())).optional(),

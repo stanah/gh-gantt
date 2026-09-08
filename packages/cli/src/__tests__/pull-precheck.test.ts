@@ -8,6 +8,7 @@ vi.mock("../github/projects.js", async (importOriginal) => {
   return {
     ...original,
     fetchProject: vi.fn(),
+    fetchProjectRelationshipSignatures: vi.fn(),
     fetchRepositoryMetadata: vi.fn(),
     checkRemoteChanges: vi.fn(),
   };
@@ -21,9 +22,15 @@ vi.mock("../github/sub-issues.js", () => ({
 }));
 
 import { executePull } from "../sync/pull-executor.js";
-import { fetchProject, fetchRepositoryMetadata, checkRemoteChanges } from "../github/projects.js";
+import {
+  fetchProject,
+  fetchProjectRelationshipSignatures,
+  fetchRepositoryMetadata,
+  checkRemoteChanges,
+} from "../github/projects.js";
 
 const mockFetchProject = vi.mocked(fetchProject);
+const mockFetchSignatures = vi.mocked(fetchProjectRelationshipSignatures);
 const mockFetchRepoMeta = vi.mocked(fetchRepositoryMetadata);
 const mockCheckRemote = vi.mocked(checkRemoteChanges);
 
@@ -67,6 +74,8 @@ describe("[Issue #157] pull pre-check", () => {
       fields: [],
       items: [],
     });
+    // 関係シグネチャの pre-check (#377) は project が空なので「変化なし」
+    mockFetchSignatures.mockResolvedValue([]);
   });
 
   it("[Issue #157] pre-check で変化なし → fetchProject が呼ばれず skipped=true", async () => {
@@ -76,6 +85,8 @@ describe("[Issue #157] pull pre-check", () => {
     const { result } = await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState);
 
     expect(mockCheckRemote).toHaveBeenCalledOnce();
+    // since クエリが「変化なし」のときだけ関係シグネチャを確認する (#377)
+    expect(mockFetchSignatures).toHaveBeenCalledOnce();
     expect(mockFetchProject).not.toHaveBeenCalled();
     expect(result.skipped).toBe(true);
   });
@@ -87,6 +98,7 @@ describe("[Issue #157] pull pre-check", () => {
     await executePull(gql as any, makeConfig(), makeEmptyTasksFile(), syncState);
 
     expect(mockCheckRemote).toHaveBeenCalledOnce();
+    expect(mockFetchSignatures).not.toHaveBeenCalled();
     expect(mockFetchProject).toHaveBeenCalledOnce();
   });
 

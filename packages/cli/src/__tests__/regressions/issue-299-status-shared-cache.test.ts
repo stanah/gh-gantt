@@ -18,6 +18,7 @@ vi.mock("../../github/projects.js", async (importOriginal) => {
   return {
     ...original,
     checkRemoteChanges: vi.fn().mockResolvedValue(false),
+    fetchProjectRelationshipSignatures: vi.fn().mockResolvedValue([]),
     fetchProject: vi.fn().mockResolvedValue({
       projectNodeId: "PVT_issue_299",
       projectTitle: "Issue 299 fixture",
