@@ -238,7 +238,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される", () => {
+describe("[FR-VIS-028-AC1] 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される", () => {
   it("設定 UI は既定で閉じており、パネル設定ボタンで開閉する", () => {
     const { container } = renderPage(null);
     expect(container.querySelector('[data-testid="project-map-layout-settings"]')).toBeNull();
@@ -278,7 +278,7 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
   });
 });
 
-describe("[FR-VIS-027-AC2] パネルの並び順を上下移動で変更できる", () => {
+describe("[FR-VIS-028-AC2] パネルの並び順を上下移動で変更できる", () => {
   it("上へ / 下へ ボタンで描画順が入れ替わる", () => {
     const { container } = renderPage(null);
     const settings = openLayoutSettings(container);
@@ -300,7 +300,7 @@ describe("[FR-VIS-027-AC2] パネルの並び順を上下移動で変更でき�
   });
 });
 
-describe("[FR-VIS-027-AC3] パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる", () => {
+describe("[FR-VIS-028-AC3] パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる", () => {
   it("サイズ選択が grid の column span に反映される", () => {
     const { container } = renderPage(null);
     const tree = container.querySelector('[data-panel="tree"]') as HTMLElement;
@@ -317,7 +317,7 @@ describe("[FR-VIS-027-AC3] パネルごとに 標準 / 広い / 全幅 の表示
   });
 });
 
-describe("[FR-VIS-027-AC4] パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする", () => {
+describe("[FR-VIS-028-AC4] パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする", () => {
   it("保存済み設定で Run Graph を隠していれば初期描画から隠れる", () => {
     localStorage.setItem(
       LAYOUT_STORAGE_KEY,
@@ -358,7 +358,7 @@ describe("[FR-VIS-027-AC4] パネル構成は Zod 検証付きで localStorage �
   });
 });
 
-describe("[FR-VIS-027-AC5] 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる", () => {
+describe("[FR-VIS-028-AC5] 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる", () => {
   it("プリセット選択で構成が切り替わり、既定に戻すで 6 パネルに戻る", () => {
     const { container } = renderPage(null);
     const settings = openLayoutSettings(container);
@@ -392,7 +392,7 @@ describe("[FR-VIS-027-AC5] 既定構成に戻す操作と 標準 / 依存重視 
   });
 });
 
-describe("[FR-VIS-027-AC6] パネル構成の変更が選択連携・フィルタ・Group by・Run Graph の動作に影響しない", () => {
+describe("[FR-VIS-028-AC6] パネル構成の変更が選択連携・フィルタ・Group by・Run Graph の動作に影響しない", () => {
   it("Board を隠して並び替えた後も Tree の選択・検索・Group by が機能する", () => {
     const { container, onSelectTask } = renderPage(null);
     const settings = openLayoutSettings(container);
@@ -424,7 +424,7 @@ describe("[FR-VIS-027-AC6] パネル構成の変更が選択連携・フィル�
   });
 });
 
-describe("[FR-VIS-027-AC7] 画面幅が狭いときはパネルが 1 カラムに折り返される", () => {
+describe("[FR-VIS-028-AC7] 画面幅が狭いときはパネルが 1 カラムに折り返される", () => {
   it("max-width 980px にマッチすると 1 カラムになり全パネルが span 1 になる", () => {
     stubMatchMedia(true);
     const { container } = renderPage(null);

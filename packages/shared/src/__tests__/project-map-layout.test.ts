@@ -14,7 +14,7 @@ import {
   visibleProjectMapPanels,
 } from "../project-map-layout.js";
 
-describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される", () => {
+describe("[FR-VIS-028-AC1] 各パネルを個別に表示 / 非表示にでき、非表示パネルは描画されず残り領域が再配分される", () => {
   it("既定構成では 6 パネルすべてが可視である", () => {
     const settings = defaultProjectMapLayoutSettings();
     expect(settings.panels.map((p) => p.id)).toEqual([...PROJECT_MAP_PANEL_IDS]);
@@ -72,7 +72,7 @@ describe("[FR-VIS-027-AC1] 各パネルを個別に表示 / 非表示にでき�
   });
 });
 
-describe("[FR-VIS-027-AC2] パネルの並び順を上下移動で変更できる", () => {
+describe("[FR-VIS-028-AC2] パネルの並び順を上下移動で変更できる", () => {
   it("movePanel で up / down に 1 つずつ移動し、端では変化しない", () => {
     const base = defaultProjectMapLayoutSettings();
     const up = moveProjectMapPanel(base, "board", "up");
@@ -84,7 +84,7 @@ describe("[FR-VIS-027-AC2] パネルの並び順を上下移動で変更でき�
   });
 });
 
-describe("[FR-VIS-027-AC3] パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる", () => {
+describe("[FR-VIS-028-AC3] パネルごとに 標準 / 広い / 全幅 の表示サイズを選べる", () => {
   it("サイズは 3 カラム grid の column span に対応する", () => {
     expect(projectMapPanelColumnSpan("standard")).toBe(1);
     expect(projectMapPanelColumnSpan("wide")).toBe(2);
@@ -98,7 +98,7 @@ describe("[FR-VIS-027-AC3] パネルごとに 標準 / 広い / 全幅 の表示
   });
 });
 
-describe("[FR-VIS-027-AC4] パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする", () => {
+describe("[FR-VIS-028-AC4] パネル構成は Zod 検証付きで localStorage に保存され再訪時に復元され、不正データは既定構成にフォールバックする", () => {
   it("正しい設定はそのまま復元される", () => {
     const stored = setProjectMapPanelVisible(
       moveProjectMapPanel(defaultProjectMapLayoutSettings(), "run", "up"),
@@ -142,7 +142,7 @@ describe("[FR-VIS-027-AC4] パネル構成は Zod 検証付きで localStorage �
   });
 });
 
-describe("[FR-VIS-027-AC5] 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる", () => {
+describe("[FR-VIS-028-AC5] 既定構成に戻す操作と 標準 / 依存重視 / ボード重視 のプリセットを選べる", () => {
   it("3 種類のプリセットが定義され、standard は既定構成と一致する", () => {
     expect(PROJECT_MAP_LAYOUT_PRESETS.map((p) => p.id)).toEqual([
       "standard",
