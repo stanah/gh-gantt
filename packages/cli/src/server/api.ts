@@ -1,6 +1,5 @@
 import { Router, json } from "express";
 import { z } from "zod";
-import { ConfigStore } from "../store/config.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { setParent, removeParent } from "../commands/task/link.js";
 import { validateTaskCloseReview } from "../commands/task/update.js";
@@ -96,12 +95,14 @@ export function createApiRouter(projectRoot: string): Router {
   const router = Router();
   router.use(json());
 
-  const configStore = new ConfigStore(projectRoot);
-
   // 設定取得: GET /api/config
   router.get("/api/config", async (_req, res) => {
     try {
-      const config = await configStore.read();
+      const config = await withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "workspace" },
+        (storage) => storage.configStore.read(),
+      );
       res.json(config);
     } catch {
       res.status(500).json({ error: "Failed to read config" });

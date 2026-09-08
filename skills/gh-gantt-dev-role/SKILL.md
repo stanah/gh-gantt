@@ -25,7 +25,7 @@ gh-gantt-dev-role role=executor issue=123 workspace=/path/to/repo input=.dev-flo
 
 次の順に project config を探す。
 
-1. `.gantt-sync/workflow.md` の `## Dev-Role Config` セクション
+1. `.gantt-sync/workflow.md`（`git` 配置モードでは `gh-gantt storage status` の `Workflow:` パス）の `## Dev-Role Config` セクション
 2. `.dev-flow/config.json`
 
 `.gantt-sync/tasks.json` と `.gantt-sync/sync-state.json` は読み込まないでください。同期データは常に `gh-gantt` CLI 経由で扱う。

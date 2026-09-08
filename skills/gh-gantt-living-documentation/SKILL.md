@@ -34,7 +34,7 @@ Evidence: 発見した要件ファイルのパス、実行するスクリプト�
 
 ### 1. プロジェクト設定の確認
 
-`.gantt-sync/workflow.md` にプロジェクト固有の設定がある場合は最優先で参照する。Living Documentation のパス・コマンドが明記されていれば、それに従う。
+`.gantt-sync/workflow.md`（`git` 配置モードでは `gh-gantt storage status` の `Workflow:` パス）にプロジェクト固有の設定がある場合は最優先で参照する。Living Documentation のパス・コマンドが明記されていれば、それに従う。
 
 ### 2. 要件ファイルの発見
 

@@ -31,9 +31,14 @@ gh-gantt CLI はグローバルにインストール済み。`gh-gantt` コマ�
 利用可能なタイプ: `task`, `epic`, `feature`, `milestone`
 
 **IMPORTANT: git-common-dir 配下の Work Graph Cache（`tasks.json`, `sync-state.json`, `comments.json`）と、
-`.gantt-sync/` 配下の workspace-local journal（`loop-state.json`, Run Graph）を直接読み書きしてはならない。**
+workspace-local journal（`loop-state.json`, Run Graph）を直接読み書きしてはならない。**
 常に `gh-gantt` CLI コマンドを使うこと。直接操作はバリデーションをバイパスし、同期状態を破損させる。
 設定ファイル（`gantt.config.json`, `workflow.md`）は直接編集してよい。
+設定と journal の配置は配置モードで決まり、`gh-gantt storage status` で実際のパスを確認できる（ADR-029）。
+
+- `repository` モード（このリポジトリの現行運用）: `<worktree>/.gantt-sync/` に置き、config と workflow は commit 対象
+- `git` モード: git-common-dir 配下の `gh-gantt/config/` と `gh-gantt/workspaces/` に置き、リポジトリには何も追加しない。
+  全 linked worktree が同じ config を参照し、journal は worktree ごとに分かれる
 
 ## スキル
 
@@ -69,11 +74,16 @@ node packages/cli/dist/index.js status
 node packages/cli/dist/index.js loop status
 ```
 
-- **`gantt.config.json` と `workflow.md` はコミット対象**（`.gitignore` に除外例外が設定済み）。
+- **`repository` モードでは `gantt.config.json` と `workflow.md` はコミット対象**（`.gitignore` に除外例外が設定済み）。
   コミットしておけば新品クローンでも `pull` 一発で作業を再開できる
 - config が未コミット・未作成の場合のみ
   `node packages/cli/dist/index.js init --owner <owner> --repo <repo> --project <N>` で GitHub Project から生成する
-  （既存 config がある場合 init は中止する。上書きは `--force`）
+  （既存 config がある場合 init は中止する。上書きは `--force`。配置モードは `--storage repository|git`）
+- **`git` モード**（config を commit しない運用）では、新品クローンに config が存在しない。
+  `init --storage git` で GitHub Project から再生成するか、退避しておいた config を
+  `gh-gantt storage status` が示す `Config:` のパスへ置いてから `pull` する。
+  既存の `.gantt-sync/` 配置からの切り替えは `gh-gantt storage migrate --to git`（逆方向は `--to repository`）。
+  両モードに config があると fail-closed で停止するので、正本でない方を削除する
 - `tasks.json` と `sync-state.json` は、GitHub に反映済みのデータであれば `pull` で再構築できるキャッシュ。
   一方、未 push の draft、date フィールド、その他のローカル専用データは失われ得るため、
   #298 と関連する永続化ギャップが解消されるまでは、破棄前に `push` または必要な退避を行う
@@ -195,5 +205,6 @@ pnpm workspaces モノレポ。`packages/` 配下に3パッケージ：
 - テスト: vp test (Vitest 4.1 ベース、vite-plus 同梱)
 - リント: vp check (Oxlint + Oxfmt)
 - Work Graph Cache: git-common-dir 配下の `gh-gantt/cache/project-storage/`（worktree 間共有、Git 管理外）
-- workspace-local データ: `.gantt-sync/`（config / workflow を除き gitignore 済み）
+- workspace-local データ: `repository` モードでは `.gantt-sync/`（config / workflow を除き gitignore 済み）、
+  `git` モードでは git-common-dir 配下の `gh-gantt/config/` と `gh-gantt/workspaces/`（ADR-029）
 - 秘密情報スキャン: docker 前提の `betterleaks` を pre-commit + CI で実行 (詳細は ADR-011)

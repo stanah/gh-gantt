@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-  GANTT_DIR,
   GRAPH_CONTRACTS_DIR,
   GraphContractSchema,
   RUN_GRAPH_DIR,
   type GraphContract,
 } from "@gh-gantt/shared";
+import { resolveWorkspaceStorageLocation } from "./project-storage.js";
 
 function safeSegment(value: string): string {
   return Buffer.from(value, "utf8").toString("base64url");
@@ -20,15 +20,29 @@ export interface GraphContractBinding {
 
 /** versioned Graph Contract を immutable artifact として保存する。 */
 export class GraphContractStore {
-  private readonly root: string;
+  private readonly projectRoot: string;
+  private root: Promise<string> | null = null;
 
   constructor(projectRoot: string) {
-    this.root = join(projectRoot, GANTT_DIR, RUN_GRAPH_DIR, GRAPH_CONTRACTS_DIR);
+    this.projectRoot = projectRoot;
   }
 
-  private path(binding: GraphContractBinding): string {
+  /** 配置は Project Storage の配置モードに従う (#379)。失敗した解決は cache しない。 */
+  private resolveRoot(): Promise<string> {
+    if (!this.root) {
+      this.root = resolveWorkspaceStorageLocation(this.projectRoot).then((location) =>
+        join(location.journalDir, RUN_GRAPH_DIR, GRAPH_CONTRACTS_DIR),
+      );
+      this.root.catch(() => {
+        this.root = null;
+      });
+    }
+    return this.root;
+  }
+
+  private async path(binding: GraphContractBinding): Promise<string> {
     return join(
-      this.root,
+      await this.resolveRoot(),
       safeSegment(binding.planId),
       `${safeSegment(binding.planVersion)}-${safeSegment(binding.schemaVersion)}.json`,
     );
@@ -36,7 +50,7 @@ export class GraphContractStore {
 
   async install(input: GraphContract): Promise<void> {
     const contract = GraphContractSchema.parse(input);
-    const filePath = this.path({
+    const filePath = await this.path({
       planId: contract.planId,
       planVersion: contract.planVersion,
       schemaVersion: contract.schemaVersion,
@@ -56,7 +70,9 @@ export class GraphContractStore {
 
   async read(binding: GraphContractBinding): Promise<GraphContract> {
     try {
-      return GraphContractSchema.parse(JSON.parse(await readFile(this.path(binding), "utf8")));
+      return GraphContractSchema.parse(
+        JSON.parse(await readFile(await this.path(binding), "utf8")),
+      );
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
         throw new Error(

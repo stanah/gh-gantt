@@ -4,8 +4,9 @@ import { readdirSync, statSync } from "node:fs";
 import { readFile, realpath } from "node:fs/promises";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
-import { ConfigSchema, GANTT_DIR } from "@gh-gantt/shared";
+import { CONFIG_FILE, ConfigSchema, GANTT_DIR } from "@gh-gantt/shared";
 import type { Config } from "@gh-gantt/shared";
+import { detectWorkspaceStorageLocation } from "./storage-location.js";
 import { gitCommandEnvironment, isNotGitRepositoryError } from "../util/git-errors.js";
 import {
   hasGitMarkerInAncestors,
@@ -60,7 +61,7 @@ type GitRunner = (projectRoot: string, args: string[]) => Promise<string>;
  */
 const revParseCache = new WeakMap<GitRunner, Map<string, Promise<string>>>();
 
-function cachedRevParse(
+export function cachedRevParse(
   executeGit: GitRunner,
   absoluteRoot: string,
   option: string,
@@ -122,7 +123,7 @@ function worktreeSignature(commonDir: string): string {
   return signature;
 }
 
-function cachedWorktreeList(
+export function cachedWorktreeList(
   executeGit: GitRunner,
   absoluteRoot: string,
   commonDir: string,
@@ -178,17 +179,33 @@ export async function resolveRepositoryCoordinationLayout(
       isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
     );
   }
+  const commonDir = await realpath(
+    isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
+  );
+  const canonicalTopLevelForLocation = await realpath(topLevel);
+  // config の配置は Project Storage の配置モード (repository / git) に従う (#379)。
+  const configPath = nonGitError
+    ? join(absoluteRoot, GANTT_DIR, CONFIG_FILE)
+    : join(
+        (
+          await detectWorkspaceStorageLocation({
+            projectRoot: canonicalRoot,
+            git: {
+              commonDir,
+              relativeProjectRoot: relative(canonicalTopLevelForLocation, canonicalRoot),
+            },
+          })
+        ).configDir,
+        CONFIG_FILE,
+      );
   let rawConfig: string;
   try {
-    rawConfig = await readFile(join(absoluteRoot, GANTT_DIR, "gantt.config.json"), "utf8");
+    rawConfig = await readFile(configPath, "utf8");
   } catch (error) {
     // configのないstandalone Run Graph callerへ従来のnon-Git signalを返す。
     if (nonGitError && (error as NodeJS.ErrnoException).code === "ENOENT") throw nonGitError;
     throw error;
   }
-  const commonDir = await realpath(
-    isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
-  );
   const config = ConfigSchema.parse(JSON.parse(rawConfig));
   const github = config.project.github;
   const projectIdentity = `${github.owner.trim().toLowerCase()}/${github.repo.trim().toLowerCase()}#${github.project_number}`;

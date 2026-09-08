@@ -3,7 +3,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
 import { detectCycles, getTaskSizeExcess } from "@gh-gantt/shared";
-import { ConfigStore } from "../store/config.js";
 import { withProjectStorage, type ProjectStorageSession } from "../store/project-storage.js";
 import { hashTask } from "../sync/hash.js";
 import { validateSyncState, type SyncStateFinding } from "../sync/validate-sync-state.js";
@@ -36,10 +35,10 @@ interface DoctorResult {
 
 /** gantt.config.json の schema 妥当性をチェック */
 async function checkConfig(
-  projectRoot: string,
+  configStore: Pick<ProjectStorageSession, "configStore">["configStore"],
 ): Promise<{ result: CheckResult; data: Config | null }> {
   try {
-    const data = await new ConfigStore(projectRoot).read();
+    const data = await configStore.read();
     return {
       result: { name: "config-schema", status: "PASS", message: "gantt.config.json は有効です" },
       data,
@@ -553,13 +552,13 @@ interface DoctorOptions {
 
 async function runDoctor(
   projectRoot: string,
-  storage: Pick<ProjectStorageSession, "tasksStore" | "stateStore">,
+  storage: Pick<ProjectStorageSession, "configStore" | "tasksStore" | "stateStore">,
   opts: DoctorOptions,
 ): Promise<DoctorResult> {
   const checks: CheckResult[] = [];
 
   // 1. config チェック
-  const { result: configResult, data: config } = await checkConfig(projectRoot);
+  const { result: configResult, data: config } = await checkConfig(storage.configStore);
   checks.push(configResult);
 
   // 2. tasks.json チェック
