@@ -1071,6 +1071,41 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/project-map-run-graph.test.tsx
+      - id: FR-VIS-027
+        summary: Dependency Map の React Flow 描画と dagre 階層レイアウト
+        acceptance_criteria:
+          - id: FR-VIS-027-AC1
+            description: 依存サブグラフのノード座標とエッジ経路が dagre の階層レイアウト (上流が上、下流が下) から得られる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC2
+            description: 同一の依存サブグラフに対するエッジ交差数が段組み等間隔配置と同数以下になる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
+          - id: FR-VIS-027-AC3
+            description: Dependency Map のノードをクリックまたは Enter / Space で選択すると詳細パネル連携の選択が更新される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC4
+            description: クリティカルパスの強調、未解決依存の赤表示、循環依存の警告が Dependency Map に表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC5
+            description: Dependency Map をパン・ズームでき、初期表示で選択タスクが表示領域内に収まる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC6
+            description: Dependency Map がライト / ダーク両テーマで既存の色トークンに沿って配色される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

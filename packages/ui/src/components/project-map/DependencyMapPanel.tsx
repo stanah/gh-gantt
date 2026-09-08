@@ -1,13 +1,33 @@
-import React, { useMemo } from "react";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  ReactFlow,
+  ReactFlowProvider,
+  Controls,
+  Handle,
+  Position,
+  useReactFlow,
+  useStore,
+  type Edge,
+  type EdgeProps,
+  type Node,
+  type NodeProps,
+} from "@xyflow/react";
+import "@xyflow/react/dist/base.css";
 import {
   buildDependencySubgraph,
   type Task as SharedTask,
   type TaskReadiness,
-  type DependencyGraphNode,
 } from "@gh-gantt/shared";
 import type { Config } from "../../types/index.js";
-import { PanelHeader, PanelBody, PanelEmpty } from "./ProjectMapLayout.js";
+import { PanelHeader, PanelEmpty } from "./ProjectMapLayout.js";
 import { boardColumnColor } from "./ReadinessBadge.js";
+import {
+  computeInitialViewport,
+  layoutDependencyGraph,
+  NODE_HEIGHT,
+  NODE_WIDTH,
+  type DependencyMapLayout,
+} from "./dependency-map-layout.js";
 
 interface DependencyMapPanelProps {
   tasks: SharedTask[];
@@ -19,16 +39,199 @@ interface DependencyMapPanelProps {
   onSelectTask: (taskId: string) => void;
 }
 
-const BOX_W = 150;
-const BOX_H = 30;
-const GAP_X = 16;
-const GAP_Y = 34;
-const PAD = 12;
+/** タスクノードが保持する描画データ。 */
+interface TaskNodeData extends Record<string, unknown> {
+  title: string;
+  /** readiness 列に対応する色 (左のバーと枠線)。 */
+  color: string;
+  isSelected: boolean;
+  onSelect: (taskId: string) => void;
+}
+
+/** 依存エッジが保持する描画データ。 */
+interface DependencyEdgeData extends Record<string, unknown> {
+  points: { x: number; y: number }[];
+  stroke: string;
+  strokeWidth: number;
+  dashed: boolean;
+  isCritical: boolean;
+}
+
+type TaskFlowNode = Node<TaskNodeData, "task">;
+type DependencyFlowEdge = Edge<DependencyEdgeData, "dependency">;
+
+const SELECTED_BORDER = "var(--color-selected-fg, #1a73e8)";
+const DANGER = "var(--color-danger, #e74c3c)";
+
+/** ハンドルは経路計算に使わないため不可視にする。 */
+const hiddenHandleStyle: React.CSSProperties = {
+  opacity: 0,
+  width: 1,
+  height: 1,
+  minWidth: 0,
+  minHeight: 0,
+  border: 0,
+  pointerEvents: "none",
+};
+
+/** ノード本体。Enter / Space で選択を親へ伝える (クリックは onNodeClick 経由)。 */
+function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
+  return (
+    <div
+      data-node={id}
+      role="button"
+      tabIndex={0}
+      aria-label={data.title}
+      aria-pressed={data.isSelected}
+      title={data.title}
+      // クリックは React Flow の onNodeClick で受ける (ノード wrapper の pointer-events を有効化するため)
+      onKeyDown={(e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        data.onSelect(id);
+      }}
+      style={{
+        boxSizing: "border-box",
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "0 8px 0 0",
+        borderRadius: 4,
+        borderStyle: "solid",
+        borderWidth: data.isSelected ? 2.5 : 1.5,
+        borderColor: data.isSelected ? SELECTED_BORDER : data.color,
+        background: "var(--color-surface, #fff)",
+        color: "var(--color-text)",
+        fontSize: 11,
+        cursor: "pointer",
+        overflow: "hidden",
+      }}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        isConnectable={false}
+        style={hiddenHandleStyle}
+      />
+      <span
+        aria-hidden="true"
+        style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
+      />
+      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {data.title}
+      </span>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={false}
+        style={hiddenHandleStyle}
+      />
+    </div>
+  );
+}
+
+/** dagre の経路点をそのまま折れ線 (角を丸めたパス) として描画するエッジ。 */
+// 上流が上・下流が下の配置で向きが読めるため、矢印 (markerEnd) は付けない
+function DependencyEdge({ id, data }: EdgeProps<DependencyFlowEdge>) {
+  if (!data) return null;
+  const path = buildRoundedPath(data.points);
+  return (
+    <path
+      id={id}
+      data-edge={id}
+      data-critical={data.isCritical ? "true" : undefined}
+      className="react-flow__edge-path"
+      d={path}
+      fill="none"
+      stroke={data.stroke}
+      strokeWidth={data.strokeWidth}
+      strokeDasharray={data.dashed ? "4 3" : undefined}
+    />
+  );
+}
+
+/** 折れ線の角を二次ベジェで丸めた SVG パスを組み立てる。 */
+function buildRoundedPath(points: { x: number; y: number }[], radius = 8): string {
+  if (points.length === 0) return "";
+  if (points.length < 3) {
+    return points.map((p, i) => `${i === 0 ? "M" : "L"}${p.x} ${p.y}`).join(" ");
+  }
+  let d = `M${points[0].x} ${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const cur = points[i];
+    const next = points[i + 1];
+    const inLen = Math.hypot(cur.x - prev.x, cur.y - prev.y);
+    const outLen = Math.hypot(next.x - cur.x, next.y - cur.y);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    if (r <= 0) {
+      d += ` L${cur.x} ${cur.y}`;
+      continue;
+    }
+    const inX = cur.x - ((cur.x - prev.x) / inLen) * r;
+    const inY = cur.y - ((cur.y - prev.y) / inLen) * r;
+    const outX = cur.x + ((next.x - cur.x) / outLen) * r;
+    const outY = cur.y + ((next.y - cur.y) / outLen) * r;
+    d += ` L${inX} ${inY} Q${cur.x} ${cur.y} ${outX} ${outY}`;
+  }
+  const last = points[points.length - 1];
+  d += ` L${last.x} ${last.y}`;
+  return d;
+}
+
+const nodeTypes = { task: TaskNode };
+const edgeTypes = { dependency: DependencyEdge };
+
+/** 既存テーマトークンへ React Flow の CSS 変数を束ねる。 */
+const canvasStyle = {
+  flex: 1,
+  minHeight: 0,
+  position: "relative",
+  "--xy-background-color": "var(--color-surface, #fff)",
+  "--xy-edge-stroke": "var(--color-border)",
+  "--xy-edge-stroke-width": "1",
+  "--xy-controls-button-background-color": "var(--color-surface, #fff)",
+  "--xy-controls-button-background-color-hover": "var(--color-hover-bg, #f5f8ff)",
+  "--xy-controls-button-color": "var(--color-text)",
+  "--xy-controls-button-color-hover": "var(--color-text)",
+  "--xy-controls-button-border-color": "var(--color-border)",
+  "--xy-controls-box-shadow": "none",
+  "--xy-attribution-background-color": "transparent",
+} as React.CSSProperties;
 
 /**
- * Dependency Map パネル。選択タスク（とその子孫）を中心に上流 / 下流を層状に縦配置し、
- * blocked_by エッジを SVG で描画する。未解決の上流は赤、クリティカルパスは太線で強調し、
- * 循環依存があれば警告を表示する。
+ * レイアウト確定後に初期ビューポートを適用する。
+ * 表示領域の寸法は React Flow の store から取り、未計測 (0) の間は何もしない。
+ */
+function InitialViewport({
+  layout,
+  selectedTaskId,
+}: {
+  layout: DependencyMapLayout;
+  selectedTaskId: string | null;
+}) {
+  const { setViewport } = useReactFlow();
+  const width = useStore((s) => s.width);
+  const height = useStore((s) => s.height);
+  const appliedRef = useRef<{ layout: DependencyMapLayout; selectedTaskId: string | null }>();
+
+  useEffect(() => {
+    if (width <= 0 || height <= 0) return;
+    const applied = appliedRef.current;
+    if (applied && applied.layout === layout && applied.selectedTaskId === selectedTaskId) return;
+    appliedRef.current = { layout, selectedTaskId };
+    void setViewport(computeInitialViewport(layout, selectedTaskId, { width, height }));
+  }, [layout, selectedTaskId, width, height, setViewport]);
+
+  return null;
+}
+
+/**
+ * Dependency Map パネル。選択タスク（とその子孫）を中心に上流 / 下流を dagre で階層配置し、
+ * React Flow で描画する。未解決の上流は赤い破線、クリティカルパスは太線で強調し、
+ * 循環依存があれば警告を表示する。パン・ズームで大きなグラフを閲覧できる。
  */
 export function DependencyMapPanel({
   tasks,
@@ -46,43 +249,101 @@ export function DependencyMapPanel({
     [selectedTaskId, tasks, config, criticalSet],
   );
 
-  const layout = useMemo(() => {
-    // rank: upstream を上 (負), selected を 0, downstream を下 (正) に置く
-    const rankOf = (node: DependencyGraphNode) =>
-      node.direction === "upstream"
-        ? -node.depth
-        : node.direction === "downstream"
-          ? node.depth
-          : 0;
+  const layout = useMemo(() => layoutDependencyGraph(graph), [graph]);
 
-    const byRank = new Map<number, DependencyGraphNode[]>();
-    for (const node of graph.nodes) {
-      const rank = rankOf(node);
-      const list = byRank.get(rank);
-      if (list) list.push(node);
-      else byRank.set(rank, [node]);
-    }
-    const ranks = [...byRank.keys()].sort((a, b) => a - b);
-    const pos = new Map<string, { x: number; y: number }>();
-    let maxCols = 0;
-    ranks.forEach((rank, rowIndex) => {
-      const nodes = byRank.get(rank)!;
-      maxCols = Math.max(maxCols, nodes.length);
-      nodes.forEach((node, colIndex) => {
-        pos.set(node.task.id, {
-          x: PAD + colIndex * (BOX_W + GAP_X),
-          y: PAD + rowIndex * (BOX_H + GAP_Y),
-        });
-      });
+  const handleNodeClick = useCallback(
+    (_event: React.MouseEvent, node: { id: string }) => onSelectTask(node.id),
+    [onSelectTask],
+  );
+
+  const nodes = useMemo<TaskFlowNode[]>(() => {
+    const posById = new Map(layout.nodes.map((n) => [n.id, n]));
+    return graph.nodes.map((node) => {
+      const p = posById.get(node.task.id)!;
+      const readiness = readinessById[node.task.id];
+      const color = readiness ? boardColumnColor(readiness.column) : "#8b949e";
+      return {
+        id: node.task.id,
+        type: "task",
+        position: { x: p.x, y: p.y },
+        width: NODE_WIDTH,
+        height: NODE_HEIGHT,
+        draggable: false,
+        connectable: false,
+        selectable: false,
+        focusable: false,
+        // jsdom / SSR でも計測を待たずにエッジを描けるようハンドル位置を明示する
+        handles: [
+          {
+            type: "target",
+            position: Position.Top,
+            x: NODE_WIDTH / 2,
+            y: 0,
+            width: 1,
+            height: 1,
+          },
+          {
+            type: "source",
+            position: Position.Bottom,
+            x: NODE_WIDTH / 2,
+            y: NODE_HEIGHT,
+            width: 1,
+            height: 1,
+          },
+        ],
+        data: {
+          title: node.task.title,
+          color,
+          isSelected: node.task.id === selectedTaskId,
+          onSelect: onSelectTask,
+        },
+      };
     });
-    const width = PAD * 2 + Math.max(1, maxCols) * (BOX_W + GAP_X) - GAP_X;
-    const height = PAD * 2 + Math.max(1, ranks.length) * (BOX_H + GAP_Y) - GAP_Y;
-    return { pos, width, height };
-  }, [graph]);
+  }, [graph, layout, readinessById, selectedTaskId, onSelectTask]);
+
+  const edges = useMemo<DependencyFlowEdge[]>(() => {
+    const pointsByKey = new Map(layout.edges.map((e) => [`${e.from}->${e.to}`, e.points]));
+    return graph.edges.flatMap((edge) => {
+      const key = `${edge.from}->${edge.to}`;
+      const points = pointsByKey.get(key);
+      if (!points) return [];
+      const stroke = edge.isUnresolved
+        ? DANGER
+        : edge.isCritical
+          ? config.gantt.colors.critical_path
+          : "var(--color-border)";
+      return [
+        {
+          id: key,
+          type: "dependency",
+          source: edge.from,
+          target: edge.to,
+          focusable: false,
+          selectable: false,
+          data: {
+            points,
+            stroke,
+            strokeWidth: edge.isCritical ? 2 : 1,
+            dashed: edge.isUnresolved,
+            isCritical: edge.isCritical,
+          },
+        },
+      ];
+    });
+  }, [graph, layout, config.gantt.colors.critical_path]);
 
   return (
     <>
-      <PanelHeader title="Dependency Map" hint={selectedTaskId ? "選択の依存" : "全依存"} />
+      <PanelHeader
+        title="Dependency Map"
+        hint={
+          graph.nodes.length > 0
+            ? `${selectedTaskId ? "選択の依存" : "全依存"} · ${graph.nodes.length} ノード / ${graph.edges.length} エッジ`
+            : selectedTaskId
+              ? "選択の依存"
+              : "全依存"
+        }
+      />
       {warnings.length > 0 && (
         <div
           role="alert"
@@ -90,10 +351,11 @@ export function DependencyMapPanel({
             margin: 8,
             padding: "4px 8px",
             fontSize: 10,
-            color: "var(--color-danger, #e74c3c)",
+            color: DANGER,
             background: "var(--color-danger-bg, rgba(231,76,60,0.1))",
-            border: "1px solid var(--color-danger, #e74c3c)",
+            border: `1px solid ${DANGER}`,
             borderRadius: 4,
+            flexShrink: 0,
           }}
         >
           {warnings.join(" / ")}
@@ -102,84 +364,31 @@ export function DependencyMapPanel({
       {graph.nodes.length === 0 ? (
         <PanelEmpty message="依存関係のあるタスクがありません" />
       ) : (
-        <PanelBody>
-          <svg
-            width={layout.width}
-            height={layout.height}
-            role="group"
-            aria-label="Dependency graph"
-            style={{ display: "block" }}
-          >
-            {graph.edges.map((edge) => {
-              const from = layout.pos.get(edge.from);
-              const to = layout.pos.get(edge.to);
-              if (!from || !to) return null;
-              const x1 = from.x + BOX_W / 2;
-              const y1 = from.y + BOX_H;
-              const x2 = to.x + BOX_W / 2;
-              const y2 = to.y;
-              const stroke = edge.isUnresolved
-                ? "#e74c3c"
-                : edge.isCritical
-                  ? config.gantt.colors.critical_path
-                  : "var(--color-border)";
-              return (
-                <line
-                  key={`${edge.from}->${edge.to}`}
-                  data-edge={`${edge.from}->${edge.to}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={stroke}
-                  strokeWidth={edge.isCritical ? 2 : 1}
-                  strokeDasharray={edge.isUnresolved ? "3 2" : undefined}
-                />
-              );
-            })}
-            {graph.nodes.map((node) => {
-              const p = layout.pos.get(node.task.id);
-              if (!p) return null;
-              const readiness = readinessById[node.task.id];
-              const color = readiness ? boardColumnColor(readiness.column) : "#8b949e";
-              const isSelected = node.task.id === selectedTaskId;
-              return (
-                <g
-                  key={node.task.id}
-                  data-node={node.task.id}
-                  role="button"
-                  tabIndex={0}
-                  aria-label={node.task.title}
-                  aria-pressed={isSelected}
-                  onClick={() => onSelectTask(node.task.id)}
-                  onKeyDown={(e) => {
-                    if (e.key !== "Enter" && e.key !== " ") return;
-                    e.preventDefault();
-                    onSelectTask(node.task.id);
-                  }}
-                  style={{ cursor: "pointer" }}
-                >
-                  <rect
-                    x={p.x}
-                    y={p.y}
-                    width={BOX_W}
-                    height={BOX_H}
-                    rx={4}
-                    fill="var(--color-bg)"
-                    stroke={isSelected ? "#4285f4" : color}
-                    strokeWidth={isSelected ? 2.5 : 1.5}
-                  />
-                  <rect x={p.x} y={p.y} width={4} height={BOX_H} rx={2} fill={color} />
-                  <text x={p.x + 10} y={p.y + BOX_H / 2 + 4} fontSize={11} fill="var(--color-text)">
-                    {node.task.title.length > 18
-                      ? `${node.task.title.slice(0, 17)}…`
-                      : node.task.title}
-                  </text>
-                </g>
-              );
-            })}
-          </svg>
-        </PanelBody>
+        <div data-testid="dependency-map-canvas" style={canvasStyle}>
+          <ReactFlowProvider>
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodeClick={handleNodeClick}
+              nodesDraggable={false}
+              nodesConnectable={false}
+              nodesFocusable={false}
+              edgesFocusable={false}
+              elementsSelectable={false}
+              minZoom={0.2}
+              maxZoom={2}
+              deleteKeyCode={null}
+              selectionKeyCode={null}
+              multiSelectionKeyCode={null}
+              aria-label="Dependency graph"
+            >
+              <InitialViewport layout={layout} selectedTaskId={selectedTaskId} />
+              <Controls showInteractive={false} position="bottom-right" />
+            </ReactFlow>
+          </ReactFlowProvider>
+        </div>
       )}
     </>
   );
