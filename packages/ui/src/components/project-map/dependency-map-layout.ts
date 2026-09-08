@@ -15,7 +15,7 @@ export interface LayoutNode {
   height: number;
 }
 
-/** レイアウト済みエッジ。`points` は from の下辺から to の上辺へ至る経路。 */
+/** レイアウト済みエッジ。`points` は from の右辺から to の左辺へ至る経路。 */
 export interface LayoutEdge {
   from: string;
   to: string;
@@ -39,41 +39,183 @@ export interface Viewport {
   zoom: number;
 }
 
-const NODE_SEP = 24;
-const RANK_SEP = 40;
+/** 段の方向。`LR` が本番の設定で、`TB` は比較・検証用に残している。 */
+export type RankDirection = "LR" | "TB";
+
+/** dagre の段割り当てアルゴリズム。 */
+export type DagreRanker = "network-simplex" | "tight-tree" | "longest-path";
+
+/** レイアウトの調整項目。省略時は本番設定 (LR / network-simplex / 連結成分の分割あり)。 */
+export interface LayoutOptions {
+  rankdir?: RankDirection;
+  ranker?: DagreRanker;
+  /**
+   * 互いに依存で繋がっていない連結成分を個別に配置するか。
+   * true なら成分ごとに dagre を実行し、大きい成分から順に行単位で敷き詰める。
+   */
+  splitComponents?: boolean;
+}
+
+/** 同じ段に並ぶノード同士の間隔 (px)。 */
+const NODE_SEP = 16;
+/** 段同士の間隔 (px)。 */
+const RANK_SEP = 48;
 const MARGIN = 12;
+/** 連結成分同士の間隔 (px)。 */
+const COMPONENT_GAP = 32;
 
 /**
- * 依存サブグラフを dagre (rankdir TB) で階層配置する。
- * エッジは `from` が `to` をブロックする向きなので、上流が上・下流が下に並ぶ。
- * サブグラフに存在しないノードを参照するエッジは無視する。
+ * 実データ (gh-gantt 自身、201 タスク / 依存 38 件) で ranker を比較し、交差数と縦横比が最良だった
+ * network-simplex を採用している。比較結果は docs/project-map.md 9.1 節を参照。
  */
-export function layoutDependencyGraph(graph: DependencySubgraph): DependencyMapLayout {
+export const DEFAULT_RANKER: DagreRanker = "network-simplex";
+
+const DEFAULT_OPTIONS: Required<LayoutOptions> = {
+  rankdir: "LR",
+  ranker: DEFAULT_RANKER,
+  splitComponents: true,
+};
+
+/**
+ * 依存サブグラフを dagre で階層配置する。既定は `rankdir: LR` で、
+ * エッジは `from` が `to` をブロックする向きなので上流 (ブロッカー) が左・下流が右に並び、
+ * 同じ段のノードは縦に積まれる。互いに繋がっていない連結成分は個別にレイアウトし、
+ * 大きい成分から順に行単位で敷き詰める。
+ * サブグラフに存在しないノードを参照するエッジと自己ループは無視する。
+ */
+export function layoutDependencyGraph(
+  graph: DependencySubgraph,
+  options: LayoutOptions = {},
+): DependencyMapLayout {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const ids = new Set(graph.nodes.map((n) => n.task.id));
+  const edges = graph.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
+  if (ids.size === 0) return { nodes: [], edges: [], width: 0, height: 0 };
+
+  // 連結成分ごとに独立した dagre グラフを組み、成分を行単位で敷き詰める。
+  // 全依存モードでは無関係な成分が多数あるため、1 つのグラフに渡すと巨大な単一段に潰れてしまう
+  const components = opts.splitComponents
+    ? connectedComponents([...ids], edges)
+    : [[...ids].sort()];
+
+  const placed = tileComponents(
+    components.map((component) => {
+      const member = new Set(component);
+      const componentEdges = edges.filter((e) => member.has(e.from) && member.has(e.to));
+      return layoutComponent(component, componentEdges, opts);
+    }),
+  );
+  const nodes: LayoutNode[] = [];
+  const layoutEdges: LayoutEdge[] = [];
+  for (const { layout, dx, dy } of placed) {
+    for (const n of layout.nodes) nodes.push({ ...n, x: n.x + dx, y: n.y + dy });
+    for (const e of layout.edges) {
+      layoutEdges.push({ ...e, points: e.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) });
+    }
+  }
+
+  // 入力順を保って返す (React Flow のノード配列順を安定させる)
+  const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const orderedNodes = graph.nodes.map((n) => nodeById.get(n.task.id)!);
+
+  let maxX = 0;
+  let maxY = 0;
+  for (const n of orderedNodes) {
+    maxX = Math.max(maxX, n.x + n.width);
+    maxY = Math.max(maxY, n.y + n.height);
+  }
+  for (const e of layoutEdges) {
+    for (const p of e.points) {
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+  }
+
+  return {
+    nodes: orderedNodes,
+    edges: layoutEdges,
+    width: maxX + MARGIN,
+    height: maxY + MARGIN,
+  };
+}
+
+/**
+ * 無向の連結成分に分ける。成分はノード数の多い順 (同数なら先頭 id 順) に並べ、
+ * 大きな成分が先頭 (左上) に来るようにする。
+ */
+function connectedComponents(
+  ids: string[],
+  edges: readonly { from: string; to: string }[],
+): string[][] {
+  const g = new dagre.graphlib.Graph({ directed: false });
+  for (const id of ids) g.setNode(id);
+  for (const e of edges) g.setEdge(e.from, e.to);
+  const components = dagre.graphlib.alg.components(g).map((c) => [...c].sort());
+  components.sort((a, b) => b.length - a.length || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+  return components;
+}
+
+/** タイル配置の目標縦横比 (幅 / 高さ)。パネルは横長なので 1 より少し大きくする。 */
+const TILE_TARGET_ASPECT = 1.5;
+
+/**
+ * 連結成分を左上から行単位で敷き詰める (棚詰め)。目標幅は最も広い成分の幅と、
+ * 総面積から目標縦横比で見積もった幅の大きい方。単純な縦積みだと孤立ノードが多いときに
+ * 極端に縦長になるため、行に収まる限り横に並べる。
+ */
+function tileComponents(
+  layouts: readonly DependencyMapLayout[],
+): { layout: DependencyMapLayout; dx: number; dy: number }[] {
+  let widest = 0;
+  let area = 0;
+  for (const l of layouts) {
+    widest = Math.max(widest, l.width);
+    area += (l.width + COMPONENT_GAP) * (l.height + COMPONENT_GAP);
+  }
+  const targetWidth = Math.max(widest, Math.sqrt(area * TILE_TARGET_ASPECT));
+
+  const placed: { layout: DependencyMapLayout; dx: number; dy: number }[] = [];
+  let rowX = 0;
+  let rowY = 0;
+  let rowHeight = 0;
+  for (const layout of layouts) {
+    if (rowX > 0 && rowX + layout.width > targetWidth) {
+      rowY += rowHeight + COMPONENT_GAP;
+      rowX = 0;
+      rowHeight = 0;
+    }
+    placed.push({ layout, dx: rowX, dy: rowY });
+    rowX += layout.width + COMPONENT_GAP;
+    rowHeight = Math.max(rowHeight, layout.height);
+  }
+  return placed;
+}
+
+/** 1 つの連結成分を dagre で配置し、原点基準の座標で返す。 */
+function layoutComponent(
+  ids: readonly string[],
+  edges: readonly { from: string; to: string }[],
+  opts: Required<LayoutOptions>,
+): DependencyMapLayout {
   const g = new dagre.graphlib.Graph({ multigraph: false });
   g.setGraph({
-    rankdir: "TB",
+    rankdir: opts.rankdir,
+    ranker: opts.ranker,
     nodesep: NODE_SEP,
     ranksep: RANK_SEP,
     marginx: MARGIN,
     marginy: MARGIN,
   });
   g.setDefaultEdgeLabel(() => ({}));
-
-  const ids = new Set<string>();
-  for (const node of graph.nodes) {
-    ids.add(node.task.id);
-    g.setNode(node.task.id, { width: NODE_WIDTH, height: NODE_HEIGHT });
-  }
-  const edges = graph.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
+  for (const id of ids) g.setNode(id, { width: NODE_WIDTH, height: NODE_HEIGHT });
   for (const edge of edges) g.setEdge(edge.from, edge.to);
-
-  if (ids.size > 0) dagre.layout(g);
+  dagre.layout(g);
 
   // dagre はノード中心座標を返すので左上座標へ変換する
-  const nodes: LayoutNode[] = graph.nodes.map((node) => {
-    const p = g.node(node.task.id);
+  const nodes: LayoutNode[] = ids.map((id) => {
+    const p = g.node(id);
     return {
-      id: node.task.id,
+      id,
       x: p.x - NODE_WIDTH / 2,
       y: p.y - NODE_HEIGHT / 2,
       width: NODE_WIDTH,
@@ -86,41 +228,62 @@ export function layoutDependencyGraph(graph: DependencySubgraph): DependencyMapL
     const from = nodeById.get(edge.from)!;
     const to = nodeById.get(edge.to)!;
     const raw = g.edge(edge.from, edge.to)?.points ?? [];
-    // 経路の始点 / 終点をノード境界に固定する。循環で to が from より上に置かれた逆向きエッジは
-    // from の上辺から to の下辺へ結び、ノード本体を貫通させない
-    const backward = to.y + to.height <= from.y;
-    const start = backward
-      ? { x: from.x + from.width / 2, y: from.y }
-      : { x: from.x + from.width / 2, y: from.y + from.height };
-    const end = backward
-      ? { x: to.x + to.width / 2, y: to.y + to.height }
-      : { x: to.x + to.width / 2, y: to.y };
+    const { start, end } = edgeAnchors(from, to, opts.rankdir);
     const points = [start, ...raw.slice(1, -1), end];
     return { from: edge.from, to: edge.to, points };
   });
 
-  let maxX = 0;
-  let maxY = 0;
+  let width = 0;
+  let height = 0;
   for (const n of nodes) {
-    maxX = Math.max(maxX, n.x + n.width);
-    maxY = Math.max(maxY, n.y + n.height);
+    width = Math.max(width, n.x + n.width);
+    height = Math.max(height, n.y + n.height);
   }
   for (const e of layoutEdges) {
     for (const p of e.points) {
-      maxX = Math.max(maxX, p.x);
-      maxY = Math.max(maxY, p.y);
+      width = Math.max(width, p.x);
+      height = Math.max(height, p.y);
     }
   }
-
-  return {
-    nodes,
-    edges: layoutEdges,
-    width: nodes.length > 0 ? maxX + MARGIN : 0,
-    height: nodes.length > 0 ? maxY + MARGIN : 0,
-  };
+  return { nodes, edges: layoutEdges, width, height };
 }
 
 type Point = { x: number; y: number };
+
+/**
+ * エッジの始点 / 終点をノード境界に固定する。LR では from の右辺中央から to の左辺中央へ、
+ * TB では from の下辺中央から to の上辺中央へ結ぶ。
+ * 循環で to が from より上流側に置かれた逆向きエッジは反対側の辺 (LR なら from の左辺 → to の右辺)
+ * から出し、ノード本体を貫通させない。
+ */
+function edgeAnchors(
+  from: LayoutNode,
+  to: LayoutNode,
+  rankdir: RankDirection,
+): { start: Point; end: Point } {
+  if (rankdir === "LR") {
+    const backward = to.x + to.width <= from.x;
+    return backward
+      ? {
+          start: { x: from.x, y: from.y + from.height / 2 },
+          end: { x: to.x + to.width, y: to.y + to.height / 2 },
+        }
+      : {
+          start: { x: from.x + from.width, y: from.y + from.height / 2 },
+          end: { x: to.x, y: to.y + to.height / 2 },
+        };
+  }
+  const backward = to.y + to.height <= from.y;
+  return backward
+    ? {
+        start: { x: from.x + from.width / 2, y: from.y },
+        end: { x: to.x + to.width / 2, y: to.y + to.height },
+      }
+    : {
+        start: { x: from.x + from.width / 2, y: from.y + from.height },
+        end: { x: to.x + to.width / 2, y: to.y },
+      };
+}
 
 function orientation(a: Point, b: Point, c: Point): number {
   const v = (b.y - a.y) * (c.x - b.x) - (b.x - a.x) * (c.y - b.y);
@@ -138,13 +301,15 @@ function segmentsCross(p1: Point, p2: Point, p3: Point, p4: Point): boolean {
 }
 
 /**
- * from の下辺中央から to の上辺中央へ引いた直線同士の交差数を数える。
+ * エッジを from / to のノード境界中央を結ぶ直線とみなし、直線同士の交差数を数える。
+ * LR では from の右辺中央 → to の左辺中央、TB では from の下辺中央 → to の上辺中央を結ぶ。
  * レイアウト方式の比較指標として使う (端点を共有する辺同士は交差と数えない)。
  * 実際の描画は dagre の折れ線経路なので、この指標は見た目の交差数と一致するとは限らない。
  */
 export function countEdgeCrossings(
   nodes: readonly Pick<LayoutNode, "id" | "x" | "y" | "width" | "height">[],
   edges: readonly { from: string; to: string }[],
+  rankdir: RankDirection = "LR",
 ): number {
   const byId = new Map(nodes.map((n) => [n.id, n]));
   const segments: { from: string; to: string; a: Point; b: Point }[] = [];
@@ -155,8 +320,14 @@ export function countEdgeCrossings(
     segments.push({
       from: e.from,
       to: e.to,
-      a: { x: from.x + from.width / 2, y: from.y + from.height },
-      b: { x: to.x + to.width / 2, y: to.y },
+      a:
+        rankdir === "LR"
+          ? { x: from.x + from.width, y: from.y + from.height / 2 }
+          : { x: from.x + from.width / 2, y: from.y + from.height },
+      b:
+        rankdir === "LR"
+          ? { x: to.x, y: to.y + to.height / 2 }
+          : { x: to.x + to.width / 2, y: to.y },
     });
   }
   let count = 0;
@@ -181,6 +352,7 @@ const FOCUS_ZOOM = 0.8;
 /**
  * 初期ビューポートを決める。グラフ全体が読める倍率 (>= 0.5) で収まるなら全体を中央に表示し、
  * 収まらなければ選択タスク (なければグラフ中心) を中央に置いて 0.8 倍で表示する。
+ * 外接領域の幅と高さの両方を見るため、横向き (LR) でも縦向きでも同じ判定で動く。
  */
 export function computeInitialViewport(
   layout: DependencyMapLayout,

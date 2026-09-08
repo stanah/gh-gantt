@@ -1119,7 +1119,7 @@ areas:
         summary: Dependency Map の React Flow 描画と dagre 階層レイアウト
         acceptance_criteria:
           - id: FR-VIS-027-AC1
-            description: 依存サブグラフのノード座標とエッジ経路が dagre の階層レイアウト (上流が上、下流が下) から得られる
+            description: 依存サブグラフのノード座標とエッジ経路が dagre の横向き階層レイアウト (上流が左、下流が右) から得られる
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
@@ -1150,6 +1150,17 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC7
+            description: Dependency Map が横向き (LR) 配置で同じ段のノードを縦に積み、ノードのハンドルとエッジの始点 / 終点が左右の辺になり、初期ビューポートが横向きでも機能する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC8
+            description: 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から行単位で敷き詰められて一つの巨大な段に潰れない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
       - id: FR-VIS-028
         summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
         acceptance_criteria:
