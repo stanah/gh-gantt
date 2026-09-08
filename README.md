@@ -45,9 +45,11 @@ gh-gantt init --owner <owner> --repo <repo> --project <project_number>
 ### Sync
 
 ```bash
-gh-gantt pull     # Pull latest data from GitHub
-gh-gantt push     # Push local changes to GitHub
-gh-gantt status   # Show sync status
+gh-gantt pull                     # Pull latest data from GitHub
+gh-gantt pull --with-comments     # Also fetch issue comments (skips issues already fetched)
+gh-gantt pull --force-comments    # Re-fetch all issue comments
+gh-gantt push                     # Push local changes to GitHub
+gh-gantt status                   # Show sync status
 ```
 
 Issue comments are fetched on demand. `pull --with-comments` is incremental: it only
@@ -64,12 +66,22 @@ gh-gantt pull --force-comments   # Re-fetch comments for all issues
 
 ```bash
 gh-gantt list                         # List tasks
-gh-gantt show <id>                    # Show task details
+gh-gantt show <id>                    # Show task details (with fetched comments)
+gh-gantt show <id> --json             # JSON output incl. `comments` / `comments_fetched_at`
 gh-gantt update <id>                  # Update a task
 gh-gantt link <id>                    # Manage dependencies and parent relationships
 gh-gantt delete <id> --yes            # Delete an issue task and reconcile the mirror
 gh-gantt create                       # Create a new draft task locally
 ```
+
+Issue comments are shown by `gh-gantt show` once they have been fetched with
+`gh-gantt pull --with-comments`. Until then, `show` reports that comments are not
+fetched and how to fetch them (`comments: null` in `--json`). `--with-comments` skips
+issues that already have cached comments; use `--force-comments` to re-fetch them.
+Comments are read from the shared Project Storage, so a single `pull --with-comments`
+makes them available to every worktree.
+`gh-gantt context` intentionally omits comments to keep its summary bounded;
+read them per issue with `show`.
 
 ### Conflict Resolution
 

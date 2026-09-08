@@ -570,6 +570,24 @@ areas:
             tests:
               - packages/cli/src/__tests__/loop-pr-evidence.test.ts
               - packages/shared/src/__tests__/loop-state.test.ts
+      - id: FR-CLI-019
+        summary: show コマンドでの Issue コメント表示
+        acceptance_criteria:
+          - id: FR-CLI-019-AC1
+            description: show は取得済みコメントを投稿者・日時・本文つきで作成日時の昇順に表示し、本文の Markdown はそのまま出力する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-show-comments.test.ts
+          - id: FR-CLI-019-AC2
+            description: show --json の出力は task のフィールドを維持したまま comments 配列と comments_fetched_at を含む
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-show-comments.test.ts
+          - id: FR-CLI-019-AC3
+            description: コメント未取得の Issue では show は未取得である旨と pull --with-comments による取得方法を案内し、--json では comments を null にする
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-show-comments.test.ts
   - id: API
     name: REST API
     description: UI と CLI の間のデータアクセス層

@@ -73,6 +73,14 @@ vi.mock("../store/tasks.js", () => ({
   },
 }));
 
+vi.mock("../store/comments.js", () => ({
+  CommentsStore: class {
+    async read() {
+      return { version: "1", fetched_at: {}, comments: {} };
+    }
+  },
+}));
+
 vi.mock("../util/task-id.js", () => ({
   resolveTaskId: (_id: string, _config: unknown) => "owner/repo#1",
 }));
