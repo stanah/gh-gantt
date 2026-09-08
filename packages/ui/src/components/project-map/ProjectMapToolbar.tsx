@@ -2,15 +2,22 @@ import React from "react";
 import type { BoardColumnId, GroupDimension, GroupDimensionOption } from "@gh-gantt/shared";
 import type { SyncStatus } from "../../hooks/useSyncStatus.js";
 import { boardColumnColor, boardColumnLabel } from "./ReadinessBadge.js";
+import type { ProjectMapFilterState } from "./filter-util.js";
 
-export interface ProjectMapFilterState {
-  search: string;
-  readiness: BoardColumnId | null;
+export type { ProjectMapFilterState } from "./filter-util.js";
+
+/** タイプ絞り込みチップの 1 選択肢（config.task_types 由来）。 */
+export interface ProjectMapTypeOption {
+  value: string;
+  label: string;
+  color: string;
 }
 
 interface ProjectMapToolbarProps {
   filter: ProjectMapFilterState;
   onChange: (filter: ProjectMapFilterState) => void;
+  /** タイプ絞り込みの選択肢。空なら タイプ フィルタを表示しない。 */
+  typeOptions?: ProjectMapTypeOption[];
   groupDimension: GroupDimension;
   onGroupDimensionChange: (dimension: GroupDimension) => void;
   groupDimensions: GroupDimensionOption[];
@@ -37,15 +44,22 @@ function formatSyncedAt(value: string): string {
   return new Date(t).toLocaleString();
 }
 
+/** 配列内の値をトグルする（あれば除去、なければ末尾に追加）。 */
+function toggleValue<T>(values: T[], value: T): T[] {
+  return values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
+}
+
 /**
- * Project Map のツールバー。タイトル検索・readiness クイックフィルタを提供し、
+ * Project Map のツールバー。タイトル検索・readiness クイックフィルタ（複数選択）・
+ * Done 除外トグル・タスクタイプ絞り込み（複数選択）を提供し、
  * 同期状態（last_synced_at / local_changes / total_tasks）を表示する。
  * パネル構成の設定 UI を開閉する「パネル設定」ボタンの入口も担う。
- * フィルタは Tree / Board / Next Actions / Timeline に一貫適用される。
+ * フィルタは Tree / Board / Next Actions / Timeline / Dependency Map に一貫適用される。
  */
 export function ProjectMapToolbar({
   filter,
   onChange,
+  typeOptions = [],
   groupDimension,
   onGroupDimensionChange,
   groupDimensions,
@@ -55,7 +69,28 @@ export function ProjectMapToolbar({
   layoutSettingsOpen = false,
   onToggleLayoutSettings,
 }: ProjectMapToolbarProps) {
-  const setReadiness = (column: BoardColumnId | null) => onChange({ ...filter, readiness: column });
+  const readinessAll = filter.readiness.length === 0 && !filter.excludeDone;
+  // All: readiness の選択と Done 除外をまとめて解除する
+  const clearReadiness = () => onChange({ ...filter, readiness: [], excludeDone: false });
+  const toggleReadiness = (column: BoardColumnId) =>
+    onChange({
+      ...filter,
+      readiness: toggleValue(filter.readiness, column),
+      // Done を明示的に選んだら除外トグルは解除する
+      excludeDone:
+        column === "done" && !filter.readiness.includes("done") ? false : filter.excludeDone,
+    });
+  const toggleExcludeDone = () =>
+    onChange({
+      ...filter,
+      excludeDone: !filter.excludeDone,
+      // 除外を有効にしたら Done の選択は外す
+      readiness: filter.excludeDone
+        ? filter.readiness
+        : filter.readiness.filter((c) => c !== "done"),
+    });
+  const toggleType = (type: string) =>
+    onChange({ ...filter, types: toggleValue(filter.types, type) });
 
   return (
     <div
@@ -111,21 +146,41 @@ export function ProjectMapToolbar({
         </select>
       </label>
       <div role="group" aria-label="Readiness フィルタ" style={{ display: "flex", gap: 4 }}>
-        <FilterChip
-          active={filter.readiness === null}
-          onClick={() => setReadiness(null)}
-          label="All"
-        />
+        <FilterChip active={readinessAll} onClick={clearReadiness} label="All" />
         {READINESS_OPTIONS.map((column) => (
           <FilterChip
             key={column}
-            active={filter.readiness === column}
-            onClick={() => setReadiness(filter.readiness === column ? null : column)}
+            active={filter.readiness.includes(column)}
+            onClick={() => toggleReadiness(column)}
             label={boardColumnLabel(column)}
             color={boardColumnColor(column)}
           />
         ))}
+        <FilterChip
+          active={filter.excludeDone}
+          onClick={toggleExcludeDone}
+          label="Done を除外"
+          title="Done 列のタスクを非表示にする"
+        />
       </div>
+      {typeOptions.length > 0 && (
+        <div role="group" aria-label="タイプ フィルタ" style={{ display: "flex", gap: 4 }}>
+          <FilterChip
+            active={filter.types.length === 0}
+            onClick={() => onChange({ ...filter, types: [] })}
+            label="All"
+          />
+          {typeOptions.map((opt) => (
+            <FilterChip
+              key={opt.value}
+              active={filter.types.includes(opt.value)}
+              onClick={() => toggleType(opt.value)}
+              label={opt.label}
+              color={opt.color}
+            />
+          ))}
+        </div>
+      )}
       <span style={{ color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
         {matchedCount}/{totalCount} 件
       </span>
@@ -169,17 +224,20 @@ function FilterChip({
   onClick,
   label,
   color,
+  title,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
   color?: string;
+  title?: string;
 }) {
   return (
     <button
       type="button"
       aria-pressed={active}
       onClick={onClick}
+      title={title}
       style={{
         display: "inline-flex",
         alignItems: "center",

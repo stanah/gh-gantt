@@ -15,6 +15,7 @@ import {
 import "@xyflow/react/dist/base.css";
 import {
   buildDependencySubgraph,
+  pruneDependencySubgraph,
   type Task as SharedTask,
   type TaskReadiness,
 } from "@gh-gantt/shared";
@@ -31,6 +32,11 @@ import {
 
 interface DependencyMapPanelProps {
   tasks: SharedTask[];
+  /**
+   * ツールバーのフィルタに一致したタスク ID。指定するとサブグラフからそれ以外のノードを取り除き、
+   * 除外ノードを経由する依存はノード上の省略記号で途切れを示す。省略 / null なら全ノードを表示する。
+   */
+  visibleTaskIds?: ReadonlySet<string> | null;
   readinessById: Record<string, TaskReadiness>;
   config: Config;
   criticalEdgeKeys: string[];
@@ -45,6 +51,10 @@ interface TaskNodeData extends Record<string, unknown> {
   /** readiness 列に対応する色 (左のバーと枠線)。 */
   color: string;
   isSelected: boolean;
+  /** フィルタで除外された上流の件数（0 なら省略記号を出さない）。 */
+  hiddenUpstream: number;
+  /** フィルタで除外された下流の件数（0 なら省略記号を出さない）。 */
+  hiddenDownstream: number;
   onSelect: (taskId: string) => void;
 }
 
@@ -119,9 +129,12 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         aria-hidden="true"
         style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
       />
-      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {data.title}
       </span>
+      {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
+        <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
+      )}
       <Handle
         type="source"
         position={Position.Right}
@@ -129,6 +142,37 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         style={hiddenHandleStyle}
       />
     </div>
+  );
+}
+
+/**
+ * フィルタで除外されたノードへ続く依存が途切れていることを示す省略記号。
+ * 上流側は「⋯→」、下流側は「→⋯」で向きを示し、title と data 属性に件数を持つ。
+ */
+function HiddenNeighborMark({ upstream, downstream }: { upstream: number; downstream: number }) {
+  const parts: string[] = [];
+  if (upstream > 0) parts.push(`除外された上流 ${upstream} 件`);
+  if (downstream > 0) parts.push(`除外された下流 ${downstream} 件`);
+  return (
+    <span
+      data-hidden-upstream={upstream > 0 ? upstream : undefined}
+      data-hidden-downstream={downstream > 0 ? downstream : undefined}
+      title={`フィルタで${parts.join(" / ")}が非表示`}
+      aria-label={parts.join(" / ")}
+      style={{
+        flexShrink: 0,
+        fontSize: 9,
+        lineHeight: 1,
+        padding: "1px 3px",
+        borderRadius: 3,
+        border: "1px dashed var(--color-text-muted, #8b949e)",
+        color: "var(--color-text-muted, #8b949e)",
+        whiteSpace: "nowrap",
+      }}
+    >
+      {upstream > 0 ? "⋯→" : ""}
+      {downstream > 0 ? "→⋯" : ""}
+    </span>
   );
 }
 
@@ -235,6 +279,7 @@ function InitialViewport({
  */
 export function DependencyMapPanel({
   tasks,
+  visibleTaskIds = null,
   readinessById,
   config,
   criticalEdgeKeys,
@@ -244,9 +289,14 @@ export function DependencyMapPanel({
 }: DependencyMapPanelProps) {
   const criticalSet = useMemo(() => new Set(criticalEdgeKeys), [criticalEdgeKeys]);
 
+  // 選択タスク中心の絞り込み（全タスクから組む）とツールバーのフィルタ（除外）は直交して効く
   const graph = useMemo(
-    () => buildDependencySubgraph(selectedTaskId, tasks, config, criticalSet),
-    [selectedTaskId, tasks, config, criticalSet],
+    () =>
+      pruneDependencySubgraph(
+        buildDependencySubgraph(selectedTaskId, tasks, config, criticalSet),
+        visibleTaskIds,
+      ),
+    [selectedTaskId, tasks, config, criticalSet, visibleTaskIds],
   );
 
   const layout = useMemo(() => layoutDependencyGraph(graph), [graph]);
@@ -262,6 +312,7 @@ export function DependencyMapPanel({
       const p = posById.get(node.task.id)!;
       const readiness = readinessById[node.task.id];
       const color = readiness ? boardColumnColor(readiness.column) : "#8b949e";
+      const hidden = graph.hiddenNeighborsById[node.task.id];
       return {
         id: node.task.id,
         type: "task",
@@ -296,6 +347,8 @@ export function DependencyMapPanel({
           title: node.task.title,
           color,
           isSelected: node.task.id === selectedTaskId,
+          hiddenUpstream: hidden?.upstream ?? 0,
+          hiddenDownstream: hidden?.downstream ?? 0,
           onSelect: onSelectTask,
         },
       };
@@ -339,7 +392,9 @@ export function DependencyMapPanel({
         title="Dependency Map"
         hint={
           graph.nodes.length > 0
-            ? `${selectedTaskId ? "選択の依存" : "全依存"} · ${graph.nodes.length} ノード / ${graph.edges.length} エッジ`
+            ? `${selectedTaskId ? "選択の依存" : "全依存"} · ${graph.nodes.length} ノード / ${graph.edges.length} エッジ${
+                graph.hiddenNodeCount > 0 ? ` · フィルタで ${graph.hiddenNodeCount} 件非表示` : ""
+              }`
             : selectedTaskId
               ? "選択の依存"
               : "全依存"
@@ -363,7 +418,13 @@ export function DependencyMapPanel({
         </div>
       )}
       {graph.nodes.length === 0 ? (
-        <PanelEmpty message="依存関係のあるタスクがありません" />
+        <PanelEmpty
+          message={
+            graph.hiddenNodeCount > 0
+              ? "フィルタに一致する依存関係のあるタスクがありません"
+              : "依存関係のあるタスクがありません"
+          }
+        />
       ) : (
         <div data-testid="dependency-map-canvas" style={canvasStyle}>
           <ReactFlowProvider>

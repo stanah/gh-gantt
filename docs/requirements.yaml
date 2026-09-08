@@ -1204,6 +1204,35 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/project-map.test.tsx
+      - id: FR-VIS-029
+        summary: Project Map のフィルタ複数選択・Done 除外・タイプ絞り込みと Dependency Map への適用
+        acceptance_criteria:
+          - id: FR-VIS-029-AC1
+            description: readiness チップを複数選択でき、任意の組み合わせで絞り込める（All で解除）
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-029-AC2
+            description: Done を除外 を 1 操作で切り替えられる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-029-AC3
+            description: タスクタイプで絞り込める（Gantt の TypeFilter とは独立した Project Map 内の状態）
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-029-AC4
+            description: Dependency Map にフィルタが適用され、除外タスクはノードに出ず、除外ノードを経由する依存は途切れとして示される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-029-AC5
+            description: フィルタ状態が Tree / Board / Next Actions / Timeline / Dependency Map で一貫し、一致件数がフィルタ結果と一致する
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション

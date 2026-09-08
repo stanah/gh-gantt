@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
-import { render, fireEvent, cleanup, within } from "@testing-library/react";
+import { render, fireEvent, cleanup, within, act } from "@testing-library/react";
 import { buildProjectMapViewModel } from "@gh-gantt/shared";
 import { ProjectMapPage } from "../components/project-map/ProjectMapPage.js";
 import type { Config, Task } from "../types/index.js";
@@ -161,6 +161,165 @@ describe("[FR-VIS-024] Project Map フィルタ (PM-08)", () => {
     const { container } = renderPage(null);
     // 全 3 タスク
     expect(container.textContent).toContain("3/3 件");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// フィルタの複数選択化と Dependency Map への適用 (#371)
+// ---------------------------------------------------------------------------
+
+function readinessGroup(container: HTMLElement): HTMLElement {
+  return container.querySelector('[aria-label="Readiness フィルタ"]') as HTMLElement;
+}
+
+function typeGroup(container: HTMLElement): HTMLElement {
+  return container.querySelector('[aria-label="タイプ フィルタ"]') as HTMLElement;
+}
+
+function boardText(container: HTMLElement): string {
+  return (container.querySelector('[aria-label="Project Board"]') as HTMLElement).textContent ?? "";
+}
+
+/** Dependency Map は React Flow の初期化を伴うため act で描画を確定させる。 */
+async function renderPageAsync(selectedTaskId: string | null) {
+  let result!: ReturnType<typeof renderPage>;
+  await act(async () => {
+    result = renderPage(selectedTaskId);
+  });
+  return result;
+}
+
+describe("[FR-VIS-029-AC1] readiness チップを複数選択でき、任意の組み合わせで絞り込める（All で解除）", () => {
+  it("Ready と Done を同時に選ぶと両方の列のタスクが残り、All で解除される", () => {
+    const { container } = renderPage(null);
+    const group = readinessGroup(container);
+    // Ready は epic と t2 の 2 件。t1=Done は除外される
+    fireEvent.click(within(group).getByText("Ready"));
+    expect(boardText(container)).toContain("UI Shell");
+    expect(boardText(container)).not.toContain("ViewModel");
+    expect(container.textContent).toContain("2/3 件");
+
+    // Done を追加選択 → t1=Done も残る
+    fireEvent.click(within(group).getByText("Done"));
+    expect(boardText(container)).toContain("UI Shell");
+    expect(boardText(container)).toContain("ViewModel");
+    expect(container.textContent).toContain("3/3 件");
+    expect(within(group).getByText("Ready").getAttribute("aria-pressed")).toBe("true");
+    expect(within(group).getByText("Done").getAttribute("aria-pressed")).toBe("true");
+
+    // 同じチップを再クリックで選択解除 → Done のみ
+    fireEvent.click(within(group).getByText("Ready"));
+    expect(boardText(container)).not.toContain("UI Shell");
+    expect(boardText(container)).toContain("ViewModel");
+    expect(container.textContent).toContain("1/3 件");
+
+    // All で解除
+    fireEvent.click(within(group).getByText("All"));
+    expect(container.textContent).toContain("3/3 件");
+    expect(within(group).getByText("All").getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
+describe("[FR-VIS-029-AC2] Done を除外 を 1 操作で切り替えられる", () => {
+  it("Done を除外 で Done 列のタスクだけが消え、readiness の選択とは独立に効く", () => {
+    const { container } = renderPage(null);
+    const group = readinessGroup(container);
+    fireEvent.click(within(group).getByText("Done を除外"));
+    expect(boardText(container)).not.toContain("ViewModel");
+    expect(boardText(container)).toContain("UI Shell");
+    expect(container.textContent).toContain("2/3 件");
+    expect(within(group).getByText("All").getAttribute("aria-pressed")).toBe("false");
+
+    // Done チップを明示的に選ぶと除外は解除される
+    fireEvent.click(within(group).getByText("Done"));
+    expect(within(group).getByText("Done を除外").getAttribute("aria-pressed")).toBe("false");
+    expect(boardText(container)).toContain("ViewModel");
+
+    // 除外を再度有効にすると Done の選択は外れる
+    fireEvent.click(within(group).getByText("Done を除外"));
+    expect(within(group).getByText("Done").getAttribute("aria-pressed")).toBe("false");
+    expect(boardText(container)).not.toContain("ViewModel");
+  });
+});
+
+describe("[FR-VIS-029-AC3] タスクタイプで絞り込める（Gantt の TypeFilter とは独立した Project Map 内の状態）", () => {
+  it("config.task_types のチップが並び、Epic を選ぶと Task 型が除外される", () => {
+    const { container } = renderPage(null);
+    const group = typeGroup(container);
+    expect(group).not.toBeNull();
+    fireEvent.click(within(group).getByText("Epic"));
+    expect(boardText(container)).not.toContain("UI Shell");
+    expect(container.textContent).toContain("1/3 件");
+    const tree = container.querySelector('[aria-label="System Tree"]') as HTMLElement;
+    expect(tree.textContent).toContain("Epic A");
+
+    // Task を追加選択で複数タイプ
+    fireEvent.click(within(group).getByText("Task"));
+    expect(container.textContent).toContain("3/3 件");
+    // All で解除
+    fireEvent.click(within(group).getByText("All"));
+    expect(within(group).getByText("Epic").getAttribute("aria-pressed")).toBe("false");
+    expect(within(group).getByText("Task").getAttribute("aria-pressed")).toBe("false");
+    expect(container.textContent).toContain("3/3 件");
+  });
+});
+
+describe("[FR-VIS-029-AC4] Dependency Map にフィルタが適用され、除外タスクはノードに出ず、除外ノードを経由する依存は途切れとして示される", () => {
+  it("Done を除外 で t1 のノードが消え、t2 に除外された上流の省略記号が付く", async () => {
+    const { container } = await renderPageAsync(null);
+    expect(container.querySelector('.react-flow__node[data-id="t1"]')).not.toBeNull();
+    expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(within(readinessGroup(container)).getByText("Done を除外"));
+    });
+    expect(container.querySelector('.react-flow__node[data-id="t1"]')).toBeNull();
+    const t2 = container.querySelector('.react-flow__node[data-id="t2"]');
+    expect(t2).not.toBeNull();
+    expect(t2!.querySelector("[data-hidden-upstream]")?.getAttribute("data-hidden-upstream")).toBe(
+      "1",
+    );
+    expect(container.querySelector('path[data-edge="t1->t2"]')).toBeNull();
+    const dep = container.querySelector('[aria-label="Dependency Map"]') as HTMLElement;
+    expect(dep.textContent).toContain("フィルタで 1 件非表示");
+  });
+
+  it("選択タスク中心の絞り込みとフィルタは同時に効く", async () => {
+    const { container } = await renderPageAsync("t2");
+    await act(async () => {
+      fireEvent.click(within(readinessGroup(container)).getByText("Done を除外"));
+    });
+    expect(container.querySelector('.react-flow__node[data-id="t1"]')).toBeNull();
+    expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
+    const dep = container.querySelector('[aria-label="Dependency Map"]') as HTMLElement;
+    expect(dep.textContent).toContain("選択の依存");
+  });
+});
+
+describe("[FR-VIS-029-AC5] フィルタ状態が Tree / Board / Next Actions / Timeline / Dependency Map で一貫し、一致件数がフィルタ結果と一致する", () => {
+  it("Done を除外 + 検索の組み合わせが全パネルに同じ集合で反映される", async () => {
+    const { container } = await renderPageAsync(null);
+    await act(async () => {
+      fireEvent.click(within(readinessGroup(container)).getByText("Done を除外"));
+    });
+    const panel = (label: string) =>
+      (container.querySelector(`[aria-label="${label}"]`) as HTMLElement).textContent ?? "";
+    expect(panel("System Tree")).not.toContain("ViewModel");
+    expect(panel("Project Board")).not.toContain("ViewModel");
+    expect(panel("Next Actions")).not.toContain("ViewModel");
+    expect(panel("Compact Gantt")).not.toContain("ViewModel");
+    expect(container.querySelector('.react-flow__node[data-id="t1"]')).toBeNull();
+    expect(container.textContent).toContain("2/3 件");
+
+    // 検索を重ねると件数も一致する
+    await act(async () => {
+      fireEvent.change(container.querySelector('input[aria-label="Project Map 検索"]')!, {
+        target: { value: "UI" },
+      });
+    });
+    expect(panel("Project Board")).toContain("UI Shell");
+    expect(container.textContent).toContain("1/3 件");
+    expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
   });
 });
 

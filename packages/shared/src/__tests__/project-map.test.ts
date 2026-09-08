@@ -8,6 +8,7 @@ import {
   buildBoardColumns,
   buildTaskHierarchy,
   buildDependencySubgraph,
+  pruneDependencySubgraph,
   buildReadiness,
   buildNextActions,
   isTaskDone,
@@ -230,6 +231,45 @@ describe("[FR-VIS-024][FR-VIS-024-AC4] 依存サブグラフの絞り込み", ()
     const selected = graph.nodes.filter((n) => n.direction === "selected").map((n) => n.task.id);
     expect(selected.sort()).toEqual(["child", "epic"]);
     expect(graph.nodes.find((n) => n.task.id === "blk")?.direction).toBe("downstream");
+  });
+});
+
+describe("[FR-VIS-029-AC4] 依存サブグラフからフィルタ除外ノードを取り除き、経由する依存を途切れとして記録する", () => {
+  const tasks = () => [
+    baseTask({ id: "a" }),
+    baseTask({ id: "b", blocked_by: [dep("a")] }),
+    baseTask({ id: "c", blocked_by: [dep("b")] }),
+    baseTask({ id: "d", blocked_by: [dep("b")] }),
+  ];
+
+  it("visibleTaskIds が null なら何も除外しない", () => {
+    const graph = buildDependencySubgraph(null, tasks(), config, new Set());
+    const pruned = pruneDependencySubgraph(graph, null);
+    expect(pruned.nodes).toBe(graph.nodes);
+    expect(pruned.edges).toBe(graph.edges);
+    expect(pruned.hiddenNodeCount).toBe(0);
+    expect(pruned.hiddenNeighborsById).toEqual({});
+  });
+
+  it("中間ノード b を除外すると a に下流 1 件、c / d に上流 1 件の途切れが記録される", () => {
+    const graph = buildDependencySubgraph(null, tasks(), config, new Set());
+    const pruned = pruneDependencySubgraph(graph, new Set(["a", "c", "d"]));
+    expect(pruned.nodes.map((n) => n.task.id).sort()).toEqual(["a", "c", "d"]);
+    expect(pruned.edges).toEqual([]);
+    expect(pruned.hiddenNodeCount).toBe(1);
+    expect(pruned.hiddenNeighborsById).toEqual({
+      a: { upstream: 0, downstream: 1 },
+      c: { upstream: 1, downstream: 0 },
+      d: { upstream: 1, downstream: 0 },
+    });
+  });
+
+  it("両端が残る依存はそのまま保持され、両端とも除外された依存は数えない", () => {
+    const graph = buildDependencySubgraph(null, tasks(), config, new Set());
+    const pruned = pruneDependencySubgraph(graph, new Set(["a", "b"]));
+    expect(pruned.edges).toEqual([expect.objectContaining({ from: "a", to: "b" })]);
+    expect(pruned.hiddenNeighborsById).toEqual({ b: { upstream: 0, downstream: 2 } });
+    expect(pruned.hiddenNodeCount).toBe(2);
   });
 });
 

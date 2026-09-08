@@ -17,8 +17,13 @@ import { ProjectBoardPanel } from "./ProjectBoardPanel.js";
 import { DependencyMapPanel } from "./DependencyMapPanel.js";
 import { NextActionsPanel } from "./NextActionsPanel.js";
 import { CompactTimelinePanel } from "./CompactTimelinePanel.js";
-import { ProjectMapToolbar, type ProjectMapFilterState } from "./ProjectMapToolbar.js";
-import { taskMatchesFilter, filterHierarchy } from "./filter-util.js";
+import { ProjectMapToolbar, type ProjectMapTypeOption } from "./ProjectMapToolbar.js";
+import {
+  createDefaultProjectMapFilter,
+  taskMatchesFilter,
+  filterHierarchy,
+  type ProjectMapFilterState,
+} from "./filter-util.js";
 import { RunGraphPanel } from "./RunGraphPanel.js";
 
 interface ProjectMapPageProps {
@@ -36,9 +41,11 @@ interface ProjectMapPageProps {
 }
 
 /**
- * Project Map ビューのページ。ツールバー（検索・readiness フィルタ・同期状態）と
+ * Project Map ビューのページ。ツールバー（検索・readiness / タイプ フィルタ・同期状態）と
  * 6 パネルを配置し、ViewModel を各パネルへ配る。フィルタは Tree / Board / Next Actions /
- * Timeline に一貫適用される（Dependency Map は選択タスク中心のため選択スコープを優先）。
+ * Timeline / Dependency Map に一貫適用される（Dependency Map は選択タスク中心の絞り込みと
+ * 直交し、除外ノードを経由する依存は途切れとして示す）。
+ * フィルタ状態は Gantt ビューの TypeFilter / hideClosed とは独立に Project Map 内で保持する。
  * パネル構成（表示 / 並び順 / サイズ）は useProjectMapLayout で localStorage に保存・復元する。
  */
 export function ProjectMapPage({
@@ -53,7 +60,7 @@ export function ProjectMapPage({
   onSelectRunNode = () => undefined,
   syncRefreshKey,
 }: ProjectMapPageProps) {
-  const [filter, setFilter] = useState<ProjectMapFilterState>({ search: "", readiness: null });
+  const [filter, setFilter] = useState<ProjectMapFilterState>(createDefaultProjectMapFilter);
   const [groupDimension, setGroupDimension] = useState<GroupDimension>("hierarchy");
   const { status: syncStatus } = useSyncStatus(syncRefreshKey);
   const layout = useProjectMapLayout();
@@ -71,6 +78,17 @@ export function ProjectMapPage({
     walk(viewModel.hierarchy);
     return tasks;
   }, [viewModel.hierarchy]);
+
+  // タイプ絞り込みの選択肢は config.task_types から作る。
+  const typeOptions = useMemo<ProjectMapTypeOption[]>(
+    () =>
+      Object.entries(config.task_types).map(([value, def]) => ({
+        value,
+        label: def.label ?? value,
+        color: def.color,
+      })),
+    [config.task_types],
+  );
 
   // Group by 軸 = 組み込み + config facets + ラベルから自動検出した namespace facets。
   const groupDimensions = useMemo(() => getGroupDimensions(config, allTasks), [config, allTasks]);
@@ -121,6 +139,7 @@ export function ProjectMapPage({
       <ProjectMapToolbar
         filter={filter}
         onChange={setFilter}
+        typeOptions={typeOptions}
         groupDimension={groupDimension}
         onGroupDimensionChange={setGroupDimension}
         groupDimensions={groupDimensions}
@@ -168,6 +187,7 @@ export function ProjectMapPage({
           dependency={
             <DependencyMapPanel
               tasks={allTasks}
+              visibleTaskIds={matchedIds}
               readinessById={viewModel.readinessById}
               config={config}
               criticalEdgeKeys={viewModel.criticalPath.criticalEdgeKeys}

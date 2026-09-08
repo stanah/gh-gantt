@@ -107,7 +107,12 @@ score =
 
 1. Toolbar 左の `Gantt` / `Project Map` トグルで Project Map ビューに切り替える。
 2. 左の System Tree で Epic / Feature / Task を選択すると、Board / Dependency Map / Next Actions / Compact Gantt が選択サブツリーに追従する。
-3. Project Map ツールバーの検索ボックスと readiness チップ（Ready / In Progress / Review / Blocked / Done）で Tree / Board / Next Actions / Compact Gantt を一貫して絞り込める（Dependency Map は選択タスク中心のため選択スコープを優先する）。
+3. Project Map ツールバーの検索ボックス・readiness チップ・タイプ チップで Tree / Board / Next Actions / Compact Gantt / Dependency Map を一貫して絞り込める。フィルタ状態は Project Map 内で保持し、Gantt ビューの Type フィルタや hideClosed とは共有しない（URL / localStorage にも保存しない）。
+   - **readiness チップ**（Ready / In Progress / Review / Blocked / Done）は複数選択で、選んだ列のいずれかに属するタスクが残る。`All` で選択と Done 除外をまとめて解除する。
+   - **`Done を除外`** は 1 操作で Done 列のタスクを非表示にするトグル。readiness の選択とは独立に効き、有効にすると Done チップの選択は外れる（Done チップを選び直すと除外は解除される）。
+   - **タイプ チップ**は `config.task_types` から並び、複数選択で絞り込める。
+   - 一致件数は `matched / total` で表示し、各パネルに渡すタスク集合と一致する。
+   - **Dependency Map への適用**: サブグラフは選択タスク中心の絞り込み（全タスクから組む）を先に行い、その結果からフィルタに一致しないノードを取り除く。両者は直交して同時に効く。除外ノードを経由する依存は、残ったノードの右端に破線囲みの省略記号（上流が除外なら `⋯→`、下流が除外なら `→⋯`）で途切れを示し、ツールチップに件数を出す。ヘッダーの hint にはフィルタで非表示になったノード数を併記する。
 4. 各カード / ノードはクリックまたは Enter / Space で選択でき、選択タスクは詳細パネルで編集できる。編集内容は ViewModel に即時反映される。
 5. ツールバー右に同期状態（最終同期時刻・未反映数・総タスク数）を表示する。Pull / Push 後に自動で更新される。
 6. ツールバー右の `パネル設定` ボタンでパネル構成の設定領域を開閉する。設定領域では次の操作ができる。
@@ -176,6 +181,7 @@ Dependency Map は shared の `buildDependencySubgraph` が返す nodes / edges 
 
 - **強調**: 未解決の依存（ブロッカーが未完了）は danger トークンの破線、クリティカルパス上のエッジは `gantt.colors.critical_path` の太線で描く。ノードの左バーと枠線は readiness 列の色に従う。
 - **選択連携**: ノードのクリック、または Enter / Space で既存の詳細パネルに選択が伝わる。選択中のノードは `aria-pressed="true"` と selected トークンの枠で示す。
+- **フィルタ**: ツールバーのフィルタに一致しないタスクは shared の `pruneDependencySubgraph` でサブグラフから取り除く。除外ノードに接続していた依存は残ったノード側に上流 / 下流の件数として記録し、ノード上の省略記号で途切れを示す（7 章）。
 - **閲覧**: ドラッグでパン、ホイール / ピンチとパネル右下のコントロールでズームできる。初期表示はグラフ全体が読める倍率（0.5 倍以上）で収まるなら全体を、収まらなければ選択タスクを中心に 0.8 倍で表示する。判定は外接領域の幅と高さの両方で行うため、横向き配置でも同じ規則で動く。
 - **テーマ**: React Flow の `--xy-*` 変数を既存の `--color-*` トークンに束ね、ライト / ダーク両テーマに追従する。
 - **対象外**: ノードのドラッグや接続による依存関係の編集は行わない。
