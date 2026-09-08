@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { ConfigSchema, TasksFileSchema, TasksFileWithConflictsSchema } from "../schema.js";
+import { CommentsFileSchema } from "../comments.js";
 import { DEFAULT_CONFLICT_POLICY, SYNC_FIELD_KEYS } from "../types.js";
 
 const validTask = {
@@ -732,5 +733,53 @@ describe("TasksFileWithConflictsSchema", () => {
       cache: { comments: {}, reactions: {} },
     };
     expect(() => TasksFileWithConflictsSchema.parse(data)).not.toThrow();
+  });
+});
+
+describe("[FR-SYNC-008-AC4] version 1 の comments.json を読み込み、fetched_at より新しい updated_at を持つ Issue だけコメントを再取得する", () => {
+  const comment = {
+    id: "C_1",
+    author: "alice",
+    body: "hello",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("version 1 は issue_updated_at 空の version 2 へ正規化される", () => {
+    const parsed = CommentsFileSchema.parse({
+      version: "1",
+      fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
+      comments: { "o/r#1": [comment] },
+    });
+    expect(parsed).toEqual({
+      version: "2",
+      fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
+      issue_updated_at: {},
+      comments: { "o/r#1": [comment] },
+    });
+  });
+
+  it("version 2 はそのまま受理される", () => {
+    const file = {
+      version: "2",
+      fetched_at: { "o/r#1": "2026-01-01T00:00:00Z" },
+      issue_updated_at: { "o/r#1": "2026-01-01T00:00:00Z" },
+      comments: { "o/r#1": [comment] },
+    };
+    expect(CommentsFileSchema.parse(file)).toEqual(file);
+  });
+
+  it("未知の version と issue_updated_at 欠落の version 2 は拒否する", () => {
+    expect(() =>
+      CommentsFileSchema.parse({
+        version: "3",
+        fetched_at: {},
+        issue_updated_at: {},
+        comments: {},
+      }),
+    ).toThrow();
+    expect(() =>
+      CommentsFileSchema.parse({ version: "2", fetched_at: {}, comments: {} }),
+    ).toThrow();
   });
 });

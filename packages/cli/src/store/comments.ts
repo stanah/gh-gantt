@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { CommentsFileSchema, GANTT_DIR, COMMENTS_FILE } from "@gh-gantt/shared";
 import type { CommentsFile } from "@gh-gantt/shared";
 
-const EMPTY: CommentsFile = { version: "1", fetched_at: {}, comments: {} };
+const EMPTY: CommentsFile = { version: "2", fetched_at: {}, issue_updated_at: {}, comments: {} };
 
 export class CommentsStore {
   private path: string | null;
@@ -33,11 +33,11 @@ export class CommentsStore {
       const raw = this.binding
         ? await this.binding.readText("comments")
         : await readFile(this.path!, "utf-8");
-      if (raw === null) return { ...EMPTY, fetched_at: {}, comments: {} };
+      if (raw === null) return { ...EMPTY, fetched_at: {}, issue_updated_at: {}, comments: {} };
       return CommentsFileSchema.parse(JSON.parse(raw));
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return { ...EMPTY, fetched_at: {}, comments: {} };
+        return { ...EMPTY, fetched_at: {}, issue_updated_at: {}, comments: {} };
       }
       throw error;
     }

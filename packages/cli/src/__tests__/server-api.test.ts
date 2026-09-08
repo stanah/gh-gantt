@@ -77,7 +77,12 @@ describe("createApiRouter", () => {
       run_graph: { plan_id: "dev-role-fixed", plan_version: "1", schema_version: "1" },
     });
     await tasksStore.write({ tasks: [task], cache: { comments: {}, reactions: {} } });
-    await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
+    await commentsStore.write({
+      version: "2",
+      fetched_at: {},
+      issue_updated_at: {},
+      comments: {},
+    });
     await new RunGraphEventStore(dir).ensureRunLocatorIndex();
     return task;
   }
@@ -440,7 +445,12 @@ describe("createApiRouter", () => {
       },
     });
     await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
-    await commentsStore.write({ version: "1", fetched_at: {}, comments: {} });
+    await commentsStore.write({
+      version: "2",
+      fetched_at: {},
+      issue_updated_at: {},
+      comments: {},
+    });
 
     const OriginalMap = globalThis.Map;
     let taskMapBuilds = 0;

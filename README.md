@@ -50,6 +50,16 @@ gh-gantt push     # Push local changes to GitHub
 gh-gantt status   # Show sync status
 ```
 
+Issue comments are fetched on demand. `pull --with-comments` is incremental: it only
+queries GitHub for issues whose `updated_at` changed since the last fetch, so new,
+edited and deleted comments are picked up without re-fetching everything.
+Use `pull --force-comments` to re-fetch comments for every issue.
+
+```bash
+gh-gantt pull --with-comments    # Fetch comments for new / changed issues
+gh-gantt pull --force-comments   # Re-fetch comments for all issues
+```
+
 ### Task Management
 
 ```bash
