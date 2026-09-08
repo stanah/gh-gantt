@@ -2,7 +2,7 @@ import React from "react";
 import type { BoardColumnId, GroupDimension, GroupDimensionOption } from "@gh-gantt/shared";
 import type { SyncStatus } from "../../hooks/useSyncStatus.js";
 import { boardColumnColor, boardColumnLabel } from "./ReadinessBadge.js";
-import type { ProjectMapFilterState } from "./filter-util.js";
+import { MILESTONE_NONE_KEY, type ProjectMapFilterState } from "./filter-util.js";
 
 export type { ProjectMapFilterState } from "./filter-util.js";
 
@@ -18,6 +18,10 @@ interface ProjectMapToolbarProps {
   onChange: (filter: ProjectMapFilterState) => void;
   /** タイプ絞り込みの選択肢。空なら タイプ フィルタを表示しない。 */
   typeOptions?: ProjectMapTypeOption[];
+  /** マイルストーン絞り込みの選択肢（名前の一覧）。空なら マイルストーン フィルタを表示しない。 */
+  milestoneOptions?: string[];
+  /** マイルストーン型のタスクが存在するか。true なら「マイルストーン型を表示」トグルを出す。 */
+  hasMilestoneTypes?: boolean;
   groupDimension: GroupDimension;
   onGroupDimensionChange: (dimension: GroupDimension) => void;
   groupDimensions: GroupDimensionOption[];
@@ -51,7 +55,8 @@ function toggleValue<T>(values: T[], value: T): T[] {
 
 /**
  * Project Map のツールバー。タイトル検索・readiness クイックフィルタ（複数選択）・
- * Done 除外トグル・タスクタイプ絞り込み（複数選択）を提供し、
+ * Done 除外トグル・タスクタイプ絞り込み（複数選択）・マイルストーン絞り込み（複数選択、
+ * 祖先からの継承つき）・マイルストーン型ノードの表示トグルを提供し、
  * 同期状態（last_synced_at / local_changes / total_tasks）を表示する。
  * パネル構成の設定 UI を開閉する「パネル設定」ボタンの入口も担う。
  * フィルタは Tree / Board / Next Actions / Timeline / Dependency Map に一貫適用される。
@@ -60,6 +65,8 @@ export function ProjectMapToolbar({
   filter,
   onChange,
   typeOptions = [],
+  milestoneOptions = [],
+  hasMilestoneTypes = false,
   groupDimension,
   onGroupDimensionChange,
   groupDimensions,
@@ -91,6 +98,8 @@ export function ProjectMapToolbar({
     });
   const toggleType = (type: string) =>
     onChange({ ...filter, types: toggleValue(filter.types, type) });
+  const toggleMilestone = (name: string) =>
+    onChange({ ...filter, milestones: toggleValue(filter.milestones, name) });
 
   return (
     <div
@@ -180,6 +189,38 @@ export function ProjectMapToolbar({
             />
           ))}
         </div>
+      )}
+      {milestoneOptions.length > 0 && (
+        <div role="group" aria-label="マイルストーン フィルタ" style={{ display: "flex", gap: 4 }}>
+          <FilterChip
+            active={filter.milestones.length === 0}
+            onClick={() => onChange({ ...filter, milestones: [] })}
+            label="All"
+          />
+          {milestoneOptions.map((name) => (
+            <FilterChip
+              key={name}
+              active={filter.milestones.includes(name)}
+              onClick={() => toggleMilestone(name)}
+              label={name}
+              title="祖先にこのマイルストーンが設定された子孫タスクも含む"
+            />
+          ))}
+          <FilterChip
+            active={filter.milestones.includes(MILESTONE_NONE_KEY)}
+            onClick={() => toggleMilestone(MILESTONE_NONE_KEY)}
+            label="(なし)"
+            title="自身にも祖先にもマイルストーンが無いタスク"
+          />
+        </div>
+      )}
+      {hasMilestoneTypes && (
+        <FilterChip
+          active={filter.showMilestoneTypes}
+          onClick={() => onChange({ ...filter, showMilestoneTypes: !filter.showMilestoneTypes })}
+          label="マイルストーン型を表示"
+          title="マイルストーン型のタスクを Dependency Map のノードとして表示する（ひし形で区別）"
+        />
       )}
       <span style={{ color: "var(--color-text-muted)", whiteSpace: "nowrap" }}>
         {matchedCount}/{totalCount} 件

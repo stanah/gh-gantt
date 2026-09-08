@@ -18,21 +18,42 @@ export interface ProjectMapFilterState {
   excludeDone: boolean;
   /** 選択中のタスクタイプ（複数選択）。空なら全タイプ。 */
   types: string[];
+  /**
+   * 選択中のマイルストーン名（複数選択）。空なら全件。
+   * {@link MILESTONE_NONE_KEY} は「自身にも祖先にもマイルストーンが無い」タスクを表す。
+   */
+  milestones: string[];
+  /** マイルストーン型（`display: "milestone"`）のタスクを Dependency Map のノードとして表示するか。 */
+  showMilestoneTypes: boolean;
 }
+
+/** マイルストーン絞り込みで「(なし)」を表すキー。マイルストーン名と衝突しない値にする。 */
+export const MILESTONE_NONE_KEY = "__none__";
 
 /** 絞り込みなしの初期フィルタ状態を返す。 */
 export function createDefaultProjectMapFilter(): ProjectMapFilterState {
-  return { search: "", readiness: [], excludeDone: false, types: [] };
+  return {
+    search: "",
+    readiness: [],
+    excludeDone: false,
+    types: [],
+    milestones: [],
+    showMilestoneTypes: false,
+  };
 }
 
 /**
- * タスクがフィルタ条件（検索文字列・readiness 列・Done 除外・タスクタイプ）に一致するか判定する。
- * 検索はタイトルと issue 番号を対象とし、大文字小文字を無視する。
+ * タスクがフィルタ条件（検索文字列・readiness 列・Done 除外・タスクタイプ・マイルストーン）に
+ * 一致するか判定する。検索はタイトルと issue 番号を対象とし、大文字小文字を無視する。
+ *
+ * @param inheritedMilestone - 祖先から継承して解決済みのマイルストーン
+ *   （shared の `resolveInheritedMilestones` の結果）。未指定なら task.milestone をそのまま使う
  */
 export function taskMatchesFilter(
   task: SharedTask,
   readiness: TaskReadiness | undefined,
   filter: ProjectMapFilterState,
+  inheritedMilestone?: string | null,
 ): boolean {
   const column = readiness?.column;
   if (filter.excludeDone && column === "done") return false;
@@ -40,6 +61,10 @@ export function taskMatchesFilter(
     return false;
   }
   if (filter.types.length > 0 && !filter.types.includes(task.type)) return false;
+  if (filter.milestones.length > 0) {
+    const milestone = inheritedMilestone === undefined ? task.milestone : inheritedMilestone;
+    if (!filter.milestones.includes(milestone ?? MILESTONE_NONE_KEY)) return false;
+  }
   const q = filter.search.trim().toLowerCase();
   if (q.length === 0) return true;
   if (task.title.toLowerCase().includes(q)) return true;

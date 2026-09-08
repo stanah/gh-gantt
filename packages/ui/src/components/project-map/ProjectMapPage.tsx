@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   groupTasks,
   getGroupDimensions,
+  resolveInheritedMilestones,
   type GroupDimension,
   type ProjectMapRunGraphViewModel,
   type ProjectMapViewModel,
@@ -10,6 +11,7 @@ import {
 import type { Config } from "../../types/index.js";
 import { useSyncStatus } from "../../hooks/useSyncStatus.js";
 import { useProjectMapLayout } from "../../hooks/useProjectMapLayout.js";
+import { getMilestoneTypeNames } from "../../lib/milestone-utils.js";
 import { ProjectMapLayout } from "./ProjectMapLayout.js";
 import { ProjectMapLayoutSettings } from "./ProjectMapLayoutSettings.js";
 import { SystemTreePanel } from "./SystemTreePanel.js";
@@ -46,6 +48,8 @@ interface ProjectMapPageProps {
  * Timeline / Dependency Map に一貫適用される（Dependency Map は選択タスク中心の絞り込みと
  * 直交し、除外ノードを経由する依存は途切れとして示す）。
  * フィルタ状態は Gantt ビューの TypeFilter / hideClosed とは独立に Project Map 内で保持する。
+ * マイルストーン絞り込みは shared の resolveInheritedMilestones で祖先から継承した値で判定し、
+ * マイルストーン型（display: "milestone"）のタスクは既定で Dependency Map のノードから除外する。
  * パネル構成（表示 / 並び順 / サイズ）は useProjectMapLayout で localStorage に保存・復元する。
  */
 export function ProjectMapPage({
@@ -100,13 +104,42 @@ export function ProjectMapPage({
     }
   }, [groupDimensions, groupDimension]);
 
+  // マイルストーンは親子関係で継承して解決する（blocked_by は辿らない）。
+  const inheritedMilestones = useMemo(() => resolveInheritedMilestones(allTasks), [allTasks]);
+  const milestoneOptions = useMemo(
+    () =>
+      [...new Set([...inheritedMilestones.values()].filter((m): m is string => m != null))].sort(),
+    [inheritedMilestones],
+  );
+
+  // マイルストーン型（display: "milestone"）のタスク ID。Dependency Map では既定で非表示。
+  const milestoneTaskIds = useMemo(() => {
+    const typeNames = getMilestoneTypeNames(config);
+    return new Set(allTasks.filter((t) => typeNames.has(t.type)).map((t) => t.id));
+  }, [allTasks, config]);
+
   const matchedIds = useMemo(() => {
     const ids = new Set<string>();
     for (const task of allTasks) {
-      if (taskMatchesFilter(task, viewModel.readinessById[task.id], filter)) ids.add(task.id);
+      if (
+        taskMatchesFilter(
+          task,
+          viewModel.readinessById[task.id],
+          filter,
+          inheritedMilestones.get(task.id) ?? null,
+        )
+      ) {
+        ids.add(task.id);
+      }
     }
     return ids;
-  }, [allTasks, viewModel.readinessById, filter]);
+  }, [allTasks, viewModel.readinessById, filter, inheritedMilestones]);
+
+  // Dependency Map に渡す表示集合。マイルストーン型はトグルが無効なら除外する。
+  const dependencyVisibleIds = useMemo(() => {
+    if (filter.showMilestoneTypes || milestoneTaskIds.size === 0) return matchedIds;
+    return new Set([...matchedIds].filter((id) => !milestoneTaskIds.has(id)));
+  }, [matchedIds, milestoneTaskIds, filter.showMilestoneTypes]);
 
   const filteredTasks = useMemo(
     () => allTasks.filter((t) => matchedIds.has(t.id)),
@@ -140,6 +173,8 @@ export function ProjectMapPage({
         filter={filter}
         onChange={setFilter}
         typeOptions={typeOptions}
+        milestoneOptions={milestoneOptions}
+        hasMilestoneTypes={milestoneTaskIds.size > 0}
         groupDimension={groupDimension}
         onGroupDimensionChange={setGroupDimension}
         groupDimensions={groupDimensions}
@@ -187,7 +222,8 @@ export function ProjectMapPage({
           dependency={
             <DependencyMapPanel
               tasks={allTasks}
-              visibleTaskIds={matchedIds}
+              visibleTaskIds={dependencyVisibleIds}
+              milestoneTaskIds={milestoneTaskIds}
               readinessById={viewModel.readinessById}
               config={config}
               criticalEdgeKeys={viewModel.criticalPath.criticalEdgeKeys}

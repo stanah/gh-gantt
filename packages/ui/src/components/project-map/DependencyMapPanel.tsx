@@ -37,6 +37,8 @@ interface DependencyMapPanelProps {
    * 除外ノードを経由する依存はノード上の省略記号で途切れを示す。省略 / null なら全ノードを表示する。
    */
   visibleTaskIds?: ReadonlySet<string> | null;
+  /** マイルストーン型（display: "milestone"）のタスク ID。ひし形マークと破線枠で通常ノードと区別する。 */
+  milestoneTaskIds?: ReadonlySet<string>;
   readinessById: Record<string, TaskReadiness>;
   config: Config;
   criticalEdgeKeys: string[];
@@ -51,6 +53,8 @@ interface TaskNodeData extends Record<string, unknown> {
   /** readiness 列に対応する色 (左のバーと枠線)。 */
   color: string;
   isSelected: boolean;
+  /** マイルストーン型のタスクか（ひし形マーク + 破線枠で描く）。 */
+  isMilestone: boolean;
   /** フィルタで除外された上流の件数（0 なら省略記号を出さない）。 */
   hiddenUpstream: number;
   /** フィルタで除外された下流の件数（0 なら省略記号を出さない）。 */
@@ -89,6 +93,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
   return (
     <div
       data-node={id}
+      data-milestone={data.isMilestone ? "true" : undefined}
       role="button"
       tabIndex={0}
       aria-label={data.title}
@@ -109,7 +114,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         gap: 6,
         padding: "0 8px 0 0",
         borderRadius: 4,
-        borderStyle: "solid",
+        borderStyle: data.isMilestone ? "dashed" : "solid",
         borderWidth: data.isSelected ? 2.5 : 1.5,
         borderColor: data.isSelected ? SELECTED_BORDER : data.color,
         background: "var(--color-surface, #fff)",
@@ -125,10 +130,25 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         isConnectable={false}
         style={hiddenHandleStyle}
       />
-      <span
-        aria-hidden="true"
-        style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
-      />
+      {data.isMilestone ? (
+        // マイルストーン型は左バーの代わりにひし形マークで示す
+        <span
+          aria-hidden="true"
+          style={{
+            width: 10,
+            height: 10,
+            marginLeft: 6,
+            flexShrink: 0,
+            background: data.color,
+            transform: "rotate(45deg)",
+          }}
+        />
+      ) : (
+        <span
+          aria-hidden="true"
+          style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
+        />
+      )}
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {data.title}
       </span>
@@ -280,6 +300,7 @@ function InitialViewport({
 export function DependencyMapPanel({
   tasks,
   visibleTaskIds = null,
+  milestoneTaskIds,
   readinessById,
   config,
   criticalEdgeKeys,
@@ -347,13 +368,14 @@ export function DependencyMapPanel({
           title: node.task.title,
           color,
           isSelected: node.task.id === selectedTaskId,
+          isMilestone: milestoneTaskIds?.has(node.task.id) ?? false,
           hiddenUpstream: hidden?.upstream ?? 0,
           hiddenDownstream: hidden?.downstream ?? 0,
           onSelect: onSelectTask,
         },
       };
     });
-  }, [graph, layout, readinessById, selectedTaskId, onSelectTask]);
+  }, [graph, layout, readinessById, selectedTaskId, milestoneTaskIds, onSelectTask]);
 
   const edges = useMemo<DependencyFlowEdge[]>(() => {
     const pointsByKey = new Map(layout.edges.map((e) => [`${e.from}->${e.to}`, e.points]));

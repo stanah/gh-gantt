@@ -1233,6 +1233,35 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/project-map.test.tsx
+      - id: FR-VIS-030
+        summary: Project Map のマイルストーン型ノード除外と継承つきマイルストーン絞り込み
+        acceptance_criteria:
+          - id: FR-VIS-030-AC1
+            description: マイルストーン型のタスクは既定で Dependency Map のノードに表示されず、表示を有効にするとひし形マークで通常ノードと区別される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-030-AC2
+            description: ツールバーのマイルストーン絞り込みが Tree / Board / Next Actions / Timeline / Dependency Map に一貫して効く
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-030-AC3
+            description: 自身に milestone が未設定でも祖先に設定があれば子孫タスクが絞り込みに含まれ、継承は parent / sub_tasks のみを辿り blocked_by は辿らない
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+              - packages/ui/src/__tests__/project-map.test.tsx
+          - id: FR-VIS-030-AC4
+            description: 継承つきマイルストーン解決は shared の resolveInheritedMilestones が提供し、自身の設定を優先して祖先の値を継承する
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+          - id: FR-VIS-030-AC5
+            description: 自身にも祖先にもマイルストーンが無いタスクは「(なし)」で絞り込める
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/project-map.test.tsx
   - id: STORE
     name: Data Store
     description: ローカルデータの永続化とバリデーション
