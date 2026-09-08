@@ -1161,6 +1161,11 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
+          - id: FR-VIS-027-AC9
+            description: Dependency Map のノードに担当者アバターが GitHub の決定的 URL から表示され、超過分は +N、取得失敗時はイニシャル、担当者なしは空領域を作らない
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
       - id: FR-VIS-028
         summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
         acceptance_criteria:
