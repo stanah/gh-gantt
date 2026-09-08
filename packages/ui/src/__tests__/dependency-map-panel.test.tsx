@@ -358,3 +358,73 @@ describe("[FR-VIS-027-AC9] Dependency Map のノードに担当者アバター�
     expect(node.querySelector("img")).toBeNull();
   });
 });
+
+describe("[FR-VIS-027-AC10] Dependency Map のノードに関連 PR の状態 (Draft / Open / Merged / Closed) がアイコンで表示され、複数時は最も進んだ状態を代表して件数を添え、アイコンから PR の URL へ新規タブで移動できる", () => {
+  const prOf = (number: number, state: string, is_draft?: boolean) => ({
+    number,
+    title: `PR ${number}`,
+    state,
+    url: `https://github.com/stanah/gh-gantt/pull/${number}`,
+    ...(is_draft === undefined ? {} : { is_draft }),
+  });
+
+  it("Draft / Open / Merged / Closed をそれぞれ data-pr-status で区別し、Draft は state が open でも draft になる", async () => {
+    const tasks = chainTasks();
+    tasks[0].linked_prs = [prOf(1, "open", true)];
+    tasks[1].linked_prs = [prOf(2, "open")];
+    tasks[2].linked_prs = [prOf(3, "merged")];
+    const { container } = await renderPanel(tasks, "sel");
+    const statusOf = (id: string) =>
+      container
+        .querySelector(`[data-node="${id}"] [data-pr-status]`)!
+        .getAttribute("data-pr-status");
+    expect(statusOf("up")).toBe("draft");
+    expect(statusOf("sel")).toBe("open");
+    expect(statusOf("down")).toBe("merged");
+
+    cleanup();
+    tasks[1].linked_prs = [prOf(4, "closed")];
+    const second = await renderPanel(tasks, "sel");
+    expect(
+      second.container
+        .querySelector('[data-node="sel"] [data-pr-status]')!
+        .getAttribute("data-pr-status"),
+    ).toBe("closed");
+  });
+
+  it("複数の PR は最も進んだ状態を代表アイコンにし、件数を添える", async () => {
+    const tasks = chainTasks();
+    tasks[1].linked_prs = [prOf(10, "open", true), prOf(11, "merged"), prOf(12, "closed")];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]')!;
+    const badges = node.querySelectorAll("[data-pr-status]");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].getAttribute("data-pr-status")).toBe("merged");
+    expect(node.querySelector("[data-pr-count]")!.textContent).toBe("3");
+    expect(badges[0].getAttribute("title")).toContain("3 件");
+    expect(badges[0].getAttribute("title")).toContain("#11");
+  });
+
+  it("アイコンは代表 PR の URL を新規タブで開くリンクで、クリックしてもノードの選択に伝播しない", async () => {
+    const tasks = chainTasks();
+    tasks[1].linked_prs = [prOf(20, "open")];
+    const { container, onSelectTask } = await renderPanel(tasks, "sel");
+    const link = container.querySelector(
+      '[data-node="sel"] a[data-pr-status]',
+    ) as HTMLAnchorElement;
+    expect(link).not.toBeNull();
+    expect(link.getAttribute("href")).toBe("https://github.com/stanah/gh-gantt/pull/20");
+    expect(link.getAttribute("target")).toBe("_blank");
+    expect(link.getAttribute("rel")).toContain("noopener");
+    fireEvent.click(link);
+    expect(onSelectTask).not.toHaveBeenCalled();
+  });
+
+  it("PR が無いノード、または legacy の number 参照だけのノードにはアイコンを出さない", async () => {
+    const tasks = chainTasks();
+    tasks[2].linked_prs = [99];
+    const { container } = await renderPanel(tasks, "sel");
+    expect(container.querySelector('[data-node="up"] [data-pr-status]')).toBeNull();
+    expect(container.querySelector('[data-node="down"] [data-pr-status]')).toBeNull();
+  });
+});

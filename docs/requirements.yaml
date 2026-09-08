@@ -125,7 +125,7 @@ areas:
         summary: Linked PR メタデータ同期
         acceptance_criteria:
           - id: FR-SYNC-007-AC1
-            description: GitHub Issue に紐づく PR の number/title/state/url を取得できる
+            description: GitHub Issue に紐づく PR の number/title/state/url/isDraft を取得できる
             status: covered
             tests:
               - packages/cli/src/__tests__/fetch-project.test.ts
@@ -282,6 +282,11 @@ areas:
             description: 存在しないタスク ID でエラーを返す
             status: uncovered
             tests: []
+          - id: FR-CLI-002-AC3
+            description: show は関連 PR を番号・状態・タイトル・URL つきで表示し、Draft PR は state が open でも draft と判別できる
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/task-show-linked-prs.test.ts
       - id: FR-CLI-003
         summary: タスク更新
         acceptance_criteria:
@@ -1166,6 +1171,12 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC10
+            description: Dependency Map のノードに関連 PR の状態 (Draft / Open / Merged / Closed) がアイコンで表示され、複数時は最も進んだ状態を代表して件数を添え、アイコンから PR の URL へ新規タブで移動できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/linked-pr.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
       - id: FR-VIS-028
         summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
         acceptance_criteria:
@@ -1310,6 +1321,12 @@ areas:
             description: Task.linked_prs は legacy number と metadata object の両方を受理できる
             status: covered
             tests:
+              - packages/shared/src/__tests__/schema.test.ts
+          - id: FR-STORE-003-AC2
+            description: linked_prs の is_draft は省略可で、既存 cache (is_draft なし) を読め、Draft PR は state が open でも draft として判別できる
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/linked-pr.test.ts
               - packages/shared/src/__tests__/schema.test.ts
       - id: FR-STORE-004
         summary: worktree 間で共有する Work Graph Cache の配置

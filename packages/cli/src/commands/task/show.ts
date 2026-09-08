@@ -3,11 +3,12 @@ import { withProjectStorage } from "../../store/project-storage.js";
 import { resolveTaskId } from "../../util/task-id.js";
 import { isMilestoneSyntheticTask } from "../../github/issues.js";
 import {
+  linkedPullRequestStatus,
   normalizeAcceptanceCriteria,
   parseAcceptanceCriteriaBody,
   parseTaskRolesBody,
 } from "@gh-gantt/shared";
-import type { Comment, CommentsFile, Task } from "@gh-gantt/shared";
+import type { Comment, CommentsFile, LinkedPullRequestRef, Task } from "@gh-gantt/shared";
 
 /**
  * show が表示対象 task について解決したコメント情報。
@@ -35,6 +36,20 @@ export function resolveTaskComments(task: Task, commentsFile: CommentsFile): Tas
     a.created_at.localeCompare(b.created_at),
   );
   return { fetched_at: fetchedAt, comments };
+}
+
+/**
+ * 関連 PR を 1 行ずつ整形する。metadata を持つ PR は `#番号 [状態] タイトル URL` で、
+ * 状態は draft / open / merged / closed のいずれか (Draft PR は state が open でも draft と表示する)。
+ * legacy の number だけの参照は `#番号` のみ。
+ */
+export function formatLinkedPullRequests(refs: LinkedPullRequestRef[]): string[] {
+  if (refs.length === 0) return ["  -"];
+  return refs.map((ref) => {
+    if (typeof ref === "number") return `  #${ref}`;
+    const url = ref.url ? ` ${ref.url}` : "";
+    return `  #${ref.number} [${linkedPullRequestStatus(ref)}] ${ref.title}${url}`;
+  });
 }
 
 /** --json 出力: task のフィールドを維持したまま comments / comments_fetched_at を追加する。 */
@@ -99,6 +114,8 @@ export function formatTask(task: Task, taskComments?: TaskComments): string {
     `Parent:     ${task.parent ?? "-"}`,
     `Sub-tasks:  ${task.sub_tasks.length > 0 ? task.sub_tasks.join(", ") : "-"}`,
     `Blocked by: ${task.blocked_by.length > 0 ? task.blocked_by.map((d) => d.task).join(", ") : "-"}`,
+    `Linked PRs:`,
+    ...formatLinkedPullRequests(task.linked_prs),
     `Acceptance Criteria:`,
     ...(acceptanceCriteria.length > 0
       ? acceptanceCriteria.map((criterion, index) => {

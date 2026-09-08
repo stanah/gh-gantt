@@ -100,7 +100,7 @@ describe("fetchProject", () => {
     expect(result.projectTitle).toBe("Test Project");
   });
 
-  it("[FR-SYNC-007-AC1] Issue に紐づく PR の番号・タイトル・状態を取得する", async () => {
+  it("[FR-SYNC-007-AC1] Issue に紐づく PR の番号・タイトル・状態・isDraft を取得する", async () => {
     const gql = vi.fn().mockResolvedValueOnce(
       makeProjectResponse([
         makeIssueItem({
@@ -110,7 +110,15 @@ describe("fetchProject", () => {
                 number: 100,
                 title: "Fix task detail relation display",
                 state: "MERGED",
+                isDraft: false,
                 url: "https://github.com/owner/repo/pull/100",
+              },
+              {
+                number: 101,
+                title: "WIP: next change",
+                state: "OPEN",
+                isDraft: true,
+                url: "https://github.com/owner/repo/pull/101",
               },
             ],
           },
@@ -125,8 +133,32 @@ describe("fetchProject", () => {
         number: 100,
         title: "Fix task detail relation display",
         state: "merged",
+        isDraft: false,
         url: "https://github.com/owner/repo/pull/100",
       },
+      {
+        number: 101,
+        title: "WIP: next change",
+        state: "open",
+        isDraft: true,
+        url: "https://github.com/owner/repo/pull/101",
+      },
     ]);
+  });
+
+  it("[FR-SYNC-007-AC1] isDraft が応答に無い PR は Draft ではない (false) として扱う", async () => {
+    const gql = vi.fn().mockResolvedValueOnce(
+      makeProjectResponse([
+        makeIssueItem({
+          closedByPullRequestsReferences: {
+            nodes: [{ number: 100, title: "No isDraft", state: "OPEN", url: null }],
+          },
+        }),
+      ]),
+    ) as any;
+
+    const result = await fetchProject(gql, "stanah", 5, "user");
+
+    expect(result.items[0].content?.linkedPullRequests[0].isDraft).toBe(false);
   });
 });

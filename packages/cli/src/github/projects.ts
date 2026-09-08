@@ -32,6 +32,8 @@ export interface RawProjectItem {
       number: number;
       title: string;
       state: string;
+      /** GitHub の isDraft。Draft PR は state が open のまま isDraft が true になる */
+      isDraft: boolean;
       url: string | null;
     }>;
   } | null;
@@ -115,6 +117,7 @@ export async function fetchProject(
               number: pr.number,
               title: pr.title,
               state: String(pr.state).toLowerCase(),
+              isDraft: pr.isDraft === true,
               url: pr.url ?? null,
             }),
           ),

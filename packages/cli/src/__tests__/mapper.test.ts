@@ -242,7 +242,15 @@ describe("[FR-SYNC-004-AC1] GitHub Project Item をローカル Task 形式に�
             number: 100,
             title: "Show linked PR title",
             state: "merged",
+            isDraft: false,
             url: "https://github.com/owner/repo/pull/100",
+          },
+          {
+            number: 101,
+            title: "Draft PR",
+            state: "open",
+            isDraft: true,
+            url: "https://github.com/owner/repo/pull/101",
           },
         ],
       },
@@ -250,12 +258,21 @@ describe("[FR-SYNC-004-AC1] GitHub Project Item をローカル Task 形式に�
 
     const task = mapRemoteItemToTask(item, makeConfig());
 
+    // isDraft は Task 側では is_draft (snake_case) として保存する
     expect(task!.linked_prs).toEqual([
       {
         number: 100,
         title: "Show linked PR title",
         state: "merged",
         url: "https://github.com/owner/repo/pull/100",
+        is_draft: false,
+      },
+      {
+        number: 101,
+        title: "Draft PR",
+        state: "open",
+        url: "https://github.com/owner/repo/pull/101",
+        is_draft: true,
       },
     ]);
   });
