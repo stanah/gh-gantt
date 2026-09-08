@@ -143,6 +143,12 @@ export interface RawProjectData {
   projectTitle: string;
   fields: Array<{ id: string; name: string; options?: Array<{ id: string; name: string }> }>;
   items: RawProjectItem[];
+  /**
+   * 関係シグネチャを取得できたか (#377)。sub-issue / blockedBy 未対応のインスタンスで
+   * フィールド不在のためシグネチャ無しで再取得した場合は false。
+   * false のとき呼び出し側は updated_at のみの従来判定に戻る。省略時は true 扱い
+   */
+  relationshipSignatureSupported?: boolean;
 }
 
 export async function detectOwnerType(gql: typeof graphql, login: string): Promise<OwnerType> {
@@ -234,7 +240,13 @@ async function fetchProjectPages(
     }
   });
 
-  return { projectNodeId, projectTitle, fields, items };
+  return {
+    projectNodeId,
+    projectTitle,
+    fields,
+    items,
+    relationshipSignatureSupported: withRelationshipSignature,
+  };
 }
 
 export interface RawMilestone {

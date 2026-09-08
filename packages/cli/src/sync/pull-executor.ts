@@ -94,6 +94,7 @@ export async function executePull(
     // sub-issue / blockedBy の追加・削除は Issue の updatedAt を更新しないため、
     // since クエリが「変化なし」でも関係シグネチャを軽量取得して snapshot と比較する (#377)。
     // こちらも最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
+    // 未対応インスタンス (null) では関係リンク自体が存在しないので since クエリの判定を採用する。
     if (!hasChanges) {
       try {
         const entries = await fetchProjectRelationshipSignatures(gql, owner, project_number);
@@ -144,6 +145,9 @@ export async function executePull(
   const remoteTasks = new Map<string, Task>();
   // Issue ごとの関係シグネチャ (#377)。取得できなかった Issue は null (不明 = stale 扱い)
   const remoteSignatures = new Map<string, RelationshipSignature | null>();
+  // sub-issue / blockedBy 未対応のインスタンスではシグネチャを取得できない (全 Issue が null)。
+  // その場合は関係リンクが存在しないので、シグネチャ比較を省き updated_at のみの従来判定に戻す (#377)
+  const signatureSupported = projectData.relationshipSignatureSupported ?? true;
   for (const item of projectData.items) {
     const task = mapRemoteItemToTask(item, config);
     if (task) {
@@ -231,8 +235,10 @@ export async function executePull(
         changed = true;
         break;
       }
-      // updated_at が一致しても関係リンクは変わりうる (#377)
+      // updated_at が一致しても関係リンクは変わりうる (#377)。
+      // milestone 由来の合成タスクはシグネチャを持たないので比較対象外
       if (
+        signatureSupported &&
         remoteSignatures.has(id) &&
         !sameRelationshipSignature(remoteSignatures.get(id), snap.relationships)
       ) {
@@ -279,7 +285,12 @@ export async function executePull(
     const id = buildTaskId(item.repository, item.number);
     if (
       opts.force ||
-      isRelationshipStale(remoteTasks.get(id), remoteSignatures.get(id), syncState.snapshots[id])
+      isRelationshipStale(
+        remoteTasks.get(id),
+        remoteSignatures.get(id),
+        syncState.snapshots[id],
+        signatureSupported,
+      )
     ) {
       staleIssueIds.add(id);
     }
@@ -529,15 +540,17 @@ function sameRelationshipSignature(
 /**
  * pre-check の第二段: 軽量取得した関係シグネチャが snapshot と一致しないか (#377)。
  *
- * 未対応インスタンス (entries が null)、snapshot にシグネチャが無い Issue、
- * ローカルの Issue 集合と項目数が食い違う場合も「変化あり」としてフル fetch に進む。
+ * snapshot にシグネチャが無い Issue、ローカルの Issue 集合と項目数が食い違う場合も
+ * 「変化あり」としてフル fetch に進む。
+ * 未対応インスタンス (entries が null) には関係リンクが存在せず、since クエリの判定で
+ * 十分なので「変化なし」を返す (#350 以前の従来動作)。
  */
 function hasRelationshipSignatureChanges(
   entries: Awaited<ReturnType<typeof fetchProjectRelationshipSignatures>>,
   tasksFile: TasksFile,
   syncState: SyncState,
 ): boolean {
-  if (!entries) return true;
+  if (!entries) return false;
   const localIssueCount = tasksFile.tasks.filter(
     (t) => !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
   ).length;
@@ -557,14 +570,17 @@ function hasRelationshipSignatureChanges(
  * snapshot が無い (新規に現れた Issue)、updated_at が記録されていない、syncFields が無い、
  * updated_at が snapshot と一致しない、または関係シグネチャが一致しない (#377) 場合は
  * 再取得する。それ以外は quick-skip と同じ仮定で snapshot から辺を再構成できる。
+ * シグネチャを取得できないインスタンス (signatureSupported = false) では updated_at のみで判定する。
  */
 function isRelationshipStale(
   remoteTask: Task | undefined,
   remoteSignature: RelationshipSignature | null | undefined,
   snapshot: SyncState["snapshots"][string] | undefined,
+  signatureSupported = true,
 ): boolean {
   if (!remoteTask || !snapshot?.updated_at || !snapshot.syncFields) return true;
   if (remoteTask.updated_at !== snapshot.updated_at) return true;
+  if (!signatureSupported) return false;
   return !sameRelationshipSignature(remoteSignature, snapshot.relationships);
 }
 

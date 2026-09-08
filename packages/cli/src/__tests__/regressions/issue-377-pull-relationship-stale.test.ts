@@ -128,7 +128,8 @@ function signatureOf(task: Task, all: Task[]): RelationshipSignature {
 
 function makeProjectItem(
   issueNumber: number,
-  relationships: RelationshipSignature,
+  relationships: RelationshipSignature | null,
+  overrides: { title?: string; updatedAt?: string } = {},
 ): RawProjectItem {
   return {
     id: `PVTI_${issueNumber}`,
@@ -136,7 +137,7 @@ function makeProjectItem(
     content: {
       nodeId: `I_${issueNumber}`,
       number: issueNumber,
-      title: `Issue ${issueNumber}`,
+      title: overrides.title ?? `Issue ${issueNumber}`,
       body: null,
       state: "open",
       stateReason: null,
@@ -144,7 +145,7 @@ function makeProjectItem(
       labels: [],
       milestone: null,
       createdAt: "2026-04-01T00:00:00Z",
-      updatedAt: UNCHANGED_AT,
+      updatedAt: overrides.updatedAt ?? UNCHANGED_AT,
       closedAt: null,
       issueType: null,
       repository: REPO,
@@ -169,6 +170,23 @@ function mockRemote(remoteTasks: Task[]): void {
       relationships: signatureOf(t, remoteTasks),
     })),
   );
+}
+
+/**
+ * sub-issue / blockedBy 未対応のインスタンス: フィールド不在で再試行した fetchProject は
+ * relationships: null / relationshipSignatureSupported: false を返し、軽量クエリは null を返す
+ */
+function mockRemoteUnsupported(remoteTasks: Task[]): void {
+  mockFetchProject.mockResolvedValue({
+    projectNodeId: "PVT_1",
+    projectTitle: "Test",
+    fields: [],
+    items: remoteTasks.map((t) =>
+      makeProjectItem(t.github_issue!, null, { title: t.title, updatedAt: t.updated_at }),
+    ),
+    relationshipSignatureSupported: false,
+  });
+  mockFetchSignatures.mockResolvedValue(null);
 }
 
 function makeSnapshot(
@@ -438,5 +456,68 @@ describe("[NFR-STABILITY-001-AC7] [NFR-SYNC-002-AC2] [Issue #377] pull が親子
     expect(result.skipped).toBe(true);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("フル fetch にフォールバック"));
     warn.mockRestore();
+  });
+
+  describe("sub-issue / blockedBy 未対応インスタンスでは updated_at のみの従来判定に戻る", () => {
+    /** 未対応インスタンスに関係リンクは無いので、snapshot にシグネチャは保存されない */
+    const unsupportedSyncState = (tasks: Task[]) => makeSyncState(tasks, { withSignature: false });
+
+    it("軽量クエリが null でも since クエリが変化なしなら pre-check で skip する", async () => {
+      const synced = [makeTask(1), makeTask(2)];
+      mockCheckRemote.mockResolvedValue(false);
+      mockRemoteUnsupported(synced);
+
+      const { result } = await executePull(
+        vi.fn() as never,
+        makeConfig(),
+        makeTasksFile(synced),
+        unsupportedSyncState(synced),
+      );
+
+      expect(result.skipped).toBe(true);
+      expect(mockFetchProject).not.toHaveBeenCalled();
+      expect(mockFetchLinks).not.toHaveBeenCalled();
+    });
+
+    it("シグネチャ無しの snapshot でも updated_at が全一致なら quick-skip する", async () => {
+      const synced = [makeTask(1), makeTask(2)];
+      mockCheckRemote.mockResolvedValue(true);
+      mockRemoteUnsupported(synced);
+
+      const { result, syncState } = await executePull(
+        vi.fn() as never,
+        makeConfig(),
+        makeTasksFile(synced),
+        unsupportedSyncState(synced),
+      );
+
+      expect(mockFetchProject).toHaveBeenCalledOnce();
+      expect(result.skipped).toBe(true);
+      expect(mockFetchLinks).not.toHaveBeenCalled();
+      expect(syncState.snapshots[id(1)]!.relationships).toBeUndefined();
+    });
+
+    it("updated_at が変わった Issue だけを関係リンクの再取得対象にする", async () => {
+      const synced = [makeTask(1), makeTask(2)];
+      const remote = [
+        makeTask(1, { updated_at: "2026-07-02T00:00:00Z", title: "edited" }),
+        makeTask(2),
+      ];
+      mockCheckRemote.mockResolvedValue(true);
+      mockRemoteUnsupported(remote);
+
+      const { result, syncState } = await executePull(
+        vi.fn() as never,
+        makeConfig(),
+        makeTasksFile(synced),
+        unsupportedSyncState(synced),
+      );
+
+      expect(result.skipped).toBeFalsy();
+      expect(fetchedNumbers()).toEqual([1]);
+      // シグネチャを取得できないので snapshot にも保存しない (次回も updated_at のみで判定する)
+      expect(syncState.snapshots[id(1)]!.relationships).toBeUndefined();
+      expect(syncState.snapshots[id(2)]!.relationships).toBeUndefined();
+    });
   });
 });

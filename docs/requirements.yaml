@@ -1351,7 +1351,9 @@ areas:
               更新されない) でも、pull が --force なしで親子・blocked_by の変更を取り込む。
               ProjectV2 items の一括取得に同梱した関係シグネチャを snapshot に保存し、
               pre-check・quick-skip・関係リンクの stale 判定を updated_at に依存せず行う。
-              シグネチャの無い旧形式 snapshot は stale 扱い (安全側) で再取得する
+              シグネチャの無い旧形式 snapshot は stale 扱い (安全側) で再取得する。
+              sub-issue / blockedBy 未対応のインスタンスではシグネチャ無しで再取得し、
+              pre-check・quick-skip・stale 判定を updated_at のみの従来動作に戻す
               (regression #377)
             status: covered
             tests:
