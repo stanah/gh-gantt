@@ -181,7 +181,20 @@ Dependency Map は shared の `buildDependencySubgraph` が返す nodes / edges 
 
   この規模では ranker 間で段の割り当てにほぼ差が出ず、`network-simplex` と `tight-tree` は同一の結果、`longest-path` は段が偏る分わずかに高さが増えた。三者とも数 ms で完了するため計算量の差も無視できる。エッジ長の総和を最小化する `network-simplex` が理論上もっとも段が詰まり、dagre の既定でもあるため採用した。ELK / d3-dag への乗り換えは dagre で不足が判明した場合に別 Issue で扱う。
 
-- **強調**: 未解決の依存（ブロッカーが未完了）は danger トークンの破線、クリティカルパス上のエッジは `gantt.colors.critical_path` の太線で描く。ノードの左バーと枠線は readiness 列の色に従う。
+- **エッジの表現**: 関係の種類を色と線種の組み合わせで区別する。定義は `DependencyMapPanel.tsx` の `dependencyEdgeStyles` の 1 箇所にまとめ、描画と凡例で共用する。色だけに頼らず線種と線幅を併用するため、色覚特性があっても、また `gantt.colors.critical_path` が danger と同じ赤に設定されていても区別できる。基本線幅は 2px（クリティカルパスは 3.5px）で、ライト / ダーク両テーマの背景から浮く。
+
+  | 種類                | 色                                               | 線種     | 線幅  |
+  | ------------------- | ------------------------------------------------ | -------- | ----- |
+  | ブロック (解決済み) | `--color-text-secondary`                         | 実線     | 2px   |
+  | ブロック (未解決)   | `--color-danger`                                 | 破線     | 2px   |
+  | クリティカルパス    | `gantt.colors.critical_path`                     | 太い実線 | 3.5px |
+  | 親子                | `--color-highlight-parent-border` (Gantt と同じ) | 点線     | 1.5px |
+
+  未解決かつクリティカルパス上のエッジは critical_path 色の太い破線になり、両方の情報を保つ。ノードの左バーと枠線は readiness 列の色に従う。
+
+- **依存タイプと lag**: 線種は関係の種類に使うため、`blocked_by` の `type` と `lag` はエッジ経路の中点にラベルで示す。finish-to-start は既定なので略号を出さず、それ以外は `SS` / `FF` / `SF`、lag が 0 以外なら `+3d` のように添える（例: `FF -2d`）。
+- **親子エッジ**: ヘッダの「親子」トグルで表示できる（既定は非表示）。shared の `buildDependencySubgraph` が両端ともサブグラフに含まれる親子だけを `parentEdges` として添え、ノード集合は変えない。レイアウトでは dagre に渡さず、配置確定後に親と子のノード境界（中心のずれが横方向に大きければ左右の辺、そうでなければ上下の辺）を直結するため、段付けには影響しない。
+- **凡例**: キャンバス左下に関係種別ごとの線見本とラベル、依存タイプ / lag ラベルの読み方を表示する。親子エッジが非表示のときは凡例の親子行を薄くして「(非表示)」と示す。
 - **担当者アバター**: ノードのタイトル左に担当者のアバターを最大 2 人まで重ねて表示し、超過分は「+N」で示す。画像は GitHub の決定的な URL `https://github.com/<login>.png?size=40` から取得するため、追加の API 呼び出しや同期フィールドは不要。取得に失敗した場合 (オフライン等) は同じ寸法のイニシャル (login の先頭 2 文字) に置き換え、レイアウトを崩さない。担当者がいないノードはアバター領域を作らない。各アバターと「+N」は title 属性に login を持ち、ホバーで担当者名が分かる。オフライン用の画像キャッシュが必要になった場合は pull 時に取得して保存する拡張を別 Issue で扱う。
 - **関連 PR の状態**: アバターの右 (タイトルの左) に、Issue を解決する PR の状態を Draft / Open / Merged / Closed の 4 種のアイコンで示す。Draft は破線、Merged は合流線、Closed は × で区別し、色は既存の success / danger / text-muted トークンに従う (Merged は GitHub と同じ紫)。複数の PR がある場合は最も進んだ状態 (merged > open > draft > closed、同順位なら番号の大きい方) を代表アイコンにし、件数を添える。アイコンは代表 PR の URL を新規タブで開くリンクで、クリックはノードの選択に伝播しない。データは `pull` が `closedByPullRequestsReferences` から取得する `linked_prs` (number / title / state / url / is_draft) で、Draft PR は GitHub 上では state が open のまま `isDraft` が true になるため `is_draft` で判別する。`is_draft` は #376 で追加した省略可の項目で、それ以前の cache もそのまま読める。状態を持たない legacy の number 参照だけのノードや、PR の無いノードにはアイコンを出さない。代表の選定は shared の `summarizeLinkedPullRequests` で行い、`gh-gantt show` の Linked PRs 表示も同じ状態判定 (`linkedPullRequestStatus`) を使う。
 - **表示範囲**: ヘッダの「全依存 / 選択中心」トグルで切り替える。既定は「全依存」で、依存に関与する全タスクを表示し、選択はノードの強調にだけ使う。「選択中心」では `buildDependencySubgraph` により選択タスク (とその子孫) を中心に上流 / 下流 2 階層へ絞り込む (選択がなければ全体を表示する)。

@@ -26,6 +26,11 @@ export interface LayoutEdge {
 export interface DependencyMapLayout {
   nodes: LayoutNode[];
   edges: LayoutEdge[];
+  /**
+   * 親子エッジ (`from` が親)。dagre には渡さず、配置確定後にノード境界同士を直結した経路を持つ。
+   * 段付けに影響させないため、依存エッジとは別に扱う。
+   */
+  parentEdges: LayoutEdge[];
   /** 全ノードとエッジを含む外接領域の幅。 */
   width: number;
   /** 全ノードとエッジを含む外接領域の高さ。 */
@@ -82,6 +87,7 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
  * 同じ段のノードは縦に積まれる。互いに繋がっていない連結成分は個別にレイアウトし、
  * 大きい成分から順に行単位で敷き詰める。
  * サブグラフに存在しないノードを参照するエッジと自己ループは無視する。
+ * 親子エッジ (`graph.parentEdges`) は段付けに使わず、配置確定後にノード境界同士を直結する。
  */
 export function layoutDependencyGraph(
   graph: DependencySubgraph,
@@ -90,7 +96,7 @@ export function layoutDependencyGraph(
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const ids = new Set(graph.nodes.map((n) => n.task.id));
   const edges = graph.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
-  if (ids.size === 0) return { nodes: [], edges: [], width: 0, height: 0 };
+  if (ids.size === 0) return { nodes: [], edges: [], parentEdges: [], width: 0, height: 0 };
 
   // 連結成分ごとに独立した dagre グラフを組み、成分を行単位で敷き詰める。
   // 全依存モードでは無関係な成分が多数あるため、1 つのグラフに渡すと巨大な単一段に潰れてしまう
@@ -118,6 +124,16 @@ export function layoutDependencyGraph(
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const orderedNodes = graph.nodes.map((n) => nodeById.get(n.task.id)!);
 
+  // 親子エッジは配置後の座標からノード境界同士を直結する (dagre の段付けには関与しない)
+  const parentEdges: LayoutEdge[] = [];
+  for (const e of graph.parentEdges) {
+    const from = nodeById.get(e.from);
+    const to = nodeById.get(e.to);
+    if (!from || !to || e.from === e.to) continue;
+    const { start, end } = parentEdgeAnchors(from, to);
+    parentEdges.push({ from: e.from, to: e.to, points: [start, end] });
+  }
+
   let maxX = 0;
   let maxY = 0;
   for (const n of orderedNodes) {
@@ -134,6 +150,7 @@ export function layoutDependencyGraph(
   return {
     nodes: orderedNodes,
     edges: layoutEdges,
+    parentEdges,
     width: maxX + MARGIN,
     height: maxY + MARGIN,
   };
@@ -245,7 +262,7 @@ function layoutComponent(
       height = Math.max(height, p.y);
     }
   }
-  return { nodes, edges: layoutEdges, width, height };
+  return { nodes, edges: layoutEdges, parentEdges: [], width, height };
 }
 
 type Point = { x: number; y: number };
@@ -283,6 +300,27 @@ function edgeAnchors(
         start: { x: from.x + from.width / 2, y: from.y + from.height },
         end: { x: to.x + to.width / 2, y: to.y },
       };
+}
+
+/**
+ * 親子エッジの始点 / 終点。中心同士のずれが横方向に大きければ左右の辺、
+ * そうでなければ上下の辺の中央同士を結び、ノード本体を貫通させない。
+ */
+function parentEdgeAnchors(from: LayoutNode, to: LayoutNode): { start: Point; end: Point } {
+  const fromCx = from.x + from.width / 2;
+  const fromCy = from.y + from.height / 2;
+  const toCx = to.x + to.width / 2;
+  const toCy = to.y + to.height / 2;
+  const dx = toCx - fromCx;
+  const dy = toCy - fromCy;
+  if (Math.abs(dx) > Math.abs(dy)) {
+    return dx >= 0
+      ? { start: { x: from.x + from.width, y: fromCy }, end: { x: to.x, y: toCy } }
+      : { start: { x: from.x, y: fromCy }, end: { x: to.x + to.width, y: toCy } };
+  }
+  return dy >= 0
+    ? { start: { x: fromCx, y: from.y + from.height }, end: { x: toCx, y: to.y } }
+    : { start: { x: fromCx, y: from.y }, end: { x: toCx, y: to.y + to.height } };
 }
 
 function orientation(a: Point, b: Point, c: Point): number {

@@ -321,6 +321,60 @@ describe("[FR-VIS-030-AC3] 自身に milestone が未設定でも祖先に設定
   });
 });
 
+describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジが依存タイプと lag を持ち、ノード同士の親子関係を parentEdges として添える", () => {
+  it("エッジに blocked_by の type と lag がそのまま載る", () => {
+    const tasks = [
+      baseTask({ id: "up" }),
+      baseTask({
+        id: "sel",
+        blocked_by: [{ task: "up", type: "start-to-start", lag: 3 }],
+      }),
+    ];
+    const graph = buildDependencySubgraph("sel", tasks, config, new Set());
+    expect(graph.edges).toEqual([
+      expect.objectContaining({ from: "up", to: "sel", type: "start-to-start", lag: 3 }),
+    ]);
+  });
+
+  it("両端がサブグラフにある親子だけが parentEdges に入り、ノード集合は変わらない", () => {
+    const tasks = [
+      baseTask({ id: "epic", type: "epic", sub_tasks: ["child", "other"] }),
+      baseTask({ id: "child", parent: "epic", blocked_by: [dep("up")] }),
+      baseTask({ id: "other", parent: "epic" }),
+      baseTask({ id: "up", blocked_by: [dep("root")] }),
+      baseTask({ id: "root" }),
+      baseTask({ id: "outside", parent: "root" }),
+    ];
+    // 選択中心: epic とその子孫 (child / other) + 上流 2 階層 (up / root)
+    const focused = buildDependencySubgraph("epic", tasks, config, new Set());
+    expect(focused.parentEdges).toEqual([
+      { from: "epic", to: "child" },
+      { from: "epic", to: "other" },
+    ]);
+    expect(focused.nodes.map((n) => n.task.id)).not.toContain("outside");
+
+    // 全依存: 依存に関与するノードだけなので epic / other / outside は含まれず親子エッジも無い
+    const all = buildDependencySubgraph(null, tasks, config, new Set());
+    expect(all.nodes.map((n) => n.task.id).sort()).toEqual(["child", "root", "up"]);
+    expect(all.parentEdges).toEqual([]);
+  });
+
+  it("フィルタで除外すると両端が残る親子エッジだけが保持され、途切れとしては数えない", () => {
+    const tasks = [
+      baseTask({ id: "epic", type: "epic", sub_tasks: ["child", "other"] }),
+      baseTask({ id: "child", parent: "epic", blocked_by: [dep("up")] }),
+      baseTask({ id: "other", parent: "epic" }),
+      baseTask({ id: "up" }),
+    ];
+    const focused = buildDependencySubgraph("epic", tasks, config, new Set());
+    expect(pruneDependencySubgraph(focused, null).parentEdges).toBe(focused.parentEdges);
+    const pruned = pruneDependencySubgraph(focused, new Set(["epic", "child", "up"]));
+    expect(pruned.parentEdges).toEqual([{ from: "epic", to: "child" }]);
+    expect(pruned.hiddenNeighborsById).toEqual({});
+    expect(pruned.hiddenNodeCount).toBe(1);
+  });
+});
+
 describe("[FR-VIS-024][FR-VIS-024-AC5] 循環依存への耐性", () => {
   it("循環があってもクラッシュせず warnings に記録される", () => {
     const tasks = [

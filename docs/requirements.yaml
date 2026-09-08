@@ -1140,7 +1140,7 @@ areas:
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC4
-            description: クリティカルパスの強調、未解決依存の赤表示、循環依存の警告が Dependency Map に表示される
+            description: クリティカルパスの強調 (太線)、未解決依存の赤い破線、循環依存の警告が Dependency Map に表示され、未解決かつクリティカルなエッジは太い破線で両方の情報を保つ
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
@@ -1179,6 +1179,24 @@ areas:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC11
             description: Dependency Map の表示範囲をヘッダの「全依存 / 選択中心」トグル (既定は全依存) とノードのフォーカス操作 (右端のアイコンまたはダブルクリック) で切り替えられ、全依存に戻しても選択が維持される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC12
+            description: Dependency Map のエッジが関係種別 (ブロック解決済み / 未解決 / クリティカルパス / 親子) ごとに 1 箇所で定義した色と線種で区別され、基本線幅が 1px より太く、同じ定義を使う凡例がパネル内に表示される
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC13
+            description: 親子関係のエッジをパネル内のトグルで表示 / 非表示でき (既定は非表示)、両端がサブグラフにある親子だけを点線で描き、レイアウトの段付けには使わない
+            status: covered
+            tests:
+              - packages/shared/src/__tests__/project-map.test.ts
+              - packages/ui/src/__tests__/dependency-map-layout.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC14
+            description: 依存タイプが finish-to-start 以外のエッジには略号 (SS / FF / SF)、lag が 0 以外のエッジには lag がラベルとして経路上に表示され、線種の意味と二重定義しない
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx

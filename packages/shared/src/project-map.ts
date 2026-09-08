@@ -1,7 +1,14 @@
 import { z } from "zod";
 import { canonicalJsonStringify, compareCodeUnits } from "./canonical-json.js";
 import { NormalizedRepositorySchema, normalizeRepository } from "./repository.js";
-import type { Task, Config, StatusValue, StatusCategory, GroupingFacet } from "./types.js";
+import type {
+  Task,
+  Config,
+  StatusValue,
+  StatusCategory,
+  GroupingFacet,
+  DependencyType,
+} from "./types.js";
 import {
   calculateCriticalPath,
   detectCycles,
@@ -110,12 +117,27 @@ export interface DependencyGraphEdge {
   isCritical: boolean;
   /** ブロッカー（from）が未完了で解除されていないか。 */
   isUnresolved: boolean;
+  /** 依存タイプ（blocked_by の type）。 */
+  type: DependencyType;
+  /** lag（日数。blocked_by の lag）。 */
+  lag: number;
+}
+
+/** 依存サブグラフに含まれるノード同士の親子関係（`from` が親、`to` が子）。 */
+export interface DependencyParentEdge {
+  from: string;
+  to: string;
 }
 
 /** 選択タスク周辺に絞った依存サブグラフ。 */
 export interface DependencySubgraph {
   nodes: DependencyGraphNode[];
   edges: DependencyGraphEdge[];
+  /**
+   * ノード同士の親子関係。両端がサブグラフに含まれる組だけを持ち、
+   * 表示の補助に使う（レイアウトの段付けや絞り込みの探索には使わない）。
+   */
+  parentEdges: DependencyParentEdge[];
 }
 
 /** Next Actions の 1 候補。 */
@@ -902,11 +924,22 @@ export function buildDependencySubgraph(
         to: node.task.id,
         isCritical: criticalEdgeKeys.has(dependencyEdgeKey(dep.task, node.task.id)),
         isUnresolved: !upstream || !isTaskDone(upstream, config),
+        type: dep.type,
+        lag: dep.lag,
       });
     }
   }
 
-  return { nodes, edges };
+  // 親子関係は両端がサブグラフにあるものだけを添える（ノード集合は変えない）
+  const parentEdges: DependencyParentEdge[] = [];
+  for (const node of nodes) {
+    const parentId = node.task.parent;
+    if (parentId != null && nodeDir.has(parentId)) {
+      parentEdges.push({ from: parentId, to: node.task.id });
+    }
+  }
+
+  return { nodes, edges, parentEdges };
 }
 
 /** 除外ノードに接続していた隣接依存の件数（ノード単位）。 */
@@ -938,10 +971,18 @@ export function pruneDependencySubgraph(
   visibleTaskIds: ReadonlySet<string> | null,
 ): PrunedDependencySubgraph {
   if (visibleTaskIds == null) {
-    return { nodes: graph.nodes, edges: graph.edges, hiddenNeighborsById: {}, hiddenNodeCount: 0 };
+    return {
+      nodes: graph.nodes,
+      edges: graph.edges,
+      parentEdges: graph.parentEdges,
+      hiddenNeighborsById: {},
+      hiddenNodeCount: 0,
+    };
   }
   const nodes = graph.nodes.filter((n) => visibleTaskIds.has(n.task.id));
   const visible = new Set(nodes.map((n) => n.task.id));
+  // 親子エッジは両端が残るものだけを保持する（途切れとしては数えない）
+  const parentEdges = graph.parentEdges.filter((e) => visible.has(e.from) && visible.has(e.to));
   const edges: DependencyGraphEdge[] = [];
   const hiddenNeighborsById: Record<string, HiddenNeighborCount> = {};
   const bump = (id: string, key: keyof HiddenNeighborCount) => {
@@ -962,6 +1003,7 @@ export function pruneDependencySubgraph(
   return {
     nodes,
     edges,
+    parentEdges,
     hiddenNeighborsById,
     hiddenNodeCount: graph.nodes.length - nodes.length,
   };
