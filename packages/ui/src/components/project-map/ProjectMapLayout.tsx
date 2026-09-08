@@ -130,7 +130,16 @@ export function ProjectMapLayout({
 }
 
 /** パネル共通のヘッダー。 */
-export function PanelHeader({ title, hint }: { title: string; hint?: string }) {
+export function PanelHeader({
+  title,
+  hint,
+  actions,
+}: {
+  title: string;
+  hint?: string;
+  /** タイトルと hint の間に置く操作要素 (モード切替など)。 */
+  actions?: React.ReactNode;
+}) {
   return (
     <div
       style={{
@@ -147,6 +156,11 @@ export function PanelHeader({ title, hint }: { title: string; hint?: string }) {
       }}
     >
       <span>{title}</span>
+      {actions && (
+        <span style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+          {actions}
+        </span>
+      )}
       {hint && (
         <span style={{ fontSize: 10, fontWeight: 400, color: "var(--color-text-muted)" }}>
           {hint}

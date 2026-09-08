@@ -97,6 +97,20 @@ function chainTasks(): Task[] {
 
 afterEach(() => cleanup());
 
+/** chainTasks に、鎖と無関係な依存ペア a → b を加えたもの。絞り込みの有無を見分けるために使う。 */
+function chainWithUnrelatedPair(): Task[] {
+  return [
+    ...chainTasks(),
+    baseTask({ id: "a", title: "Unrelated A", custom_fields: { Status: "Todo" } }),
+    baseTask({
+      id: "b",
+      title: "Unrelated B",
+      custom_fields: { Status: "Todo" },
+      blocked_by: [{ task: "a", type: "finish-to-start", lag: 0 }],
+    }),
+  ];
+}
+
 async function renderPanel(
   tasks: Task[],
   selectedTaskId: string | null,
@@ -104,24 +118,37 @@ async function renderPanel(
 ) {
   const vm = buildProjectMapViewModel(tasks, config);
   const onSelectTask = vi.fn();
+  const element = (selected: string | null) => (
+    <div style={{ width: 600, height: 400 }}>
+      <DependencyMapPanel
+        tasks={tasks}
+        readinessById={vm.readinessById}
+        config={config}
+        criticalEdgeKeys={overrides.criticalEdgeKeys ?? vm.criticalPath.criticalEdgeKeys}
+        warnings={overrides.warnings ?? vm.warnings}
+        selectedTaskId={selected}
+        onSelectTask={onSelectTask}
+      />
+    </div>
+  );
   let result!: ReturnType<typeof render>;
   await act(async () => {
-    result = render(
-      <div style={{ width: 600, height: 400 }}>
-        <DependencyMapPanel
-          tasks={tasks}
-          readinessById={vm.readinessById}
-          config={config}
-          criticalEdgeKeys={overrides.criticalEdgeKeys ?? vm.criticalPath.criticalEdgeKeys}
-          warnings={overrides.warnings ?? vm.warnings}
-          selectedTaskId={selectedTaskId}
-          onSelectTask={onSelectTask}
-        />
-      </div>,
-    );
+    result = render(element(selectedTaskId));
   });
-  return { ...result, onSelectTask, vm };
+  /** 親が選択を更新したことを模して、selectedTaskId だけ差し替えて再描画する。 */
+  const rerenderWithSelection = async (selected: string | null) => {
+    await act(async () => {
+      result.rerender(element(selected));
+    });
+  };
+  return { ...result, onSelectTask, vm, rerenderWithSelection };
 }
+
+const renderedNodeIds = (container: HTMLElement) =>
+  [...container.querySelectorAll("[data-node]")].map((el) => el.getAttribute("data-node")).sort();
+
+const scopeButton = (container: HTMLElement, scope: "all" | "focus") =>
+  container.querySelector(`button[data-scope="${scope}"]`) as HTMLButtonElement;
 
 const translate = (el: Element) => {
   const m = (el as HTMLElement).style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
@@ -157,11 +184,21 @@ describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ�
   });
 });
 
-describe("[FR-VIS-027-AC3] Dependency Map のノードをクリックまたは Enter / Space で選択すると詳細パネル連携の選択が更新される", () => {
+describe("[FR-VIS-027-AC3] Dependency Map のノードをクリックまたは Enter / Space で選択すると詳細パネル連携の選択だけが更新され、表示範囲は変わらない", () => {
   it("クリックで onSelectTask が呼ばれる", async () => {
     const { container, onSelectTask } = await renderPanel(chainTasks(), "sel");
     fireEvent.click(container.querySelector('[data-node="down"]')!);
     expect(onSelectTask).toHaveBeenCalledWith("down");
+  });
+
+  it("[FR-VIS-027-AC11] 既定の「全依存」では選択が変わってもノード集合が変わらない", async () => {
+    const { container, rerenderWithSelection } = await renderPanel(chainWithUnrelatedPair(), "sel");
+    expect(renderedNodeIds(container)).toEqual(["a", "b", "down", "sel", "up"]);
+    await rerenderWithSelection("down");
+    expect(renderedNodeIds(container)).toEqual(["a", "b", "down", "sel", "up"]);
+    expect(container.querySelector('[data-node="down"]')!.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
   });
 
   it("Enter / Space で onSelectTask が呼ばれ、他のキーでは呼ばれない", async () => {
@@ -184,6 +221,72 @@ describe("[FR-VIS-027-AC3] Dependency Map のノードをクリックまたは E
     expect(sel.getAttribute("aria-label")).toBe("Selected Task");
     expect(sel.getAttribute("aria-pressed")).toBe("true");
     expect(up.getAttribute("aria-pressed")).toBe("false");
+  });
+});
+
+describe("[FR-VIS-027-AC11] Dependency Map の表示範囲をヘッダの「全依存 / 選択中心」トグルとノードのフォーカス操作で切り替えられる", () => {
+  it("ヘッダにトグルがあり、既定は「全依存」が押下状態になっている", async () => {
+    const { container } = await renderPanel(chainWithUnrelatedPair(), "sel");
+    const group = container.querySelector('[role="group"][aria-label="Dependency Map の表示範囲"]');
+    expect(group).not.toBeNull();
+    expect(scopeButton(container, "all").getAttribute("aria-pressed")).toBe("true");
+    expect(scopeButton(container, "focus").getAttribute("aria-pressed")).toBe("false");
+    expect(scopeButton(container, "all").textContent).toBe("全依存");
+    expect(scopeButton(container, "focus").textContent).toBe("選択中心");
+  });
+
+  it("「選択中心」に切り替えると選択タスク中心の部分グラフに絞られ、「全依存」に戻すと選択を保ったまま全体が表示される", async () => {
+    const { container } = await renderPanel(chainWithUnrelatedPair(), "sel");
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "focus"));
+    });
+    expect(scopeButton(container, "focus").getAttribute("aria-pressed")).toBe("true");
+    expect(renderedNodeIds(container)).toEqual(["down", "sel", "up"]);
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "all"));
+    });
+    expect(scopeButton(container, "all").getAttribute("aria-pressed")).toBe("true");
+    expect(renderedNodeIds(container)).toEqual(["a", "b", "down", "sel", "up"]);
+    expect(container.querySelector('[data-node="sel"]')!.getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("「選択中心」で選択がないときは全体を表示する", async () => {
+    const { container } = await renderPanel(chainWithUnrelatedPair(), null);
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "focus"));
+    });
+    expect(renderedNodeIds(container)).toEqual(["a", "b", "down", "sel", "up"]);
+  });
+
+  it("ノード右端のフォーカス操作でそのタスクが選択され「選択中心」へ切り替わる (選択は 1 回だけ伝わる)", async () => {
+    const { container, onSelectTask, rerenderWithSelection } = await renderPanel(
+      chainWithUnrelatedPair(),
+      "sel",
+    );
+    const focus = container.querySelector('button[data-node-focus="a"]')!;
+    expect(focus.getAttribute("aria-label")).toBe("Unrelated A を中心に表示");
+    await act(async () => {
+      fireEvent.click(focus);
+    });
+    expect(onSelectTask).toHaveBeenCalledTimes(1);
+    expect(onSelectTask).toHaveBeenCalledWith("a");
+    expect(scopeButton(container, "focus").getAttribute("aria-pressed")).toBe("true");
+    await rerenderWithSelection("a");
+    expect(renderedNodeIds(container)).toEqual(["a", "b"]);
+  });
+
+  it("ノードのダブルクリックでもフォーカス操作になる", async () => {
+    const { container, onSelectTask, rerenderWithSelection } = await renderPanel(
+      chainWithUnrelatedPair(),
+      "sel",
+    );
+    await act(async () => {
+      fireEvent.doubleClick(container.querySelector('.react-flow__node[data-id="b"]')!);
+    });
+    expect(onSelectTask).toHaveBeenLastCalledWith("b");
+    expect(scopeButton(container, "focus").getAttribute("aria-pressed")).toBe("true");
+    await rerenderWithSelection("b");
+    expect(renderedNodeIds(container)).toEqual(["a", "b"]);
   });
 });
 

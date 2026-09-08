@@ -284,15 +284,21 @@ describe("[FR-VIS-029-AC4] Dependency Map にフィルタが適用され、除�
     expect(dep.textContent).toContain("フィルタで 1 件非表示");
   });
 
-  it("選択タスク中心の絞り込みとフィルタは同時に効く", async () => {
+  it("「選択中心」の絞り込みとフィルタは同時に効く", async () => {
     const { container } = await renderPageAsync("t2");
+    const dep = container.querySelector('[aria-label="Dependency Map"]') as HTMLElement;
+    await act(async () => {
+      fireEvent.click(dep.querySelector('button[data-scope="focus"]')!);
+    });
     await act(async () => {
       fireEvent.click(within(readinessGroup(container)).getByText("Done を除外"));
     });
+    expect(dep.querySelector('button[data-scope="focus"]')?.getAttribute("aria-pressed")).toBe(
+      "true",
+    );
     expect(container.querySelector('.react-flow__node[data-id="t1"]')).toBeNull();
     expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
-    const dep = container.querySelector('[aria-label="Dependency Map"]') as HTMLElement;
-    expect(dep.textContent).toContain("選択の依存");
+    expect(dep.textContent).toContain("フィルタで 1 件非表示");
   });
 });
 
