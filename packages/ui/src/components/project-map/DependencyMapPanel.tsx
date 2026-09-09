@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -67,7 +67,16 @@ interface TaskNodeData extends Record<string, unknown> {
   /** フィルタで除外された下流の件数（0 なら省略記号を出さない）。 */
   hiddenDownstream: number;
   onSelect: (taskId: string) => void;
+  /** このタスクを選択したうえで「選択中心」モードへ切り替える。 */
+  onFocus: (taskId: string) => void;
 }
+
+/**
+ * Dependency Map の表示範囲。
+ * - `all`: 依存に関与する全タスクを表示する (既定)。選択はノードの強調にだけ使う
+ * - `focus`: 選択タスク (とその子孫) を中心に上流 / 下流 2 階層へ絞り込む
+ */
+export type DependencyMapScope = "all" | "focus";
 
 /** 依存エッジが保持する描画データ。 */
 interface DependencyEdgeData extends Record<string, unknown> {
@@ -156,7 +165,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
         />
       )}
-      {/* アバターと PR バッジはタイトルの左に置く。右端はフォーカス操作などの拡張用に空けておく */}
+      {/* アバターと PR バッジはタイトルの左に置く。右端は省略記号とフォーカス操作 */}
       <AssigneeAvatars assignees={data.assignees} />
       <LinkedPrBadge linkedPrs={data.linkedPrs} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -165,6 +174,35 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
       {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
         <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
       )}
+      <button
+        type="button"
+        data-node-focus={id}
+        aria-label={`${data.title} を中心に表示`}
+        title="このタスクを中心に表示"
+        // クリックは onNodeClick (選択のみ) に伝播させず、フォーカス操作だけを行う
+        onClick={(e) => {
+          e.stopPropagation();
+          data.onFocus(id);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        }}
+        style={{
+          flexShrink: 0,
+          width: 16,
+          height: 16,
+          padding: 0,
+          border: 0,
+          borderRadius: 3,
+          background: "transparent",
+          color: "var(--color-text-muted)",
+          fontSize: 11,
+          lineHeight: 1,
+          cursor: "pointer",
+        }}
+      >
+        ◎
+      </button>
       <Handle
         type="source"
         position={Position.Right}
@@ -275,6 +313,49 @@ const canvasStyle = {
   "--xy-attribution-background-color": "transparent",
 } as React.CSSProperties;
 
+const SCOPE_LABELS: Record<DependencyMapScope, string> = {
+  all: "全依存",
+  focus: "選択中心",
+};
+
+/** ヘッダの「全依存 / 選択中心」トグル。現在のモードを aria-pressed で常に示す。 */
+function ScopeToggle({
+  scope,
+  onChange,
+}: {
+  scope: DependencyMapScope;
+  onChange: (scope: DependencyMapScope) => void;
+}) {
+  return (
+    <span role="group" aria-label="Dependency Map の表示範囲" style={{ display: "flex", gap: 2 }}>
+      {(Object.keys(SCOPE_LABELS) as DependencyMapScope[]).map((value) => {
+        const active = value === scope;
+        return (
+          <button
+            key={value}
+            type="button"
+            data-scope={value}
+            aria-pressed={active}
+            onClick={() => onChange(value)}
+            style={{
+              padding: "1px 7px",
+              border: `1px solid ${active ? "var(--color-accent, #4285f4)" : "var(--color-border)"}`,
+              borderRadius: 10,
+              fontSize: 10,
+              fontWeight: active ? 600 : 400,
+              cursor: "pointer",
+              background: active ? "rgba(66, 133, 244, 0.12)" : "var(--color-bg)",
+              color: active ? "var(--color-text)" : "var(--color-text-secondary)",
+            }}
+          >
+            {SCOPE_LABELS[value]}
+          </button>
+        );
+      })}
+    </span>
+  );
+}
+
 /**
  * レイアウト確定後に初期ビューポートを適用する。
  * 表示領域の寸法は React Flow の store から取り、未計測 (0) の間は何もしない。
@@ -289,23 +370,30 @@ function InitialViewport({
   const { setViewport } = useReactFlow();
   const width = useStore((s) => s.width);
   const height = useStore((s) => s.height);
-  const appliedRef = useRef<{ layout: DependencyMapLayout; selectedTaskId: string | null }>();
+  const appliedRef = useRef<DependencyMapLayout>();
+  // 選択の変化だけではビューポートを動かさない (全依存モードでクリックしても表示範囲を保つ)。
+  // レイアウトが変わったときに、その時点の選択を中心候補として使う
+  const selectedRef = useRef(selectedTaskId);
+  selectedRef.current = selectedTaskId;
 
   useEffect(() => {
     if (width <= 0 || height <= 0) return;
-    const applied = appliedRef.current;
-    if (applied && applied.layout === layout && applied.selectedTaskId === selectedTaskId) return;
-    appliedRef.current = { layout, selectedTaskId };
-    void setViewport(computeInitialViewport(layout, selectedTaskId, { width, height }));
-  }, [layout, selectedTaskId, width, height, setViewport]);
+    if (appliedRef.current === layout) return;
+    appliedRef.current = layout;
+    void setViewport(computeInitialViewport(layout, selectedRef.current, { width, height }));
+  }, [layout, width, height, setViewport]);
 
   return null;
 }
 
 /**
- * Dependency Map パネル。選択タスク（とその子孫）を中心に、左を上流 (ブロッカー)・右を下流とする
- * 横向きの階層配置を dagre で求め、React Flow で描画する。互いに依存のない連結成分は個別に配置する。未解決の上流は赤い破線、クリティカルパスは太線で強調し、
- * 循環依存があれば警告を表示する。パン・ズームで大きなグラフを閲覧できる。
+ * Dependency Map パネル。左を上流 (ブロッカー)・右を下流とする横向きの階層配置を dagre で求め、
+ * React Flow で描画する。互いに依存のない連結成分は個別に配置する。
+ * 表示範囲はヘッダの「全依存 / 選択中心」トグルで切り替え、既定の「全依存」ではノードをクリックしても
+ * 選択が詳細パネルへ伝わるだけで表示範囲は変わらない。「選択中心」では選択タスク (とその子孫) を中心に
+ * 上流 / 下流 2 階層へ絞り込む。ノード右端のフォーカス操作 (またはダブルクリック) は
+ * そのタスクを選択したうえで「選択中心」へ切り替える。
+ * 未解決の上流は赤い破線、クリティカルパスは太線で強調し、循環依存があれば警告を表示する。
  */
 export function DependencyMapPanel({
   tasks,
@@ -319,15 +407,18 @@ export function DependencyMapPanel({
   onSelectTask,
 }: DependencyMapPanelProps) {
   const criticalSet = useMemo(() => new Set(criticalEdgeKeys), [criticalEdgeKeys]);
+  const [scope, setScope] = useState<DependencyMapScope>("all");
 
-  // 選択タスク中心の絞り込み（全タスクから組む）とツールバーのフィルタ（除外）は直交して効く
+  // 「全依存」では選択に関係なく全体を出す。「選択中心」で選択がなければ全体にフォールバックする。
+  // 表示範囲の絞り込み（全タスクから組む）とツールバーのフィルタ（除外）は直交して効く
+  const focusTaskId = scope === "focus" ? selectedTaskId : null;
   const graph = useMemo(
     () =>
       pruneDependencySubgraph(
-        buildDependencySubgraph(selectedTaskId, tasks, config, criticalSet),
+        buildDependencySubgraph(focusTaskId, tasks, config, criticalSet),
         visibleTaskIds,
       ),
-    [selectedTaskId, tasks, config, criticalSet, visibleTaskIds],
+    [focusTaskId, tasks, config, criticalSet, visibleTaskIds],
   );
 
   const layout = useMemo(() => layoutDependencyGraph(graph), [graph]);
@@ -335,6 +426,19 @@ export function DependencyMapPanel({
   const handleNodeClick = useCallback(
     (_event: React.MouseEvent, node: { id: string }) => onSelectTask(node.id),
     [onSelectTask],
+  );
+
+  const focusTask = useCallback(
+    (taskId: string) => {
+      onSelectTask(taskId);
+      setScope("focus");
+    },
+    [onSelectTask],
+  );
+
+  const handleNodeDoubleClick = useCallback(
+    (_event: React.MouseEvent, node: { id: string }) => focusTask(node.id),
+    [focusTask],
   );
 
   const nodes = useMemo<TaskFlowNode[]>(() => {
@@ -384,10 +488,11 @@ export function DependencyMapPanel({
           hiddenUpstream: hidden?.upstream ?? 0,
           hiddenDownstream: hidden?.downstream ?? 0,
           onSelect: onSelectTask,
+          onFocus: focusTask,
         },
       };
     });
-  }, [graph, layout, readinessById, selectedTaskId, milestoneTaskIds, onSelectTask]);
+  }, [graph, layout, readinessById, selectedTaskId, milestoneTaskIds, onSelectTask, focusTask]);
 
   const edges = useMemo<DependencyFlowEdge[]>(() => {
     const pointsByKey = new Map(layout.edges.map((e) => [`${e.from}->${e.to}`, e.points]));
@@ -424,14 +529,15 @@ export function DependencyMapPanel({
     <>
       <PanelHeader
         title="Dependency Map"
+        actions={<ScopeToggle scope={scope} onChange={setScope} />}
         hint={
           graph.nodes.length > 0
-            ? `${selectedTaskId ? "選択の依存" : "全依存"} · ${graph.nodes.length} ノード / ${graph.edges.length} エッジ${
+            ? `${graph.nodes.length} ノード / ${graph.edges.length} エッジ${
                 graph.hiddenNodeCount > 0 ? ` · フィルタで ${graph.hiddenNodeCount} 件非表示` : ""
               }`
-            : selectedTaskId
-              ? "選択の依存"
-              : "全依存"
+            : graph.hiddenNodeCount > 0
+              ? `フィルタで ${graph.hiddenNodeCount} 件非表示`
+              : undefined
         }
       />
       {warnings.length > 0 && (
@@ -468,6 +574,9 @@ export function DependencyMapPanel({
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               onNodeClick={handleNodeClick}
+              onNodeDoubleClick={handleNodeDoubleClick}
+              // ダブルクリックはフォーカス操作に使うため、d3-zoom の拡大 (イベントを握り潰す) を止める
+              zoomOnDoubleClick={false}
               nodesDraggable={false}
               nodesConnectable={false}
               nodesFocusable={false}

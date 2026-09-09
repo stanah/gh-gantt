@@ -1046,7 +1046,7 @@ areas:
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
           - id: FR-VIS-024-AC4
-            description: 依存サブグラフが選択タスクとその子孫を中心に上流/下流 N 階層へ絞り込まれる
+            description: Dependency Map の「選択中心」モードで依存サブグラフが選択タスクとその子孫を中心に上流/下流 N 階層へ絞り込まれ、「全依存」モードでは依存に関与する全タスクが対象になる
             status: covered
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
@@ -1135,7 +1135,7 @@ areas:
             tests:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
           - id: FR-VIS-027-AC3
-            description: Dependency Map のノードをクリックまたは Enter / Space で選択すると詳細パネル連携の選択が更新される
+            description: Dependency Map のノードをクリックまたは Enter / Space で選択すると詳細パネル連携の選択だけが更新され、表示範囲は変わらない
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
@@ -1176,6 +1176,11 @@ areas:
             status: covered
             tests:
               - packages/shared/src/__tests__/linked-pr.test.ts
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC11
+            description: Dependency Map の表示範囲をヘッダの「全依存 / 選択中心」トグル (既定は全依存) とノードのフォーカス操作 (右端のアイコンまたはダブルクリック) で切り替えられ、全依存に戻しても選択が維持される
+            status: covered
+            tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
       - id: FR-VIS-028
         summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
