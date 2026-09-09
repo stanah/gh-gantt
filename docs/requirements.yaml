@@ -1047,7 +1047,7 @@ areas:
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
           - id: FR-VIS-024-AC4
-            description: Dependency Map の「選択中心」モードで依存サブグラフが選択タスクとその子孫を中心に上流/下流 N 階層へ絞り込まれ、「全依存」モードでは依存に関与する全タスクが対象になる
+            description: Dependency Map の「全依存」モードでは親か子かブロック関係のいずれかを持つ全タスクがノードになり (どれも持たない孤立タスクは isolatedTaskIds に記録して既定では含めない)、「選択中心」モードでは選択タスクの部分木 (子孫) と、それに対する上流/下流のブロック関係 N 階層、選択タスクの祖先 (ルートまでの親の連鎖) に絞り込まれる
             status: covered
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
@@ -1163,7 +1163,7 @@ areas:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC8
-            description: 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から縦に積まれて左端が揃い、横軸上に別の成分が並ばない
+            description: 全依存モードで親子でもブロック関係でも繋がっていない連結成分が個別にレイアウトされ、大きい成分から縦に積まれて左端が揃い、横軸上に別の成分が並ばない
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
@@ -1190,7 +1190,7 @@ areas:
               - packages/shared/src/__tests__/project-map.test.ts
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC13
-            description: 親子関係のエッジをパネル内のトグルで表示 / 非表示でき (既定は非表示)、両端がサブグラフにある親子だけを点線で描き、レイアウトの段付けには使わない
+            description: 親子関係のエッジがレイアウトの段付けの骨格になり (親が左・子が右)、常時表示の muted な実線として親の右辺中央と子の左辺中央を直線で結ぶ。ブロック関係のエッジは段付けに使わず、配置確定後に from の右辺中央から to の左辺中央へ 3 次ベジェで重ね、パネル内の「ブロック」トグル (既定は表示) で表示 / 非表示できる
             status: covered
             tests:
               - packages/shared/src/__tests__/project-map.test.ts
@@ -1203,6 +1203,16 @@ areas:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC15
             description: Dependency Map のノードがタイトルに全体 (最大 2 行) を使い、PR バッジ・担当者アバター・非表示隣接マーク・フォーカス操作はノード内の行を占有せず角や辺に重ねて表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC16
+            description: 親も子もブロック関係も無い孤立タスクは Dependency Map に既定で表示されず、ヘッダに件数が示され、トグルで表示できる
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC17
+            description: Dependency Map のヘッダ hint が「N ノード / 親子 N / ブロック N」の形になり、フィルタで除外された親子の途切れも非表示隣接マークで示される
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx

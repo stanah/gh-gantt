@@ -220,6 +220,8 @@ describe("[FR-VIS-024][FR-VIS-024-AC4] 依存サブグラフの絞り込み", ()
     expect(graph.edges).toContainEqual(
       expect.objectContaining({ from: "up", to: "sel", isUnresolved: true }),
     );
+    // 選択中心では孤立タスクを数えない
+    expect(graph.isolatedTaskIds).toEqual([]);
   });
 
   it("選択中の親を選ぶと子孫タスクも selected に含まれる", () => {
@@ -232,6 +234,77 @@ describe("[FR-VIS-024][FR-VIS-024-AC4] 依存サブグラフの絞り込み", ()
     const selected = graph.nodes.filter((n) => n.direction === "selected").map((n) => n.task.id);
     expect(selected.sort()).toEqual(["child", "epic"]);
     expect(graph.nodes.find((n) => n.task.id === "blk")?.direction).toBe("downstream");
+  });
+
+  it("[Issue #398] 選択タスクの祖先がルートまで ancestor として含まれ、祖先からはブロック関係を辿らない", () => {
+    const tasks = [
+      baseTask({ id: "root", type: "epic", sub_tasks: ["mid"], blocked_by: [dep("rootBlocker")] }),
+      baseTask({ id: "rootBlocker" }),
+      baseTask({ id: "mid", type: "epic", parent: "root", sub_tasks: ["sel", "sibling"] }),
+      baseTask({ id: "sibling", parent: "mid" }),
+      baseTask({ id: "sel", parent: "mid", sub_tasks: ["leaf"] }),
+      baseTask({ id: "leaf", parent: "sel", blocked_by: [dep("up")] }),
+      baseTask({ id: "up" }),
+    ];
+    const graph = buildDependencySubgraph("sel", tasks, config, new Set());
+    const byId = new Map(graph.nodes.map((n) => [n.task.id, n]));
+    expect([...byId.keys()].sort()).toEqual(["leaf", "mid", "root", "sel", "up"]);
+    expect(byId.get("mid")).toMatchObject({ direction: "ancestor", depth: 1 });
+    expect(byId.get("root")).toMatchObject({ direction: "ancestor", depth: 2 });
+    expect(byId.get("up")?.direction).toBe("upstream");
+    // 祖先の兄弟や祖先のブロッカーは含めない
+    expect(byId.has("sibling")).toBe(false);
+    expect(byId.has("rootBlocker")).toBe(false);
+    // 祖先の連鎖と部分木の親子辺が揃う
+    expect(graph.parentEdges).toEqual(
+      expect.arrayContaining([
+        { from: "root", to: "mid" },
+        { from: "mid", to: "sel" },
+        { from: "sel", to: "leaf" },
+      ]),
+    );
+    expect(graph.parentEdges).toHaveLength(3);
+  });
+
+  it("[Issue #398] 全依存モードでは親か子かブロック関係を持つ全タスクがノードになり、孤立タスクは isolatedTaskIds に記録される", () => {
+    const tasks = [
+      baseTask({ id: "epic", type: "epic", sub_tasks: ["child"] }),
+      baseTask({ id: "child", parent: "epic" }),
+      baseTask({ id: "a" }),
+      baseTask({ id: "b", blocked_by: [dep("a")] }),
+      baseTask({ id: "solo" }),
+      // 存在しないタスクへの参照だけでは関係を持つとみなさない
+      baseTask({ id: "dangling", parent: "ghost", blocked_by: [dep("ghost2")] }),
+    ];
+    const graph = buildDependencySubgraph(null, tasks, config, new Set());
+    expect(graph.nodes.map((n) => n.task.id).sort()).toEqual(["a", "b", "child", "epic"]);
+    expect(graph.parentEdges).toEqual([{ from: "epic", to: "child" }]);
+    expect(graph.edges).toEqual([expect.objectContaining({ from: "a", to: "b" })]);
+    expect(graph.isolatedTaskIds).toEqual(["solo", "dangling"]);
+
+    // includeIsolated で孤立タスクもノードに含まれる (件数は変わらない)
+    const withIsolated = buildDependencySubgraph(null, tasks, config, new Set(), {
+      includeIsolated: true,
+    });
+    expect(withIsolated.nodes.map((n) => n.task.id).sort()).toEqual([
+      "a",
+      "b",
+      "child",
+      "dangling",
+      "epic",
+      "solo",
+    ]);
+    expect(withIsolated.isolatedTaskIds).toEqual(["solo", "dangling"]);
+  });
+
+  it("[Issue #398] parent が未設定でも親の sub_tasks に載っていれば親子辺になる", () => {
+    const tasks = [
+      baseTask({ id: "epic", type: "epic", sub_tasks: ["child"] }),
+      baseTask({ id: "child" }),
+    ];
+    const graph = buildDependencySubgraph(null, tasks, config, new Set());
+    expect(graph.parentEdges).toEqual([{ from: "epic", to: "child" }]);
+    expect(graph.isolatedTaskIds).toEqual([]);
   });
 });
 
@@ -271,6 +344,20 @@ describe("[FR-VIS-029-AC4] 依存サブグラフからフィルタ除外ノー�
     expect(pruned.edges).toEqual([expect.objectContaining({ from: "a", to: "b" })]);
     expect(pruned.hiddenNeighborsById).toEqual({ b: { upstream: 0, downstream: 2 } });
     expect(pruned.hiddenNodeCount).toBe(2);
+  });
+
+  it("[Issue #398] 孤立タスクの一覧もフィルタで絞られる", () => {
+    const graph = buildDependencySubgraph(
+      null,
+      [...tasks(), baseTask({ id: "solo1" }), baseTask({ id: "solo2" })],
+      config,
+      new Set(),
+    );
+    expect(graph.isolatedTaskIds).toEqual(["solo1", "solo2"]);
+    expect(pruneDependencySubgraph(graph, null).isolatedTaskIds).toBe(graph.isolatedTaskIds);
+    expect(
+      pruneDependencySubgraph(graph, new Set(["a", "b", "c", "d", "solo2"])).isolatedTaskIds,
+    ).toEqual(["solo2"]);
   });
 });
 
@@ -321,7 +408,7 @@ describe("[FR-VIS-030-AC3] 自身に milestone が未設定でも祖先に設定
   });
 });
 
-describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジが依存タイプと lag を持ち、ノード同士の親子関係を parentEdges として添える", () => {
+describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジが依存タイプと lag を持ち、ノード同士の親子関係を parentEdges として持つ", () => {
   it("エッジに blocked_by の type と lag がそのまま載る", () => {
     const tasks = [
       baseTask({ id: "up" }),
@@ -336,16 +423,16 @@ describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジ�
     ]);
   });
 
-  it("両端がサブグラフにある親子だけが parentEdges に入り、ノード集合は変わらない", () => {
+  it("[Issue #398] 両端がサブグラフにある親子が parentEdges に入り、全依存モードでは親子だけのタスクもノードになる", () => {
     const tasks = [
       baseTask({ id: "epic", type: "epic", sub_tasks: ["child", "other"] }),
       baseTask({ id: "child", parent: "epic", blocked_by: [dep("up")] }),
       baseTask({ id: "other", parent: "epic" }),
       baseTask({ id: "up", blocked_by: [dep("root")] }),
-      baseTask({ id: "root" }),
+      baseTask({ id: "root", sub_tasks: ["outside"] }),
       baseTask({ id: "outside", parent: "root" }),
     ];
-    // 選択中心: epic とその子孫 (child / other) + 上流 2 階層 (up / root)
+    // 選択中心: epic とその子孫 (child / other) + 上流 2 階層 (up / root)。root の子 outside は含めない
     const focused = buildDependencySubgraph("epic", tasks, config, new Set());
     expect(focused.parentEdges).toEqual([
       { from: "epic", to: "child" },
@@ -353,13 +440,27 @@ describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジ�
     ]);
     expect(focused.nodes.map((n) => n.task.id)).not.toContain("outside");
 
-    // 全依存: 依存に関与するノードだけなので epic / other / outside は含まれず親子エッジも無い
+    // 全依存: 親子ツリーが骨格なので epic / other / outside もノードになり、親子辺が全面的に付く
     const all = buildDependencySubgraph(null, tasks, config, new Set());
-    expect(all.nodes.map((n) => n.task.id).sort()).toEqual(["child", "root", "up"]);
-    expect(all.parentEdges).toEqual([]);
+    expect(all.nodes.map((n) => n.task.id).sort()).toEqual([
+      "child",
+      "epic",
+      "other",
+      "outside",
+      "root",
+      "up",
+    ]);
+    expect(all.parentEdges).toEqual(
+      expect.arrayContaining([
+        { from: "epic", to: "child" },
+        { from: "epic", to: "other" },
+        { from: "root", to: "outside" },
+      ]),
+    );
+    expect(all.parentEdges).toHaveLength(3);
   });
 
-  it("フィルタで除外すると両端が残る親子エッジだけが保持され、途切れとしては数えない", () => {
+  it("[Issue #398] フィルタで除外された親子の途切れは、親側を下流・子側を上流として非表示隣接に数える", () => {
     const tasks = [
       baseTask({ id: "epic", type: "epic", sub_tasks: ["child", "other"] }),
       baseTask({ id: "child", parent: "epic", blocked_by: [dep("up")] }),
@@ -368,10 +469,18 @@ describe("[FR-VIS-027-AC12][FR-VIS-027-AC13] 依存サブグラフのエッジ�
     ];
     const focused = buildDependencySubgraph("epic", tasks, config, new Set());
     expect(pruneDependencySubgraph(focused, null).parentEdges).toBe(focused.parentEdges);
+    // 子 other を除外 → 親 epic に下流 1 件
     const pruned = pruneDependencySubgraph(focused, new Set(["epic", "child", "up"]));
     expect(pruned.parentEdges).toEqual([{ from: "epic", to: "child" }]);
-    expect(pruned.hiddenNeighborsById).toEqual({});
+    expect(pruned.hiddenNeighborsById).toEqual({ epic: { upstream: 0, downstream: 1 } });
     expect(pruned.hiddenNodeCount).toBe(1);
+    // 親 epic を除外 → 子 child / other にそれぞれ上流 1 件
+    const withoutParent = pruneDependencySubgraph(focused, new Set(["child", "other", "up"]));
+    expect(withoutParent.parentEdges).toEqual([]);
+    expect(withoutParent.hiddenNeighborsById).toEqual({
+      child: { upstream: 1, downstream: 0 },
+      other: { upstream: 1, downstream: 0 },
+    });
   });
 });
 

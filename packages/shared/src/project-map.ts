@@ -67,7 +67,13 @@ export type NextActionCategory =
   | "ready";
 
 /** 依存サブグラフ上のノードが選択タスクから見てどの向きにあるか。 */
-export type DependencyDirection = "upstream" | "selected" | "downstream";
+/**
+ * 依存サブグラフ上でのノードの立場。
+ * - `selected`: 選択タスクとその子孫 (全依存モードでは全ノード)
+ * - `upstream` / `downstream`: 選択の部分木に対するブロック関係の隣接 (depth はその距離)
+ * - `ancestor`: 選択タスクの祖先 (ルートまでの親の連鎖。文脈として含めるだけでブロック関係は辿らない)
+ */
+export type DependencyDirection = "upstream" | "selected" | "downstream" | "ancestor";
 
 /**
  * 1 タスクの実行可能性（readiness）と Board 列分類の評価結果。
@@ -105,7 +111,7 @@ export interface HierarchyNode {
 export interface DependencyGraphNode {
   task: Task;
   direction: DependencyDirection;
-  /** 選択タスクからの距離（選択は 0、上流/下流は 1, 2, ...）。 */
+  /** 選択タスクからの距離（選択は 0、上流/下流/祖先は 1, 2, ...）。 */
   depth: number;
 }
 
@@ -129,15 +135,30 @@ export interface DependencyParentEdge {
   to: string;
 }
 
-/** 選択タスク周辺に絞った依存サブグラフ。 */
+/**
+ * Dependency Map の入力となるサブグラフ。親子ツリーを骨格とし、ブロック関係をその上に重ねる。
+ * - `parentEdges` はレイアウトの段付け (親が左、子が右) を決める構造線
+ * - `edges` (ブロック関係) は段付けに使わず、配置確定後にノード同士を結ぶ重ね書き
+ */
 export interface DependencySubgraph {
   nodes: DependencyGraphNode[];
+  /** ブロック関係 (`from` が `to` をブロックする)。両端がサブグラフに含まれるものだけ。 */
   edges: DependencyGraphEdge[];
-  /**
-   * ノード同士の親子関係。両端がサブグラフに含まれる組だけを持ち、
-   * 表示の補助に使う（レイアウトの段付けや絞り込みの探索には使わない）。
-   */
+  /** 親子関係 (`from` が親)。両端がサブグラフに含まれるものだけ。 */
   parentEdges: DependencyParentEdge[];
+  /**
+   * 親も子もブロック関係も持たない孤立タスクの ID (全依存モードのみ。選択中心では空)。
+   * `includeIsolated` を指定しない限りノードには含めず、UI はここから件数を表示する。
+   */
+  isolatedTaskIds: string[];
+}
+
+/** {@link buildDependencySubgraph} のオプション。 */
+export interface DependencySubgraphOptions {
+  /** 選択中心モードで部分木から辿るブロック関係の階層数 (既定 2)。 */
+  depth?: number;
+  /** 全依存モードで孤立タスクもノードに含めるか (既定 false)。 */
+  includeIsolated?: boolean;
 }
 
 /** Next Actions の 1 候補。 */
@@ -848,25 +869,59 @@ export function collectSubtreeIds(rootId: string, taskById: Map<string, Task>): 
 }
 
 /**
- * 選択タスク（とその子孫）を中心に、上流 / 下流 N 階層に絞った依存サブグラフを返す。
- * `selectedTaskId` が null の場合は、依存を 1 件以上持つ全タスクを返す。
+ * 各タスクの親を 1 つに解決する。`parent` が対象集合内にあればそれを使い、
+ * 無ければ他タスクの `sub_tasks` の逆引きで補う (どちらも無ければ登録しない)。
+ */
+function resolveParentIds(tasks: Task[], taskById: Map<string, Task>): Map<string, string> {
+  const parentById = new Map<string, string>();
+  for (const task of tasks) {
+    if (task.parent != null && taskById.has(task.parent)) parentById.set(task.id, task.parent);
+  }
+  for (const task of tasks) {
+    for (const childId of task.sub_tasks) {
+      if (taskById.has(childId) && !parentById.has(childId)) parentById.set(childId, task.id);
+    }
+  }
+  return parentById;
+}
+
+/**
+ * Dependency Map に描くサブグラフを組み立てる。ノード集合は親子ツリーを基準に決める。
+ *
+ * - `selectedTaskId` が null (全依存モード): 親か子かブロック関係のいずれかを持つ全タスクをノードにする。
+ *   どれも持たない孤立タスクは `isolatedTaskIds` に記録し、`includeIsolated` のときだけノードに含める
+ * - 選択あり (選択中心モード): 選択タスクの部分木 (子孫) を `selected` とし、部分木に対する
+ *   上流 / 下流のブロック関係を `depth` 階層まで辿る。さらに選択タスクの祖先 (ルートまでの親の連鎖) を
+ *   `ancestor` として文脈に含める (祖先からはブロック関係を辿らない)
+ *
+ * `parentEdges` と `edges` はいずれも両端がノード集合に含まれる組だけを返す。
  */
 export function buildDependencySubgraph(
   selectedTaskId: string | null,
   tasks: Task[],
   config: Config,
   criticalEdgeKeys: Set<string>,
-  depth = 2,
+  options: DependencySubgraphOptions = {},
 ): DependencySubgraph {
+  const depth = options.depth ?? 2;
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const reverseEdges = buildReverseEdges(tasks);
+  const parentById = resolveParentIds(tasks, taskById);
+  const childIds = new Set(parentById.values());
   const nodeDir = new Map<string, { direction: DependencyDirection; depth: number }>();
+  const isolatedTaskIds: string[] = [];
 
   if (selectedTaskId == null || !taskById.has(selectedTaskId)) {
-    // 選択なし: 依存に関与する全タスクを selected 扱いで返す。
     for (const task of tasks) {
-      if (task.blocked_by.length > 0 || (reverseEdges.get(task.id)?.length ?? 0) > 0) {
+      const hasBlock =
+        task.blocked_by.some((dep) => taskById.has(dep.task)) ||
+        (reverseEdges.get(task.id)?.length ?? 0) > 0;
+      const hasFamily = parentById.has(task.id) || childIds.has(task.id);
+      if (hasBlock || hasFamily) {
         nodeDir.set(task.id, { direction: "selected", depth: 0 });
+      } else {
+        isolatedTaskIds.push(task.id);
+        if (options.includeIsolated) nodeDir.set(task.id, { direction: "selected", depth: 0 });
       }
     }
   } else {
@@ -906,6 +961,13 @@ export function buildDependencySubgraph(
       }
       frontier = next;
     }
+
+    // 祖先: 選択タスクからルートまで親を辿り、文脈として含める (循環は打ち切る)
+    let ancestorId = parentById.get(selectedTaskId);
+    for (let d = 1; ancestorId != null && !nodeDir.has(ancestorId); d += 1) {
+      nodeDir.set(ancestorId, { direction: "ancestor", depth: d });
+      ancestorId = parentById.get(ancestorId);
+    }
   }
 
   const nodes: DependencyGraphNode[] = [];
@@ -930,23 +992,25 @@ export function buildDependencySubgraph(
     }
   }
 
-  // 親子関係は両端がサブグラフにあるものだけを添える（ノード集合は変えない）
   const parentEdges: DependencyParentEdge[] = [];
   for (const node of nodes) {
-    const parentId = node.task.parent;
+    const parentId = parentById.get(node.task.id);
     if (parentId != null && nodeDir.has(parentId)) {
       parentEdges.push({ from: parentId, to: node.task.id });
     }
   }
 
-  return { nodes, edges, parentEdges };
+  return { nodes, edges, parentEdges, isolatedTaskIds };
 }
 
-/** 除外ノードに接続していた隣接依存の件数（ノード単位）。 */
+/**
+ * 除外ノードに接続していた隣接関係の件数（ノード単位）。
+ * ブロック関係と親子関係の両方を数え、親は上流側・子は下流側として扱う。
+ */
 export interface HiddenNeighborCount {
-  /** 除外された上流（このタスクをブロックする側）の件数。 */
+  /** 除外された上流（このタスクをブロックする側、またはこのタスクの親）の件数。 */
   upstream: number;
-  /** 除外された下流（このタスクにブロックされる側）の件数。 */
+  /** 除外された下流（このタスクにブロックされる側、またはこのタスクの子）の件数。 */
   downstream: number;
 }
 
@@ -959,9 +1023,9 @@ export interface PrunedDependencySubgraph extends DependencySubgraph {
 }
 
 /**
- * 依存サブグラフから `visibleTaskIds` に含まれないノードとそのエッジを取り除く。
- * 除外ノードを経由する依存は、残ったノード側に「除外された上流 / 下流の件数」として記録し、
- * UI が経路の途切れを示せるようにする。`visibleTaskIds` が null なら何も除外しない。
+ * 依存サブグラフから `visibleTaskIds` に含まれないノードとその辺を取り除く。
+ * 除外ノードを経由するブロック関係と親子関係は、残ったノード側に「除外された上流 / 下流の件数」として記録し、
+ * UI が経路の途切れを示せるようにする。`isolatedTaskIds` も表示対象に絞る。`visibleTaskIds` が null なら何も除外しない。
  *
  * @param graph - {@link buildDependencySubgraph} が返した依存サブグラフ
  * @param visibleTaskIds - 表示対象のタスク ID 集合。null は全表示
@@ -975,35 +1039,40 @@ export function pruneDependencySubgraph(
       nodes: graph.nodes,
       edges: graph.edges,
       parentEdges: graph.parentEdges,
+      isolatedTaskIds: graph.isolatedTaskIds,
       hiddenNeighborsById: {},
       hiddenNodeCount: 0,
     };
   }
   const nodes = graph.nodes.filter((n) => visibleTaskIds.has(n.task.id));
   const visible = new Set(nodes.map((n) => n.task.id));
-  // 親子エッジは両端が残るものだけを保持する（途切れとしては数えない）
-  const parentEdges = graph.parentEdges.filter((e) => visible.has(e.from) && visible.has(e.to));
-  const edges: DependencyGraphEdge[] = [];
   const hiddenNeighborsById: Record<string, HiddenNeighborCount> = {};
   const bump = (id: string, key: keyof HiddenNeighborCount) => {
     const entry = (hiddenNeighborsById[id] ??= { upstream: 0, downstream: 0 });
     entry[key] += 1;
   };
-  for (const edge of graph.edges) {
-    const fromVisible = visible.has(edge.from);
-    const toVisible = visible.has(edge.to);
-    if (fromVisible && toVisible) {
-      edges.push(edge);
-      continue;
+  // 片側だけ残る辺は、残った側に途切れとして記録する (両端とも除外なら数えない)
+  const keep = <E extends { from: string; to: string }>(list: E[]): E[] => {
+    const kept: E[] = [];
+    for (const edge of list) {
+      const fromVisible = visible.has(edge.from);
+      const toVisible = visible.has(edge.to);
+      if (fromVisible && toVisible) {
+        kept.push(edge);
+        continue;
+      }
+      if (fromVisible) bump(edge.from, "downstream");
+      if (toVisible) bump(edge.to, "upstream");
     }
-    // 片側だけ残る依存は、残った側に途切れとして記録する
-    if (fromVisible) bump(edge.from, "downstream");
-    if (toVisible) bump(edge.to, "upstream");
-  }
+    return kept;
+  };
+  const edges = keep(graph.edges);
+  const parentEdges = keep(graph.parentEdges);
   return {
     nodes,
     edges,
     parentEdges,
+    isolatedTaskIds: graph.isolatedTaskIds.filter((id) => visibleTaskIds.has(id)),
     hiddenNeighborsById,
     hiddenNodeCount: graph.nodes.length - nodes.length,
   };

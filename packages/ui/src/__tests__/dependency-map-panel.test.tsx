@@ -115,10 +115,30 @@ function chainWithUnrelatedPair(): Task[] {
   ];
 }
 
+/** epic (親) → child / other (子) の親子と、up → child のブロック関係を持つタスク集合。 */
+function familyTasks(): Task[] {
+  return [
+    baseTask({ id: "epic", title: "Epic", type: "task", sub_tasks: ["child", "other"] }),
+    baseTask({ id: "up", title: "Up", custom_fields: { Status: "Done" } }),
+    baseTask({
+      id: "child",
+      title: "Child",
+      parent: "epic",
+      custom_fields: { Status: "Todo" },
+      blocked_by: [{ task: "up", type: "finish-to-start", lag: 0 }],
+    }),
+    baseTask({ id: "other", title: "Other", parent: "epic", custom_fields: { Status: "Todo" } }),
+  ];
+}
+
 async function renderPanel(
   tasks: Task[],
   selectedTaskId: string | null,
-  overrides: Partial<{ warnings: string[]; criticalEdgeKeys: string[] }> = {},
+  overrides: Partial<{
+    warnings: string[];
+    criticalEdgeKeys: string[];
+    visibleTaskIds: ReadonlySet<string> | null;
+  }> = {},
 ) {
   const vm = buildProjectMapViewModel(tasks, config);
   const onSelectTask = vi.fn();
@@ -126,6 +146,7 @@ async function renderPanel(
     <div style={{ width: 600, height: 400 }}>
       <DependencyMapPanel
         tasks={tasks}
+        visibleTaskIds={overrides.visibleTaskIds ?? null}
         readinessById={vm.readinessById}
         config={config}
         criticalEdgeKeys={overrides.criticalEdgeKeys ?? vm.criticalPath.criticalEdgeKeys}
@@ -159,21 +180,31 @@ const translate = (el: Element) => {
   return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: Number.NaN, y: Number.NaN };
 };
 
-describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ経路が dagre の横向き階層レイアウト (上流が左、下流が右) から得られる", () => {
-  it("React Flow のキャンバス上に上流 → 選択 → 下流の順でノードが横に並ぶ", async () => {
-    const { container } = await renderPanel(chainTasks(), "sel");
+describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ経路が dagre の横向き階層レイアウト (親が左、子が右) から得られる", () => {
+  it("[Issue #398] React Flow のキャンバス上に親 → 子の順でノードが横に並び、ブロック関係だけの鎖は段付けされず縦に積まれる", async () => {
+    const { container } = await renderPanel(familyTasks(), "child");
     expect(container.querySelector(".react-flow")).not.toBeNull();
+    const epic = container.querySelector('.react-flow__node[data-id="epic"]')!;
+    const child = container.querySelector('.react-flow__node[data-id="child"]')!;
+    const other = container.querySelector('.react-flow__node[data-id="other"]')!;
     const up = container.querySelector('.react-flow__node[data-id="up"]')!;
-    const sel = container.querySelector('.react-flow__node[data-id="sel"]')!;
-    const down = container.querySelector('.react-flow__node[data-id="down"]')!;
-    expect(up).not.toBeNull();
-    expect(translate(up).x).toBeLessThan(translate(sel).x);
-    expect(translate(sel).x).toBeLessThan(translate(down).x);
-    // 1 本の鎖なので同じ行に並ぶ
-    expect(translate(up).y).toBeCloseTo(translate(sel).y, 3);
+    expect(translate(epic).x).toBeLessThan(translate(child).x);
+    // 兄弟は同じ段に縦に並ぶ
+    expect(translate(child).x).toBeCloseTo(translate(other).x, 3);
+    expect(translate(child).y).not.toBeCloseTo(translate(other).y, 3);
+    // ブロッカー up は親を持たないので段付けされず、ルートと同じ段に置かれる
+    expect(translate(up).x).toBeCloseTo(translate(epic).x, 3);
+
+    cleanup();
+    const chain = await renderPanel(chainTasks(), "sel");
+    const xs = ["up", "sel", "down"].map(
+      (id) => translate(chain.container.querySelector(`.react-flow__node[data-id="${id}"]`)!).x,
+    );
+    expect(xs[0]).toBeCloseTo(xs[1], 3);
+    expect(xs[1]).toBeCloseTo(xs[2], 3);
   });
 
-  it("エッジが dagre の経路点からなるパスとして描画される", async () => {
+  it("エッジがレイアウトの経路からなるパスとして描画される", async () => {
     const { container } = await renderPanel(chainTasks(), "sel");
     const path = container.querySelector('path[data-edge="up->sel"]');
     expect(path).not.toBeNull();
@@ -181,9 +212,9 @@ describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ�
     expect(container.querySelector('path[data-edge="sel->down"]')).not.toBeNull();
   });
 
-  it("依存を持つタスクがなければ空状態を表示する", async () => {
+  it("[Issue #398] 親子でもブロックでも繋がるタスクがなければ空状態を表示する", async () => {
     const { container } = await renderPanel([baseTask({ id: "solo", title: "Solo" })], null);
-    expect(container.textContent).toContain("依存関係のあるタスクがありません");
+    expect(container.textContent).toContain("親子・ブロック関係のあるタスクがありません");
     expect(container.querySelector(".react-flow")).toBeNull();
   });
 });
@@ -347,20 +378,21 @@ describe("[FR-VIS-027-AC12] Dependency Map のエッジが関係種別ごとに�
     }
   });
 
-  it("関係種別ごとの色と線種の定義が 1 箇所にまとまり、4 系統が色でも線種でも互いに区別できる", () => {
+  it("関係種別ごとの色と線種の定義が 1 箇所にまとまり、4 系統が色でも線種 / 線幅でも互いに区別できる", () => {
     const styles = dependencyEdgeStyles("#123456");
     const kinds = Object.keys(styles).sort();
     expect(kinds).toEqual(["blocked", "critical", "parent", "unresolved"]);
     const strokes = new Set(Object.values(styles).map((s) => s.stroke));
     expect(strokes.size).toBe(4);
     expect(styles.critical.stroke).toBe("#123456");
-    // 線種: 解決済み = 実線、未解決 = 破線、クリティカル = 太い実線、親子 = 点線
+    // 線種: 解決済み = 実線、未解決 = 破線、クリティカル = 太い実線、親子 = 細い実線 (muted)
     expect(styles.blocked.dasharray).toBeUndefined();
     expect(styles.unresolved.dasharray).toBeDefined();
     expect(styles.critical.dasharray).toBeUndefined();
     expect(styles.critical.strokeWidth).toBeGreaterThan(styles.blocked.strokeWidth);
-    expect(styles.parent.dasharray).toBeDefined();
-    expect(styles.parent.dasharray).not.toBe(styles.unresolved.dasharray);
+    expect(styles.parent.dasharray).toBeUndefined();
+    expect(styles.parent.strokeWidth).toBeLessThan(styles.blocked.strokeWidth);
+    expect(styles.parent.stroke).toContain("--color-text-muted");
   });
 
   it("凡例がキャンバス内に表示され、描画と同じ色・線種の見本と説明を持つ", async () => {
@@ -380,56 +412,156 @@ describe("[FR-VIS-027-AC12] Dependency Map のエッジが関係種別ごとに�
   });
 });
 
-describe("[FR-VIS-027-AC13] 親子関係のエッジをパネル内のトグルで表示 / 非表示でき、既定は非表示でレイアウトの段付けに使われない", () => {
-  /** epic (親) → child (子) の親子と、up → child の依存を持つタスク集合。 */
-  function familyTasks(): Task[] {
-    return [
-      baseTask({ id: "epic", title: "Epic", type: "task", sub_tasks: ["child"] }),
-      baseTask({ id: "up", title: "Up", custom_fields: { Status: "Done" } }),
-      baseTask({
-        id: "child",
-        title: "Child",
-        parent: "epic",
-        custom_fields: { Status: "Todo" },
-        blocked_by: [{ task: "up", type: "finish-to-start", lag: 0 }],
-      }),
-    ];
-  }
-
-  it("既定では親子エッジが描かれず、凡例の親子は非表示と示される", async () => {
+describe("[FR-VIS-027-AC13] 親子辺は常時表示の構造線としてツリーの段付けを決め、ブロック辺はパネル内の「ブロック」トグル (既定は表示) で表示 / 非表示でき、段付けには使われない", () => {
+  it("[Issue #398] 既定で親子辺が muted の実線で描かれ、ブロック辺も描かれ、トグルは押下状態になっている", async () => {
     const { container } = await renderPanel(familyTasks(), "epic");
-    await act(async () => {
-      fireEvent.click(scopeButton(container, "focus"));
-    });
-    expect(renderedNodeIds(container)).toEqual(["child", "epic", "up"]);
-    expect(container.querySelector('path[data-kind="parent"]')).toBeNull();
-    const toggle = container.querySelector("button[data-parent-toggle]")!;
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
-    expect(container.querySelector('[data-legend-kind="parent"]')!.textContent).toContain("非表示");
-  });
-
-  it("トグルを押すと親子エッジが点線で描かれ、ノード座標は変わらない", async () => {
-    const { container } = await renderPanel(familyTasks(), "epic");
-    await act(async () => {
-      fireEvent.click(scopeButton(container, "focus"));
-    });
-    const before = translate(container.querySelector('.react-flow__node[data-id="child"]')!);
-    await act(async () => {
-      fireEvent.click(container.querySelector("button[data-parent-toggle]")!);
-    });
+    expect(renderedNodeIds(container)).toEqual(["child", "epic", "other", "up"]);
     const parent = container.querySelector('path[data-edge="parent:epic->child"]')!;
     expect(parent).not.toBeNull();
     expect(parent.getAttribute("data-kind")).toBe("parent");
-    expect(parent.getAttribute("stroke")).toContain("--color-highlight-parent-border");
-    expect(parent.getAttribute("stroke-dasharray")).not.toBeNull();
+    expect(parent.getAttribute("stroke")).toContain("--color-text-muted");
+    expect(parent.getAttribute("stroke-dasharray")).toBeNull();
+    // 親子辺は 2 点の直線
+    expect(parent.getAttribute("d")).toMatch(/^M[-\d.]+ [-\d.]+ L[-\d.]+ [-\d.]+$/);
+    expect(container.querySelector('path[data-edge="parent:epic->other"]')).not.toBeNull();
+    // ブロック辺は 3 次ベジェ
+    const block = container.querySelector('path[data-edge="up->child"]')!;
+    expect(block).not.toBeNull();
+    expect(block.getAttribute("d")).toMatch(/^M[-\d.]+ [-\d.]+ C/);
+    const toggle = container.querySelector("button[data-block-toggle]")!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("true");
+    expect(toggle.textContent).toBe("ブロック");
+    expect(container.querySelector("button[data-parent-toggle]")).toBeNull();
+    expect(container.querySelector('[data-legend-kind="blocked"]')!.textContent).not.toContain(
+      "非表示",
+    );
+  });
+
+  it("[Issue #398] トグルを押すとブロック辺だけが消えて親子辺とノード座標は変わらず、凡例のブロック系統が非表示と示される", async () => {
+    const { container } = await renderPanel(familyTasks(), "epic");
+    const before = translate(container.querySelector('.react-flow__node[data-id="child"]')!);
+    await act(async () => {
+      fireEvent.click(container.querySelector("button[data-block-toggle]")!);
+    });
+    expect(container.querySelector("button[data-block-toggle]")!.getAttribute("aria-pressed")).toBe(
+      "false",
+    );
+    expect(container.querySelector('path[data-edge="up->child"]')).toBeNull();
+    expect(container.querySelector('path[data-edge="parent:epic->child"]')).not.toBeNull();
     const after = translate(container.querySelector('.react-flow__node[data-id="child"]')!);
     expect(after).toEqual(before);
-    // 依存エッジはそのまま
-    expect(container.querySelector('path[data-edge="up->child"]')).not.toBeNull();
+    for (const kind of ["blocked", "unresolved", "critical"]) {
+      expect(container.querySelector(`[data-legend-kind="${kind}"]`)!.textContent).toContain(
+        "非表示",
+      );
+    }
+    expect(container.querySelector('[data-legend-kind="parent"]')!.textContent).not.toContain(
+      "非表示",
+    );
     await act(async () => {
-      fireEvent.click(container.querySelector("button[data-parent-toggle]")!);
+      fireEvent.click(container.querySelector("button[data-block-toggle]")!);
     });
-    expect(container.querySelector('path[data-kind="parent"]')).toBeNull();
+    expect(container.querySelector('path[data-edge="up->child"]')).not.toBeNull();
+  });
+
+  it("[Issue #398] 「選択中心」では部分木とブロック隣接に加えて祖先の連鎖が文脈として描かれる", async () => {
+    const tasks = [
+      baseTask({ id: "root", title: "Root", sub_tasks: ["mid"] }),
+      baseTask({ id: "mid", title: "Mid", parent: "root", sub_tasks: ["sel", "sibling"] }),
+      baseTask({ id: "sibling", title: "Sibling", parent: "mid" }),
+      baseTask({ id: "sel", title: "Sel", parent: "mid", sub_tasks: ["leaf"] }),
+      baseTask({
+        id: "leaf",
+        title: "Leaf",
+        parent: "sel",
+        blocked_by: [{ task: "up", type: "finish-to-start", lag: 0 }],
+      }),
+      baseTask({ id: "up", title: "Up" }),
+    ];
+    const { container } = await renderPanel(tasks, "sel");
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "focus"));
+    });
+    expect(renderedNodeIds(container)).toEqual(["leaf", "mid", "root", "sel", "up"]);
+    expect(container.querySelector('path[data-edge="parent:root->mid"]')).not.toBeNull();
+    expect(container.querySelector('path[data-edge="parent:mid->sel"]')).not.toBeNull();
+    expect(container.querySelector('path[data-edge="parent:sel->leaf"]')).not.toBeNull();
+    expect(container.querySelector('path[data-edge="up->leaf"]')).not.toBeNull();
+    // 祖先 → 選択 → 子孫 の順に左から右へ並ぶ
+    const x = (id: string) =>
+      translate(container.querySelector(`.react-flow__node[data-id="${id}"]`)!).x;
+    expect(x("root")).toBeLessThan(x("mid"));
+    expect(x("mid")).toBeLessThan(x("sel"));
+    expect(x("sel")).toBeLessThan(x("leaf"));
+  });
+});
+
+describe("[FR-VIS-027-AC16] 親も子もブロック関係も無い孤立タスクは Dependency Map に既定で表示されず、ヘッダに件数が示され、トグルで表示できる", () => {
+  it("[Issue #398] 孤立タスクは既定で描かれず、hint とトグルに件数が出て、押すとノードとして現れる", async () => {
+    const tasks = [
+      ...familyTasks(),
+      baseTask({ id: "solo1", title: "Solo 1" }),
+      baseTask({ id: "solo2", title: "Solo 2" }),
+    ];
+    const { container } = await renderPanel(tasks, null);
+    expect(renderedNodeIds(container)).toEqual(["child", "epic", "other", "up"]);
+    expect(container.textContent).toContain("孤立 2 件非表示");
+    const toggle = container.querySelector("button[data-isolated-toggle]")!;
+    expect(toggle).not.toBeNull();
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(toggle.textContent).toBe("孤立 2");
+    await act(async () => {
+      fireEvent.click(toggle);
+    });
+    expect(renderedNodeIds(container)).toEqual(["child", "epic", "other", "solo1", "solo2", "up"]);
+    expect(container.textContent).not.toContain("件非表示");
+    expect(
+      container.querySelector("button[data-isolated-toggle]")!.getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
+  it("[Issue #398] 孤立タスクが無ければトグルを出さず、空状態でも孤立トグルから表示に切り替えられる", async () => {
+    const { container } = await renderPanel(familyTasks(), null);
+    expect(container.querySelector("button[data-isolated-toggle]")).toBeNull();
+
+    cleanup();
+    const solo = await renderPanel([baseTask({ id: "solo", title: "Solo" })], null);
+    expect(solo.container.querySelector(".react-flow")).toBeNull();
+    expect(solo.container.textContent).toContain("孤立 1 件非表示");
+    await act(async () => {
+      fireEvent.click(solo.container.querySelector("button[data-isolated-toggle]")!);
+    });
+    expect(renderedNodeIds(solo.container)).toEqual(["solo"]);
+  });
+});
+
+describe("[FR-VIS-027-AC17] Dependency Map のヘッダ hint が「N ノード / 親子 N / ブロック N」の形になり、フィルタで除外された親子の途切れも非表示隣接マークで示される", () => {
+  it("[Issue #398] hint にノード数・親子辺数・ブロック辺数が並ぶ", async () => {
+    const { container } = await renderPanel(familyTasks(), null);
+    expect(container.textContent).toContain("4 ノード / 親子 2 / ブロック 1");
+  });
+
+  it("[Issue #398] フィルタで子が除外されると親に下流の途切れ、親が除外されると子に上流の途切れが付く", async () => {
+    const { container } = await renderPanel(familyTasks(), null, {
+      visibleTaskIds: new Set(["epic", "child", "up"]),
+    });
+    const epic = container.querySelector('[data-node="epic"]')!;
+    expect(
+      epic.querySelector("[data-hidden-downstream]")!.getAttribute("data-hidden-downstream"),
+    ).toBe("1");
+    expect(container.querySelector('path[data-edge="parent:epic->other"]')).toBeNull();
+    expect(container.textContent).toContain("フィルタで 1 件非表示");
+
+    cleanup();
+    const withoutParent = await renderPanel(familyTasks(), null, {
+      visibleTaskIds: new Set(["child", "other", "up"]),
+    });
+    for (const id of ["child", "other"]) {
+      const node = withoutParent.container.querySelector(`[data-node="${id}"]`)!;
+      expect(
+        node.querySelector("[data-hidden-upstream]")!.getAttribute("data-hidden-upstream"),
+      ).toBe("1");
+    }
   });
 });
 
@@ -515,7 +647,8 @@ describe("[FR-VIS-027-AC7] Dependency Map が横向き (LR) 配置で、ノー�
     const sel = layout.nodes.find((n) => n.id === "sel")!;
     const d = container.querySelector('path[data-edge="up->sel"]')!.getAttribute("d")!;
     const start = d.match(/^M([-\d.]+) ([-\d.]+)/)!;
-    const end = d.match(/L([-\d.]+) ([-\d.]+)$/)!;
+    // ブロック辺は 3 次ベジェなので終点はパス末尾の座標
+    const end = d.match(/([-\d.]+) ([-\d.]+)$/)!;
     expect(Number(start[1])).toBeCloseTo(up.x + up.width, 3);
     expect(Number(start[2])).toBeCloseTo(up.y + up.height / 2, 3);
     expect(Number(end[1])).toBeCloseTo(sel.x, 3);
