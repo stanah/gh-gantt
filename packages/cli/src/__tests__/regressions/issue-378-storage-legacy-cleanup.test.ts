@@ -272,6 +272,41 @@ describe("[FR-STORE-006] [Issue #378] 移行済みの legacy cache を fingerpri
     expect(await exists(join(linked, ".gantt-sync", "tasks.json"))).toBe(true);
   });
 
+  it("[FR-STORE-006-AC3] comments.json だけが残る worktree は別 Project ではなく comments-only として報告し削除しない", async () => {
+    const { repository, linked } = await makeRepository();
+    await writeLegacy(repository, { "tasks.json": TASKS_V1, "sync-state.json": SYNC_STATE });
+    await expect(readTasks(repository)).resolves.toBe(TASKS_V1);
+    await writeLegacy(linked, { "comments.json": COMMENTS });
+
+    const status = await runStorage(repository, "status");
+    const statusEntries = entriesOf(status);
+    expect(statusEntries.map((entry) => entry.state)).toEqual(["comments-only", "recorded"]);
+
+    const result = await runStorage(repository, "cleanup");
+    expect(entriesOf(result).map((entry) => [entry.state, entry.action])).toEqual([
+      ["comments-only", "skipped"],
+      ["recorded", "deleted"],
+    ]);
+    expect(await exists(join(linked, ".gantt-sync", "comments.json"))).toBe(true);
+  });
+
+  it("[FR-STORE-006-AC4] migration manifest が壊れていても storage status は解決済み path を返し legacy 検査だけを省く", async () => {
+    const { repository, commonDir } = await makeRepository();
+    await writeLegacy(repository, { "tasks.json": TASKS_V1, "sync-state.json": SYNC_STATE });
+    await expect(readTasks(repository)).resolves.toBe(TASKS_V1);
+    const found = await execFileAsync("find", [
+      join(commonDir, "gh-gantt", "cache", "project-storage", "v1"),
+      "-name",
+      "migration.json",
+    ]);
+    await writeFile(found.stdout.trim(), "{ not json");
+
+    const status = await runStorage(repository, "status");
+    expect(status.ok).toBe(true);
+    expect(status.legacy).toBeNull();
+    expect(typeof (status.paths as Record<string, string>).config).toBe("string");
+  });
+
   it("[FR-STORE-006-AC3] 共有 cache がまだ無い repository では未記録として何も削除しない", async () => {
     const { repository } = await makeRepository();
     await writeLegacy(repository, { "tasks.json": TASKS_V1, "sync-state.json": SYNC_STATE });

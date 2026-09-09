@@ -108,6 +108,7 @@ export type LegacyCacheState =
   | "unrecorded"
   | "incomplete"
   | "invalid"
+  | "comments-only"
   | "other-project";
 
 /** `<worktree>/.gantt-sync/` に残る移行前の Work Graph Cache 一組の状態。 */
@@ -784,6 +785,23 @@ async function inspectLegacy(layout: GitLayout): Promise<LegacyCacheInspection> 
       if ((await readOptional(join(directory, name))) !== null) files.push(join(directory, name));
     }
     if (files.length === 0) continue;
+    // comments.json だけが残る entry は merge base を持たず fingerprint を計算できない。
+    // 別 Project と混同しないよう専用の状態で報告し、削除対象にも含めない
+    if (
+      (await readOptional(join(directory, "tasks.json"))) === null &&
+      (await readOptional(join(directory, "sync-state.json"))) === null
+    ) {
+      entries.push({
+        workspace: root,
+        files,
+        fingerprint: null,
+        recordedFingerprint: null,
+        state: "comments-only",
+        reason:
+          "comments.json だけが残っており fingerprint を計算できません。GitHub から再構築できる cache なので手動で削除できます",
+      });
+      continue;
+    }
     let candidate: LegacyCandidate | null;
     try {
       candidate = await readCandidate(layout, worktree);
@@ -1238,7 +1256,21 @@ class LazyProjectStorageSession implements ProjectStorageSession {
         const layout = await resolveSharedLayout(workspace);
         if (layout.kind === "git") {
           sharedCacheRoot = layout.namespaceRoot;
-          legacy = await inspectLegacy(layout);
+          try {
+            legacy = await inspectLegacy(layout);
+          } catch (inspectionError) {
+            // manifest が壊れていても解決済み path は返す契約なので、legacy の検査結果だけを縮退させる。
+            // それ以外の検査エラーは従来どおり伝播させる
+            if (
+              !(
+                inspectionError instanceof ProjectStorageError &&
+                inspectionError.code === "MIGRATION_MANIFEST_INVALID"
+              )
+            ) {
+              throw inspectionError;
+            }
+            legacy = null;
+          }
         }
       } catch (error) {
         if (!(error instanceof ProjectStorageError && error.code === "PROJECT_CONFIG_MISSING")) {

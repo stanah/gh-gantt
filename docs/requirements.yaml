@@ -1461,7 +1461,7 @@ areas:
               - packages/cli/src/__tests__/regressions/issue-378-storage-legacy-cleanup.test.ts
           - id: FR-STORE-006-AC3
             description: |
-              fingerprint が一致しない (分岐、未記録、片側欠損、破損、別 Project) legacy file は
+              fingerprint が一致しない (分岐、未記録、片側欠損、comments.json のみ、破損、別 Project) legacy file は
               削除せず、理由を表示する
             status: covered
             tests:
