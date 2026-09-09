@@ -3,7 +3,11 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import React from "react";
 import { render, fireEvent, cleanup, act } from "@testing-library/react";
 import { buildProjectMapViewModel, buildDependencySubgraph } from "@gh-gantt/shared";
-import { DependencyMapPanel } from "../components/project-map/DependencyMapPanel.js";
+import {
+  DependencyMapPanel,
+  dependencyEdgeLabel,
+  dependencyEdgeStyles,
+} from "../components/project-map/DependencyMapPanel.js";
 import {
   computeInitialViewport,
   layoutDependencyGraph,
@@ -291,14 +295,16 @@ describe("[FR-VIS-027-AC11] Dependency Map の表示範囲をヘッダの「全�
 });
 
 describe("[FR-VIS-027-AC4] クリティカルパスの強調、未解決依存の赤表示、循環依存の警告が Dependency Map に表示される", () => {
-  it("未解決の依存エッジは danger トークンの破線で描画される", async () => {
+  it("未解決の依存エッジは danger トークンの破線、解決済みは実線で描画される", async () => {
     const { container } = await renderPanel(chainTasks(), "sel", { criticalEdgeKeys: [] });
     const unresolved = container.querySelector('path[data-edge="sel->down"]')!;
     expect(unresolved.getAttribute("stroke")).toContain("--color-danger");
     expect(unresolved.getAttribute("stroke-dasharray")).not.toBeNull();
+    expect(unresolved.getAttribute("data-kind")).toBe("unresolved");
     const resolved = container.querySelector('path[data-edge="up->sel"]')!;
-    expect(resolved.getAttribute("stroke")).toContain("--color-border");
+    expect(resolved.getAttribute("stroke")).toContain("--color-text-secondary");
     expect(resolved.getAttribute("stroke-dasharray")).toBeNull();
+    expect(resolved.getAttribute("data-kind")).toBe("blocked");
   });
 
   it("クリティカルパス上の解決済みエッジは critical_path 色の太線で描画される", async () => {
@@ -307,8 +313,21 @@ describe("[FR-VIS-027-AC4] クリティカルパスの強調、未解決依存�
     });
     const critical = container.querySelector('path[data-edge="up->sel"]')!;
     expect(critical.getAttribute("stroke")).toBe(config.gantt.colors.critical_path);
-    expect(Number(critical.getAttribute("stroke-width"))).toBeGreaterThan(1);
+    expect(Number(critical.getAttribute("stroke-width"))).toBeGreaterThan(2);
     expect(critical.getAttribute("data-critical")).toBe("true");
+    expect(critical.getAttribute("stroke-dasharray")).toBeNull();
+  });
+
+  it("未解決かつクリティカルパス上のエッジは critical_path 色の太い破線になり、両方の情報を保つ", async () => {
+    const { container } = await renderPanel(chainTasks(), "sel", {
+      criticalEdgeKeys: ["sel->down"],
+    });
+    const edge = container.querySelector('path[data-edge="sel->down"]')!;
+    expect(edge.getAttribute("stroke")).toBe(config.gantt.colors.critical_path);
+    expect(Number(edge.getAttribute("stroke-width"))).toBeGreaterThan(2);
+    expect(edge.getAttribute("stroke-dasharray")).not.toBeNull();
+    expect(edge.getAttribute("data-critical")).toBe("true");
+    expect(edge.getAttribute("data-unresolved")).toBe("true");
   });
 
   it("循環依存の警告が role=alert で表示される", async () => {
@@ -317,6 +336,123 @@ describe("[FR-VIS-027-AC4] クリティカルパスの強調、未解決依存�
     });
     const alert = container.querySelector('[role="alert"]');
     expect(alert?.textContent).toContain("循環依存");
+  });
+});
+
+describe("[FR-VIS-027-AC12] Dependency Map のエッジが関係種別ごとに色と線種で区別され、基本線幅が読める太さで、凡例がパネル内に表示される", () => {
+  it("依存エッジの基本線幅が 1px より太い", async () => {
+    const { container } = await renderPanel(chainTasks(), "sel", { criticalEdgeKeys: [] });
+    for (const path of container.querySelectorAll("path[data-edge]")) {
+      expect(Number(path.getAttribute("stroke-width"))).toBeGreaterThanOrEqual(2);
+    }
+  });
+
+  it("関係種別ごとの色と線種の定義が 1 箇所にまとまり、4 系統が色でも線種でも互いに区別できる", () => {
+    const styles = dependencyEdgeStyles("#123456");
+    const kinds = Object.keys(styles).sort();
+    expect(kinds).toEqual(["blocked", "critical", "parent", "unresolved"]);
+    const strokes = new Set(Object.values(styles).map((s) => s.stroke));
+    expect(strokes.size).toBe(4);
+    expect(styles.critical.stroke).toBe("#123456");
+    // 線種: 解決済み = 実線、未解決 = 破線、クリティカル = 太い実線、親子 = 点線
+    expect(styles.blocked.dasharray).toBeUndefined();
+    expect(styles.unresolved.dasharray).toBeDefined();
+    expect(styles.critical.dasharray).toBeUndefined();
+    expect(styles.critical.strokeWidth).toBeGreaterThan(styles.blocked.strokeWidth);
+    expect(styles.parent.dasharray).toBeDefined();
+    expect(styles.parent.dasharray).not.toBe(styles.unresolved.dasharray);
+  });
+
+  it("凡例がキャンバス内に表示され、描画と同じ色・線種の見本と説明を持つ", async () => {
+    const { container } = await renderPanel(chainTasks(), "sel");
+    const legend = container.querySelector('[data-testid="dependency-map-legend"]')!;
+    expect(legend).not.toBeNull();
+    expect(legend.getAttribute("aria-label")).toBe("凡例");
+    const styles = dependencyEdgeStyles(config.gantt.colors.critical_path);
+    for (const kind of ["blocked", "unresolved", "critical", "parent"] as const) {
+      const row = legend.querySelector(`[data-legend-kind="${kind}"]`)!;
+      expect(row.textContent).toContain(styles[kind].label);
+      const line = row.querySelector("line")!;
+      expect(line.getAttribute("stroke")).toBe(styles[kind].stroke);
+      expect(line.getAttribute("stroke-dasharray")).toBe(styles[kind].dasharray ?? null);
+    }
+    expect(legend.textContent).toContain("lag");
+  });
+});
+
+describe("[FR-VIS-027-AC13] 親子関係のエッジをパネル内のトグルで表示 / 非表示でき、既定は非表示でレイアウトの段付けに使われない", () => {
+  /** epic (親) → child (子) の親子と、up → child の依存を持つタスク集合。 */
+  function familyTasks(): Task[] {
+    return [
+      baseTask({ id: "epic", title: "Epic", type: "task", sub_tasks: ["child"] }),
+      baseTask({ id: "up", title: "Up", custom_fields: { Status: "Done" } }),
+      baseTask({
+        id: "child",
+        title: "Child",
+        parent: "epic",
+        custom_fields: { Status: "Todo" },
+        blocked_by: [{ task: "up", type: "finish-to-start", lag: 0 }],
+      }),
+    ];
+  }
+
+  it("既定では親子エッジが描かれず、凡例の親子は非表示と示される", async () => {
+    const { container } = await renderPanel(familyTasks(), "epic");
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "focus"));
+    });
+    expect(renderedNodeIds(container)).toEqual(["child", "epic", "up"]);
+    expect(container.querySelector('path[data-kind="parent"]')).toBeNull();
+    const toggle = container.querySelector("button[data-parent-toggle]")!;
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(container.querySelector('[data-legend-kind="parent"]')!.textContent).toContain("非表示");
+  });
+
+  it("トグルを押すと親子エッジが点線で描かれ、ノード座標は変わらない", async () => {
+    const { container } = await renderPanel(familyTasks(), "epic");
+    await act(async () => {
+      fireEvent.click(scopeButton(container, "focus"));
+    });
+    const before = translate(container.querySelector('.react-flow__node[data-id="child"]')!);
+    await act(async () => {
+      fireEvent.click(container.querySelector("button[data-parent-toggle]")!);
+    });
+    const parent = container.querySelector('path[data-edge="parent:epic->child"]')!;
+    expect(parent).not.toBeNull();
+    expect(parent.getAttribute("data-kind")).toBe("parent");
+    expect(parent.getAttribute("stroke")).toContain("--color-highlight-parent-border");
+    expect(parent.getAttribute("stroke-dasharray")).not.toBeNull();
+    const after = translate(container.querySelector('.react-flow__node[data-id="child"]')!);
+    expect(after).toEqual(before);
+    // 依存エッジはそのまま
+    expect(container.querySelector('path[data-edge="up->child"]')).not.toBeNull();
+    await act(async () => {
+      fireEvent.click(container.querySelector("button[data-parent-toggle]")!);
+    });
+    expect(container.querySelector('path[data-kind="parent"]')).toBeNull();
+  });
+});
+
+describe("[FR-VIS-027-AC14] 依存タイプが finish-to-start 以外のエッジと lag が 0 以外のエッジにラベルが表示される", () => {
+  it("dependencyEdgeLabel は finish-to-start / lag 0 で null、それ以外で略号と lag を返す", () => {
+    expect(dependencyEdgeLabel("finish-to-start", 0)).toBeNull();
+    expect(dependencyEdgeLabel("start-to-start", 0)).toBe("SS");
+    expect(dependencyEdgeLabel("finish-to-finish", 0)).toBe("FF");
+    expect(dependencyEdgeLabel("start-to-finish", 0)).toBe("SF");
+    expect(dependencyEdgeLabel("finish-to-start", 3)).toBe("+3d");
+    expect(dependencyEdgeLabel("finish-to-finish", -2)).toBe("FF -2d");
+  });
+
+  it("finish-to-start / lag 0 のエッジにはラベルが無く、それ以外のエッジには経路上にラベルが出る", async () => {
+    const tasks = chainTasks();
+    tasks[2].blocked_by = [{ task: "sel", type: "start-to-start", lag: 2 }];
+    const { container } = await renderPanel(tasks, "sel");
+    expect(container.querySelector('text[data-edge-label="up->sel"]')).toBeNull();
+    const label = container.querySelector('text[data-edge-label="sel->down"]')!;
+    expect(label).not.toBeNull();
+    expect(label.textContent).toBe("SS +2d");
+    const path = container.querySelector('path[data-edge="sel->down"]')!;
+    expect(label.getAttribute("fill")).toBe(path.getAttribute("stroke"));
   });
 });
 
