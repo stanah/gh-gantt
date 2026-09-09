@@ -66,8 +66,8 @@ const NODE_SEP = 16;
 /** 段同士の間隔 (px)。 */
 const RANK_SEP = 48;
 const MARGIN = 12;
-/** 連結成分同士の間隔 (px)。 */
-const COMPONENT_GAP = 32;
+/** 連結成分同士の間隔 (px)。成分の境界が分かるよう段間隔より広く取る。 */
+const COMPONENT_GAP = 56;
 
 /**
  * 実データ (gh-gantt 自身、201 タスク / 依存 38 件) で ranker を比較し、交差数と縦横比が最良だった
@@ -85,7 +85,7 @@ const DEFAULT_OPTIONS: Required<LayoutOptions> = {
  * 依存サブグラフを dagre で階層配置する。既定は `rankdir: LR` で、
  * エッジは `from` が `to` をブロックする向きなので上流 (ブロッカー) が左・下流が右に並び、
  * 同じ段のノードは縦に積まれる。互いに繋がっていない連結成分は個別にレイアウトし、
- * 大きい成分から順に行単位で敷き詰める。
+ * 大きい成分から順に縦に積んで左端を揃える (横軸の意味を保つため横には並べない)。
  * サブグラフに存在しないノードを参照するエッジと自己ループは無視する。
  * 親子エッジ (`graph.parentEdges`) は段付けに使わず、配置確定後にノード境界同士を直結する。
  */
@@ -98,13 +98,13 @@ export function layoutDependencyGraph(
   const edges = graph.edges.filter((e) => ids.has(e.from) && ids.has(e.to) && e.from !== e.to);
   if (ids.size === 0) return { nodes: [], edges: [], parentEdges: [], width: 0, height: 0 };
 
-  // 連結成分ごとに独立した dagre グラフを組み、成分を行単位で敷き詰める。
+  // 連結成分ごとに独立した dagre グラフを組み、成分を縦に積む。
   // 全依存モードでは無関係な成分が多数あるため、1 つのグラフに渡すと巨大な単一段に潰れてしまう
   const components = opts.splitComponents
     ? connectedComponents([...ids], edges)
     : [[...ids].sort()];
 
-  const placed = tileComponents(
+  const placed = stackComponents(
     components.map((component) => {
       const member = new Set(component);
       const componentEdges = edges.filter((e) => member.has(e.from) && member.has(e.to));
@@ -172,38 +172,19 @@ function connectedComponents(
   return components;
 }
 
-/** タイル配置の目標縦横比 (幅 / 高さ)。パネルは横長なので 1 より少し大きくする。 */
-const TILE_TARGET_ASPECT = 1.5;
-
 /**
- * 連結成分を左上から行単位で敷き詰める (棚詰め)。目標幅は最も広い成分の幅と、
- * 総面積から目標縦横比で見積もった幅の大きい方。単純な縦積みだと孤立ノードが多いときに
- * 極端に縦長になるため、行に収まる限り横に並べる。
+ * 連結成分を縦に一列に積み、左端 (最上流の段) を揃える。
+ * LR 配置では横軸が「左 = 上流、右 = 下流」の意味を持つため、無関係な成分を右隣に並べると
+ * 左の成分の下流に続いているように読めてしまう。縦長になる分はパン・ズームと初期ビューポートで吸収する。
  */
-function tileComponents(
+function stackComponents(
   layouts: readonly DependencyMapLayout[],
 ): { layout: DependencyMapLayout; dx: number; dy: number }[] {
-  let widest = 0;
-  let area = 0;
-  for (const l of layouts) {
-    widest = Math.max(widest, l.width);
-    area += (l.width + COMPONENT_GAP) * (l.height + COMPONENT_GAP);
-  }
-  const targetWidth = Math.max(widest, Math.sqrt(area * TILE_TARGET_ASPECT));
-
   const placed: { layout: DependencyMapLayout; dx: number; dy: number }[] = [];
-  let rowX = 0;
-  let rowY = 0;
-  let rowHeight = 0;
+  let y = 0;
   for (const layout of layouts) {
-    if (rowX > 0 && rowX + layout.width > targetWidth) {
-      rowY += rowHeight + COMPONENT_GAP;
-      rowX = 0;
-      rowHeight = 0;
-    }
-    placed.push({ layout, dx: rowX, dy: rowY });
-    rowX += layout.width + COMPONENT_GAP;
-    rowHeight = Math.max(rowHeight, layout.height);
+    placed.push({ layout, dx: 0, dy: y });
+    y += layout.height + COMPONENT_GAP;
   }
   return placed;
 }
@@ -389,7 +370,7 @@ const FOCUS_ZOOM = 0.8;
 
 /**
  * 初期ビューポートを決める。グラフ全体が読める倍率 (>= 0.5) で収まるなら全体を中央に表示し、
- * 収まらなければ選択タスク (なければグラフ中心) を中央に置いて 0.8 倍で表示する。
+ * 収まらなければ選択タスクを中央に置いて 0.8 倍で表示し、選択がなければ左上 (先頭の成分) を 0.8 倍で表示する。
  * 外接領域の幅と高さの両方を見るため、横向き (LR) でも縦向きでも同じ判定で動く。
  */
 export function computeInitialViewport(
@@ -417,5 +398,7 @@ export function computeInitialViewport(
   if (selected) {
     return centerOn(selected.x + selected.width / 2, selected.y + selected.height / 2, FOCUS_ZOOM);
   }
-  return centerOn(layout.width / 2, layout.height / 2, FOCUS_ZOOM);
+  // 選択がなければ先頭 (左上) の成分が読める倍率で見えるようにする。
+  // 成分は縦積みなので中央を出すと途中の成分しか見えない
+  return { x: FIT_PADDING, y: FIT_PADDING, zoom: FOCUS_ZOOM };
 }
