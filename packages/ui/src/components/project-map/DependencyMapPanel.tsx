@@ -111,7 +111,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
     >
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         isConnectable={false}
         style={hiddenHandleStyle}
       />
@@ -124,7 +124,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
       </span>
       <Handle
         type="source"
-        position={Position.Bottom}
+        position={Position.Right}
         isConnectable={false}
         style={hiddenHandleStyle}
       />
@@ -133,7 +133,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
 }
 
 /** dagre の経路点をそのまま折れ線 (角を丸めたパス) として描画するエッジ。 */
-// 上流が上・下流が下の配置で向きが読めるため、矢印 (markerEnd) は付けない
+// 上流が左・下流が右の配置で向きが読めるため、矢印 (markerEnd) は付けない
 function DependencyEdge({ id, data }: EdgeProps<DependencyFlowEdge>) {
   if (!data) return null;
   const path = buildRoundedPath(data.points);
@@ -229,8 +229,8 @@ function InitialViewport({
 }
 
 /**
- * Dependency Map パネル。選択タスク（とその子孫）を中心に上流 / 下流を dagre で階層配置し、
- * React Flow で描画する。未解決の上流は赤い破線、クリティカルパスは太線で強調し、
+ * Dependency Map パネル。選択タスク（とその子孫）を中心に、左を上流 (ブロッカー)・右を下流とする
+ * 横向きの階層配置を dagre で求め、React Flow で描画する。互いに依存のない連結成分は個別に配置する。未解決の上流は赤い破線、クリティカルパスは太線で強調し、
  * 循環依存があれば警告を表示する。パン・ズームで大きなグラフを閲覧できる。
  */
 export function DependencyMapPanel({
@@ -272,21 +272,22 @@ export function DependencyMapPanel({
         connectable: false,
         selectable: false,
         focusable: false,
-        // jsdom / SSR でも計測を待たずにエッジを描けるようハンドル位置を明示する
+        // jsdom / SSR でも計測を待たずにエッジを描けるようハンドル位置を明示する。
+        // 横向き (LR) 配置なので target を左辺中央、source を右辺中央に置く
         handles: [
           {
             type: "target",
-            position: Position.Top,
-            x: NODE_WIDTH / 2,
-            y: 0,
+            position: Position.Left,
+            x: 0,
+            y: NODE_HEIGHT / 2,
             width: 1,
             height: 1,
           },
           {
             type: "source",
-            position: Position.Bottom,
-            x: NODE_WIDTH / 2,
-            y: NODE_HEIGHT,
+            position: Position.Right,
+            x: NODE_WIDTH,
+            y: NODE_HEIGHT / 2,
             width: 1,
             height: 1,
           },

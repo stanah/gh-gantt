@@ -123,21 +123,23 @@ async function renderPanel(
   return { ...result, onSelectTask, vm };
 }
 
-const translateY = (el: Element) => {
+const translate = (el: Element) => {
   const m = (el as HTMLElement).style.transform.match(/translate\(([-\d.]+)px,\s*([-\d.]+)px\)/);
-  return m ? Number(m[2]) : Number.NaN;
+  return m ? { x: Number(m[1]), y: Number(m[2]) } : { x: Number.NaN, y: Number.NaN };
 };
 
-describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ経路が dagre の階層レイアウト (上流が上、下流が下) から得られる", () => {
-  it("React Flow のキャンバス上に上流 → 選択 → 下流の順でノードが縦に並ぶ", async () => {
+describe("[FR-VIS-027-AC1] 依存サブグラフのノード座標とエッジ経路が dagre の横向き階層レイアウト (上流が左、下流が右) から得られる", () => {
+  it("React Flow のキャンバス上に上流 → 選択 → 下流の順でノードが横に並ぶ", async () => {
     const { container } = await renderPanel(chainTasks(), "sel");
     expect(container.querySelector(".react-flow")).not.toBeNull();
     const up = container.querySelector('.react-flow__node[data-id="up"]')!;
     const sel = container.querySelector('.react-flow__node[data-id="sel"]')!;
     const down = container.querySelector('.react-flow__node[data-id="down"]')!;
     expect(up).not.toBeNull();
-    expect(translateY(up)).toBeLessThan(translateY(sel));
-    expect(translateY(sel)).toBeLessThan(translateY(down));
+    expect(translate(up).x).toBeLessThan(translate(sel).x);
+    expect(translate(sel).x).toBeLessThan(translate(down).x);
+    // 1 本の鎖なので同じ行に並ぶ
+    expect(translate(up).y).toBeCloseTo(translate(sel).y, 3);
   });
 
   it("エッジが dagre の経路点からなるパスとして描画される", async () => {
@@ -249,6 +251,36 @@ describe("[FR-VIS-027-AC5] Dependency Map をパン・ズームでき、初期�
     const node = container.querySelector('.react-flow__node[data-id="sel"]')!;
     expect(node.classList.contains("draggable")).toBe(false);
     expect(container.querySelector(".react-flow__handle.connectable")).toBeNull();
+  });
+});
+
+describe("[FR-VIS-027-AC7] Dependency Map が横向き (LR) 配置で、ノードのハンドルが左右の辺にありエッジの始点 / 終点が左右の辺になる", () => {
+  it("target ハンドルは左辺、source ハンドルは右辺に置かれる", async () => {
+    const { container } = await renderPanel(chainTasks(), "sel");
+    const node = container.querySelector('.react-flow__node[data-id="sel"]')!;
+    const target = node.querySelector(".react-flow__handle.target")!;
+    const source = node.querySelector(".react-flow__handle.source")!;
+    expect(target.classList.contains("react-flow__handle-left")).toBe(true);
+    expect(source.classList.contains("react-flow__handle-right")).toBe(true);
+    expect(node.querySelector(".react-flow__handle-top")).toBeNull();
+    expect(node.querySelector(".react-flow__handle-bottom")).toBeNull();
+  });
+
+  it("エッジのパスは from ノードの右辺から始まり to ノードの左辺で終わる", async () => {
+    const tasks = chainTasks();
+    const { container, vm } = await renderPanel(tasks, "sel");
+    const layout = layoutDependencyGraph(
+      buildDependencySubgraph("sel", tasks, config, new Set(vm.criticalPath.criticalEdgeKeys)),
+    );
+    const up = layout.nodes.find((n) => n.id === "up")!;
+    const sel = layout.nodes.find((n) => n.id === "sel")!;
+    const d = container.querySelector('path[data-edge="up->sel"]')!.getAttribute("d")!;
+    const start = d.match(/^M([-\d.]+) ([-\d.]+)/)!;
+    const end = d.match(/L([-\d.]+) ([-\d.]+)$/)!;
+    expect(Number(start[1])).toBeCloseTo(up.x + up.width, 3);
+    expect(Number(start[2])).toBeCloseTo(up.y + up.height / 2, 3);
+    expect(Number(end[1])).toBeCloseTo(sel.x, 3);
+    expect(Number(end[2])).toBeCloseTo(sel.y + sel.height / 2, 3);
   });
 });
 
