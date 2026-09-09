@@ -304,3 +304,57 @@ describe("[FR-VIS-027-AC6] Dependency Map がライト / ダーク両テーマ�
     expect(style).toContain("--xy-controls-button-background-color");
   });
 });
+
+describe("[FR-VIS-027-AC9] Dependency Map のノードに担当者アバターが GitHub の決定的 URL から表示され、超過分は +N、取得失敗時はイニシャル、担当者なしは空領域を作らない", () => {
+  it("担当者の login ごとに https://github.com/<login>.png?size=40 の画像を表示し、title で login が分かる", async () => {
+    const tasks = chainTasks();
+    tasks[1].assignees = ["alice", "bob"];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]')!;
+    const imgs = node.querySelectorAll("img[data-avatar]");
+    expect(imgs).toHaveLength(2);
+    expect(imgs[0].getAttribute("src")).toBe("https://github.com/alice.png?size=40");
+    expect(imgs[0].getAttribute("title")).toBe("alice");
+    expect(imgs[1].getAttribute("src")).toBe("https://github.com/bob.png?size=40");
+    const group = node.querySelector("[data-assignees]")!;
+    expect(group.getAttribute("aria-label")).toBe("担当: alice, bob");
+    expect(group.getAttribute("title")).toBe("alice, bob");
+  });
+
+  it("3 人以上の担当者は 2 人までを画像で表示し、残りを +N で示す", async () => {
+    const tasks = chainTasks();
+    tasks[1].assignees = ["alice", "bob", "carol", "dave"];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]')!;
+    expect(node.querySelectorAll("img[data-avatar]")).toHaveLength(2);
+    const overflow = node.querySelector("[data-avatar-overflow]")!;
+    expect(overflow.getAttribute("data-avatar-overflow")).toBe("2");
+    expect(overflow.textContent).toBe("+2");
+    expect(overflow.getAttribute("title")).toBe("carol, dave");
+  });
+
+  it("画像の取得に失敗した担当者は同じ寸法のイニシャルのプレースホルダに置き換わる", async () => {
+    const tasks = chainTasks();
+    tasks[1].assignees = ["alice"];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]')!;
+    const img = node.querySelector('img[data-avatar="alice"]') as HTMLImageElement;
+    await act(async () => {
+      fireEvent.error(img);
+    });
+    expect(node.querySelector('img[data-avatar="alice"]')).toBeNull();
+    const fallback = node.querySelector('[data-avatar="alice"][data-avatar-fallback="true"]')!;
+    expect(fallback).not.toBeNull();
+    expect(fallback.textContent).toBe("AL");
+    expect(fallback.getAttribute("title")).toBe("alice");
+    expect((fallback as HTMLElement).style.width).toBe(`${img.getAttribute("width")}px`);
+    expect((fallback as HTMLElement).style.height).toBe(`${img.getAttribute("height")}px`);
+  });
+
+  it("担当者がいないノードにはアバター領域を描画しない", async () => {
+    const { container } = await renderPanel(chainTasks(), "sel");
+    const node = container.querySelector('[data-node="up"]')!;
+    expect(node.querySelector("[data-assignees]")).toBeNull();
+    expect(node.querySelector("img")).toBeNull();
+  });
+});
