@@ -1,6 +1,19 @@
 export type OwnerType = "user" | "organization";
 
-const PROJECT_V2_FRAGMENT = `
+/**
+ * 関係リンクの変更検出に使う軽量シグネチャ (#377)。
+ * sub-issue / blockedBy の追加・削除は Issue の updatedAt を更新しないため、
+ * 親 Issue と各接続の件数を items 一括取得に同梱して snapshot と比較する。
+ * blockedBy / blocking は totalCount だけが必要なので first: 1 で取得コストを抑える。
+ */
+export const RELATIONSHIP_SIGNATURE_FRAGMENT = `
+                parent { number repository { nameWithOwner } }
+                subIssuesSummary { total }
+                blockedBy(first: 1) { totalCount }
+                blocking(first: 1) { totalCount }`;
+
+function buildProjectV2Fragment(withRelationshipSignature: boolean): string {
+  return `
         id
         title
         fields(first: 50) {
@@ -73,18 +86,55 @@ const PROJECT_V2_FRAGMENT = `
                     url
                   }
                 }
-                repository { nameWithOwner }
+                repository { nameWithOwner }${withRelationshipSignature ? RELATIONSHIP_SIGNATURE_FRAGMENT : ""}
               }
             }
           }
         }`;
+}
 
-export function buildProjectQuery(ownerType: OwnerType): string {
+export interface ProjectQueryOptions {
+  /**
+   * 関係シグネチャ (parent / subIssuesSummary / blockedBy / blocking の件数) を同梱するか。
+   * sub-issue 未対応の GitHub インスタンスではフィールド不在エラーになるため、
+   * 呼び出し側がフォールバックとして false で再試行する (#377)
+   */
+  withRelationshipSignature?: boolean;
+}
+
+export function buildProjectQuery(ownerType: OwnerType, opts: ProjectQueryOptions = {}): string {
   return `
   query($owner: String!, $number: Int!, $cursor: String) {
     ${ownerType}(login: $owner) {
       projectV2(number: $number) {
-${PROJECT_V2_FRAGMENT}
+${buildProjectV2Fragment(opts.withRelationshipSignature ?? true)}
+      }
+    }
+  }
+`;
+}
+
+/**
+ * pre-check 用の軽量クエリ (#377)。items の Issue ごとに識別子と関係シグネチャだけを取得し、
+ * updatedAt を動かさない関係変更を snapshot との比較で検出する。
+ */
+export function buildProjectRelationshipSignatureQuery(ownerType: OwnerType): string {
+  return `
+  query($owner: String!, $number: Int!, $cursor: String) {
+    ${ownerType}(login: $owner) {
+      projectV2(number: $number) {
+        items(first: 100, after: $cursor) {
+          pageInfo { hasNextPage endCursor }
+          nodes {
+            content {
+              __typename
+              ... on Issue {
+                number
+                repository { nameWithOwner }${RELATIONSHIP_SIGNATURE_FRAGMENT}
+              }
+            }
+          }
+        }
       }
     }
   }

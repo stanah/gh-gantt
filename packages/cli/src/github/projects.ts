@@ -1,7 +1,9 @@
 import type { graphql } from "@octokit/graphql";
+import type { RelationshipSignature } from "@gh-gantt/shared";
 import {
   type OwnerType,
   buildProjectQuery,
+  buildProjectRelationshipSignatureQuery,
   OWNER_TYPE_QUERY,
   REPOSITORY_ID_QUERY,
   REPOSITORY_METADATA_QUERY,
@@ -9,6 +11,7 @@ import {
   buildUserIdsQuery,
   ISSUES_SINCE_QUERY,
 } from "./queries.js";
+import { isExplicitlyUnsupportedRelationshipCapability } from "./sub-issues.js";
 
 export interface RawProjectItem {
   id: string;
@@ -36,7 +39,99 @@ export interface RawProjectItem {
       isDraft: boolean;
       url: string | null;
     }>;
+    /**
+     * 関係リンクの変更検出用シグネチャ (#377)。
+     * 未対応インスタンスで取得できなかった場合は null。省略・null は「不明」として
+     * 関係リンクを再取得する側に倒す
+     */
+    relationships?: RelationshipSignature | null;
   } | null;
+}
+
+/** ProjectV2 items の Issue content から関係シグネチャを組み立てる。フィールド不在なら null */
+export function toRelationshipSignature(content: any): RelationshipSignature | null {
+  if (
+    !content ||
+    content.subIssuesSummary?.total == null ||
+    content.blockedBy?.totalCount == null ||
+    content.blocking?.totalCount == null
+  ) {
+    return null;
+  }
+  const parent =
+    content.parent?.number != null && content.parent?.repository?.nameWithOwner
+      ? `${content.parent.repository.nameWithOwner}#${content.parent.number}`
+      : null;
+  return {
+    parent,
+    sub_issues_total: content.subIssuesSummary.total,
+    blocked_by_total: content.blockedBy.totalCount,
+    blocking_total: content.blocking.totalCount,
+  };
+}
+
+/** ProjectV2 items を cursor で全ページ走査し、各ページの projectV2 node を callback に渡す */
+async function forEachProjectPage(
+  gql: typeof graphql,
+  query: string,
+  ownerType: OwnerType,
+  owner: string,
+  projectNumber: number,
+  onPage: (project: any) => void,
+): Promise<void> {
+  let cursor: string | null = null;
+  do {
+    const result: any = await gql(query, { owner, number: projectNumber, cursor });
+    const project = result[ownerType].projectV2;
+    onPage(project);
+    cursor = project.items.pageInfo.hasNextPage ? project.items.pageInfo.endCursor : null;
+  } while (cursor);
+}
+
+export interface ProjectRelationshipSignatureEntry {
+  number: number;
+  repository: string;
+  relationships: RelationshipSignature;
+}
+
+/**
+ * pre-check 用に project items の関係シグネチャだけを軽量取得する (#377)。
+ * sub-issue 未対応のインスタンスでフィールドが存在しない場合は null を返す。
+ */
+export async function fetchProjectRelationshipSignatures(
+  gql: typeof graphql,
+  owner: string,
+  projectNumber: number,
+  ownerType?: OwnerType,
+): Promise<ProjectRelationshipSignatureEntry[] | null> {
+  const resolvedOwnerType = ownerType ?? (await detectOwnerType(gql, owner));
+  const entries: ProjectRelationshipSignatureEntry[] = [];
+  try {
+    await forEachProjectPage(
+      gql,
+      buildProjectRelationshipSignatureQuery(resolvedOwnerType),
+      resolvedOwnerType,
+      owner,
+      projectNumber,
+      (project) => {
+        for (const item of project.items.nodes) {
+          const content = item.content;
+          if (!content || (content.__typename && content.__typename !== "Issue")) continue;
+          const relationships = toRelationshipSignature(content);
+          if (!relationships) continue;
+          entries.push({
+            number: content.number,
+            repository: content.repository.nameWithOwner,
+            relationships,
+          });
+        }
+      },
+    );
+  } catch (error) {
+    if (isExplicitlyUnsupportedRelationshipCapability(error)) return null;
+    throw error;
+  }
+  return entries;
 }
 
 export interface RawIssueType {
@@ -50,6 +145,12 @@ export interface RawProjectData {
   projectTitle: string;
   fields: Array<{ id: string; name: string; options?: Array<{ id: string; name: string }> }>;
   items: RawProjectItem[];
+  /**
+   * 関係シグネチャを取得できたか (#377)。sub-issue / blockedBy 未対応のインスタンスで
+   * フィールド不在のためシグネチャ無しで再取得した場合は false。
+   * false のとき呼び出し側は updated_at のみの従来判定に戻る。省略時は true 扱い
+   */
+  relationshipSignatureSupported?: boolean;
 }
 
 export async function detectOwnerType(gql: typeof graphql, login: string): Promise<OwnerType> {
@@ -67,17 +168,32 @@ export async function fetchProject(
   ownerType?: OwnerType,
 ): Promise<RawProjectData> {
   const resolvedOwnerType = ownerType ?? (await detectOwnerType(gql, owner));
-  const query = buildProjectQuery(resolvedOwnerType);
+
+  // 関係シグネチャ同梱で取得し、sub-issue 未対応インスタンスでフィールド不在なら
+  // シグネチャ無し (relationships: null) で再試行する (#377)
+  try {
+    return await fetchProjectPages(gql, owner, projectNumber, resolvedOwnerType, true);
+  } catch (error) {
+    if (!isExplicitlyUnsupportedRelationshipCapability(error)) throw error;
+    return fetchProjectPages(gql, owner, projectNumber, resolvedOwnerType, false);
+  }
+}
+
+async function fetchProjectPages(
+  gql: typeof graphql,
+  owner: string,
+  projectNumber: number,
+  ownerType: OwnerType,
+  withRelationshipSignature: boolean,
+): Promise<RawProjectData> {
+  const query = buildProjectQuery(ownerType, { withRelationshipSignature });
 
   const items: RawProjectItem[] = [];
-  let cursor: string | null = null;
   let projectNodeId = "";
   let projectTitle = "";
   let fields: RawProjectData["fields"] = [];
 
-  do {
-    const result: any = await gql(query, { owner, number: projectNumber, cursor });
-    const project = result[resolvedOwnerType].projectV2;
+  await forEachProjectPage(gql, query, ownerType, owner, projectNumber, (project) => {
     projectNodeId = project.id;
     projectTitle = project.title;
     fields = project.fields.nodes;
@@ -121,14 +237,19 @@ export async function fetchProject(
               url: pr.url ?? null,
             }),
           ),
+          relationships: withRelationshipSignature ? toRelationshipSignature(content) : null,
         },
       });
     }
+  });
 
-    cursor = project.items.pageInfo.hasNextPage ? project.items.pageInfo.endCursor : null;
-  } while (cursor);
-
-  return { projectNodeId, projectTitle, fields, items };
+  return {
+    projectNodeId,
+    projectTitle,
+    fields,
+    items,
+    relationshipSignatureSupported: withRelationshipSignature,
+  };
 }
 
 export interface RawMilestone {

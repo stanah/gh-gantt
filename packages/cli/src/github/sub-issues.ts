@@ -26,9 +26,10 @@ export interface IssueRelationships {
 
 class RelationshipPaginationError extends Error {}
 
-function isExplicitlyUnsupportedRelationshipCapability(error: unknown): boolean {
+/** sub-issue / blockedBy 未対応の GitHub インスタンスでのフィールド不在エラーか (#350, #377) */
+export function isExplicitlyUnsupportedRelationshipCapability(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  return /Cannot query field ["'](?:parent|subIssues|blockedBy|blocking)["'] on type ["']Issue["']|Field ["'](?:parent|subIssues|blockedBy|blocking)["'] .*does(?: not|n't) exist on type ["']Issue["']/i.test(
+  return /Cannot query field ["'](?:parent|subIssues|subIssuesSummary|blockedBy|blocking)["'] on type ["']Issue["']|Field ["'](?:parent|subIssues|subIssuesSummary|blockedBy|blocking)["'] .*does(?: not|n't) exist on type ["']Issue["']/i.test(
     message,
   );
 }

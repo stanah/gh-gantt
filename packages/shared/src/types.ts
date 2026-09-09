@@ -283,12 +283,37 @@ export const DEFAULT_CONFLICT_POLICY: Readonly<ConflictPolicy> = Object.freeze({
   labels: "theirs",
 });
 
+/**
+ * 関係リンク (parent / sub-issue / blockedBy) の変更検出に使う軽量シグネチャ (#377)。
+ *
+ * GitHub は sub-issue や blockedBy の追加・削除で Issue の `updatedAt` を更新しないため、
+ * updated_at だけでは関係の変化を検出できない。ProjectV2 items の一括取得で得られる
+ * 親 Issue と各接続の件数を snapshot に保存し、次回 pull で比較する。
+ * 件数のみでは blocker の入れ替えを直接検出できないが、相手側 Issue の blocking / parent が
+ * 変わるためそちらで検出される。
+ */
+export interface RelationshipSignature {
+  /** 親 Issue のタスク ID (`owner/repo#N`)。親が無ければ null */
+  parent: string | null;
+  /** sub-issue の総数 (project 外の Issue も含む) */
+  sub_issues_total: number;
+  /** この Issue を block している Issue の総数 */
+  blocked_by_total: number;
+  /** この Issue が block している Issue の総数 */
+  blocking_total: number;
+}
+
 export interface Snapshot {
   hash: string;
   synced_at: string;
   updated_at?: string;
   syncFields?: SyncFields;
   remoteHash?: string;
+  /**
+   * 前回 pull で観測した関係シグネチャ (#377)。
+   * 無い場合 (旧形式の sync-state) は関係が変わった可能性ありとして扱い、関係リンクを再取得する
+   */
+  relationships?: RelationshipSignature;
 }
 
 export interface SyncState {

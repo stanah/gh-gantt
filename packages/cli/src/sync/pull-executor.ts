@@ -1,6 +1,11 @@
 import type { graphql } from "@octokit/graphql";
-import type { Config, Task, SyncState, TasksFile } from "@gh-gantt/shared";
-import { fetchProject, fetchRepositoryMetadata, checkRemoteChanges } from "../github/projects.js";
+import type { Config, Task, SyncState, TasksFile, RelationshipSignature } from "@gh-gantt/shared";
+import {
+  fetchProject,
+  fetchProjectRelationshipSignatures,
+  fetchRepositoryMetadata,
+  checkRemoteChanges,
+} from "../github/projects.js";
 import {
   fetchAllIssueRelationshipLinks,
   type BlockedByLink,
@@ -86,6 +91,21 @@ export async function executePull(
         `  ⚠ pre-check に失敗したためフル fetch にフォールバック: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
+    // sub-issue / blockedBy の追加・削除は Issue の updatedAt を更新しないため、
+    // since クエリが「変化なし」でも関係シグネチャを軽量取得して snapshot と比較する (#377)。
+    // こちらも最適化パスなので失敗時はフル fetch にフォールバックする (fail-open)。
+    // 未対応インスタンス (null) では関係リンク自体が存在しないので since クエリの判定を採用する。
+    if (!hasChanges) {
+      try {
+        const entries = await fetchProjectRelationshipSignatures(gql, owner, project_number);
+        hasChanges = hasRelationshipSignatureChanges(entries, tasksFile, syncState);
+      } catch (error) {
+        hasChanges = true;
+        console.warn(
+          `  ⚠ 関係シグネチャの pre-check に失敗したためフル fetch にフォールバック: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
     if (!hasChanges) {
       return {
         result: {
@@ -123,9 +143,17 @@ export async function executePull(
 
   // Map remote items to tasks
   const remoteTasks = new Map<string, Task>();
+  // Issue ごとの関係シグネチャ (#377)。取得できなかった Issue は null (不明 = stale 扱い)
+  const remoteSignatures = new Map<string, RelationshipSignature | null>();
+  // sub-issue / blockedBy 未対応のインスタンスではシグネチャを取得できない (全 Issue が null)。
+  // その場合は関係リンクが存在しないので、シグネチャ比較を省き updated_at のみの従来判定に戻す (#377)
+  const signatureSupported = projectData.relationshipSignatureSupported ?? true;
   for (const item of projectData.items) {
     const task = mapRemoteItemToTask(item, config);
-    if (task) remoteTasks.set(task.id, task);
+    if (task) {
+      remoteTasks.set(task.id, task);
+      remoteSignatures.set(task.id, item.content?.relationships ?? null);
+    }
   }
   for (const m of repoMetadata.milestones) {
     if (!m.dueOn) continue;
@@ -207,6 +235,16 @@ export async function executePull(
         changed = true;
         break;
       }
+      // updated_at が一致しても関係リンクは変わりうる (#377)。
+      // milestone 由来の合成タスクはシグネチャを持たないので比較対象外
+      if (
+        signatureSupported &&
+        remoteSignatures.has(id) &&
+        !sameRelationshipSignature(remoteSignatures.get(id), snap.relationships)
+      ) {
+        changed = true;
+        break;
+      }
     }
     if (!changed) {
       return {
@@ -236,16 +274,24 @@ export async function executePull(
   }
 
   // 関係リンク (sub-issue / blockedBy) は Issue ごとに 1 クエリかかるため、取得対象を
-  // updated_at が sync-state と一致しない Issue に絞る (#350)。quick-skip と同じ仮定
-  // (updated_at が一致する Issue は関係も変わっていない) に基づき、一致した Issue の辺は
-  // snapshot の syncFields から再構成する。--force と snapshot 不在時は全件取得する。
+  // updated_at または関係シグネチャが sync-state と一致しない Issue に絞る (#350, #377)。
+  // 両方一致した Issue の辺は snapshot の syncFields から再構成する。
+  // --force と snapshot 不在時は全件取得する。
   const issueItems = projectData.items
     .filter((i) => i.content)
     .map((i) => ({ number: i.content!.number, repository: i.content!.repository }));
   const staleIssueIds = new Set<string>();
   for (const item of issueItems) {
     const id = buildTaskId(item.repository, item.number);
-    if (opts.force || isRelationshipStale(remoteTasks.get(id), syncState.snapshots[id])) {
+    if (
+      opts.force ||
+      isRelationshipStale(
+        remoteTasks.get(id),
+        remoteSignatures.get(id),
+        syncState.snapshots[id],
+        signatureSupported,
+      )
+    ) {
       staleIssueIds.add(id);
     }
   }
@@ -377,12 +423,16 @@ export async function executePull(
 
     const isConflicted = conflictedIds.has(task.id);
     const hasLocalChanges = locallyChangedIds.has(task.id);
+    // 今回観測した関係シグネチャ (#377)。取得できなかった場合はキーを持たせず、次回は stale 扱いにする
+    const relationships = remoteSignatures.get(task.id) ?? undefined;
+    const signature = relationships ? { relationships } : {};
 
     if (isConflicted) {
       // Conflicted: preserve hash so local changes remain pushable
       newSnapshots[task.id] = {
         ...(existing ?? { hash: hashTask(task), synced_at: new Date().toISOString() }),
         remoteHash,
+        ...signature,
       };
     } else if (hasLocalChanges) {
       // Unpushed local changes: preserve hash for diff detection,
@@ -392,6 +442,7 @@ export async function executePull(
         updated_at: remoteTask?.updated_at ?? existing?.updated_at,
         syncFields: extractSyncFields(task),
         remoteHash,
+        ...signature,
       };
     } else if (existing && remoteHash === (existing.remoteHash ?? existing.hash)) {
       // ハッシュ一致 (内容変更なし) でも updated_at を remote に追従する。
@@ -402,6 +453,7 @@ export async function executePull(
         ...existing,
         updated_at: remoteTask?.updated_at ?? existing.updated_at,
         remoteHash,
+        ...signature,
       };
     } else {
       newSnapshots[task.id] = {
@@ -410,6 +462,7 @@ export async function executePull(
         updated_at: task.updated_at,
         syncFields: extractSyncFields(task),
         remoteHash,
+        ...signature,
       };
     }
   }
@@ -466,18 +519,69 @@ export async function executePull(
 }
 
 /**
+ * 関係シグネチャが一致するか (#377)。
+ *
+ * remote 側が取得できていない (null / undefined) か、snapshot に記録が無い (旧形式の sync-state)
+ * 場合は「変わった可能性あり」として不一致扱いにし、安全側 (再取得) に倒す。
+ */
+function sameRelationshipSignature(
+  remote: RelationshipSignature | null | undefined,
+  recorded: RelationshipSignature | undefined,
+): boolean {
+  if (!remote || !recorded) return false;
+  return (
+    remote.parent === recorded.parent &&
+    remote.sub_issues_total === recorded.sub_issues_total &&
+    remote.blocked_by_total === recorded.blocked_by_total &&
+    remote.blocking_total === recorded.blocking_total
+  );
+}
+
+/**
+ * pre-check の第二段: 軽量取得した関係シグネチャが snapshot と一致しないか (#377)。
+ *
+ * snapshot にシグネチャが無い Issue、ローカルの Issue 集合と項目数が食い違う場合も
+ * 「変化あり」としてフル fetch に進む。
+ * 未対応インスタンス (entries が null) には関係リンクが存在せず、since クエリの判定で
+ * 十分なので「変化なし」を返す (#350 以前の従来動作)。
+ */
+function hasRelationshipSignatureChanges(
+  entries: Awaited<ReturnType<typeof fetchProjectRelationshipSignatures>>,
+  tasksFile: TasksFile,
+  syncState: SyncState,
+): boolean {
+  if (!entries) return false;
+  const localIssueCount = tasksFile.tasks.filter(
+    (t) => !isDraftTask(t.id) && !isMilestoneSyntheticTask(t.id),
+  ).length;
+  if (entries.length !== localIssueCount) return true;
+  for (const entry of entries) {
+    const id = buildTaskId(entry.repository, entry.number);
+    if (!sameRelationshipSignature(entry.relationships, syncState.snapshots[id]?.relationships)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * 関係リンクを GitHub から取り直す必要があるか。
  *
  * snapshot が無い (新規に現れた Issue)、updated_at が記録されていない、syncFields が無い、
- * または updated_at が snapshot と一致しない場合は再取得する。それ以外は quick-skip と
- * 同じ仮定で snapshot から辺を再構成できる。
+ * updated_at が snapshot と一致しない、または関係シグネチャが一致しない (#377) 場合は
+ * 再取得する。それ以外は quick-skip と同じ仮定で snapshot から辺を再構成できる。
+ * シグネチャを取得できないインスタンス (signatureSupported = false) では updated_at のみで判定する。
  */
 function isRelationshipStale(
   remoteTask: Task | undefined,
+  remoteSignature: RelationshipSignature | null | undefined,
   snapshot: SyncState["snapshots"][string] | undefined,
+  signatureSupported = true,
 ): boolean {
   if (!remoteTask || !snapshot?.updated_at || !snapshot.syncFields) return true;
-  return remoteTask.updated_at !== snapshot.updated_at;
+  if (remoteTask.updated_at !== snapshot.updated_at) return true;
+  if (!signatureSupported) return false;
+  return !sameRelationshipSignature(remoteSignature, snapshot.relationships);
 }
 
 /**

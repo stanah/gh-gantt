@@ -6,7 +6,7 @@
  * 変わった Issue に接する既存の辺は捨てて取得結果で置き換える。
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { Config, SyncState, TasksFile, Task } from "@gh-gantt/shared";
+import type { Config, SyncState, TasksFile, Task, RelationshipSignature } from "@gh-gantt/shared";
 
 vi.mock("../github/projects.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../github/projects.js")>();
@@ -101,7 +101,38 @@ function makeTask(issueNumber: number, updatedAt: string, overrides: Partial<Tas
   };
 }
 
-function makeProjectItem(issueNumber: number, updatedAt: string): RawProjectItem {
+/**
+ * 同期済み状態のタスク集合から Issue の関係シグネチャ (#377) を導出する。
+ * blocking_total は「他タスクの blocked_by に自分が現れる数」
+ */
+function signatureOf(task: Task, all: Task[]): RelationshipSignature {
+  return {
+    parent: task.parent,
+    sub_issues_total: task.sub_tasks.length,
+    blocked_by_total: task.blocked_by.length,
+    blocking_total: all.filter((t) => t.blocked_by.some((d) => d.task === task.id)).length,
+  };
+}
+
+const NO_RELATIONSHIPS: RelationshipSignature = {
+  parent: null,
+  sub_issues_total: 0,
+  blocked_by_total: 0,
+  blocking_total: 0,
+};
+
+/** makeSyncedTasks の同期済み状態に対応するシグネチャ。未知の Issue は関係無し */
+function syncedSignature(issueNumber: number): RelationshipSignature {
+  const synced = makeSyncedTasks();
+  const task = synced.find((t) => t.github_issue === issueNumber);
+  return task ? signatureOf(task, synced) : NO_RELATIONSHIPS;
+}
+
+function makeProjectItem(
+  issueNumber: number,
+  updatedAt: string,
+  relationships: RelationshipSignature = syncedSignature(issueNumber),
+): RawProjectItem {
   return {
     id: `PVTI_${issueNumber}`,
     fieldValues: {},
@@ -121,11 +152,12 @@ function makeProjectItem(issueNumber: number, updatedAt: string): RawProjectItem
       issueType: null,
       repository: REPO,
       linkedPullRequests: [],
+      relationships,
     },
   };
 }
 
-function makeSnapshot(task: Task): SyncState["snapshots"][string] {
+function makeSnapshot(task: Task, all: Task[]): SyncState["snapshots"][string] {
   const hash = hashTask(task);
   return {
     hash,
@@ -133,6 +165,7 @@ function makeSnapshot(task: Task): SyncState["snapshots"][string] {
     synced_at: LAST_PULL_AT,
     updated_at: task.updated_at,
     syncFields: extractSyncFields(task),
+    relationships: signatureOf(task, all),
   };
 }
 
@@ -151,7 +184,7 @@ function makeSyncState(tasks: Task[]): SyncState {
       ]),
     ),
     field_ids: {},
-    snapshots: Object.fromEntries(tasks.map((t) => [t.id, makeSnapshot(t)])),
+    snapshots: Object.fromEntries(tasks.map((t) => [t.id, makeSnapshot(t, tasks)])),
   };
 }
 

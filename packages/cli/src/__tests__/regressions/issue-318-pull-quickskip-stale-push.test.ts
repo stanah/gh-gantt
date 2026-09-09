@@ -17,7 +17,7 @@
  * watermark を前進させて pre-check の高速性を維持する。
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import type { Config, SyncState, TasksFile, Task } from "@gh-gantt/shared";
+import type { Config, SyncState, TasksFile, Task, RelationshipSignature } from "@gh-gantt/shared";
 
 vi.mock("../../github/projects.js", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../github/projects.js")>();
@@ -151,10 +151,19 @@ function makeProjectItem(
       issueType: null,
       repository: "stanah/gh-gantt",
       linkedPullRequests: [],
+      relationships: NO_RELATIONSHIPS,
       ...overrides,
     },
   };
 }
+
+/** 関係シグネチャ (#377)。本テストのタスクは親子・依存を持たないので固定値 */
+const NO_RELATIONSHIPS: RelationshipSignature = {
+  parent: null,
+  sub_issues_total: 0,
+  blocked_by_total: 0,
+  blocking_total: 0,
+};
 
 function makeSnapshot(task: Task): SyncState["snapshots"][string] {
   const hash = hashTask(task);
@@ -164,6 +173,7 @@ function makeSnapshot(task: Task): SyncState["snapshots"][string] {
     synced_at: LAST_PULL_AT,
     updated_at: task.updated_at,
     syncFields: extractSyncFields(task),
+    relationships: NO_RELATIONSHIPS,
   };
 }
 
