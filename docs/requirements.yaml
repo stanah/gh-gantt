@@ -1163,7 +1163,7 @@ areas:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC8
-            description: 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から行単位で敷き詰められて一つの巨大な段に潰れない
+            description: 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から縦に積まれて左端が揃い、横軸上に別の成分が並ばない
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-layout.test.ts

@@ -292,14 +292,15 @@ describe("[FR-VIS-027-AC5] Dependency Map をパン・ズームでき、初期�
     expect(nodeInView(layout, "n30", vp, size)).toBe(true);
   });
 
-  it("選択がなければグラフ全体の中心を表示する", () => {
+  it("[Issue #393] 選択がなく縮小しきれない場合は左上 (先頭の成分) を読める倍率で表示する", () => {
     const layout = layoutDependencyGraph(chain(40));
     const size = { width: 300, height: 200 };
     const vp = computeInitialViewport(layout, null, size);
-    const centerX = (layout.width / 2) * vp.zoom + vp.x;
-    const centerY = (layout.height / 2) * vp.zoom + vp.y;
-    expect(centerX).toBeCloseTo(size.width / 2, 5);
-    expect(centerY).toBeCloseTo(size.height / 2, 5);
+    expect(vp.zoom).toBeGreaterThanOrEqual(0.5);
+    // 最上流 (左端) の先頭ノードが表示領域に収まる
+    expect(nodeInView(layout, "n0", vp, size)).toBe(true);
+    expect(vp.x).toBeGreaterThanOrEqual(0);
+    expect(vp.y).toBeGreaterThanOrEqual(0);
   });
 });
 
@@ -371,8 +372,8 @@ describe("[FR-VIS-027-AC7] Dependency Map が横向き (LR) 配置で同じ段�
   });
 });
 
-describe("[FR-VIS-027-AC8] 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から行単位で敷き詰められて一つの巨大な段に潰れない", () => {
-  it("繋がっていない 2 本の鎖は別々の行に配置され、段が混ざらない", () => {
+describe("[FR-VIS-027-AC8] 全依存モードで互いに依存のない連結成分が個別にレイアウトされ、大きい成分から縦に積まれて左端が揃い、横軸上に別の成分が並ばない", () => {
+  it("[Issue #393] 繋がっていない 2 本の鎖は上下に積まれ、左端が揃う", () => {
     const graph: DependencySubgraph = {
       parentEdges: [],
       nodes: [node("a"), node("b"), node("c"), node("d"), node("e")],
@@ -397,7 +398,7 @@ describe("[FR-VIS-027-AC8] 全依存モードで互いに依存のない連結�
     expect(Math.abs(mergedA.y - mergedD.y)).toBeLessThan(NODE_HEIGHT * 2);
   });
 
-  it("孤立ノードが多い場合は複数の行と列に敷き詰められ、一列に潰れない", () => {
+  it("[Issue #393] 孤立ノードが多くても横には並べず、すべて同じ x で縦に積まれる", () => {
     const ids = Array.from({ length: 12 }, (_, i) => `n${i}`);
     const graph: DependencySubgraph = {
       parentEdges: [],
@@ -406,25 +407,33 @@ describe("[FR-VIS-027-AC8] 全依存モードで互いに依存のない連結�
     };
     const layout = layoutDependencyGraph(graph);
     const xs = new Set(layout.nodes.map((n) => Math.round(n.x)));
-    const ys = new Set(layout.nodes.map((n) => Math.round(n.y)));
-    expect(xs.size).toBeGreaterThan(1);
-    expect(ys.size).toBeGreaterThan(1);
-    const ratio = layout.width / layout.height;
-    expect(ratio).toBeGreaterThan(0.5);
-    expect(ratio).toBeLessThan(3);
-    // ノード同士が重ならない
-    for (let i = 0; i < layout.nodes.length; i += 1) {
-      for (let j = i + 1; j < layout.nodes.length; j += 1) {
-        const a = layout.nodes[i];
-        const b = layout.nodes[j];
-        const overlap =
-          a.x < b.x + b.width &&
-          b.x < a.x + a.width &&
-          a.y < b.y + b.height &&
-          b.y < a.y + a.height;
-        expect(overlap).toBe(false);
-      }
+    expect(xs.size).toBe(1);
+    // 成分同士は段間隔より広い間隔で区切られ、重ならない
+    const sorted = [...layout.nodes].sort((a, b) => a.y - b.y);
+    for (let i = 1; i < sorted.length; i += 1) {
+      const gap = sorted[i].y - (sorted[i - 1].y + sorted[i - 1].height);
+      expect(gap).toBeGreaterThanOrEqual(48);
     }
+  });
+
+  it("[Issue #393] 横に長い成分と短い成分が混在しても、短い成分が長い成分の右隣に置かれない", () => {
+    // a-b-c-d-e の長い鎖と、孤立ノード f / g
+    const graph: DependencySubgraph = {
+      parentEdges: [],
+      nodes: ["a", "b", "c", "d", "e", "f", "g"].map((id) => node(id)),
+      edges: [edge("a", "b"), edge("b", "c"), edge("c", "d"), edge("d", "e")],
+    };
+    const layout = layoutDependencyGraph(graph);
+    const byId = new Map(layout.nodes.map((n) => [n.id, n]));
+    const chainBottom = Math.max(
+      ...["a", "b", "c", "d", "e"].map((id) => byId.get(id)!.y + NODE_HEIGHT),
+    );
+    for (const id of ["f", "g"]) {
+      const n = byId.get(id)!;
+      expect(n.x).toBeCloseTo(byId.get("a")!.x, 5);
+      expect(n.y).toBeGreaterThanOrEqual(chainBottom);
+    }
+    expect(byId.get("g")!.y).toBeGreaterThan(byId.get("f")!.y);
   });
 
   it("成分間のエッジ経路も成分のオフセット分だけ平行移動され、ノード境界に一致する", () => {
