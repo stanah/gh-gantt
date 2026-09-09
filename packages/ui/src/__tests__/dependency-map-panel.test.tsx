@@ -668,8 +668,8 @@ describe("[FR-VIS-027-AC10] Dependency Map のノードに関連 PR の状態 (D
   });
 });
 
-describe("[FR-VIS-027-AC15] Dependency Map のノードが 2 段構成で、上段にタイトルが最大 2 行表示され、下段のメタ行に PR バッジ・非表示隣接マーク・フォーカス操作がまとまり、担当者アバターはノード右下にはみ出して重なりタイトル領域を奪わない", () => {
-  it("[Issue #394] タイトルは 2 行 clamp の上段に置かれ、フォーカス操作と PR バッジはメタ行に入る", async () => {
+describe("[FR-VIS-027-AC15] Dependency Map のノードがタイトルに全体 (最大 2 行) を使い、PR バッジ・担当者アバター・非表示隣接マーク・フォーカス操作はノード内の行を占有せず角や辺に重ねて表示される", () => {
+  it("[Issue #394] タイトルは 2 行 clamp で、PR バッジとフォーカス操作はタイトルの外に絶対配置される", async () => {
     const tasks = chainTasks();
     tasks[1].linked_prs = [
       { number: 10, title: "pr", state: "OPEN", url: "https://example.com/pull/10" },
@@ -679,11 +679,21 @@ describe("[FR-VIS-027-AC15] Dependency Map のノードが 2 段構成で、上�
     const title = node.querySelector("[data-node-title]") as HTMLElement;
     expect(title.textContent).toBe(tasks[1].title);
     expect(title.style.webkitLineClamp).toBe("2");
-    const meta = node.querySelector("[data-node-meta]")!;
-    expect(meta.querySelector('[data-node-focus="sel"]')).not.toBeNull();
-    expect(meta.querySelector("[data-pr-status]")).not.toBeNull();
     // タイトル行にはアイコン類が入らない
     expect(title.querySelector("[data-pr-status], [data-node-focus], [data-avatar]")).toBeNull();
+    const pr = node.querySelector("[data-node-pr]") as HTMLElement;
+    expect(pr.style.position).toBe("absolute");
+    expect(parseFloat(pr.style.top)).toBeLessThan(0);
+    expect(pr.querySelector("[data-pr-status]")).not.toBeNull();
+    const focus = node.querySelector('[data-node-focus="sel"]') as HTMLElement;
+    expect(focus.style.position).toBe("absolute");
+    // 平常時は非表示で、ホバーで現れる
+    expect(focus.style.opacity).toBe("0");
+    fireEvent.mouseEnter(node);
+    expect(focus.style.opacity).toBe("1");
+    // PR の無いノードにはバッジ領域を作らない
+    const none = container.querySelector('[data-node="up"]') as HTMLElement;
+    expect(none.querySelector("[data-node-pr]")).toBeNull();
   });
 
   it("[Issue #394] 担当者アバターはノード内のフローから外れ、右下に絶対配置ではみ出す", async () => {

@@ -97,10 +97,6 @@ type TaskFlowNode = Node<TaskNodeData, "task">;
 type DependencyFlowEdge = Edge<DependencyEdgeData, "dependency">;
 
 const SELECTED_BORDER = "var(--color-selected-fg, #1a73e8)";
-/** 右下のアバターがノード境界からはみ出す量 (px)。 */
-const AVATAR_OVERHANG = 7;
-/** メタ行の右端で、はみ出したアバターと重ならないよう空けておく幅 (px)。 */
-const AVATAR_OVERHANG_WIDTH = 30;
 const DANGER = "var(--color-danger, #e74c3c)";
 
 /**
@@ -198,13 +194,18 @@ const hiddenHandleStyle: React.CSSProperties = {
   pointerEvents: "none",
 };
 
+/** ノードの角や辺に重ねるアイコン類がノード境界からはみ出す量 (px)。 */
+const OVERHANG = 7;
+
 /**
- * ノード本体。タイトルを最優先にした 2 段構成で、上段はタイトル (最大 2 行)、
- * 下段はメタ行 (PR バッジ・非表示隣接マーク・フォーカス操作)。担当者アバターはノード内の
- * 領域を奪わないよう、右下に半分はみ出す形で重ねる。Enter / Space で選択を親へ伝える
- * (クリックは onNodeClick 経由)。
+ * ノード本体。タイトルにノード全体 (最大 2 行) を使い、アイコン類はノード内の行を占有せず
+ * 角や辺に重ねる。右上に PR バッジ、右下に担当者アバター、左右の辺の中央に非表示隣接マーク、
+ * フォーカス操作 (◎) はホバー / フォーカス時だけ右上の内側に出す。
+ * Enter / Space で選択を親へ伝える (クリックは onNodeClick 経由)。
  */
 function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
+  const [showFocus, setShowFocus] = useState(false);
+  const hasPr = data.linkedPrs.length > 0;
   return (
     <div
       data-node={id}
@@ -219,6 +220,12 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         if (e.key !== "Enter" && e.key !== " ") return;
         e.preventDefault();
         data.onSelect(id);
+      }}
+      onMouseEnter={() => setShowFocus(true)}
+      onMouseLeave={() => setShowFocus(false)}
+      onFocus={() => setShowFocus(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowFocus(false);
       }}
       style={{
         boxSizing: "border-box",
@@ -235,7 +242,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         color: "var(--color-text)",
         fontSize: 11,
         cursor: "pointer",
-        // アバターを右下にはみ出させるため overflow は隠さない (タイトルは内側で clamp する)
+        // 角のアイコンをはみ出させるため overflow は隠さない (タイトルは内側で clamp する)
         overflow: "visible",
       }}
     >
@@ -264,86 +271,49 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
         />
       )}
-      <div
+      {/* タイトルにノードの高さを丸ごと使い、最大 2 行まで表示して超える分だけ省略する */}
+      <span
+        data-node-title="true"
         style={{
           flex: 1,
           minWidth: 0,
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: "4px 6px 3px 6px",
+          alignSelf: "center",
+          padding: "3px 8px 3px 6px",
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: 2,
           overflow: "hidden",
+          lineHeight: 1.3,
+          wordBreak: "break-word",
         }}
       >
-        {/* 上段: タイトルを最大 2 行まで表示し、超える分だけ省略する */}
+        {data.title}
+      </span>
+      {/* 以下はノード内の行を占有しない重ね表示。右上: PR バッジ、右下: アバター、左右辺: 非表示隣接マーク */}
+      {hasPr && (
         <span
-          data-node-title="true"
+          data-node-pr="true"
           style={{
-            display: "-webkit-box",
-            WebkitBoxOrient: "vertical",
-            WebkitLineClamp: 2,
-            overflow: "hidden",
-            lineHeight: 1.3,
-            wordBreak: "break-word",
-          }}
-        >
-          {data.title}
-        </span>
-        {/* 下段: メタ行。右端の余白は右下にはみ出すアバターのために空けておく */}
-        <span
-          data-node-meta="true"
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            height: 14,
-            paddingRight: data.assignees.length > 0 ? AVATAR_OVERHANG_WIDTH : 0,
+            position: "absolute",
+            top: -OVERHANG,
+            right: -OVERHANG,
+            display: "inline-flex",
+            padding: 2,
+            borderRadius: 999,
+            background: "var(--color-surface, #fff)",
+            border: "1px solid var(--color-border)",
           }}
         >
           <LinkedPrBadge linkedPrs={data.linkedPrs} />
-          {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
-            <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
-          )}
-          <span style={{ flex: 1 }} />
-          <button
-            type="button"
-            data-node-focus={id}
-            aria-label={`${data.title} を中心に表示`}
-            title="このタスクを中心に表示"
-            // クリックは onNodeClick (選択のみ) に伝播させず、フォーカス操作だけを行う
-            onClick={(e) => {
-              e.stopPropagation();
-              data.onFocus(id);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-            }}
-            style={{
-              flexShrink: 0,
-              width: 14,
-              height: 14,
-              padding: 0,
-              border: 0,
-              borderRadius: 3,
-              background: "transparent",
-              color: "var(--color-text-muted)",
-              fontSize: 11,
-              lineHeight: 1,
-              cursor: "pointer",
-            }}
-          >
-            ◎
-          </button>
         </span>
-      </div>
+      )}
       {data.assignees.length > 0 && (
-        // 担当者アバターはノードの右下に半分はみ出す形で重ね、タイトル領域を奪わない
         <span
           data-node-avatars="true"
           style={{
             position: "absolute",
-            right: -AVATAR_OVERHANG,
-            bottom: -AVATAR_OVERHANG,
+            right: -OVERHANG,
+            bottom: -OVERHANG,
             display: "inline-flex",
             pointerEvents: "none",
           }}
@@ -351,6 +321,64 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           <AssigneeAvatars assignees={data.assignees} />
         </span>
       )}
+      {data.hiddenUpstream > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            left: -OVERHANG - 4,
+            top: "50%",
+            transform: "translateY(-50%)",
+          }}
+        >
+          <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={0} />
+        </span>
+      )}
+      {data.hiddenDownstream > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            right: -OVERHANG - 4,
+            top: "50%",
+            transform: "translateY(-50%)",
+          }}
+        >
+          <HiddenNeighborMark upstream={0} downstream={data.hiddenDownstream} />
+        </span>
+      )}
+      <button
+        type="button"
+        data-node-focus={id}
+        aria-label={`${data.title} を中心に表示`}
+        title="このタスクを中心に表示"
+        // クリックは onNodeClick (選択のみ) に伝播させず、フォーカス操作だけを行う
+        onClick={(e) => {
+          e.stopPropagation();
+          data.onFocus(id);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+        }}
+        style={{
+          position: "absolute",
+          // PR バッジと重ならないよう、バッジがあるときは少し下にずらす
+          top: hasPr ? 12 : 2,
+          right: 2,
+          width: 14,
+          height: 14,
+          padding: 0,
+          border: 0,
+          borderRadius: 3,
+          background: "var(--color-surface, #fff)",
+          color: "var(--color-text-muted)",
+          fontSize: 11,
+          lineHeight: 1,
+          cursor: "pointer",
+          // ホバー / フォーカス時だけ見せ、平常時はタイトルを隠さない
+          opacity: showFocus ? 1 : 0,
+        }}
+      >
+        ◎
+      </button>
       <Handle
         type="source"
         position={Position.Right}
@@ -383,6 +411,7 @@ function HiddenNeighborMark({ upstream, downstream }: { upstream: number; downst
         borderRadius: 3,
         border: "1px dashed var(--color-text-muted, #8b949e)",
         color: "var(--color-text-muted, #8b949e)",
+        background: "var(--color-surface, #fff)",
         whiteSpace: "nowrap",
       }}
     >

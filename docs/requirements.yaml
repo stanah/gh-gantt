@@ -1202,7 +1202,7 @@ areas:
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
           - id: FR-VIS-027-AC15
-            description: Dependency Map のノードが 2 段構成で、上段にタイトルが最大 2 行表示され、下段のメタ行に PR バッジ・非表示隣接マーク・フォーカス操作がまとまり、担当者アバターはノード右下にはみ出して重なりタイトル領域を奪わない
+            description: Dependency Map のノードがタイトルに全体 (最大 2 行) を使い、PR バッジ・担当者アバター・非表示隣接マーク・フォーカス操作はノード内の行を占有せず角や辺に重ねて表示される
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
