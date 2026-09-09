@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-/** アバターの一辺 (px)。ノードの固定高さ 36px の 1 行に収まる大きさ。 */
+/** アバターの一辺 (px)。ノードの右下に半分はみ出して重ねる前提の大きさ。 */
 export const AVATAR_SIZE = 18;
 /** ノード上に画像で表示する担当者の最大人数。超過分は「+N」にまとめる。 */
 export const MAX_VISIBLE_ASSIGNEES = 2;

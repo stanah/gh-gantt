@@ -97,6 +97,10 @@ type TaskFlowNode = Node<TaskNodeData, "task">;
 type DependencyFlowEdge = Edge<DependencyEdgeData, "dependency">;
 
 const SELECTED_BORDER = "var(--color-selected-fg, #1a73e8)";
+/** 右下のアバターがノード境界からはみ出す量 (px)。 */
+const AVATAR_OVERHANG = 7;
+/** メタ行の右端で、はみ出したアバターと重ならないよう空けておく幅 (px)。 */
+const AVATAR_OVERHANG_WIDTH = 30;
 const DANGER = "var(--color-danger, #e74c3c)";
 
 /**
@@ -194,7 +198,12 @@ const hiddenHandleStyle: React.CSSProperties = {
   pointerEvents: "none",
 };
 
-/** ノード本体。Enter / Space で選択を親へ伝える (クリックは onNodeClick 経由)。 */
+/**
+ * ノード本体。タイトルを最優先にした 2 段構成で、上段はタイトル (最大 2 行)、
+ * 下段はメタ行 (PR バッジ・非表示隣接マーク・フォーカス操作)。担当者アバターはノード内の
+ * 領域を奪わないよう、右下に半分はみ出す形で重ねる。Enter / Space で選択を親へ伝える
+ * (クリックは onNodeClick 経由)。
+ */
 function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
   return (
     <div
@@ -213,12 +222,11 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
       }}
       style={{
         boxSizing: "border-box",
+        position: "relative",
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "0 8px 0 0",
+        alignItems: "stretch",
         borderRadius: 4,
         borderStyle: data.isMilestone ? "dashed" : "solid",
         borderWidth: data.isSelected ? 2.5 : 1.5,
@@ -227,7 +235,8 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         color: "var(--color-text)",
         fontSize: 11,
         cursor: "pointer",
-        overflow: "hidden",
+        // アバターを右下にはみ出させるため overflow は隠さない (タイトルは内側で clamp する)
+        overflow: "visible",
       }}
     >
       <Handle
@@ -243,7 +252,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{
             width: 10,
             height: 10,
-            marginLeft: 6,
+            margin: "auto 4px auto 6px",
             flexShrink: 0,
             background: data.color,
             transform: "rotate(45deg)",
@@ -255,44 +264,93 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
         />
       )}
-      {/* アバターと PR バッジはタイトルの左に置く。右端は省略記号とフォーカス操作 */}
-      <AssigneeAvatars assignees={data.assignees} />
-      <LinkedPrBadge linkedPrs={data.linkedPrs} />
-      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {data.title}
-      </span>
-      {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
-        <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
-      )}
-      <button
-        type="button"
-        data-node-focus={id}
-        aria-label={`${data.title} を中心に表示`}
-        title="このタスクを中心に表示"
-        // クリックは onNodeClick (選択のみ) に伝播させず、フォーカス操作だけを行う
-        onClick={(e) => {
-          e.stopPropagation();
-          data.onFocus(id);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" || e.key === " ") e.stopPropagation();
-        }}
+      <div
         style={{
-          flexShrink: 0,
-          width: 16,
-          height: 16,
-          padding: 0,
-          border: 0,
-          borderRadius: 3,
-          background: "transparent",
-          color: "var(--color-text-muted)",
-          fontSize: 11,
-          lineHeight: 1,
-          cursor: "pointer",
+          flex: 1,
+          minWidth: 0,
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "space-between",
+          padding: "4px 6px 3px 6px",
+          overflow: "hidden",
         }}
       >
-        ◎
-      </button>
+        {/* 上段: タイトルを最大 2 行まで表示し、超える分だけ省略する */}
+        <span
+          data-node-title="true"
+          style={{
+            display: "-webkit-box",
+            WebkitBoxOrient: "vertical",
+            WebkitLineClamp: 2,
+            overflow: "hidden",
+            lineHeight: 1.3,
+            wordBreak: "break-word",
+          }}
+        >
+          {data.title}
+        </span>
+        {/* 下段: メタ行。右端の余白は右下にはみ出すアバターのために空けておく */}
+        <span
+          data-node-meta="true"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 6,
+            height: 14,
+            paddingRight: data.assignees.length > 0 ? AVATAR_OVERHANG_WIDTH : 0,
+          }}
+        >
+          <LinkedPrBadge linkedPrs={data.linkedPrs} />
+          {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
+            <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
+          )}
+          <span style={{ flex: 1 }} />
+          <button
+            type="button"
+            data-node-focus={id}
+            aria-label={`${data.title} を中心に表示`}
+            title="このタスクを中心に表示"
+            // クリックは onNodeClick (選択のみ) に伝播させず、フォーカス操作だけを行う
+            onClick={(e) => {
+              e.stopPropagation();
+              data.onFocus(id);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") e.stopPropagation();
+            }}
+            style={{
+              flexShrink: 0,
+              width: 14,
+              height: 14,
+              padding: 0,
+              border: 0,
+              borderRadius: 3,
+              background: "transparent",
+              color: "var(--color-text-muted)",
+              fontSize: 11,
+              lineHeight: 1,
+              cursor: "pointer",
+            }}
+          >
+            ◎
+          </button>
+        </span>
+      </div>
+      {data.assignees.length > 0 && (
+        // 担当者アバターはノードの右下に半分はみ出す形で重ね、タイトル領域を奪わない
+        <span
+          data-node-avatars="true"
+          style={{
+            position: "absolute",
+            right: -AVATAR_OVERHANG,
+            bottom: -AVATAR_OVERHANG,
+            display: "inline-flex",
+            pointerEvents: "none",
+          }}
+        >
+          <AssigneeAvatars assignees={data.assignees} />
+        </span>
+      )}
       <Handle
         type="source"
         position={Position.Right}

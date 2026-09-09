@@ -667,3 +667,40 @@ describe("[FR-VIS-027-AC10] Dependency Map のノードに関連 PR の状態 (D
     expect(container.querySelector('[data-node="down"] [data-pr-status]')).toBeNull();
   });
 });
+
+describe("[FR-VIS-027-AC15] Dependency Map のノードが 2 段構成で、上段にタイトルが最大 2 行表示され、下段のメタ行に PR バッジ・非表示隣接マーク・フォーカス操作がまとまり、担当者アバターはノード右下にはみ出して重なりタイトル領域を奪わない", () => {
+  it("[Issue #394] タイトルは 2 行 clamp の上段に置かれ、フォーカス操作と PR バッジはメタ行に入る", async () => {
+    const tasks = chainTasks();
+    tasks[1].linked_prs = [
+      { number: 10, title: "pr", state: "OPEN", url: "https://example.com/pull/10" },
+    ];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]') as HTMLElement;
+    const title = node.querySelector("[data-node-title]") as HTMLElement;
+    expect(title.textContent).toBe(tasks[1].title);
+    expect(title.style.webkitLineClamp).toBe("2");
+    const meta = node.querySelector("[data-node-meta]")!;
+    expect(meta.querySelector('[data-node-focus="sel"]')).not.toBeNull();
+    expect(meta.querySelector("[data-pr-status]")).not.toBeNull();
+    // タイトル行にはアイコン類が入らない
+    expect(title.querySelector("[data-pr-status], [data-node-focus], [data-avatar]")).toBeNull();
+  });
+
+  it("[Issue #394] 担当者アバターはノード内のフローから外れ、右下に絶対配置ではみ出す", async () => {
+    const tasks = chainTasks();
+    tasks[1].assignees = ["alice"];
+    const { container } = await renderPanel(tasks, "sel");
+    const node = container.querySelector('[data-node="sel"]') as HTMLElement;
+    const wrap = node.querySelector("[data-node-avatars]") as HTMLElement;
+    expect(wrap).not.toBeNull();
+    expect(wrap.style.position).toBe("absolute");
+    expect(parseFloat(wrap.style.right)).toBeLessThan(0);
+    expect(parseFloat(wrap.style.bottom)).toBeLessThan(0);
+    expect(wrap.querySelector("img[data-avatar]")).not.toBeNull();
+    // ノード本体は overflow を隠さない (はみ出しを許す)
+    expect(node.style.overflow).toBe("visible");
+    // 担当者なしならアバター領域を作らない
+    const none = container.querySelector('[data-node="up"]') as HTMLElement;
+    expect(none.querySelector("[data-node-avatars]")).toBeNull();
+  });
+});
