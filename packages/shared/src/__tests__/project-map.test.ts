@@ -9,6 +9,7 @@ import {
   buildTaskHierarchy,
   buildDependencySubgraph,
   pruneDependencySubgraph,
+  resolveInheritedMilestones,
   buildReadiness,
   buildNextActions,
   isTaskDone,
@@ -270,6 +271,53 @@ describe("[FR-VIS-029-AC4] 依存サブグラフからフィルタ除外ノー�
     expect(pruned.edges).toEqual([expect.objectContaining({ from: "a", to: "b" })]);
     expect(pruned.hiddenNeighborsById).toEqual({ b: { upstream: 0, downstream: 2 } });
     expect(pruned.hiddenNodeCount).toBe(2);
+  });
+});
+
+describe("[FR-VIS-030-AC4] 継承つきマイルストーン解決は shared の resolveInheritedMilestones が提供し、自身の設定を優先して祖先の値を継承する", () => {
+  it("自身の milestone を優先し、未設定なら parent を辿って祖先の値を継承する", () => {
+    const tasks = [
+      baseTask({ id: "root", milestone: "v1", sub_tasks: ["mid"] }),
+      baseTask({ id: "mid", parent: "root", sub_tasks: ["leaf", "own"] }),
+      baseTask({ id: "leaf", parent: "mid" }),
+      baseTask({ id: "own", parent: "mid", milestone: "v2" }),
+    ];
+    const resolved = resolveInheritedMilestones(tasks);
+    expect(resolved.get("root")).toBe("v1");
+    expect(resolved.get("mid")).toBe("v1");
+    expect(resolved.get("leaf")).toBe("v1");
+    expect(resolved.get("own")).toBe("v2");
+  });
+
+  it("parent が未設定でも親の sub_tasks に載っていれば継承する", () => {
+    const tasks = [
+      baseTask({ id: "root", milestone: "v1", sub_tasks: ["child"] }),
+      baseTask({ id: "child" }),
+    ];
+    expect(resolveInheritedMilestones(tasks).get("child")).toBe("v1");
+  });
+
+  it("循環した親子関係でも停止し、未解決は null になる", () => {
+    const tasks = [
+      baseTask({ id: "a", parent: "b", sub_tasks: ["b"] }),
+      baseTask({ id: "b", parent: "a", sub_tasks: ["a"] }),
+    ];
+    const resolved = resolveInheritedMilestones(tasks);
+    expect(resolved.get("a")).toBeNull();
+    expect(resolved.get("b")).toBeNull();
+  });
+});
+
+describe("[FR-VIS-030-AC3] 自身に milestone が未設定でも祖先に設定があれば子孫タスクが絞り込みに含まれ、継承は parent / sub_tasks のみを辿り blocked_by は辿らない", () => {
+  it("blocked_by の上流にマイルストーンがあっても継承しない", () => {
+    const tasks = [
+      baseTask({ id: "up", milestone: "v1" }),
+      baseTask({ id: "down", blocked_by: [dep("up")] }),
+      baseTask({ id: "parentless" }),
+    ];
+    const resolved = resolveInheritedMilestones(tasks);
+    expect(resolved.get("down")).toBeNull();
+    expect(resolved.get("parentless")).toBeNull();
   });
 });
 

@@ -323,6 +323,169 @@ describe("[FR-VIS-029-AC5] フィルタ状態が Tree / Board / Next Actions / T
   });
 });
 
+// ---------------------------------------------------------------------------
+// マイルストーン型の除外と継承つきマイルストーンフィルタ (#373)
+// ---------------------------------------------------------------------------
+
+const milestoneConfig: Config = {
+  ...config,
+  task_types: {
+    ...config.task_types,
+    milestone: { label: "Milestone", display: "milestone", color: "#e67e22", github_label: null },
+  },
+  type_hierarchy: { epic: ["task"], task: [], milestone: [] },
+};
+
+/**
+ * epic(v1) ─ t1 / t2 は milestone 未設定で v1 を継承する。
+ * blk は epic をブロックするが親子ではないので継承しない。solo は (なし)、other は v2。
+ * ms はマイルストーン型で t2 にブロックされる。
+ */
+function milestoneTasks(): Task[] {
+  return [
+    baseTask({
+      id: "epic",
+      type: "epic",
+      title: "Epic A",
+      milestone: "v1",
+      sub_tasks: ["t1", "t2"],
+      blocked_by: [{ task: "blk", type: "finish-to-start", lag: 0 }],
+    }),
+    baseTask({ id: "t1", parent: "epic", title: "ViewModel", custom_fields: { Status: "Done" } }),
+    baseTask({
+      id: "t2",
+      parent: "epic",
+      title: "UI Shell",
+      blocked_by: [{ task: "t1", type: "finish-to-start", lag: 0 }],
+    }),
+    baseTask({ id: "blk", title: "Blocker Task" }),
+    baseTask({ id: "solo", title: "Solo Task" }),
+    baseTask({ id: "other", title: "Other Task", milestone: "v2" }),
+    baseTask({
+      id: "ms",
+      type: "milestone",
+      title: "Release v1",
+      milestone: "v1",
+      blocked_by: [{ task: "t2", type: "finish-to-start", lag: 0 }],
+    }),
+  ];
+}
+
+async function renderMilestonePage(selectedTaskId: string | null = null) {
+  const vm = buildProjectMapViewModel(milestoneTasks(), milestoneConfig);
+  let result!: ReturnType<typeof render>;
+  await act(async () => {
+    result = render(
+      <ProjectMapPage
+        viewModel={vm}
+        config={milestoneConfig}
+        selectedTaskId={selectedTaskId}
+        onSelectTask={vi.fn()}
+      />,
+    );
+  });
+  return result;
+}
+
+function milestoneGroup(container: HTMLElement): HTMLElement {
+  return container.querySelector('[aria-label="マイルストーン フィルタ"]') as HTMLElement;
+}
+
+const panelText = (container: HTMLElement, label: string) =>
+  (container.querySelector(`[aria-label="${label}"]`) as HTMLElement).textContent ?? "";
+
+describe("[FR-VIS-030-AC1] マイルストーン型のタスクは既定で Dependency Map のノードに表示されず、表示を有効にするとひし形マークで通常ノードと区別される", () => {
+  it("既定では ms ノードが無く、トグルで data-milestone 付きノードとして現れる", async () => {
+    const { container } = await renderMilestonePage();
+    expect(container.querySelector('.react-flow__node[data-id="ms"]')).toBeNull();
+    expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
+    // t2 → ms の依存は途切れとして示される
+    const t2 = container.querySelector('.react-flow__node[data-id="t2"]')!;
+    expect(t2.querySelector("[data-hidden-downstream]")).not.toBeNull();
+    // Tree には構造として残る
+    expect(container.querySelector('[data-task-id="ms"]')).not.toBeNull();
+
+    await act(async () => {
+      fireEvent.click(container.querySelector('button[title*="ひし形"]')!);
+    });
+    const ms = container.querySelector('.react-flow__node[data-id="ms"]');
+    expect(ms).not.toBeNull();
+    expect(ms!.querySelector('[data-node="ms"]')?.getAttribute("data-milestone")).toBe("true");
+    expect(container.querySelector('path[data-edge="t2->ms"]')).not.toBeNull();
+    // 通常ノードはひし形にならない
+    expect(container.querySelector('[data-node="t2"]')?.getAttribute("data-milestone")).toBeNull();
+  });
+
+  it("マイルストーン型が無い構成ではトグルを表示しない", () => {
+    const { container } = renderPage(null);
+    expect(container.querySelector('[title*="ひし形"]')).toBeNull();
+  });
+});
+
+describe("[FR-VIS-030-AC2] ツールバーのマイルストーン絞り込みが Tree / Board / Next Actions / Timeline / Dependency Map に一貫して効く", () => {
+  it("v1 を選ぶと v1 配下だけが全パネルに残り、件数が一致する", async () => {
+    const { container } = await renderMilestonePage();
+    const group = milestoneGroup(container);
+    expect(within(group).getByText("v1")).toBeTruthy();
+    expect(within(group).getByText("v2")).toBeTruthy();
+
+    await act(async () => {
+      fireEvent.click(within(group).getByText("v1"));
+    });
+    // epic / t1 / t2 / ms の 4 件
+    expect(container.textContent).toContain("4/7 件");
+    for (const label of ["System Tree", "Project Board", "Next Actions", "Compact Gantt"]) {
+      expect(panelText(container, label)).not.toContain("Other Task");
+      expect(panelText(container, label)).not.toContain("Solo Task");
+      expect(panelText(container, label)).not.toContain("Blocker Task");
+    }
+    expect(panelText(container, "Project Board")).toContain("UI Shell");
+    expect(panelText(container, "Project Board")).toContain("ViewModel");
+    expect(container.querySelector('.react-flow__node[data-id="blk"]')).toBeNull();
+    expect(container.querySelector('.react-flow__node[data-id="t2"]')).not.toBeNull();
+
+    // v2 を追加選択で複数選択
+    await act(async () => {
+      fireEvent.click(within(group).getByText("v2"));
+    });
+    expect(container.textContent).toContain("5/7 件");
+    expect(panelText(container, "Project Board")).toContain("Other Task");
+
+    await act(async () => {
+      fireEvent.click(within(group).getByText("All"));
+    });
+    expect(container.textContent).toContain("7/7 件");
+  });
+});
+
+describe("[FR-VIS-030-AC3] 自身に milestone が未設定でも祖先に設定があれば子孫タスクが絞り込みに含まれ、継承は parent / sub_tasks のみを辿り blocked_by は辿らない", () => {
+  it("t1 / t2 は epic の v1 を継承し、epic をブロックする blk は継承しない", async () => {
+    const { container } = await renderMilestonePage();
+    await act(async () => {
+      fireEvent.click(within(milestoneGroup(container)).getByText("v1"));
+    });
+    const board = panelText(container, "Project Board");
+    expect(board).toContain("ViewModel");
+    expect(board).toContain("UI Shell");
+    expect(board).not.toContain("Blocker Task");
+  });
+});
+
+describe("[FR-VIS-030-AC5] 自身にも祖先にもマイルストーンが無いタスクは「(なし)」で絞り込める", () => {
+  it("(なし) を選ぶと solo / blk だけが残り、継承で v1 を持つ t1 は除外される", async () => {
+    const { container } = await renderMilestonePage();
+    await act(async () => {
+      fireEvent.click(within(milestoneGroup(container)).getByText("(なし)"));
+    });
+    expect(container.textContent).toContain("2/7 件");
+    const board = panelText(container, "Project Board");
+    expect(board).toContain("Solo Task");
+    expect(board).toContain("Blocker Task");
+    expect(board).not.toContain("ViewModel");
+    expect(board).not.toContain("Other Task");
+  });
+});
+
 describe("[FR-VIS-025] Project Map の Group by 軸セレクタ (GRP-02)", () => {
   it("Group by を type に切り替えると System Tree がグループ表示になる", () => {
     const { container } = renderPage(null);

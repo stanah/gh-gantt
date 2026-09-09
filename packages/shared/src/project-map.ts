@@ -767,6 +767,47 @@ export function buildTaskHierarchy(tasks: Task[]): HierarchyNode[] {
   return roots;
 }
 
+/**
+ * 各タスクのマイルストーンを親子関係で継承して解決する。
+ *
+ * 自身に `milestone` が設定されていればそれを使い、未設定なら `parent`（無ければ `sub_tasks` の逆引き）
+ * で祖先を辿り、最初に見つかったマイルストーンを継承する。祖先にも無ければ null。
+ * 継承は親子のみを辿り、`blocked_by` は辿らない。循環は visited で打ち切る。
+ *
+ * Project Map のマイルストーン絞り込みと Group by のマイルストーン軸で同じ結果を使うための共通関数。
+ *
+ * @param tasks - 対象タスク（祖先もこの配列に含まれている必要がある）
+ * @returns タスク ID → 解決済みマイルストーン名（無ければ null）
+ */
+export function resolveInheritedMilestones(tasks: Task[]): Map<string, string | null> {
+  const taskById = new Map(tasks.map((t) => [t.id, t]));
+  // parent 未設定でも親の sub_tasks に載っていれば親とみなす
+  const parentById = new Map<string, string>();
+  for (const task of tasks) {
+    for (const childId of task.sub_tasks) {
+      if (taskById.has(childId) && !parentById.has(childId)) parentById.set(childId, task.id);
+    }
+  }
+  const resolved = new Map<string, string | null>();
+  const resolve = (id: string, visiting: Set<string>): string | null => {
+    const cached = resolved.get(id);
+    if (cached !== undefined) return cached;
+    const task = taskById.get(id);
+    if (!task || visiting.has(id)) return null;
+    visiting.add(id);
+    let value: string | null = task.milestone ?? null;
+    if (value == null) {
+      const parentId =
+        task.parent != null && taskById.has(task.parent) ? task.parent : parentById.get(id);
+      value = parentId != null ? resolve(parentId, visiting) : null;
+    }
+    resolved.set(id, value);
+    return value;
+  };
+  for (const task of tasks) resolve(task.id, new Set());
+  return resolved;
+}
+
 /** 指定タスクとその全子孫（sub_tasks 経由）の ID 集合を返す。 */
 export function collectSubtreeIds(rootId: string, taskById: Map<string, Task>): Set<string> {
   const ids = new Set<string>();
