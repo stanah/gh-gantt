@@ -2,9 +2,9 @@ import dagre from "@dagrejs/dagre";
 import type { DependencySubgraph } from "@gh-gantt/shared";
 
 /** Dependency Map ノードの固定幅 (px)。 */
-export const NODE_WIDTH = 170;
+export const NODE_WIDTH = 220;
 /** Dependency Map ノードの固定高さ (px)。 */
-export const NODE_HEIGHT = 36;
+export const NODE_HEIGHT = 44;
 
 /** レイアウト済みノード。`x` / `y` は左上座標。 */
 export interface LayoutNode {

@@ -194,8 +194,18 @@ const hiddenHandleStyle: React.CSSProperties = {
   pointerEvents: "none",
 };
 
-/** ノード本体。Enter / Space で選択を親へ伝える (クリックは onNodeClick 経由)。 */
+/** ノードの角や辺に重ねるアイコン類がノード境界からはみ出す量 (px)。 */
+const OVERHANG = 7;
+
+/**
+ * ノード本体。タイトルにノード全体 (最大 2 行) を使い、アイコン類はノード内の行を占有せず
+ * 角や辺に重ねる。右上に PR バッジ、右下に担当者アバター、左右の辺の中央に非表示隣接マーク、
+ * フォーカス操作 (◎) はホバー / フォーカス時だけ右上の内側に出す。
+ * Enter / Space で選択を親へ伝える (クリックは onNodeClick 経由)。
+ */
 function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
+  const [showFocus, setShowFocus] = useState(false);
+  const hasPr = data.linkedPrs.length > 0;
   return (
     <div
       data-node={id}
@@ -211,14 +221,19 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         e.preventDefault();
         data.onSelect(id);
       }}
+      onMouseEnter={() => setShowFocus(true)}
+      onMouseLeave={() => setShowFocus(false)}
+      onFocus={() => setShowFocus(true)}
+      onBlur={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowFocus(false);
+      }}
       style={{
         boxSizing: "border-box",
+        position: "relative",
         width: NODE_WIDTH,
         height: NODE_HEIGHT,
         display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "0 8px 0 0",
+        alignItems: "stretch",
         borderRadius: 4,
         borderStyle: data.isMilestone ? "dashed" : "solid",
         borderWidth: data.isSelected ? 2.5 : 1.5,
@@ -227,7 +242,8 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
         color: "var(--color-text)",
         fontSize: 11,
         cursor: "pointer",
-        overflow: "hidden",
+        // 角のアイコンをはみ出させるため overflow は隠さない (タイトルは内側で clamp する)
+        overflow: "visible",
       }}
     >
       <Handle
@@ -243,7 +259,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{
             width: 10,
             height: 10,
-            marginLeft: 6,
+            margin: "auto 4px auto 6px",
             flexShrink: 0,
             background: data.color,
             transform: "rotate(45deg)",
@@ -255,14 +271,79 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
         />
       )}
-      {/* アバターと PR バッジはタイトルの左に置く。右端は省略記号とフォーカス操作 */}
-      <AssigneeAvatars assignees={data.assignees} />
-      <LinkedPrBadge linkedPrs={data.linkedPrs} />
-      <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+      {/* タイトルにノードの高さを丸ごと使い、最大 2 行まで表示して超える分だけ省略する */}
+      <span
+        data-node-title="true"
+        style={{
+          flex: 1,
+          minWidth: 0,
+          alignSelf: "center",
+          padding: "3px 8px 3px 6px",
+          display: "-webkit-box",
+          WebkitBoxOrient: "vertical",
+          WebkitLineClamp: 2,
+          overflow: "hidden",
+          lineHeight: 1.3,
+          wordBreak: "break-word",
+        }}
+      >
         {data.title}
       </span>
-      {(data.hiddenUpstream > 0 || data.hiddenDownstream > 0) && (
-        <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={data.hiddenDownstream} />
+      {/* 以下はノード内の行を占有しない重ね表示。右上: PR バッジ、右下: アバター、左右辺: 非表示隣接マーク */}
+      {hasPr && (
+        <span
+          data-node-pr="true"
+          style={{
+            position: "absolute",
+            top: -OVERHANG,
+            right: -OVERHANG,
+            display: "inline-flex",
+            padding: 2,
+            borderRadius: 999,
+            background: "var(--color-surface, #fff)",
+            border: "1px solid var(--color-border)",
+          }}
+        >
+          <LinkedPrBadge linkedPrs={data.linkedPrs} />
+        </span>
+      )}
+      {data.assignees.length > 0 && (
+        <span
+          data-node-avatars="true"
+          style={{
+            position: "absolute",
+            right: -OVERHANG,
+            bottom: -OVERHANG,
+            display: "inline-flex",
+            pointerEvents: "none",
+          }}
+        >
+          <AssigneeAvatars assignees={data.assignees} />
+        </span>
+      )}
+      {data.hiddenUpstream > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            left: -OVERHANG - 4,
+            top: "50%",
+            transform: "translateY(-50%)",
+          }}
+        >
+          <HiddenNeighborMark upstream={data.hiddenUpstream} downstream={0} />
+        </span>
+      )}
+      {data.hiddenDownstream > 0 && (
+        <span
+          style={{
+            position: "absolute",
+            right: -OVERHANG - 4,
+            top: "50%",
+            transform: "translateY(-50%)",
+          }}
+        >
+          <HiddenNeighborMark upstream={0} downstream={data.hiddenDownstream} />
+        </span>
       )}
       <button
         type="button"
@@ -278,17 +359,22 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           if (e.key === "Enter" || e.key === " ") e.stopPropagation();
         }}
         style={{
-          flexShrink: 0,
-          width: 16,
-          height: 16,
+          position: "absolute",
+          // PR バッジと重ならないよう、バッジがあるときは少し下にずらす
+          top: hasPr ? 12 : 2,
+          right: 2,
+          width: 14,
+          height: 14,
           padding: 0,
           border: 0,
           borderRadius: 3,
-          background: "transparent",
+          background: "var(--color-surface, #fff)",
           color: "var(--color-text-muted)",
           fontSize: 11,
           lineHeight: 1,
           cursor: "pointer",
+          // ホバー / フォーカス時だけ見せ、平常時はタイトルを隠さない
+          opacity: showFocus ? 1 : 0,
         }}
       >
         ◎
@@ -325,6 +411,7 @@ function HiddenNeighborMark({ upstream, downstream }: { upstream: number; downst
         borderRadius: 3,
         border: "1px dashed var(--color-text-muted, #8b949e)",
         color: "var(--color-text-muted, #8b949e)",
+        background: "var(--color-surface, #fff)",
         whiteSpace: "nowrap",
       }}
     >

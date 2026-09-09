@@ -1201,6 +1201,11 @@ areas:
             status: covered
             tests:
               - packages/ui/src/__tests__/dependency-map-panel.test.tsx
+          - id: FR-VIS-027-AC15
+            description: Dependency Map のノードがタイトルに全体 (最大 2 行) を使い、PR バッジ・担当者アバター・非表示隣接マーク・フォーカス操作はノード内の行を占有せず角や辺に重ねて表示される
+            status: covered
+            tests:
+              - packages/ui/src/__tests__/dependency-map-panel.test.tsx
       - id: FR-VIS-028
         summary: Project Map のパネル構成カスタマイズ（表示切替・並び順・サイズ・保存）
         acceptance_criteria:

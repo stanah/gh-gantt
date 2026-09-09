@@ -278,7 +278,8 @@ describe("[FR-VIS-027-AC5] Dependency Map をパン・ズームでき、初期�
 
   it("小さなグラフでは全ノードが表示領域に収まり、拡大率は 1 を超えない", () => {
     const layout = layoutDependencyGraph(chain(3));
-    const size = { width: 400, height: 300 };
+    // 3 段分 (ノード幅 220 × 3 + 段間隔) が 0.5 倍以上で収まる幅
+    const size = { width: 600, height: 300 };
     const vp = computeInitialViewport(layout, "n1", size);
     expect(vp.zoom).toBeLessThanOrEqual(1);
     for (const n of layout.nodes) expect(nodeInView(layout, n.id, vp, size)).toBe(true);
