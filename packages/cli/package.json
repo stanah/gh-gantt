@@ -17,17 +17,17 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "^7.3.4",
     "@gh-gantt/shared": "workspace:*",
-    "@octokit/graphql": "^8.0.0",
+    "@octokit/graphql": "^8.2.2",
     "cli-table3": "^0.6.5",
-    "commander": "^12.0.0",
-    "express": "^4.21.0",
-    "express-rate-limit": "^8.5.2",
-    "playwright": "^1.58.2",
-    "zod": "^3.23.0"
+    "commander": "^12.1.0",
+    "express": "^4.22.2",
+    "express-rate-limit": "^8.7.0",
+    "playwright": "^1.63.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
-    "@types/express": "^4.17.0",
-    "typescript": "^5.5.0",
-    "vite-plus": "^0.1.24"
+    "@types/express": "^4.17.25",
+    "typescript": "^5.9.3",
+    "vite-plus": "^0.3.0"
   }
 }
