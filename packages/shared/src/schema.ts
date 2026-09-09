@@ -71,6 +71,8 @@ export const LinkedPullRequestSchema: z.ZodType<LinkedPullRequest> = z.object({
   title: z.string(),
   state: z.string(),
   url: z.string().nullable(),
+  // 既存 cache (is_draft なし) を読めるよう optional にする
+  is_draft: z.boolean().optional(),
 });
 
 const LinkedPullRequestRefSchema = z.union([z.number(), LinkedPullRequestSchema]);

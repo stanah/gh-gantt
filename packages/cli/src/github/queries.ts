@@ -69,6 +69,7 @@ const PROJECT_V2_FRAGMENT = `
                     number
                     title
                     state
+                    isDraft
                     url
                   }
                 }

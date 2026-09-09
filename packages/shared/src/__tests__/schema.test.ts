@@ -668,6 +668,31 @@ describe("TasksFileSchema", () => {
     expect(() => TasksFileSchema.parse(data)).not.toThrow();
   });
 
+  it("[FR-STORE-003-AC2] linked_prs の is_draft は省略可で、既存 cache (is_draft なし) と is_draft 付きの両方を受理する", () => {
+    const withoutDraft = {
+      number: 100,
+      title: "Legacy cache entry",
+      state: "open",
+      url: "https://github.com/owner/repo/pull/100",
+    };
+    const withDraft = { ...withoutDraft, number: 101, is_draft: true };
+    const data = {
+      tasks: [{ ...validTask, linked_prs: [withoutDraft, withDraft] }],
+      cache: { comments: {}, reactions: {} },
+    };
+
+    const parsed = TasksFileSchema.parse(data);
+    const prs = parsed.tasks[0].linked_prs.map((ref) => (typeof ref === "number" ? null : ref));
+    expect(prs[0]?.is_draft).toBeUndefined();
+    expect(prs[1]?.is_draft).toBe(true);
+    expect(() =>
+      TasksFileSchema.parse({
+        ...data,
+        tasks: [{ ...validTask, linked_prs: [{ ...withDraft, is_draft: "yes" }] }],
+      }),
+    ).toThrow();
+  });
+
   it("should strip unknown keys from tasks (strict mode)", () => {
     const taskWithMarkers = {
       ...validTask,

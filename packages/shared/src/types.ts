@@ -45,6 +45,8 @@ export interface LinkedPullRequest {
   title: string;
   state: string;
   url: string | null;
+  /** Draft PR なら true。#376 以前の cache には無いため省略可 (後方互換) */
+  is_draft?: boolean;
 }
 
 export type LinkedPullRequestRef = number | LinkedPullRequest;

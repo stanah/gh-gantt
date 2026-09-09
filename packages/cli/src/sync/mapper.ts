@@ -43,7 +43,14 @@ export function mapRemoteItemToTask(item: RawProjectItem, config: Config): Task 
     assignees: c.assignees,
     labels: c.labels,
     milestone: c.milestone,
-    linked_prs: c.linkedPullRequests,
+    // isDraft (GraphQL) は Task では is_draft として保存する
+    linked_prs: (c.linkedPullRequests ?? []).map((pr) => ({
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      url: pr.url,
+      is_draft: pr.isDraft,
+    })),
     created_at: c.createdAt,
     updated_at: c.updatedAt,
     closed_at: c.closedAt,

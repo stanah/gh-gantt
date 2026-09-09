@@ -16,6 +16,7 @@ import "@xyflow/react/dist/base.css";
 import {
   buildDependencySubgraph,
   pruneDependencySubgraph,
+  type LinkedPullRequestRef,
   type Task as SharedTask,
   type TaskReadiness,
 } from "@gh-gantt/shared";
@@ -23,6 +24,7 @@ import type { Config } from "../../types/index.js";
 import { PanelHeader, PanelEmpty } from "./ProjectMapLayout.js";
 import { boardColumnColor } from "./ReadinessBadge.js";
 import { AssigneeAvatars } from "./AssigneeAvatars.js";
+import { LinkedPrBadge } from "./LinkedPrBadge.js";
 import {
   computeInitialViewport,
   layoutDependencyGraph,
@@ -55,6 +57,8 @@ interface TaskNodeData extends Record<string, unknown> {
   color: string;
   /** 担当者の GitHub login。空ならアバター領域を作らない。 */
   assignees: string[];
+  /** 関連 PR。状態を持つ PR が無ければバッジを作らない。 */
+  linkedPrs: LinkedPullRequestRef[];
   isSelected: boolean;
   /** マイルストーン型のタスクか（ひし形マーク + 破線枠で描く）。 */
   isMilestone: boolean;
@@ -152,8 +156,9 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
           style={{ alignSelf: "stretch", width: 4, flexShrink: 0, background: data.color }}
         />
       )}
-      {/* タイトルの左に置く。右端はフォーカス操作などの拡張用に空けておく */}
+      {/* アバターと PR バッジはタイトルの左に置く。右端はフォーカス操作などの拡張用に空けておく */}
       <AssigneeAvatars assignees={data.assignees} />
+      <LinkedPrBadge linkedPrs={data.linkedPrs} />
       <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
         {data.title}
       </span>
@@ -373,6 +378,7 @@ export function DependencyMapPanel({
           title: node.task.title,
           color,
           assignees: node.task.assignees,
+          linkedPrs: node.task.linked_prs,
           isSelected: node.task.id === selectedTaskId,
           isMilestone: milestoneTaskIds?.has(node.task.id) ?? false,
           hiddenUpstream: hidden?.upstream ?? 0,
