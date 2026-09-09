@@ -868,6 +868,64 @@ export function buildDependencySubgraph(
   return { nodes, edges };
 }
 
+/** 除外ノードに接続していた隣接依存の件数（ノード単位）。 */
+export interface HiddenNeighborCount {
+  /** 除外された上流（このタスクをブロックする側）の件数。 */
+  upstream: number;
+  /** 除外された下流（このタスクにブロックされる側）の件数。 */
+  downstream: number;
+}
+
+/** {@link pruneDependencySubgraph} の結果。フィルタで除外されたノードを取り除いた依存サブグラフ。 */
+export interface PrunedDependencySubgraph extends DependencySubgraph {
+  /** 残ったノード ID → 除外ノードへ向かっていた上流 / 下流の件数（0 件のノードは含めない）。 */
+  hiddenNeighborsById: Record<string, HiddenNeighborCount>;
+  /** 除外されたノードの数。 */
+  hiddenNodeCount: number;
+}
+
+/**
+ * 依存サブグラフから `visibleTaskIds` に含まれないノードとそのエッジを取り除く。
+ * 除外ノードを経由する依存は、残ったノード側に「除外された上流 / 下流の件数」として記録し、
+ * UI が経路の途切れを示せるようにする。`visibleTaskIds` が null なら何も除外しない。
+ *
+ * @param graph - {@link buildDependencySubgraph} が返した依存サブグラフ
+ * @param visibleTaskIds - 表示対象のタスク ID 集合。null は全表示
+ */
+export function pruneDependencySubgraph(
+  graph: DependencySubgraph,
+  visibleTaskIds: ReadonlySet<string> | null,
+): PrunedDependencySubgraph {
+  if (visibleTaskIds == null) {
+    return { nodes: graph.nodes, edges: graph.edges, hiddenNeighborsById: {}, hiddenNodeCount: 0 };
+  }
+  const nodes = graph.nodes.filter((n) => visibleTaskIds.has(n.task.id));
+  const visible = new Set(nodes.map((n) => n.task.id));
+  const edges: DependencyGraphEdge[] = [];
+  const hiddenNeighborsById: Record<string, HiddenNeighborCount> = {};
+  const bump = (id: string, key: keyof HiddenNeighborCount) => {
+    const entry = (hiddenNeighborsById[id] ??= { upstream: 0, downstream: 0 });
+    entry[key] += 1;
+  };
+  for (const edge of graph.edges) {
+    const fromVisible = visible.has(edge.from);
+    const toVisible = visible.has(edge.to);
+    if (fromVisible && toVisible) {
+      edges.push(edge);
+      continue;
+    }
+    // 片側だけ残る依存は、残った側に途切れとして記録する
+    if (fromVisible) bump(edge.from, "downstream");
+    if (toVisible) bump(edge.to, "upstream");
+  }
+  return {
+    nodes,
+    edges,
+    hiddenNeighborsById,
+    hiddenNodeCount: graph.nodes.length - nodes.length,
+  };
+}
+
 function nextActionCategory(
   readiness: TaskReadiness,
   task: Task,
