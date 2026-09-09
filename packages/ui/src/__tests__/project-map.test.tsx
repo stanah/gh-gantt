@@ -97,7 +97,9 @@ describe("[FR-VIS-024] Project Map ページ", () => {
     const { container, getByText } = renderPage(null);
     expect(container.querySelector('[data-testid="project-map-page"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="project-map-layout"]')).not.toBeNull();
-    expect(getByText("Epic A")).toBeTruthy();
+    // Epic A は System Tree と Dependency Map (親子ツリーの骨格) の両方に出る
+    const tree = container.querySelector('[aria-label="System Tree"]') as HTMLElement;
+    expect(within(tree).getByText("Epic A")).toBeTruthy();
     expect(getByText("System Tree")).toBeTruthy();
     expect(getByText("Project Board")).toBeTruthy();
     expect(getByText("Dependency Map")).toBeTruthy();

@@ -29,10 +29,12 @@ import { AssigneeAvatars } from "./AssigneeAvatars.js";
 import { LinkedPrBadge } from "./LinkedPrBadge.js";
 import {
   computeInitialViewport,
+  cubicPoint,
   layoutDependencyGraph,
   NODE_HEIGHT,
   NODE_WIDTH,
   type DependencyMapLayout,
+  type LayoutEdgeShape,
 } from "./dependency-map-layout.js";
 
 interface DependencyMapPanelProps {
@@ -75,14 +77,16 @@ interface TaskNodeData extends Record<string, unknown> {
 
 /**
  * Dependency Map の表示範囲。
- * - `all`: 依存に関与する全タスクを表示する (既定)。選択はノードの強調にだけ使う
- * - `focus`: 選択タスク (とその子孫) を中心に上流 / 下流 2 階層へ絞り込む
+ * - `all`: 親か子かブロック関係を持つ全タスクを表示する (既定)。選択はノードの強調にだけ使う
+ * - `focus`: 選択タスクの部分木と、それに対するブロック関係 2 階層、選択タスクの祖先に絞り込む
  */
 export type DependencyMapScope = "all" | "focus";
 
 /** エッジが保持する描画データ。 */
 interface DependencyEdgeData extends Record<string, unknown> {
   points: { x: number; y: number }[];
+  /** 経路の形。親子は直線 (polyline)、ブロック関係は 3 次ベジェ (cubic)。 */
+  shape: LayoutEdgeShape;
   kind: DependencyEdgeKind;
   stroke: string;
   strokeWidth: number;
@@ -120,15 +124,15 @@ const EDGE_BASE_WIDTH = 2;
 const EDGE_CRITICAL_WIDTH = 3.5;
 /** 未解決の依存を示す破線パターン。 */
 const DASH_UNRESOLVED = "7 4";
-/** 親子関係を示す点線パターン。 */
-const DASH_PARENT = "2 3";
+/** 親子の構造線の線幅 (px)。ブロック辺より細くして背景に退かせる。 */
+const EDGE_PARENT_WIDTH = 1.5;
 
 /**
  * 関係種別ごとの色・線種・線幅を 1 箇所で定義する。
- * - ブロック (解決済み): 実線、テキスト補助色 (ライト / ダーク両方で背景と十分なコントラストがある)
- * - ブロック (未解決): 破線、danger トークン
- * - クリティカルパス: 太い実線、config の `gantt.colors.critical_path` (未解決なら太い破線)
- * - 親子: 点線、Gantt の親ハイライトと同じ parent トークン
+ * - ブロック (解決済み): 実線の曲線、テキスト補助色 (ライト / ダーク両方で背景と十分なコントラストがある)
+ * - ブロック (未解決): 破線の曲線、danger トークン
+ * - クリティカルパス: 太い実線の曲線、config の `gantt.colors.critical_path` (未解決なら太い破線)
+ * - 親子: 細い実線の直線、muted トークン。ツリーの骨格として常時表示し、ブロック辺の曲線とは形でも区別する
  * critical_path が danger と同じ赤に設定されていても、線種と線幅で未解決との区別がつく。
  */
 export function dependencyEdgeStyles(
@@ -153,15 +157,14 @@ export function dependencyEdgeStyles(
     },
     parent: {
       label: "親子",
-      stroke: "var(--color-highlight-parent-border, #8957e5)",
-      strokeWidth: 1.5,
-      dasharray: DASH_PARENT,
+      stroke: "var(--color-text-muted, #8b949e)",
+      strokeWidth: EDGE_PARENT_WIDTH,
     },
   };
 }
 
-/** 凡例の表示順。 */
-const EDGE_KIND_ORDER: DependencyEdgeKind[] = ["blocked", "unresolved", "critical", "parent"];
+/** 凡例の表示順。骨格の親子を先頭に置く。 */
+const EDGE_KIND_ORDER: DependencyEdgeKind[] = ["parent", "blocked", "unresolved", "critical"];
 
 /** 依存タイプの略号。finish-to-start は既定なので表示しない。 */
 const DEPENDENCY_TYPE_ABBR: Record<DependencyType, string | null> = {
@@ -225,7 +228,7 @@ function TaskNode({ id, data }: NodeProps<TaskFlowNode>) {
       onMouseLeave={() => setShowFocus(false)}
       onFocus={() => setShowFocus(true)}
       onBlur={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setShowFocus(false);
+        if (!e.currentTarget.contains(e.relatedTarget as Element | null)) setShowFocus(false);
       }}
       style={{
         boxSizing: "border-box",
@@ -422,14 +425,18 @@ function HiddenNeighborMark({ upstream, downstream }: { upstream: number; downst
 }
 
 /**
- * dagre の経路点をそのまま折れ線 (角を丸めたパス) として描画するエッジ。
+ * レイアウトの経路をそのまま描画するエッジ。親子は 2 点の直線、ブロック関係は 3 次ベジェ。
  * 依存タイプ / lag のラベルがあれば経路の中点に添える。
  */
 // 上流が左・下流が右の配置で向きが読めるため、矢印 (markerEnd) は付けない
 function DependencyEdge({ id, data }: EdgeProps<DependencyFlowEdge>) {
   if (!data) return null;
-  const path = buildRoundedPath(data.points);
-  const mid = data.label ? polylineMidpoint(data.points) : null;
+  const path = data.shape === "cubic" ? buildCubicPath(data.points) : buildRoundedPath(data.points);
+  const mid = !data.label
+    ? null
+    : data.shape === "cubic"
+      ? cubicPoint(data.points, 0.5)
+      : polylineMidpoint(data.points);
   return (
     <g data-edge-group={id}>
       <path
@@ -491,10 +498,10 @@ function polylineMidpoint(points: { x: number; y: number }[]): { x: number; y: n
 /** 凡例。関係種別ごとの線見本とラベル、依存タイプ / lag ラベルの読み方を示す。 */
 function EdgeLegend({
   styles,
-  showParents,
+  showBlocks,
 }: {
   styles: Record<DependencyEdgeKind, DependencyEdgeStyle>;
-  showParents: boolean;
+  showBlocks: boolean;
 }) {
   return (
     <Panel position="bottom-left">
@@ -518,7 +525,7 @@ function EdgeLegend({
       >
         {EDGE_KIND_ORDER.map((kind) => {
           const style = styles[kind];
-          const hidden = kind === "parent" && !showParents;
+          const hidden = kind !== "parent" && !showBlocks;
           return (
             <span
               key={kind}
@@ -547,6 +554,13 @@ function EdgeLegend({
       </div>
     </Panel>
   );
+}
+
+/** [始点, 制御点 1, 制御点 2, 終点] の 3 次ベジェを SVG パスにする。 */
+function buildCubicPath(points: { x: number; y: number }[]): string {
+  if (points.length < 4) return buildRoundedPath(points);
+  const [s, c1, c2, e] = points;
+  return `M${s.x} ${s.y} C${c1.x} ${c1.y} ${c2.x} ${c2.y} ${e.x} ${e.y}`;
 }
 
 /** 折れ線の角を二次ベジェで丸めた SVG パスを組み立てる。 */
@@ -677,15 +691,17 @@ function InitialViewport({
 }
 
 /**
- * Dependency Map パネル。左を上流 (ブロッカー)・右を下流とする横向きの階層配置を dagre で求め、
- * React Flow で描画する。互いに依存のない連結成分は個別に配置する。
+ * Dependency Map パネル。親子ツリーを骨格に、親を左・子を右とする横向きの階層配置を dagre で求め、
+ * React Flow で描画する。ブロック関係は段付けに使わず、配置確定後に曲線で重ねる。
+ * 親子でもブロックでも繋がっていない連結成分は個別に配置し、縦に積む。
  * 表示範囲はヘッダの「全依存 / 選択中心」トグルで切り替え、既定の「全依存」ではノードをクリックしても
- * 選択が詳細パネルへ伝わるだけで表示範囲は変わらない。「選択中心」では選択タスク (とその子孫) を中心に
- * 上流 / 下流 2 階層へ絞り込む。ノード右端のフォーカス操作 (またはダブルクリック) は
+ * 選択が詳細パネルへ伝わるだけで表示範囲は変わらない。「選択中心」では選択タスクの部分木と
+ * それに対するブロック関係 2 階層、選択タスクの祖先に絞り込む。ノード右端のフォーカス操作 (またはダブルクリック) は
  * そのタスクを選択したうえで「選択中心」へ切り替える。
- * エッジは関係種別 (ブロック解決済み / 未解決 / クリティカルパス / 親子) を色と線種で区別し、
- * 依存タイプと lag はラベルで示す。親子エッジはヘッダのトグルで表示でき (既定は非表示)、凡例をキャンバス内に置く。
- * 循環依存があれば警告を表示する。
+ * エッジは関係種別 (親子 / ブロック解決済み / 未解決 / クリティカルパス) を色と線種で区別し、
+ * 依存タイプと lag はラベルで示す。親子エッジは常時表示の構造線で、ブロック辺は「ブロック」トグルで
+ * 表示 / 非表示にできる (既定は表示)。親も子もブロック関係も持たない孤立タスクは既定で非表示にし、
+ * ヘッダに件数と表示トグルを置く。凡例をキャンバス内に置き、循環依存があれば警告を表示する。
  */
 export function DependencyMapPanel({
   tasks,
@@ -700,8 +716,10 @@ export function DependencyMapPanel({
 }: DependencyMapPanelProps) {
   const criticalSet = useMemo(() => new Set(criticalEdgeKeys), [criticalEdgeKeys]);
   const [scope, setScope] = useState<DependencyMapScope>("all");
-  // 親子エッジは既定で非表示。表示してもレイアウトの段付けには使わない
-  const [showParents, setShowParents] = useState(false);
+  // ブロック辺は既定で表示。非表示にしてもレイアウト (親子ツリーの段付け) は変わらない
+  const [showBlocks, setShowBlocks] = useState(true);
+  // 孤立タスク (親も子もブロック関係も無い) は既定で非表示
+  const [showIsolated, setShowIsolated] = useState(false);
   const edgeStyles = useMemo(
     () => dependencyEdgeStyles(config.gantt.colors.critical_path),
     [config.gantt.colors.critical_path],
@@ -713,10 +731,12 @@ export function DependencyMapPanel({
   const graph = useMemo(
     () =>
       pruneDependencySubgraph(
-        buildDependencySubgraph(focusTaskId, tasks, config, criticalSet),
+        buildDependencySubgraph(focusTaskId, tasks, config, criticalSet, {
+          includeIsolated: showIsolated,
+        }),
         visibleTaskIds,
       ),
-    [focusTaskId, tasks, config, criticalSet, visibleTaskIds],
+    [focusTaskId, tasks, config, criticalSet, visibleTaskIds, showIsolated],
   );
 
   const layout = useMemo(() => layoutDependencyGraph(graph), [graph]);
@@ -793,11 +813,33 @@ export function DependencyMapPanel({
   }, [graph, layout, readinessById, selectedTaskId, milestoneTaskIds, onSelectTask, focusTask]);
 
   const edges = useMemo<DependencyFlowEdge[]>(() => {
-    const pointsByKey = new Map(layout.edges.map((e) => [`${e.from}->${e.to}`, e.points]));
-    const dependencyEdges = graph.edges.flatMap<DependencyFlowEdge>((edge) => {
+    // 親子エッジは骨格として常に描き、ブロック辺の下に置く (配列の先頭が下)
+    const parentStyle = edgeStyles.parent;
+    const parentEdges = layout.parentEdges.map<DependencyFlowEdge>((edge) => ({
+      id: `parent:${edge.from}->${edge.to}`,
+      type: "dependency",
+      source: edge.from,
+      target: edge.to,
+      focusable: false,
+      selectable: false,
+      data: {
+        points: edge.points,
+        shape: edge.shape,
+        kind: "parent",
+        stroke: parentStyle.stroke,
+        strokeWidth: parentStyle.strokeWidth,
+        dasharray: parentStyle.dasharray,
+        isCritical: false,
+        isUnresolved: false,
+        label: null,
+      },
+    }));
+    if (!showBlocks) return parentEdges;
+    const layoutByKey = new Map(layout.edges.map((e) => [`${e.from}->${e.to}`, e]));
+    const blockEdges = graph.edges.flatMap<DependencyFlowEdge>((edge) => {
       const key = `${edge.from}->${edge.to}`;
-      const points = pointsByKey.get(key);
-      if (!points) return [];
+      const path = layoutByKey.get(key);
+      if (!path) return [];
       // 色と線幅は関係種別 (クリティカル > 未解決 > 解決済み) から、線種は未解決かどうかから決める。
       // 未解決のクリティカルパスは太い破線になり、両方の情報を保つ
       const kind: DependencyEdgeKind = edge.isCritical
@@ -815,7 +857,8 @@ export function DependencyMapPanel({
           focusable: false,
           selectable: false,
           data: {
-            points,
+            points: path.points,
+            shape: path.shape,
             kind,
             stroke: style.stroke,
             strokeWidth: style.strokeWidth,
@@ -827,29 +870,23 @@ export function DependencyMapPanel({
         },
       ];
     });
-    if (!showParents) return dependencyEdges;
-    // 親子エッジは依存エッジの下に描く (配列の先頭が下)
-    const parentStyle = edgeStyles.parent;
-    const parentEdges = layout.parentEdges.map<DependencyFlowEdge>((edge) => ({
-      id: `parent:${edge.from}->${edge.to}`,
-      type: "dependency",
-      source: edge.from,
-      target: edge.to,
-      focusable: false,
-      selectable: false,
-      data: {
-        points: edge.points,
-        kind: "parent",
-        stroke: parentStyle.stroke,
-        strokeWidth: parentStyle.strokeWidth,
-        dasharray: parentStyle.dasharray,
-        isCritical: false,
-        isUnresolved: false,
-        label: null,
-      },
-    }));
-    return [...parentEdges, ...dependencyEdges];
-  }, [graph, layout, edgeStyles, showParents]);
+    return [...parentEdges, ...blockEdges];
+  }, [graph, layout, edgeStyles, showBlocks]);
+
+  const isolatedCount = graph.isolatedTaskIds.length;
+  const hintParts: string[] = [];
+  if (graph.nodes.length > 0) {
+    hintParts.push(
+      `${graph.nodes.length} ノード / 親子 ${graph.parentEdges.length} / ブロック ${graph.edges.length}`,
+    );
+  }
+  if (!showIsolated && isolatedCount > 0) hintParts.push(`孤立 ${isolatedCount} 件非表示`);
+  const hint = [
+    hintParts.join(" / "),
+    graph.hiddenNodeCount > 0 ? `フィルタで ${graph.hiddenNodeCount} 件非表示` : "",
+  ]
+    .filter((part) => part.length > 0)
+    .join(" · ");
 
   return (
     <>
@@ -860,29 +897,29 @@ export function DependencyMapPanel({
             <ScopeToggle scope={scope} onChange={setScope} />
             <button
               type="button"
-              data-parent-toggle
-              aria-pressed={showParents}
-              title="親子関係のエッジを表示する (レイアウトには影響しない)"
-              onClick={() => setShowParents((v) => !v)}
-              style={{ ...toggleButtonStyle(showParents), marginLeft: 6 }}
+              data-block-toggle
+              aria-pressed={showBlocks}
+              title="ブロック関係のエッジを表示する (レイアウトには影響しない)"
+              onClick={() => setShowBlocks((v) => !v)}
+              style={{ ...toggleButtonStyle(showBlocks), marginLeft: 6 }}
             >
-              親子
+              ブロック
             </button>
+            {(isolatedCount > 0 || showIsolated) && (
+              <button
+                type="button"
+                data-isolated-toggle
+                aria-pressed={showIsolated}
+                title="親も子もブロック関係も無い孤立タスクを表示する"
+                onClick={() => setShowIsolated((v) => !v)}
+                style={{ ...toggleButtonStyle(showIsolated), marginLeft: 4 }}
+              >
+                孤立{isolatedCount > 0 ? ` ${isolatedCount}` : ""}
+              </button>
+            )}
           </>
         }
-        hint={
-          graph.nodes.length > 0
-            ? `${graph.nodes.length} ノード / ${graph.edges.length} エッジ${
-                showParents && graph.parentEdges.length > 0
-                  ? ` / 親子 ${graph.parentEdges.length}`
-                  : ""
-              }${
-                graph.hiddenNodeCount > 0 ? ` · フィルタで ${graph.hiddenNodeCount} 件非表示` : ""
-              }`
-            : graph.hiddenNodeCount > 0
-              ? `フィルタで ${graph.hiddenNodeCount} 件非表示`
-              : undefined
-        }
+        hint={hint.length > 0 ? hint : undefined}
       />
       {warnings.length > 0 && (
         <div
@@ -905,8 +942,8 @@ export function DependencyMapPanel({
         <PanelEmpty
           message={
             graph.hiddenNodeCount > 0
-              ? "フィルタに一致する依存関係のあるタスクがありません"
-              : "依存関係のあるタスクがありません"
+              ? "フィルタに一致する親子・ブロック関係のあるタスクがありません"
+              : "親子・ブロック関係のあるタスクがありません"
           }
         />
       ) : (
@@ -935,7 +972,7 @@ export function DependencyMapPanel({
             >
               <InitialViewport layout={layout} selectedTaskId={selectedTaskId} />
               <Controls showInteractive={false} position="bottom-right" />
-              <EdgeLegend styles={edgeStyles} showParents={showParents} />
+              <EdgeLegend styles={edgeStyles} showBlocks={showBlocks} />
             </ReactFlow>
           </ReactFlowProvider>
         </div>
