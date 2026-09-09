@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import type { SyncState, Task, TasksFile } from "@gh-gantt/shared";
-import { ConfigStore } from "../store/config.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
 import { createGraphQLClient } from "../github/client.js";
@@ -299,12 +298,11 @@ export function createDeleteCommand(): Command {
     .option("--json", "Output deletion result as JSON")
     .action(async (id: string, opts: { yes?: boolean; json?: boolean }) => {
       const projectRoot = process.cwd();
-      const configStore = new ConfigStore(projectRoot);
       return withProjectStorage(
         projectRoot,
         { mode: "write", scope: "shared-cache" },
         async (storage) => {
-          const { tasksStore, stateStore } = storage;
+          const { configStore, tasksStore, stateStore } = storage;
           const config = await configStore.read();
           const tasksFile = await tasksStore.read();
           const syncState = await stateStore.read();

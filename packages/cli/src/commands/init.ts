@@ -9,8 +9,8 @@ import {
 import { fetchAllSubIssueLinks } from "../github/sub-issues.js";
 import { mapProjectItemToTask, applySubIssueLinks, milestoneToTask } from "../github/issues.js";
 import { resolveTaskType } from "../sync/type-resolver.js";
-import { ConfigStore } from "../store/config.js";
-import { withProjectStorage } from "../store/project-storage.js";
+import { ProjectStorageError, withProjectStorage } from "../store/project-storage.js";
+import { isStorageMode, STORAGE_MODES, type StorageMode } from "../store/storage-location.js";
 import { DEFAULT_CONFLICT_POLICY } from "@gh-gantt/shared";
 import type { Config, TaskType, TaskDisplay, Task, SyncState } from "@gh-gantt/shared";
 
@@ -85,12 +85,46 @@ export const initCommand = new Command("init")
   .option("--status-field <name>", "Status field name", "Status")
   .option("--type-field <name>", "Type custom field name (auto-detected if omitted)")
   .option("--force", "既存の gantt.config.json を上書きする")
+  .option(
+    "--storage <mode>",
+    `config / workflow / journal の配置モード (${STORAGE_MODES.join(" | ")})。` +
+      "repository は <worktree>/.gantt-sync/ に置いて commit 対象にし、git は git-common-dir 配下に置いてリポジトリへ何も追加しない",
+    "repository",
+  )
   .action(async (opts) => {
     const projectRoot = process.cwd();
 
-    // 初期化済みワークスペースの config を誤って上書きしない（--force で明示上書き）
-    if (!opts.force && (await new ConfigStore(projectRoot).exists())) {
-      console.error(".gantt-sync/gantt.config.json が既に存在します。");
+    if (!isStorageMode(opts.storage)) {
+      console.error(
+        `--storage は ${STORAGE_MODES.join(" | ")} のいずれかを指定してください: ${opts.storage}`,
+      );
+      process.exitCode = 1;
+      return;
+    }
+    const storageMode: StorageMode = opts.storage;
+
+    // 配置モードを解決し、初期化済みワークスペースの config を誤って上書きしない（--force で明示上書き）。
+    // 既存 config が別モードにある場合や両モードに config がある場合は Project Storage が fail-closed にする。
+    let existing: { configPath: string; exists: boolean };
+    try {
+      existing = await withProjectStorage(
+        projectRoot,
+        { mode: "read", scope: "workspace", storageMode },
+        async (storage) => ({
+          configPath: (await storage.describeStorage()).paths.config,
+          exists: await storage.configStore.exists(),
+        }),
+      );
+    } catch (error) {
+      if (error instanceof ProjectStorageError) {
+        console.error(`${error.code}: ${error.message}`);
+        process.exitCode = 1;
+        return;
+      }
+      throw error;
+    }
+    if (!opts.force && existing.exists) {
+      console.error(`${existing.configPath} が既に存在します。`);
       console.error("  同期データの再構成だけなら gh-gantt pull を使ってください。");
       console.error("  設定ごと作り直す場合は --force を指定してください。");
       process.exitCode = 1;
@@ -307,19 +341,26 @@ export const initCommand = new Command("init")
       option_ids: optionIds,
     };
 
-    // Write files
-    const configStore = new ConfigStore(projectRoot);
-    await configStore.write(config);
-    await withProjectStorage(
+    // Write files: config を先に publish し、その identity で Work Graph Cache の namespace を解決する
+    const description = await withProjectStorage(
       projectRoot,
-      { mode: "write", scope: "shared-cache" },
-      async ({ tasksStore, stateStore }) => {
-        await tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
-        await stateStore.write(syncState);
+      { mode: "write", scope: "all", storageMode },
+      async (storage) => {
+        await storage.configStore.write(config);
+        await storage.flush();
+        await storage.tasksStore.write({ tasks, cache: { comments: {}, reactions: {} } });
+        await storage.stateStore.write(syncState);
+        return storage.describeStorage();
       },
     );
 
     console.log(`Initialized gh-gantt with ${tasks.length} tasks`);
-    console.log("Workspace config: .gantt-sync/gantt.config.json");
+    console.log(`Storage mode: ${description.mode}`);
+    console.log(`Workspace config: ${description.paths.config}`);
+    if (description.mode === "git") {
+      console.log(
+        "  git モードのため .gantt-sync/ は作成されず、リポジトリに追加する file はありません。",
+      );
+    }
     console.log("Work Graph Cache を初期化しました。");
   });

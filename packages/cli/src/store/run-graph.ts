@@ -3,8 +3,8 @@ import { mkdir, readdir, readFile, rename, rm, writeFile } from "node:fs/promise
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { resolveWorkspaceStorageLocation } from "./project-storage.js";
 import {
-  GANTT_DIR,
   RUN_GRAPH_DIR,
   RUN_GRAPH_RUNS_DIR,
   RunGraphAcceptedEventReadSchema,
@@ -392,19 +392,46 @@ async function listJsonFiles(path: string): Promise<string[]> {
 
 /** run ごとの accepted event を immutable sequence segment として保持する。 */
 export class RunGraphEventStore {
-  private readonly root: string;
-  private readonly locatorIndexRoot: string;
+  private readonly projectRoot: string;
   private readonly dependencies: RunGraphEventStoreDependencies;
+  private resolved: { root: string; locatorIndexRoot: string } | null = null;
+  private resolving: Promise<{ root: string; locatorIndexRoot: string }> | null = null;
 
   constructor(projectRoot: string, dependencies: RunGraphEventStoreDependencies = {}) {
-    this.root = join(projectRoot, GANTT_DIR, RUN_GRAPH_DIR, RUN_GRAPH_RUNS_DIR);
-    this.locatorIndexRoot = join(
-      projectRoot,
-      GANTT_DIR,
-      RUN_GRAPH_DIR,
-      RUN_GRAPH_LOCATOR_INDEX_DIR,
-    );
+    this.projectRoot = projectRoot;
     this.dependencies = dependencies;
+  }
+
+  /**
+   * journal の配置は Project Storage の配置モードに従う (#379)。
+   * repository モードでは `<root>/.gantt-sync/run-graph/`、git モードでは git-common-dir 配下の
+   * worktree 別 namespace になる。public method の先頭で一度だけ解決する。
+   */
+  private async resolveRoots(): Promise<{ root: string; locatorIndexRoot: string }> {
+    if (this.resolved) return this.resolved;
+    if (!this.resolving) {
+      this.resolving = resolveWorkspaceStorageLocation(this.projectRoot).then((location) => {
+        this.resolved = {
+          root: join(location.journalDir, RUN_GRAPH_DIR, RUN_GRAPH_RUNS_DIR),
+          locatorIndexRoot: join(location.journalDir, RUN_GRAPH_DIR, RUN_GRAPH_LOCATOR_INDEX_DIR),
+        };
+        return this.resolved;
+      });
+      this.resolving.catch(() => {
+        this.resolving = null;
+      });
+    }
+    return this.resolving;
+  }
+
+  private get root(): string {
+    if (!this.resolved) throw new Error("Run Graph の配置が未解決です");
+    return this.resolved.root;
+  }
+
+  private get locatorIndexRoot(): string {
+    if (!this.resolved) throw new Error("Run Graph の配置が未解決です");
+    return this.resolved.locatorIndexRoot;
   }
 
   private runDir(runId: string): string {
@@ -413,6 +440,7 @@ export class RunGraphEventStore {
 
   async appendAccepted(input: RunGraphAcceptedEvent): Promise<void> {
     const event = RunGraphAcceptedEventSchema.parse(input);
+    await this.resolveRoots();
     const release = await acquireLocatorIndexLease(this.locatorIndexRoot);
     let journalCommitted = false;
     let failure: unknown = null;
@@ -472,6 +500,7 @@ export class RunGraphEventStore {
 
   async appendRejection(input: RunGraphRejection): Promise<void> {
     const rejection = RunGraphRejectionSchema.parse(input);
+    await this.resolveRoots();
     const rejectionDir = join(this.runDir(rejection.runId), "rejections");
     await mkdir(rejectionDir, { recursive: true });
     const filePath = join(rejectionDir, `${safeSegment(rejection.rejectionId)}.json`);
@@ -486,6 +515,7 @@ export class RunGraphEventStore {
   }
 
   async readJournal(runId: string): Promise<RunGraphJournal> {
+    await this.resolveRoots();
     const journal = await this.readJournalOrEmpty(runId);
     if (journal.acceptedEvents.length === 0) {
       throw new Error(`Run Graph が見つかりません: ${runId}`);
@@ -513,6 +543,7 @@ export class RunGraphEventStore {
   }
 
   async listRunIds(): Promise<string[]> {
+    await this.resolveRoots();
     try {
       const entries = await readdir(this.root, { withFileTypes: true });
       return entries
@@ -698,6 +729,7 @@ export class RunGraphEventStore {
 
   /** 旧 journal の locator を server 起動時に再構築し、request path の全 Run 走査を避ける。 */
   async ensureRunLocatorIndex(): Promise<void> {
+    await this.resolveRoots();
     await withLocatorIndexLease(this.locatorIndexRoot, async () => {
       await this.recoverPendingLocatorTransaction();
       const state = await readJsonOptional(
@@ -717,6 +749,7 @@ export class RunGraphEventStore {
     total: number;
     items: RunGraphRunLocator[];
   }> {
+    await this.resolveRoots();
     const readStableIndex = async () => {
       const limit = Math.min(50, Math.max(1, input.limit));
       const index = await readJsonOptional(

@@ -1,6 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import {
+  cp,
+  mkdir,
+  readFile,
+  realpath,
+  rename,
+  rm,
+  rmdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { hostname } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -8,6 +18,7 @@ import {
   CommentsFileSchema,
   ConfigSchema,
   GANTT_DIR,
+  RUN_GRAPH_DIR,
   SyncStateSchema,
   TasksFileWithConflictsSchema,
 } from "@gh-gantt/shared";
@@ -17,6 +28,14 @@ import { ConfigStore } from "./config.js";
 import { LoopStateStore } from "./loop-state.js";
 import { SyncStateStore } from "./state.js";
 import { TasksStore } from "./tasks.js";
+import { cachedRevParse, cachedWorktreeList } from "./repository-coordination-layout.js";
+import {
+  detectWorkspaceStorageLocation,
+  ProjectStorageError,
+  workspaceSlotPath,
+  type StorageMode,
+  type WorkspaceStorageLocation,
+} from "./storage-location.js";
 import { gitCommandEnvironment, isNotGitRepositoryError } from "../util/git-errors.js";
 import {
   hasGitMarkerInAncestors,
@@ -55,6 +74,37 @@ export interface ProjectStorageOptions {
   dependencies?: ProjectStorageDependencies;
   /** 分岐したlegacy cacheからoperatorが明示的に選ぶworktree root。 */
   legacySource?: string;
+  /**
+   * config / workflow / journal の配置モードを明示する (#379)。
+   * 既存 config と矛盾する指定は fail-closed になる。省略時は既存 config から検出する。
+   */
+  storageMode?: StorageMode;
+}
+
+/** `storage status` 等が表示する、解決済みの配置。physical path は表示専用で caller は組み立てない。 */
+export interface ProjectStorageDescription {
+  mode: StorageMode;
+  projectRoot: string;
+  gitCommonDir: string | null;
+  paths: {
+    config: string;
+    workflow: string;
+    loopState: string;
+    runGraph: string;
+    /** repository モードの `.gantt-sync`。git モードでは legacy 確認用。 */
+    repositoryDir: string;
+    gitConfigDir: string | null;
+    gitJournalDir: string | null;
+  };
+  /** Work Graph Cache の配置。config が無く identity を解決できない場合は null。 */
+  sharedCacheRoot: string | null;
+}
+
+export interface StorageRelocationReport {
+  changed: boolean;
+  from: StorageMode;
+  to: StorageMode;
+  moved: Array<{ slot: string; from: string; to: string }>;
 }
 
 export interface ProjectStorageSession {
@@ -65,19 +115,19 @@ export interface ProjectStorageSession {
   readonly loopStore: LoopStateStore;
   /** legacy cache migrationを含む共有cacheの初期化を明示的に開始する。 */
   ensureSharedCache(): Promise<void>;
+  /** 配置モードと解決済み path を返す。lease は取得しない。 */
+  describeStorage(): Promise<ProjectStorageDescription>;
+  /**
+   * config / workflow / journal を別モードへ移す (#379)。repository lease 内で実行し、
+   * 移行元と移行先を migration manifest に記録する。
+   */
+  relocateStorage(target: StorageMode): Promise<StorageRelocationReport>;
   /** 長いremote操作の途中で、整合したsnapshot-setを明示的にpublishする。 */
   flush(): Promise<void>;
 }
 
-export class ProjectStorageError extends Error {
-  readonly code: string;
-
-  constructor(code: string, message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "ProjectStorageError";
-    this.code = code;
-  }
-}
+export { ProjectStorageError } from "./storage-location.js";
+export type { StorageMode, WorkspaceStorageLocation } from "./storage-location.js";
 
 export function createProjectStorageDependencies(
   overrides: Partial<ProjectStorageDependencies> = {},
@@ -98,6 +148,20 @@ export function createProjectStorageDependencies(
   };
 }
 
+interface GitDiscovery {
+  topLevel: string;
+  commonDir: string;
+  relativeProjectRoot: string;
+  worktrees: string[];
+}
+
+/** Git discovery と配置モードまで解決した workspace。identity と lease はまだ持たない。 */
+interface WorkspaceLayout {
+  projectRoot: string;
+  git: GitDiscovery | null;
+  location: WorkspaceStorageLocation;
+}
+
 interface GitLayout {
   kind: "git";
   projectRoot: string;
@@ -105,17 +169,20 @@ interface GitLayout {
   commonDir: string;
   relativeProjectRoot: string;
   worktrees: string[];
+  location: WorkspaceStorageLocation;
   projectIdentity: string;
   namespaceRoot: string;
   lockDir: string;
 }
 
-interface StandaloneLayout {
-  kind: "standalone";
+/** workspace slot、または non-git 縮退時の全 slot を location の path で読み書きする。 */
+interface WorkspaceBoundLayout {
+  kind: "workspace";
   projectRoot: string;
+  location: WorkspaceStorageLocation;
 }
 
-type StorageLayout = GitLayout | StandaloneLayout;
+type StorageLayout = GitLayout | WorkspaceBoundLayout;
 
 const LockOwnerSchema = z.object({
   schemaVersion: z.literal("1"),
@@ -151,11 +218,23 @@ interface LegacyCandidate {
   fingerprint: string;
 }
 
+const StorageRelocationRecordSchema = z.object({
+  workspace: z.string().min(1),
+  from: z.enum(["repository", "git"]),
+  to: z.enum(["repository", "git"]),
+  relocatedAt: z.string().datetime(),
+  moved: z.array(
+    z.object({ slot: z.string().min(1), from: z.string().min(1), to: z.string().min(1) }),
+  ),
+});
+
 const MigrationManifestSchema = z.object({
   schemaVersion: z.literal("1"),
   projectIdentity: z.string().min(1),
   selectedSource: z.string().min(1).nullable(),
   legacyFingerprints: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)),
+  /** 配置モードの移行履歴 (#379)。旧 manifest には無い。 */
+  storageRelocations: z.array(StorageRelocationRecordSchema).optional(),
 });
 
 type MigrationManifest = z.infer<typeof MigrationManifestSchema>;
@@ -241,8 +320,7 @@ async function runGit(projectRoot: string, args: string[]): Promise<string> {
   }
 }
 
-async function readProjectIdentity(projectRoot: string): Promise<string> {
-  const configPath = join(projectRoot, GANTT_DIR, "gantt.config.json");
+async function readProjectIdentity(configPath: string): Promise<string> {
   try {
     const parsed = ConfigSchema.parse(JSON.parse(await readFile(configPath, "utf8")));
     const github = parsed.project.github;
@@ -263,19 +341,20 @@ async function readProjectIdentity(projectRoot: string): Promise<string> {
   }
 }
 
-async function resolveLayout(
+async function discoverGit(
   projectRoot: string,
   dependencies: ProjectStorageDependencies,
-): Promise<StorageLayout> {
-  // standalone fallback は従来の caller 指定 path を維持する。Git 管理下では
+): Promise<{ projectRoot: string; git: GitDiscovery | null }> {
+  // non-git は従来の caller 指定 path を維持する。Git 管理下では
   // rev-parse / common-dir の結果だけを realpath して repository identity を揃える。
+  // toplevel / common-dir / worktree 一覧は root ごとに cache し git の起動を減らす (#353, #355)。
   const absoluteRoot = resolve(projectRoot);
   let topLevel: string;
   try {
-    topLevel = await dependencies.runGit(absoluteRoot, ["rev-parse", "--show-toplevel"]);
+    topLevel = await cachedRevParse(dependencies.runGit, absoluteRoot, "--show-toplevel");
   } catch (error) {
     if (error instanceof ProjectStorageError && error.code === "NOT_A_GIT_REPOSITORY") {
-      return { kind: "standalone", projectRoot: absoluteRoot };
+      return { projectRoot: absoluteRoot, git: null };
     }
     if (error instanceof ProjectStorageError) throw error;
     throw new ProjectStorageError(
@@ -288,13 +367,12 @@ async function resolveLayout(
   let rawCommonDir: string;
   let worktreeOutput: string;
   try {
-    rawCommonDir = await dependencies.runGit(absoluteRoot, ["rev-parse", "--git-common-dir"]);
-    worktreeOutput = await dependencies.runGit(absoluteRoot, [
-      "worktree",
-      "list",
-      "--porcelain",
-      "-z",
-    ]);
+    rawCommonDir = await cachedRevParse(dependencies.runGit, absoluteRoot, "--git-common-dir");
+    worktreeOutput = await cachedWorktreeList(
+      dependencies.runGit,
+      absoluteRoot,
+      isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
+    );
   } catch (error) {
     if (error instanceof ProjectStorageError) throw error;
     throw new ProjectStorageError(
@@ -308,42 +386,78 @@ async function resolveLayout(
   const commonDir = await realpath(
     isAbsolute(rawCommonDir) ? rawCommonDir : resolve(absoluteRoot, rawCommonDir),
   );
-  const projectIdentity = await readProjectIdentity(gitProjectRoot);
-  const projectKey = fingerprint(projectIdentity).slice(0, 32);
-  const storageRoot = join(commonDir, "gh-gantt");
   return {
-    kind: "git",
     projectRoot: gitProjectRoot,
-    topLevel: canonicalTopLevel,
-    commonDir,
-    relativeProjectRoot: relative(canonicalTopLevel, gitProjectRoot),
-    worktrees: parseWorktreeList(worktreeOutput),
-    projectIdentity,
+    git: {
+      topLevel: canonicalTopLevel,
+      commonDir,
+      relativeProjectRoot: relative(canonicalTopLevel, gitProjectRoot),
+      worktrees: parseWorktreeList(worktreeOutput),
+    },
+  };
+}
+
+async function resolveWorkspaceLayout(
+  projectRoot: string,
+  dependencies: ProjectStorageDependencies,
+  explicitMode?: StorageMode,
+): Promise<WorkspaceLayout> {
+  const discovered = await discoverGit(projectRoot, dependencies);
+  const location = await detectWorkspaceStorageLocation(
+    {
+      projectRoot: discovered.projectRoot,
+      git: discovered.git
+        ? {
+            commonDir: discovered.git.commonDir,
+            relativeProjectRoot: discovered.git.relativeProjectRoot,
+          }
+        : null,
+    },
+    { explicit: explicitMode },
+  );
+  return { projectRoot: discovered.projectRoot, git: discovered.git, location };
+}
+
+/**
+ * project の workspace 配置 (モード、config / journal directory) を解決する。
+ *
+ * `withProjectStorage` を通らない Run Graph store 等が、journal の物理 path を
+ * caller ごとに組み立てずに同じ解決順序へ従うための入口。lease は取得しない。
+ */
+export async function resolveWorkspaceStorageLocation(
+  projectRoot: string,
+  dependencies: ProjectStorageDependencies = createProjectStorageDependencies(),
+): Promise<WorkspaceStorageLocation> {
+  return (await resolveWorkspaceLayout(projectRoot, dependencies)).location;
+}
+
+function sharedNamespace(git: GitDiscovery, projectIdentity: string) {
+  const projectKey = fingerprint(projectIdentity).slice(0, 32);
+  const storageRoot = join(git.commonDir, "gh-gantt");
+  return {
     namespaceRoot: join(storageRoot, "cache", "project-storage", LAYOUT_VERSION, projectKey),
     lockDir: join(storageRoot, "locks", "work-graph-cache.lock"),
   };
 }
 
-function workspacePath(projectRoot: string, slot: ProjectStorageSlot): string {
-  const directory = join(projectRoot, GANTT_DIR);
-  switch (slot) {
-    case "config":
-      return join(directory, "gantt.config.json");
-    case "workflow":
-      return join(directory, "workflow.md");
-    case "tasks":
-      return join(directory, "tasks.json");
-    case "sync-state":
-      return join(directory, "sync-state.json");
-    case "comments":
-      return join(directory, "comments.json");
-    case "loop-state":
-      return join(directory, "loop-state.json");
-    case "graph-contracts":
-      return join(directory, "run-graph", "contracts");
-    case "run-graph":
-      return join(directory, "run-graph", "runs");
+async function resolveSharedLayout(workspace: WorkspaceLayout): Promise<StorageLayout> {
+  if (workspace.git === null) {
+    return { kind: "workspace", projectRoot: workspace.projectRoot, location: workspace.location };
   }
+  const projectIdentity = await readProjectIdentity(
+    workspaceSlotPath(workspace.location, "config"),
+  );
+  return {
+    kind: "git",
+    projectRoot: workspace.projectRoot,
+    topLevel: workspace.git.topLevel,
+    commonDir: workspace.git.commonDir,
+    relativeProjectRoot: workspace.git.relativeProjectRoot,
+    worktrees: workspace.git.worktrees,
+    location: workspace.location,
+    projectIdentity,
+    ...sharedNamespace(workspace.git, projectIdentity),
+  };
 }
 
 function sharedLocation(layout: GitLayout, slot: SharedSlot): string {
@@ -533,13 +647,23 @@ async function readCandidate(
 
   let candidateIdentity: string;
   try {
-    candidateIdentity = await readProjectIdentity(root);
+    candidateIdentity = await readProjectIdentity(join(directory, "gantt.config.json"));
   } catch (error) {
-    throw new ProjectStorageError(
-      "LEGACY_CACHE_INVALID",
-      `legacy cache の project identity を検証できません: ${root}`,
-      { cause: error },
-    );
+    // git モードでは config が worktree に無いのが正常なので、共有 config の identity を使う。
+    // repository モードでは従来どおり config の無い legacy pair を fail-closed にする。
+    if (
+      layout.location.mode === "git" &&
+      error instanceof ProjectStorageError &&
+      error.code === "PROJECT_CONFIG_MISSING"
+    ) {
+      candidateIdentity = layout.projectIdentity;
+    } else {
+      throw new ProjectStorageError(
+        "LEGACY_CACHE_INVALID",
+        `legacy cache の project identity を検証できません: ${root}`,
+        { cause: error },
+      );
+    }
   }
   if (candidateIdentity !== layout.projectIdentity) return null;
   if (tasks === null || syncState === null) {
@@ -631,11 +755,28 @@ async function selectLegacyCandidate(
   );
 }
 
+async function readMigrationManifest(layout: GitLayout): Promise<MigrationManifest | null> {
+  const manifestRaw = await readOptional(migrationPath(layout));
+  if (manifestRaw === null) return null;
+  try {
+    return MigrationManifestSchema.parse(JSON.parse(manifestRaw));
+  } catch (error) {
+    throw new ProjectStorageError("MIGRATION_MANIFEST_INVALID", "migration manifest が不正です", {
+      cause: error,
+    });
+  }
+}
+
+async function saveMigrationManifest(layout: GitLayout, manifest: MigrationManifest) {
+  await writeAtomic(migrationPath(layout), `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 async function writeMigrationManifest(
   layout: GitLayout,
   candidates: LegacyCandidate[],
   selectedSource: string | null,
 ): Promise<void> {
+  const previous = await readMigrationManifest(layout);
   const migration: MigrationManifest = {
     schemaVersion: "1",
     projectIdentity: layout.projectIdentity,
@@ -643,8 +784,9 @@ async function writeMigrationManifest(
     legacyFingerprints: Object.fromEntries(
       candidates.map((candidate) => [candidate.workspace, candidate.fingerprint]),
     ),
+    ...(previous?.storageRelocations ? { storageRelocations: previous.storageRelocations } : {}),
   };
-  await writeAtomic(migrationPath(layout), `${JSON.stringify(migration, null, 2)}\n`);
+  await saveMigrationManifest(layout, migration);
 }
 
 async function publishLegacyCandidate(
@@ -662,17 +804,7 @@ async function publishLegacyCandidate(
 async function migrateLegacy(layout: GitLayout, legacySource?: string): Promise<void> {
   const generation = await readCurrentGeneration(layout);
   const candidates = await collectLegacyCandidates(layout);
-  const manifestRaw = await readOptional(migrationPath(layout));
-  let manifest: MigrationManifest | null = null;
-  if (manifestRaw !== null) {
-    try {
-      manifest = MigrationManifestSchema.parse(JSON.parse(manifestRaw));
-    } catch (error) {
-      throw new ProjectStorageError("MIGRATION_MANIFEST_INVALID", "migration manifest が不正です", {
-        cause: error,
-      });
-    }
-  }
+  const manifest = await readMigrationManifest(layout);
 
   if (generation !== null) {
     if (candidates.length === 0) {
@@ -751,7 +883,7 @@ class BoundStorageSession {
     if (this.layout.kind === "git" && isSharedSlot(slot)) {
       return sharedLocation(this.layout, slot);
     }
-    return workspacePath(this.layout.projectRoot, slot);
+    return workspaceSlotPath(this.layout.location, slot);
   }
 
   async readText(slot: ProjectStorageSlot): Promise<string | null> {
@@ -789,10 +921,11 @@ class BoundStorageSession {
 
   async commit(): Promise<void> {
     if (this.options.mode !== "write" || this.staged.size === 0) return;
-    if (this.layout.kind === "standalone") {
+    if (this.layout.kind === "workspace") {
+      const location = this.layout.location;
       await Promise.all(
         [...this.staged].map(([slot, content]) =>
-          writeAtomic(workspacePath(this.layout.projectRoot, slot), content),
+          writeAtomic(workspaceSlotPath(location, slot), content),
         ),
       );
       this.staged.clear();
@@ -824,7 +957,7 @@ class BoundStorageSession {
       }
       await writeAtomic(sharedLocation(this.layout, "comments"), comments);
     }
-    if ((await readOptional(migrationPath(this.layout))) === null) {
+    if ((await readMigrationManifest(this.layout)) === null) {
       const manifest: MigrationManifest = {
         schemaVersion: "1",
         projectIdentity: this.layout.projectIdentity,
@@ -843,7 +976,39 @@ class BoundStorageSession {
 
 interface InitializedStorage {
   bound: BoundStorageSession;
+  layout: StorageLayout;
   release: () => Promise<void>;
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await stat(path);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+/** 同一 filesystem では rename、跨ぐ場合は copy してから削除する。 */
+async function movePath(from: string, to: string): Promise<void> {
+  await mkdir(dirname(to), { recursive: true });
+  try {
+    await rename(from, to);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
+    await cp(from, to, { recursive: true, errorOnExist: true, force: false });
+    await rm(from, { recursive: true, force: true });
+  }
+}
+
+async function removeIfEmpty(directory: string): Promise<void> {
+  try {
+    await rmdir(directory);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ENOENT" && code !== "ENOTEMPTY" && code !== "EEXIST") throw error;
+  }
 }
 
 class LazyProjectStorageSession implements ProjectStorageSession {
@@ -852,8 +1017,9 @@ class LazyProjectStorageSession implements ProjectStorageSession {
   readonly stateStore: SyncStateStore;
   readonly commentsStore: CommentsStore;
   readonly loopStore: LoopStateStore;
+  private workspaceLayout: Promise<WorkspaceLayout> | null = null;
+  private workspaceBound: Promise<BoundStorageSession> | null = null;
   private initialized: Promise<InitializedStorage> | null = null;
-  private readonly workspace: BoundStorageSession;
 
   constructor(
     private readonly projectRoot: string,
@@ -864,10 +1030,6 @@ class LazyProjectStorageSession implements ProjectStorageSession {
       readText: (slot: ProjectStorageSlot) => this.readText(slot),
       writeText: (slot: ProjectStorageSlot, content: string) => this.writeText(slot, content),
     };
-    this.workspace = new BoundStorageSession(
-      { kind: "standalone", projectRoot: resolve(projectRoot) },
-      options,
-    );
     this.configStore = new ConfigStore(binding);
     this.tasksStore = new TasksStore(binding);
     this.stateStore = new SyncStateStore(binding);
@@ -875,17 +1037,43 @@ class LazyProjectStorageSession implements ProjectStorageSession {
     this.loopStore = new LoopStateStore(binding);
   }
 
+  /** Git discovery と配置モードの解決。lease は取らず、shared slot に触れない caller でも使える。 */
+  private resolveWorkspace(): Promise<WorkspaceLayout> {
+    if (!this.workspaceLayout) {
+      this.workspaceLayout = resolveWorkspaceLayout(
+        this.projectRoot,
+        this.dependencies,
+        this.options.storageMode,
+      );
+    }
+    return this.workspaceLayout;
+  }
+
+  private workspace(): Promise<BoundStorageSession> {
+    if (!this.workspaceBound) {
+      this.workspaceBound = this.resolveWorkspace().then(
+        (workspace) =>
+          new BoundStorageSession(
+            { kind: "workspace", projectRoot: workspace.projectRoot, location: workspace.location },
+            this.options,
+          ),
+      );
+    }
+    return this.workspaceBound;
+  }
+
   private async initialize(): Promise<InitializedStorage> {
     if (this.initialized) return this.initialized;
     this.initialized = (async () => {
-      const layout = await resolveLayout(this.projectRoot, this.dependencies);
-      const release =
-        layout.kind === "git"
-          ? await acquireLease(layout, this.options, this.dependencies)
-          : async () => undefined;
+      const layout = await resolveSharedLayout(await this.resolveWorkspace());
+      if (layout.kind === "workspace") {
+        // non-git は shared slot も同じ workspace session で `.gantt-sync/` へ縮退する。
+        return { bound: await this.workspace(), layout, release: async () => undefined };
+      }
+      const release = await acquireLease(layout, this.options, this.dependencies);
       try {
-        if (layout.kind === "git") await migrateLegacy(layout, this.options.legacySource);
-        return { bound: new BoundStorageSession(layout, this.options), release };
+        await migrateLegacy(layout, this.options.legacySource);
+        return { bound: new BoundStorageSession(layout, this.options), layout, release };
       } catch (error) {
         await release();
         throw error;
@@ -898,24 +1086,148 @@ class LazyProjectStorageSession implements ProjectStorageSession {
     await this.initialize();
   }
 
+  async describeStorage(): Promise<ProjectStorageDescription> {
+    const workspace = await this.resolveWorkspace();
+    const location = workspace.location;
+    let sharedCacheRoot: string | null = location.repositoryDir;
+    if (workspace.git !== null) {
+      try {
+        const identity = await readProjectIdentity(workspaceSlotPath(location, "config"));
+        sharedCacheRoot = sharedNamespace(workspace.git, identity).namespaceRoot;
+      } catch (error) {
+        if (!(error instanceof ProjectStorageError && error.code === "PROJECT_CONFIG_MISSING")) {
+          throw error;
+        }
+        sharedCacheRoot = null;
+      }
+    }
+    return {
+      mode: location.mode,
+      projectRoot: workspace.projectRoot,
+      gitCommonDir: workspace.git?.commonDir ?? null,
+      paths: {
+        config: workspaceSlotPath(location, "config"),
+        workflow: workspaceSlotPath(location, "workflow"),
+        loopState: workspaceSlotPath(location, "loop-state"),
+        runGraph: join(location.journalDir, RUN_GRAPH_DIR),
+        repositoryDir: location.repositoryDir,
+        gitConfigDir: location.gitConfigDir,
+        gitJournalDir: location.gitJournalDir,
+      },
+      sharedCacheRoot,
+    };
+  }
+
+  async relocateStorage(target: StorageMode): Promise<StorageRelocationReport> {
+    if (this.options.mode !== "write") {
+      throw new ProjectStorageError(
+        "STORAGE_SCOPE_VIOLATION",
+        "read scopeでは配置を変更できません",
+      );
+    }
+    const workspace = await this.resolveWorkspace();
+    const location = workspace.location;
+    if (workspace.git === null) {
+      throw new ProjectStorageError(
+        "STORAGE_MODE_UNSUPPORTED",
+        "non-git directory では repository モードだけが使えます",
+      );
+    }
+    if (location.mode === target) {
+      return { changed: false, from: location.mode, to: target, moved: [] };
+    }
+    // 移行元の config で identity を解決し、repository lease と legacy 検証を先に通す。
+    const { layout } = await this.initialize();
+    if (layout.kind !== "git") {
+      throw new ProjectStorageError("STORAGE_MODE_UNSUPPORTED", "Git layout を解決できません");
+    }
+
+    const targetConfigDir = target === "git" ? location.gitConfigDir! : location.repositoryDir;
+    const targetJournalDir = target === "git" ? location.gitJournalDir! : location.repositoryDir;
+    const plan = [
+      {
+        slot: "config",
+        from: join(location.configDir, "gantt.config.json"),
+        to: join(targetConfigDir, "gantt.config.json"),
+      },
+      {
+        slot: "workflow",
+        from: join(location.configDir, "workflow.md"),
+        to: join(targetConfigDir, "workflow.md"),
+      },
+      {
+        slot: "loop-state",
+        from: join(location.journalDir, "loop-state.json"),
+        to: join(targetJournalDir, "loop-state.json"),
+      },
+      {
+        slot: "run-graph",
+        from: join(location.journalDir, RUN_GRAPH_DIR),
+        to: join(targetJournalDir, RUN_GRAPH_DIR),
+      },
+    ];
+    const moves: Array<{ slot: string; from: string; to: string }> = [];
+    for (const item of plan) {
+      if (!(await exists(item.from))) continue;
+      if (await exists(item.to)) {
+        throw new ProjectStorageError(
+          "STORAGE_RELOCATION_CONFLICT",
+          `移行先に既に ${item.slot} が存在します: ${item.to}。移行先を確認して削除するか退避してから再実行してください`,
+        );
+      }
+      moves.push(item);
+    }
+    if (!moves.some((item) => item.slot === "config")) {
+      throw new ProjectStorageError(
+        "PROJECT_CONFIG_MISSING",
+        `移行元に gantt.config.json がありません: ${plan[0].from}`,
+      );
+    }
+    for (const item of moves) await movePath(item.from, item.to);
+    await removeIfEmpty(location.configDir);
+    if (location.journalDir !== location.configDir) await removeIfEmpty(location.journalDir);
+
+    const previous = await readMigrationManifest(layout);
+    const manifest: MigrationManifest = previous ?? {
+      schemaVersion: "1",
+      projectIdentity: layout.projectIdentity,
+      selectedSource: null,
+      legacyFingerprints: {},
+    };
+    manifest.storageRelocations = [
+      ...(manifest.storageRelocations ?? []),
+      {
+        workspace: workspace.projectRoot,
+        from: location.mode,
+        to: target,
+        relocatedAt: new Date().toISOString(),
+        moved: moves,
+      },
+    ];
+    await saveMigrationManifest(layout, manifest);
+    // 以後この session で workspace slot に触れた場合は移行後の配置を解決し直す。
+    this.workspaceLayout = null;
+    this.workspaceBound = null;
+    return { changed: true, from: location.mode, to: target, moved: moves };
+  }
+
   private async readText(slot: ProjectStorageSlot): Promise<string | null> {
-    if (!isSharedSlot(slot)) return this.workspace.readText(slot);
+    if (!isSharedSlot(slot)) return (await this.workspace()).readText(slot);
     return (await this.initialize()).bound.readText(slot);
   }
 
   private async writeText(slot: ProjectStorageSlot, content: string): Promise<void> {
-    if (!isSharedSlot(slot)) return this.workspace.writeText(slot, content);
+    if (!isSharedSlot(slot)) return (await this.workspace()).writeText(slot, content);
     return (await this.initialize()).bound.writeText(slot, content);
   }
 
   async flush(): Promise<void> {
-    await this.workspace.flush();
+    if (this.workspaceBound) await (await this.workspaceBound).flush();
     if (this.initialized) await (await this.initialized).bound.flush();
   }
 
   async finish(): Promise<void> {
-    await this.workspace.flush();
-    if (this.initialized) await (await this.initialized).bound.flush();
+    await this.flush();
   }
 
   async close(): Promise<void> {

@@ -1,6 +1,5 @@
 import { Command } from "commander";
 import Table from "cli-table3";
-import { ConfigStore } from "../store/config.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import { resolveTaskId } from "../util/task-id.js";
 import type { Config, SprintConfig, Task } from "@gh-gantt/shared";
@@ -245,10 +244,20 @@ function formatSprintTable(sprints: SprintConfig[]): string {
   return table.toString();
 }
 
-async function readConfig(): Promise<{ store: ConfigStore; config: Config }> {
-  const store = new ConfigStore(process.cwd());
-  const config = await store.read();
-  return { store, config };
+/** config は Project Storage 経由で読み書きし、配置モード (#379) に caller が依存しない。 */
+async function readConfig(): Promise<{ config: Config }> {
+  const config = await withProjectStorage(
+    process.cwd(),
+    { mode: "read", scope: "workspace" },
+    (storage) => storage.configStore.read(),
+  );
+  return { config };
+}
+
+async function writeConfig(config: Config): Promise<void> {
+  await withProjectStorage(process.cwd(), { mode: "write", scope: "workspace" }, (storage) =>
+    storage.configStore.write(config),
+  );
 }
 
 function shortTaskId(task: Task): string {
@@ -295,13 +304,13 @@ export function createSprintCommand(): Command {
     .option("--json", "Output created sprint as JSON")
     .action(async (name: string, opts) => {
       try {
-        const { store, config } = await readConfig();
+        const { config } = await readConfig();
         const result = createSprint(config, name, opts);
         if (result.error || !result.sprint) {
           fail(result.error ?? "Failed to create sprint.");
           return;
         }
-        await store.write(result.config);
+        await writeConfig(result.config);
         if (opts.json) {
           console.log(
             JSON.stringify({ sprint: result.sprint, sprints: result.config.sprints }, null, 2),
@@ -325,7 +334,7 @@ export function createSprintCommand(): Command {
     .option("--json", "Output updated sprint as JSON")
     .action(async (name: string, opts) => {
       try {
-        const { store, config } = await readConfig();
+        const { config } = await readConfig();
         const hasUpdate =
           opts.name !== undefined ||
           opts.startDate !== undefined ||
@@ -340,7 +349,7 @@ export function createSprintCommand(): Command {
           fail(result.error ?? "Failed to update sprint.");
           return;
         }
-        await store.write(result.config);
+        await writeConfig(result.config);
         if (opts.json) {
           console.log(
             JSON.stringify({ sprint: result.sprint, sprints: result.config.sprints }, null, 2),
@@ -360,13 +369,13 @@ export function createSprintCommand(): Command {
     .option("--json", "Output deleted sprint as JSON")
     .action(async (name: string, opts) => {
       try {
-        const { store, config } = await readConfig();
+        const { config } = await readConfig();
         const result = deleteSprint(config, name);
         if (result.error || !result.deleted) {
           fail(result.error ?? "Failed to delete sprint.");
           return;
         }
-        await store.write(result.config);
+        await writeConfig(result.config);
         if (opts.json) {
           console.log(
             JSON.stringify({ deleted: result.deleted, sprints: result.config.sprints }, null, 2),

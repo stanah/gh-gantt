@@ -30,7 +30,9 @@ export const pullCommand = new Command("pull")
             return await configStore.read();
           } catch (err) {
             if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-              console.error(".gantt-sync/gantt.config.json がありません。");
+              console.error(
+                "gantt.config.json がありません (配置は gh-gantt storage status で確認できます)。",
+              );
               console.error(
                 "  設定をコミットしてあるリポジトリなら checkout 漏れを確認してください。",
               );

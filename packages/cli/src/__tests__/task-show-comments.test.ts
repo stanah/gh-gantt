@@ -11,7 +11,12 @@ import {
 const storage = vi.hoisted(() => ({
   config: { project: { github: { owner: "owner", repo: "repo" } } },
   tasks: [] as unknown[],
-  commentsFile: { version: "1", fetched_at: {}, comments: {} } as CommentsFile,
+  commentsFile: {
+    version: "2",
+    fetched_at: {},
+    issue_updated_at: {},
+    comments: {},
+  } as CommentsFile,
 }));
 
 vi.mock("../store/project-storage.js", () => ({
@@ -73,13 +78,19 @@ function makeComment(overrides: Partial<Comment> = {}): Comment {
   };
 }
 
-const notFetched: CommentsFile = { version: "1", fetched_at: {}, comments: {} };
+const notFetched: CommentsFile = {
+  version: "2",
+  fetched_at: {},
+  issue_updated_at: {},
+  comments: {},
+};
 
 describe("[FR-CLI-019-AC1] show は取得済みコメントを投稿者・日時・本文つきで作成日時の昇順に表示し、本文の Markdown はそのまま出力する", () => {
   it("投稿者・日時・本文を作成日時の昇順で表示する", () => {
     const task = makeTask();
     const commentsFile: CommentsFile = {
-      version: "1",
+      version: "2",
+      issue_updated_at: {},
       fetched_at: { "owner/repo#1": "2026-04-05T00:00:00Z" },
       comments: {
         "owner/repo#1": [
@@ -115,7 +126,8 @@ describe("[FR-CLI-019-AC1] show は取得済みコメントを投稿者・日時
     const task = makeTask();
     const markdown = "## 見出し\n\n- item\n\n```ts\nconst x = 1;\n```";
     const commentsFile: CommentsFile = {
-      version: "1",
+      version: "2",
+      issue_updated_at: {},
       fetched_at: { "owner/repo#1": "2026-04-05T00:00:00Z" },
       comments: {
         "owner/repo#1": [makeComment({ body: markdown, updated_at: "2026-04-04T00:00:00Z" })],
@@ -131,7 +143,8 @@ describe("[FR-CLI-019-AC1] show は取得済みコメントを投稿者・日時
   it("取得済みでコメントが 0 件なら 0 件である旨を表示する", () => {
     const task = makeTask();
     const commentsFile: CommentsFile = {
-      version: "1",
+      version: "2",
+      issue_updated_at: {},
       fetched_at: { "owner/repo#1": "2026-04-05T00:00:00Z" },
       comments: { "owner/repo#1": [] },
     };
@@ -148,7 +161,8 @@ describe("[FR-CLI-019-AC2] show --json の出力は task のフィールドを�
     const task = makeTask();
     const comment = makeComment();
     const commentsFile: CommentsFile = {
-      version: "1",
+      version: "2",
+      issue_updated_at: {},
       fetched_at: { "owner/repo#1": "2026-04-05T00:00:00Z" },
       comments: { "owner/repo#1": [comment] },
     };
@@ -206,7 +220,8 @@ describe("show コマンドは commentsStore からコメントを読む", () =>
     process.exitCode = undefined;
     storage.tasks = [makeTask()];
     storage.commentsFile = {
-      version: "1",
+      version: "2",
+      issue_updated_at: {},
       fetched_at: { "owner/repo#1": "2026-04-05T00:00:00Z" },
       comments: { "owner/repo#1": [makeComment({ body: "from store" })] },
     };

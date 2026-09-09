@@ -1,7 +1,6 @@
 import { Command } from "commander";
 import * as readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { ConfigStore } from "../store/config.js";
 import { withProjectStorage } from "../store/project-storage.js";
 import {
   applyConflictPolicy,
@@ -153,7 +152,7 @@ export function createResolveCommand(dependencies: ResolveCommandDependencies = 
           }
 
           if (opts?.auto) {
-            const config = await new ConfigStore(projectRoot).read();
+            const config = await storage.configStore.read();
             const legacyStrategy = (config.sync as unknown as Record<string, unknown>)[
               "conflict_strategy"
             ];

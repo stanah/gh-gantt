@@ -55,6 +55,10 @@ catalog は次の配置を固定する。
 `loop-state.json` は Run Graph ではなく outer loop の観測 journal であり、どちらも #299 の
 共有対象にしない。
 
+workspace-local slot の物理配置は初版では `<worktree>/.gantt-sync/` に固定していたが、
+#379 で `repository` / `git` の配置モードから選べるようにした。モードの解決順序と `git` モードの
+配置は ADR-029 を正本とする。本 ADR の scope 分類、snapshot-set、lease、legacy migration は変わらない。
+
 ### versioned repository namespace
 
 Git repository では、workspace-local の Zod 検証済み config から GitHub Project identity

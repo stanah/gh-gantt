@@ -1391,6 +1391,44 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-299-worktree-cache-layout.test.ts
+      - id: FR-STORE-005
+        summary: config / workflow / journal の配置モード (repository / git)
+        acceptance_criteria:
+          - id: FR-STORE-005-AC1
+            description: |
+              git モードでは gantt.config.json と workflow.md を git-common-dir 配下の
+              gh-gantt 名前空間に置き、.gantt-sync/ を作らず、全 linked worktree が同じ config を参照する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
+          - id: FR-STORE-005-AC2
+            description: |
+              git モードでも loop-state.json と Run Graph は worktree 識別子で namespace を分け、
+              worktree 単位の観測レイヤーという性質を保つ
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
+          - id: FR-STORE-005-AC3
+            description: |
+              repository モードと git モードの両方に gantt.config.json がある場合は
+              STORAGE_MODE_AMBIGUOUS で fail-closed に停止し、両方の path と解消方法を表示する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
+          - id: FR-STORE-005-AC4
+            description: |
+              既存の .gantt-sync/ 配置は無指定で repository モードとして動き、non-git directory では
+              repository モードだけが使え、既存 config と矛盾する明示指定は停止する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
+          - id: FR-STORE-005-AC5
+            description: |
+              storage migrate --to <mode> は config / workflow / journal を移動して migration manifest に
+              記録し、移行後も共有 cache の読み書きと legacy cache の検証が通る
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
       - id: NFR-STORE-001
         summary: スキーマバリデーション
         acceptance_criteria:
