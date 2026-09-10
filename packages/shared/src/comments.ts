@@ -47,12 +47,10 @@ const CommentsFileV2Schema = z.object({
 /** version 1 / 2 の両方を受理し、常に version 2 の形へ正規化する。 */
 export const CommentsFileSchema: z.ZodType<CommentsFile, z.ZodTypeDef, unknown> = z.union([
   CommentsFileV2Schema,
-  CommentsFileV1Schema.transform(
-    (legacy): CommentsFile => ({
-      version: "2",
-      fetched_at: legacy.fetched_at,
-      issue_updated_at: {},
-      comments: legacy.comments,
-    }),
-  ),
+  CommentsFileV1Schema.transform((legacy): CommentsFile => ({
+    version: "2",
+    fetched_at: legacy.fetched_at,
+    issue_updated_at: {},
+    comments: legacy.comments,
+  })),
 ]);

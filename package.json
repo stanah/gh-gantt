@@ -25,16 +25,16 @@
     "req:validate": "tsx scripts/req-validate.ts"
   },
   "devDependencies": {
-    "@commitlint/cli": "^20.5.0",
-    "@commitlint/config-conventional": "^20.5.0",
+    "@commitlint/cli": "^20.5.3",
+    "@commitlint/config-conventional": "^20.5.3",
     "@gh-gantt/shared": "workspace:*",
-    "@playwright/test": "^1.58.2",
-    "lefthook": "^2.1.4",
-    "tsx": "^4.21.0",
-    "typedoc": "^0.28.18",
-    "vite-plus": "^0.1.24",
-    "vitest": "4.1.8",
-    "yaml": "^2.8.3",
+    "@playwright/test": "^1.63.0",
+    "lefthook": "^2.1.12",
+    "tsx": "^4.23.13",
+    "typedoc": "^0.28.20",
+    "vite-plus": "^0.3.0",
+    "vitest": "4.1.11",
+    "yaml": "^2.9.0",
     "zod": "^3.25.76"
   },
   "engines": {
@@ -46,13 +46,9 @@
       "lefthook"
     ],
     "overrides": {
-      "esbuild": "0.28.1",
-      "fast-uri": "3.1.2",
-      "path-to-regexp": "0.1.13",
-      "qs": "6.15.2",
-      "vite": "8.0.16",
-      "ws": "8.21.0",
-      "brace-expansion": "5.0.6"
+      "vite": "npm:@voidzero-dev/vite-plus-core@0.3.0",
+      "vitest": "4.1.11",
+      "qs": "6.16.0"
     }
   }
 }
