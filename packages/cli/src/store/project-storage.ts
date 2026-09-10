@@ -98,6 +98,45 @@ export interface ProjectStorageDescription {
   };
   /** Work Graph Cache の配置。config が無く identity を解決できない場合は null。 */
   sharedCacheRoot: string | null;
+  /** 各 worktree に残る legacy cache の状態 (#378)。non-git、または identity 未解決なら null。 */
+  legacy: LegacyCacheInspection | null;
+}
+
+export type LegacyCacheState =
+  | "recorded"
+  | "diverged"
+  | "unrecorded"
+  | "incomplete"
+  | "invalid"
+  | "comments-only"
+  | "other-project";
+
+/** `<worktree>/.gantt-sync/` に残る移行前の Work Graph Cache 一組の状態。 */
+export interface LegacyCacheEntry {
+  /** legacy cache を持つ project root。 */
+  workspace: string;
+  /** 実在する legacy file の絶対 path (tasks.json / sync-state.json / comments.json)。 */
+  files: string[];
+  fingerprint: string | null;
+  recordedFingerprint: string | null;
+  state: LegacyCacheState;
+  /** 表示用の理由。削除できない entry の根拠を示す。 */
+  reason: string;
+}
+
+export interface LegacyCacheInspection {
+  /** migration manifest が存在するか (共有 cache が一度も publish されていなければ false)。 */
+  manifest: boolean;
+  entries: LegacyCacheEntry[];
+}
+
+export interface LegacyCleanupOptions {
+  dryRun: boolean;
+}
+
+export interface LegacyCleanupReport {
+  dryRun: boolean;
+  entries: Array<LegacyCacheEntry & { action: "deleted" | "planned" | "skipped" }>;
 }
 
 export interface StorageRelocationReport {
@@ -122,6 +161,11 @@ export interface ProjectStorageSession {
    * 移行元と移行先を migration manifest に記録する。
    */
   relocateStorage(target: StorageMode): Promise<StorageRelocationReport>;
+  /**
+   * 移行済みの legacy cache を削除する (#378)。migration manifest の fingerprint と一致する
+   * pair だけを対象にし、一致しない pair は理由付きで残す。`dryRun` は削除せず計画だけ返す。
+   */
+  cleanupLegacyCache(options: LegacyCleanupOptions): Promise<LegacyCleanupReport>;
   /** 長いremote操作の途中で、整合したsnapshot-setを明示的にpublishする。 */
   flush(): Promise<void>;
 }
@@ -235,6 +279,17 @@ const MigrationManifestSchema = z.object({
   legacyFingerprints: z.record(z.string(), z.string().regex(/^[0-9a-f]{64}$/)),
   /** 配置モードの移行履歴 (#379)。旧 manifest には無い。 */
   storageRelocations: z.array(StorageRelocationRecordSchema).optional(),
+  /** legacy cache の削除履歴 (#378)。旧 manifest には無い。 */
+  legacyCleanups: z
+    .array(
+      z.object({
+        workspace: z.string().min(1),
+        fingerprint: z.string().regex(/^[0-9a-f]{64}$/),
+        deletedAt: z.string().datetime(),
+        files: z.array(z.string().min(1)),
+      }),
+    )
+    .optional(),
 });
 
 type MigrationManifest = z.infer<typeof MigrationManifestSchema>;
@@ -713,6 +768,107 @@ async function collectLegacyCandidates(layout: GitLayout): Promise<LegacyCandida
   return candidates.filter((candidate): candidate is LegacyCandidate => candidate !== null);
 }
 
+const LEGACY_FILES = ["tasks.json", "sync-state.json", "comments.json"] as const;
+
+/**
+ * 全 worktree の legacy cache を migration manifest と照合し、削除可否を判定する (#378)。
+ * fail-closed にはせず、各 worktree の状態と理由を返す。
+ */
+async function inspectLegacy(layout: GitLayout): Promise<LegacyCacheInspection> {
+  const manifest = await readMigrationManifest(layout);
+  const entries: LegacyCacheEntry[] = [];
+  for (const worktree of [...layout.worktrees].sort()) {
+    const root = join(worktree, layout.relativeProjectRoot);
+    const directory = join(root, GANTT_DIR);
+    const files: string[] = [];
+    for (const name of LEGACY_FILES) {
+      if ((await readOptional(join(directory, name))) !== null) files.push(join(directory, name));
+    }
+    if (files.length === 0) continue;
+    // comments.json だけが残る entry は merge base を持たず fingerprint を計算できない。
+    // 別 Project と混同しないよう専用の状態で報告し、削除対象にも含めない
+    if (
+      (await readOptional(join(directory, "tasks.json"))) === null &&
+      (await readOptional(join(directory, "sync-state.json"))) === null
+    ) {
+      entries.push({
+        workspace: root,
+        files,
+        fingerprint: null,
+        recordedFingerprint: null,
+        state: "comments-only",
+        reason:
+          "comments.json だけが残っており fingerprint を計算できません。GitHub から再構築できる cache なので手動で削除できます",
+      });
+      continue;
+    }
+    let candidate: LegacyCandidate | null;
+    try {
+      candidate = await readCandidate(layout, worktree);
+    } catch (error) {
+      const code = error instanceof ProjectStorageError ? error.code : "LEGACY_CACHE_INVALID";
+      entries.push({
+        workspace: root,
+        files,
+        fingerprint: null,
+        recordedFingerprint: null,
+        state: code === "LEGACY_CACHE_INCOMPLETE" ? "incomplete" : "invalid",
+        reason:
+          code === "LEGACY_CACHE_INCOMPLETE"
+            ? "tasks.json と sync-state.json の片方だけが存在するため fingerprint を計算できません"
+            : `legacy cache を検証できません: ${error instanceof Error ? error.message : String(error)}`,
+      });
+      continue;
+    }
+    if (candidate === null) {
+      entries.push({
+        workspace: root,
+        files,
+        fingerprint: null,
+        recordedFingerprint: null,
+        state: "other-project",
+        reason: "別の GitHub Project の cache のため、この namespace からは削除しません",
+      });
+      continue;
+    }
+    const recorded = manifest?.legacyFingerprints[candidate.workspace] ?? null;
+    if (recorded === null) {
+      entries.push({
+        workspace: candidate.workspace,
+        files,
+        fingerprint: candidate.fingerprint,
+        recordedFingerprint: null,
+        state: "unrecorded",
+        reason: manifest
+          ? "migration manifest に記録がありません。gh-gantt storage migrate --from <worktree> で正本を明示してください"
+          : "共有 cache がまだ publish されていません。先に gh-gantt pull を実行してください",
+      });
+      continue;
+    }
+    if (recorded !== candidate.fingerprint) {
+      entries.push({
+        workspace: candidate.workspace,
+        files,
+        fingerprint: candidate.fingerprint,
+        recordedFingerprint: recorded,
+        state: "diverged",
+        reason:
+          "migration 後に legacy cache が変更されています。gh-gantt storage migrate --from <worktree> で正本を明示してください",
+      });
+      continue;
+    }
+    entries.push({
+      workspace: candidate.workspace,
+      files,
+      fingerprint: candidate.fingerprint,
+      recordedFingerprint: recorded,
+      state: "recorded",
+      reason: "migration manifest の fingerprint と一致しており、共有 cache へ移行済みです",
+    });
+  }
+  return { manifest: manifest !== null, entries };
+}
+
 async function publishSnapshot(layout: GitLayout, tasks: string, syncState: string): Promise<void> {
   try {
     TasksFileWithConflictsSchema.parse(JSON.parse(tasks));
@@ -785,6 +941,7 @@ async function writeMigrationManifest(
       candidates.map((candidate) => [candidate.workspace, candidate.fingerprint]),
     ),
     ...(previous?.storageRelocations ? { storageRelocations: previous.storageRelocations } : {}),
+    ...(previous?.legacyCleanups ? { legacyCleanups: previous.legacyCleanups } : {}),
   };
   await saveMigrationManifest(layout, migration);
 }
@@ -1062,7 +1219,9 @@ class LazyProjectStorageSession implements ProjectStorageSession {
     return this.workspaceBound;
   }
 
-  private async initialize(): Promise<InitializedStorage> {
+  private async initialize(
+    options: { skipLegacyMigration?: boolean } = {},
+  ): Promise<InitializedStorage> {
     if (this.initialized) return this.initialized;
     this.initialized = (async () => {
       const layout = await resolveSharedLayout(await this.resolveWorkspace());
@@ -1072,7 +1231,8 @@ class LazyProjectStorageSession implements ProjectStorageSession {
       }
       const release = await acquireLease(layout, this.options, this.dependencies);
       try {
-        await migrateLegacy(layout, this.options.legacySource);
+        // cleanup は分岐した legacy を fail-closed にせず個別に判定するため migration を飛ばす
+        if (!options.skipLegacyMigration) await migrateLegacy(layout, this.options.legacySource);
         return { bound: new BoundStorageSession(layout, this.options), layout, release };
       } catch (error) {
         await release();
@@ -1090,10 +1250,28 @@ class LazyProjectStorageSession implements ProjectStorageSession {
     const workspace = await this.resolveWorkspace();
     const location = workspace.location;
     let sharedCacheRoot: string | null = location.repositoryDir;
+    let legacy: LegacyCacheInspection | null = null;
     if (workspace.git !== null) {
       try {
-        const identity = await readProjectIdentity(workspaceSlotPath(location, "config"));
-        sharedCacheRoot = sharedNamespace(workspace.git, identity).namespaceRoot;
+        const layout = await resolveSharedLayout(workspace);
+        if (layout.kind === "git") {
+          sharedCacheRoot = layout.namespaceRoot;
+          try {
+            legacy = await inspectLegacy(layout);
+          } catch (inspectionError) {
+            // manifest が壊れていても解決済み path は返す契約なので、legacy の検査結果だけを縮退させる。
+            // それ以外の検査エラーは従来どおり伝播させる
+            if (
+              !(
+                inspectionError instanceof ProjectStorageError &&
+                inspectionError.code === "MIGRATION_MANIFEST_INVALID"
+              )
+            ) {
+              throw inspectionError;
+            }
+            legacy = null;
+          }
+        }
       } catch (error) {
         if (!(error instanceof ProjectStorageError && error.code === "PROJECT_CONFIG_MISSING")) {
           throw error;
@@ -1115,7 +1293,63 @@ class LazyProjectStorageSession implements ProjectStorageSession {
         gitJournalDir: location.gitJournalDir,
       },
       sharedCacheRoot,
+      legacy,
     };
+  }
+
+  async cleanupLegacyCache(options: LegacyCleanupOptions): Promise<LegacyCleanupReport> {
+    if (!options.dryRun && this.options.mode !== "write") {
+      throw new ProjectStorageError(
+        "STORAGE_SCOPE_VIOLATION",
+        "read scopeでは legacy cache を削除できません",
+      );
+    }
+    const { layout } = await this.initialize({ skipLegacyMigration: true });
+    if (layout.kind !== "git") {
+      throw new ProjectStorageError(
+        "STORAGE_MODE_UNSUPPORTED",
+        "non-git directory には移行済み legacy cache がありません",
+      );
+    }
+    const inspection = await inspectLegacy(layout);
+    const generation = await readCurrentGeneration(layout);
+    const entries: LegacyCleanupReport["entries"] = [];
+    const deleted: NonNullable<MigrationManifest["legacyCleanups"]> = [];
+    for (const entry of inspection.entries) {
+      if (entry.state !== "recorded") {
+        entries.push({ ...entry, action: "skipped" });
+        continue;
+      }
+      if (generation === null) {
+        entries.push({
+          ...entry,
+          action: "skipped",
+          reason: "共有 cache の CURRENT generation が無いため削除しません",
+        });
+        continue;
+      }
+      if (options.dryRun) {
+        entries.push({ ...entry, action: "planned" });
+        continue;
+      }
+      for (const file of entry.files) await rm(file, { force: true });
+      await removeIfEmpty(join(entry.workspace, GANTT_DIR));
+      deleted.push({
+        workspace: entry.workspace,
+        fingerprint: entry.fingerprint!,
+        deletedAt: new Date().toISOString(),
+        files: entry.files,
+      });
+      entries.push({ ...entry, action: "deleted" });
+    }
+    if (deleted.length > 0) {
+      const manifest = await readMigrationManifest(layout);
+      if (manifest) {
+        manifest.legacyCleanups = [...(manifest.legacyCleanups ?? []), ...deleted];
+        await saveMigrationManifest(layout, manifest);
+      }
+    }
+    return { dryRun: options.dryRun, entries };
   }
 
   async relocateStorage(target: StorageMode): Promise<StorageRelocationReport> {

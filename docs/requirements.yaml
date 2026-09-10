@@ -1444,6 +1444,35 @@ areas:
             status: covered
             tests:
               - packages/cli/src/__tests__/regressions/issue-379-storage-location-mode.test.ts
+      - id: FR-STORE-006
+        summary: 移行済み legacy cache の安全な掃除
+        acceptance_criteria:
+          - id: FR-STORE-006-AC1
+            description: |
+              storage cleanup は migration manifest に記録された fingerprint と一致する worktree の
+              legacy tasks.json / sync-state.json / comments.json だけを削除し、削除履歴を manifest に残す
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-378-storage-legacy-cleanup.test.ts
+          - id: FR-STORE-006-AC2
+            description: --dry-run は削除予定の worktree と file を列挙するだけで file を残す
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-378-storage-legacy-cleanup.test.ts
+          - id: FR-STORE-006-AC3
+            description: |
+              fingerprint が一致しない (分岐、未記録、片側欠損、comments.json のみ、破損、別 Project) legacy file は
+              削除せず、理由を表示する
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-378-storage-legacy-cleanup.test.ts
+          - id: FR-STORE-006-AC4
+            description: |
+              storage status は legacy file が残る worktree と状態を示し、削除後も共有 cache の
+              読み書きと manifest との整合性検証が通る
+            status: covered
+            tests:
+              - packages/cli/src/__tests__/regressions/issue-378-storage-legacy-cleanup.test.ts
       - id: NFR-STORE-001
         summary: スキーマバリデーション
         acceptance_criteria:

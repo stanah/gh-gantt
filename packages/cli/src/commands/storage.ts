@@ -2,6 +2,8 @@ import { Command } from "commander";
 import {
   ProjectStorageError,
   withProjectStorage,
+  type LegacyCacheInspection,
+  type LegacyCleanupReport,
   type ProjectStorageDescription,
   type StorageMode,
   type StorageRelocationReport,
@@ -47,6 +49,41 @@ export function formatStorageDescription(description: ProjectStorageDescription)
     lines.push(`Repository dir:    ${description.paths.repositoryDir} (git モードでは未使用)`);
   } else if (description.paths.gitConfigDir) {
     lines.push(`Git mode config:   ${description.paths.gitConfigDir} (未使用)`);
+  }
+  lines.push(...formatLegacyInspection(description.legacy));
+  return lines;
+}
+
+/** legacy cache が残っている worktree を状態付きで列挙する (#378)。 */
+export function formatLegacyInspection(legacy: LegacyCacheInspection | null): string[] {
+  if (legacy === null || legacy.entries.length === 0) return ["Legacy cache:      なし"];
+  const lines = [`Legacy cache:      ${legacy.entries.length} 件の worktree に残っています`];
+  for (const entry of legacy.entries) {
+    lines.push(`  [${entry.state}] ${entry.workspace}`);
+    for (const file of entry.files) lines.push(`      ${file}`);
+    lines.push(`      ${entry.reason}`);
+  }
+  if (legacy.entries.some((entry) => entry.state === "recorded")) {
+    lines.push(
+      "  移行済みの legacy file は gh-gantt storage cleanup --dry-run で確認し、storage cleanup で削除できます",
+    );
+  }
+  return lines;
+}
+
+function formatCleanup(report: LegacyCleanupReport): string[] {
+  if (report.entries.length === 0) return ["削除対象の legacy cache はありません"];
+  const lines = [
+    report.dryRun
+      ? "legacy cache の削除計画 (--dry-run のため削除していません):"
+      : "legacy cache の削除結果:",
+  ];
+  for (const entry of report.entries) {
+    const label =
+      entry.action === "deleted" ? "削除" : entry.action === "planned" ? "削除予定" : "保持";
+    lines.push(`  [${label}] ${entry.workspace} (${entry.state})`);
+    for (const file of entry.files) lines.push(`      ${file}`);
+    if (entry.action === "skipped") lines.push(`      ${entry.reason}`);
   }
   return lines;
 }
@@ -157,6 +194,32 @@ export function createStorageCommand(dependencies: StorageCommandDependencies = 
         }
       } catch (error) {
         reportError(error, options.json, "STORAGE_MIGRATION_FAILED");
+      }
+    });
+
+  storage
+    .command("cleanup")
+    .description(
+      "共有 cache へ移行済みの legacy file (.gantt-sync/tasks.json 等) を削除する。" +
+        "migration manifest の fingerprint と一致する worktree だけが対象",
+    )
+    .option("--dry-run", "削除せず対象と理由を表示する")
+    .option("--json", "JSON形式で出力する")
+    .action(async (options: { dryRun?: boolean; json?: boolean }) => {
+      try {
+        const dryRun = options.dryRun === true;
+        const report = await withProjectStorage(
+          projectRoot(),
+          { mode: dryRun ? "read" : "write", scope: "shared-cache" },
+          (session) => session.cleanupLegacyCache({ dryRun }),
+        );
+        if (options.json) {
+          console.log(JSON.stringify({ ok: true, ...report }, null, 2));
+        } else {
+          for (const line of formatCleanup(report)) console.log(line);
+        }
+      } catch (error) {
+        reportError(error, options.json, "STORAGE_CLEANUP_FAILED");
       }
     });
 
