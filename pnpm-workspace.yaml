@@ -1,2 +1,13 @@
 packages:
   - "packages/*"
+
+# pnpm 11 以降は package.json の pnpm フィールドを読まないため、設定はここに置く
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.0
+  vitest: 4.1.11
+  qs: 6.16.0
+
+# 従来の onlyBuiltDependencies: [lefthook] と同じ振る舞い (esbuild は optionalDependencies のバイナリで動く)
+allowBuilds:
+  lefthook: true
+  esbuild: false
